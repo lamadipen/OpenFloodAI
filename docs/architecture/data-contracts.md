@@ -869,7 +869,9 @@ Future test examples:
 Machine-readable schema:
 
 - `schemas/event.schema.json` provides a first simple schema for event/audit records.
-- It is intentionally small and should grow only when implementation stories need stricter validation.
+- Example records live in `examples/events/`.
+- Validation tests live in `tests/schema/`.
+- The schema is intentionally focused on event/audit records and should grow only when implementation stories need stricter validation.
 
 ## 21. Known Unknowns
 
