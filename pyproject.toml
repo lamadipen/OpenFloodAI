@@ -16,9 +16,11 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = [
+  "jsonschema[format]>=4.23",
   "mypy>=1.11",
   "pytest>=8.3",
   "ruff>=0.6",
+  "types-jsonschema>=4.23",
 ]
 
 [tool.hatch.build.targets.wheel]
