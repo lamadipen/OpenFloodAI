@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openfloodai.org/schemas/event.schema.json",
+  "title": "OpenFloodAI V1 Event Audit Record",
+  "description": "Initial schema for event and audit records. This is a simple starting point, not a complete production schema.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "contract_version",
+    "record_id",
+    "record_type",
+    "site_id",
+    "camera_id",
+    "timestamp",
+    "event_type",
+    "software_version",
+    "config_version",
+    "input_quality_state",
+    "risk_state",
+    "reason_codes",
+    "evidence_window"
+  ],
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "const": "v1"
+    },
+    "record_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "record_type": {
+      "type": "string",
+      "const": "event_audit_record"
+    },
+    "site_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "camera_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "event_type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "software_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "config_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "model_version": {
+      "type": "string"
+    },
+    "input_quality_state": {
+      "type": "string",
+      "enum": ["USABLE", "DEGRADED", "UNKNOWN"]
+    },
+    "risk_state": {
+      "type": "string",
+      "enum": ["NORMAL", "ELEVATED", "HIGH", "CRITICAL", "UNKNOWN_DEGRADED"]
+    },
+    "reason_codes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    },
+    "evidence_window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end", "duration_seconds"],
+      "properties": {
+        "start": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "end": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "duration_seconds": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "component_signals": {
+      "type": "object"
+    },
+    "alert_action_taken": {
+      "type": "string"
+    },
+    "delivery_result": {
+      "type": "object"
+    },
+    "source_record_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "local_storage_state": {
+      "type": "string"
+    },
+    "public_fields": {
+      "type": "object"
+    },
+    "restricted_fields": {
+      "type": "object"
+    }
+  }
+}
