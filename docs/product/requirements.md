@@ -62,18 +62,19 @@ Simple example: a camera watches a bridge. Over time, the system sees that water
 
 OpenFloodAI V1 must:
 
-- Read prerecorded video for development and testing.
-- Later in V1, read fixed-camera streams such as RTSP or CCTV feeds.
+- Support prerecorded video before live camera streams.
+- Treat live RTSP/CCTV stream support as planned for V1 and track it as a separate implementation story.
 - Check whether the camera feed is usable.
 - Detect possible river or water regions in the image.
 - Estimate relative water-level or water-coverage change over time.
 - Look for fast changes, not only a single high-looking frame.
 - Combine evidence over time before changing risk state.
-- Create explainable risk states.
+- Create explainable risk states with reason codes.
+- Include the evidence window used for each risk-state change.
 - Create alert candidates with reason codes and supporting evidence.
 - Record events so people can review what happened later.
-- Continue core detection on the edge device without cloud access where practical.
-- Stay camera-agnostic where practical, so it can support different fixed cameras.
+- Continue core detection on the edge device during cloud/network loss when video, power, storage, and local configuration are available.
+- Support different fixed cameras when their video quality and viewpoint are suitable for river monitoring.
 
 Simple example: the system should be able to say, “Risk is HIGH because water coverage increased quickly and stayed high for several minutes,” instead of only saying, “Alert.”
 
@@ -120,7 +121,7 @@ Boundary example: OpenFloodAI can say, “This camera shows signs of critical ri
 The following are in scope for V1:
 
 - Prerecorded video.
-- Fixed-camera streams later in V1.
+- Fixed-camera streams, tracked as a separate V1 implementation story.
 - River or water-region detection.
 - Relative water-level or water-coverage change estimation.
 - Rapid rise or rate-of-change analysis.
@@ -134,7 +135,7 @@ The following are in scope for V1:
 - Low-cost edge inference.
 - Offline or degraded operation for core detection.
 - Event recording for analysis and audit.
-- Camera and hardware flexibility where practical.
+- Camera and hardware flexibility when video quality, viewpoint, and edge-device capacity are suitable.
 
 Simple example: if heavy rain blurs the image so the river cannot be seen clearly, the system should report degraded confidence instead of guessing.
 
@@ -170,6 +171,16 @@ OpenFloodAI V1 uses these initial risk states:
 
 The risk engine must be testable without the ML model. It should accept evidence, apply rules, and produce a risk state and reasons.
 
+Risk-state transitions must be based on:
+
+- Water coverage or water-level change over time.
+- Rate of change.
+- Camera/feed health.
+- Confidence or uncertainty.
+- Persistence across multiple frames or time windows.
+
+The exact numeric thresholds are unknown for now. They must be set after dataset research, baseline experiments, and field evidence.
+
 Simple example: if the camera is offline, the state should become `UNKNOWN / DEGRADED`, not `NORMAL`.
 
 ## 11. Alert-Candidate Concept
@@ -178,29 +189,48 @@ An alert candidate is a message that says, “This may need attention.”
 
 It is not the same as an official public warning. A human, operator, or approved local process must decide what action to take.
 
-An alert candidate should include:
+Each alert candidate should record:
 
-- Camera or site ID.
-- Time.
+- Site/camera ID.
+- Timestamp.
+- Software version.
+- Model version, if a model is used.
+- Config version.
+- Input quality state.
 - Risk state.
-- Main reasons.
-- Confidence or uncertainty where available.
-- Recent evidence, such as sustained water-coverage change.
+- Reason codes.
+- Main component signals.
+- Confidence or uncertainty.
+- Evidence window, such as sustained water-coverage change over several minutes.
 - System health state.
+- Alert action taken.
+- Delivery result, if notification is attempted.
 
 Simple example: “Camera bridge-01 is HIGH because water coverage increased quickly for 6 minutes. Camera feed is healthy.”
 
 ## 12. Edge and Offline Requirements
 
-OpenFloodAI V1 should run core detection near the camera where practical.
+OpenFloodAI V1 should run core detection near the camera.
 
 The edge device should:
 
-- Keep processing video if cloud access is lost but local video is still available.
+- Keep processing video if cloud access is lost but local video, power, storage, and local configuration are available.
 - Store important events locally when it cannot send them right away.
 - Report degraded status when camera, power, disk, clock, or network problems affect reliability.
 - Use local cached configuration when cloud configuration is not reachable.
 - Avoid depending on a cloud service for the basic act of detecting concerning visual change.
+
+During cloud/network loss:
+
+- Local detection should continue if video, power, storage, and local configuration are available.
+- Events should be stored locally.
+- Upload may resume after connectivity returns.
+
+During camera loss, unusable video, low disk, bad clock, or missing configuration:
+
+- The system must show `UNKNOWN / DEGRADED`.
+- It must not silently report `NORMAL`.
+- It must record the failure reason where possible.
 
 Simple example: if the internet is down for 30 minutes, the edge device should keep watching the river and save local events. When the internet returns, it may upload the saved events if configured.
 
@@ -273,11 +303,13 @@ OpenFloodAI should collect only what is needed for river monitoring.
 Privacy expectations:
 
 - Avoid face, person, vehicle, or license-plate recognition.
-- Do not store raw video unless there is a clear operational or research reason.
-- Make raw-video retention configurable.
+- Raw video retention must be configurable by site.
+- The default should avoid storing raw video unless needed for review, research, or debugging.
 - Prefer storing events, summaries, and cropped river-focused evidence where practical.
 - Protect camera URLs, credentials, and location details.
+- Do not write camera credentials into logs.
 - Document who can access stored video or event evidence.
+- Consider masking or cropping before public deployment if people, roads, homes, vehicles, or license plates appear in view.
 
 Simple example: if a camera view includes a road near the river, the system should not analyze license plates. The project is about flood risk, not tracking people or vehicles.
 
@@ -312,6 +344,28 @@ Possible future capabilities after V1:
 - Public-facing status page controlled by local authorities.
 
 Future example: a later version may combine a camera signal with an official river gauge. V1 should not require that extra sensor to work.
+
+## Testability Notes
+
+Future implementation stories should include tests for:
+
+- Normal river conditions.
+- Gradual rise.
+- Rapid rise.
+- High or flood-like water.
+- Water receding.
+- Rain, fog, darkness, glare, and obstruction.
+- Frozen frames.
+- Dropped or corrupt frames.
+- Camera offline.
+- Network loss and recovery.
+- Low disk.
+- Bad clock or time.
+- Bad or missing configuration.
+
+Each major requirement should be linked to a future test, replay scenario, or field-pilot evidence item.
+
+Simple example: before trusting the system in a pilot, we should replay videos of normal water, fast-rising water, and a blocked camera to check that each case produces the expected state.
 
 ## Architect Review Notes
 
