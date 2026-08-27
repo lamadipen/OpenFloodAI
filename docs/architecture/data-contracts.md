@@ -16,6 +16,31 @@ Some records describe the place. Some describe the camera. Some describe video q
 
 Simple example: instead of writing “big water problem” in one place and “high river” somewhere else, the system should use a clear risk state like `HIGH` plus reason codes that explain why.
 
+## Quick Reference Table
+
+| Record Type | What It Means | Who Uses It |
+| --- | --- | --- |
+| `site` | The river monitoring place. | Operators, dashboard, audit records. |
+| `camera` | One camera at a site. | Camera setup, health checks, event tracing. |
+| `video_frame_metadata` | Information about a frame without storing the image itself. | Vision module, audit/replay tools. |
+| `camera_health_output` | Whether the camera/video feed is usable. | Risk engine, operators, audit records. |
+| `vision_signal_output` | What the ML/vision module thinks it sees. | Temporal analysis and risk engine. |
+| `temporal_analysis_output` | How evidence changes across time. | Risk engine and audit review. |
+| `risk_engine_input` | Evidence sent into the risk engine. | Risk engine tests and decision logic. |
+| `risk_engine_output` | The selected risk state and reasons. | Alert candidate logic, audit records. |
+| `alert_candidate` | A request for human or approved local review. | Operators or review workflow. |
+| `event_audit_record` | Long-term record of an important event. | QA, debugging, field review. |
+| `delivery_result` | Whether a notification attempt worked. | Audit and operations review. |
+
+## State Meaning Table
+
+| State | Simple Meaning |
+| --- | --- |
+| `USABLE` | The camera/video evidence is good enough to use. |
+| `DEGRADED` | Evidence exists, but it is poor quality or partly blocked. |
+| `UNKNOWN` | The system cannot tell what is happening. |
+| `UNKNOWN_DEGRADED` | Risk must not be treated as normal because evidence is missing or unreliable. |
+
 ## 3. Data Contract Principles
 
 V1 records should follow these principles:
@@ -861,6 +886,12 @@ The following are not settled yet:
 - Final JSON schemas for every record type are not created yet.
 
 These unknowns should become future issues, ADRs, schemas, or tests.
+
+Future issue candidates:
+
+- Create a formal `reason-codes.md` list.
+- Add stricter schemas for more record types.
+- Add a public-event schema that blocks exact GPS, camera secrets, and private details from public output.
 
 ## Architect Review Notes
 
