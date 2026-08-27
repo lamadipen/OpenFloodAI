@@ -889,9 +889,10 @@ These unknowns should become future issues, ADRs, schemas, or tests.
 
 Future issue candidates:
 
-- Create a formal `reason-codes.md` list.
 - Add stricter schemas for more record types.
 - Add a public-event schema that blocks exact GPS, camera secrets, and private details from public output.
+
+Reason-code details now live in [reason-codes.md](reason-codes.md).
 
 ## Architect Review Notes
 
