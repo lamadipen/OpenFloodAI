@@ -16,6 +16,24 @@ Simple example: if the camera is offline, the system can record `CAMERA_OFFLINE`
 
 Reason codes help operators, developers, and QA reviewers understand the system later. They should explain evidence, not give emergency instructions.
 
+## Reason-Code Naming Format
+
+V1 reason codes should use uppercase snake case.
+
+That means:
+
+- Use capital letters.
+- Use underscores between words.
+- Do not use spaces.
+- Keep names short and stable.
+
+Examples:
+
+- Good: `CAMERA_OFFLINE`
+- Good: `HIGH_WATER_COVERAGE`
+- Avoid: `camera offline`
+- Avoid: `HighWaterCoverage`
+
 ## 3. Risk States
 
 OpenFloodAI V1 uses these risk states:
@@ -218,21 +236,6 @@ Test expectations:
 
 Simple example: a unit test can give the future risk engine fake input with `CAMERA_OFFLINE` and check that the output state is `UNKNOWN_DEGRADED`.
 
-## 15. Known Unknowns
-
-The following are not settled yet:
-
-- Final numeric thresholds for `ELEVATED`, `HIGH`, and `CRITICAL`.
-- Final site-specific reference lines or baseline definitions.
-- Full reason-code list for every future component.
-- Whether some reason codes should have severity levels.
-- Whether reason-code ordering should be required.
-- How reason codes should be translated for operator dashboards.
-- Which reason codes should be public versus restricted.
-- How long deprecated reason codes should remain supported.
-
-These unknowns should become future issues, schemas, tests, or ADRs.
-
 ## Risk-State Rule Guidance
 
 These are simple guidance rules for future implementation. They are not final algorithms.
@@ -247,6 +250,21 @@ These are simple guidance rules for future implementation. They are not final al
 - If OpenFloodAI does not create an official warning, use `OFFICIAL_WARNING_NOT_CREATED` when that boundary needs to be visible.
 
 Simple example: high water in one frame may be noise. High water plus several minutes of persistent rise is stronger evidence.
+
+## 15. Known Unknowns
+
+The following are not settled yet:
+
+- Final numeric thresholds for `ELEVATED`, `HIGH`, and `CRITICAL`.
+- Final site-specific reference lines or baseline definitions.
+- Full reason-code list for every future component.
+- Whether some reason codes should have severity levels.
+- Whether reason-code ordering should be required.
+- How reason codes should be translated for operator dashboards.
+- Which reason codes should be public versus restricted.
+- How long deprecated reason codes should remain supported.
+
+These unknowns should become future issues, schemas, tests, or ADRs.
 
 ## Safety Boundaries
 
