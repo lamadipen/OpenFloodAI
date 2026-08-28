@@ -7,7 +7,6 @@ from typing import Any, cast
 
 import pytest
 from jsonschema import Draft202012Validator, FormatChecker
-from jsonschema.exceptions import ValidationError
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = ROOT / "schemas" / "event.schema.json"
@@ -29,13 +28,13 @@ def build_validator() -> Draft202012Validator:
     return Draft202012Validator(schema, format_checker=FormatChecker())
 
 
-def collect_schema_errors(record: dict[str, Any]) -> list[ValidationError]:
-    return sorted(build_validator().iter_errors(record), key=lambda error: error.json_path)
+def collect_schema_error_validators(record: dict[str, Any]) -> set[str]:
+    errors = sorted(build_validator().iter_errors(record), key=lambda error: error.json_path)
+    return {error.validator for error in errors}
 
 
 def assert_schema_valid(record: dict[str, Any]) -> None:
-    errors = collect_schema_errors(record)
-    assert errors == []
+    assert collect_schema_error_validators(record) == set()
 
 
 def test_schema_file_contains_required_validation_rules() -> None:
@@ -88,54 +87,48 @@ def test_invalid_event_examples_fail_schema_validation(
 ) -> None:
     record = load_json(EXAMPLES_PATH / example_file)
 
-    errors = collect_schema_errors(record)
-    assert errors, f"{example_file} should fail schema validation"
-    assert expected_validator in {error.validator for error in errors}
+    error_validators = collect_schema_error_validators(record)
+    assert error_validators, f"{example_file} should fail schema validation"
+    assert expected_validator in error_validators
 
 
 def test_bad_timestamp_fails_validation() -> None:
     record = load_json(EXAMPLES_PATH / "valid-high-event-audit-record.json")
     record["timestamp"] = "not-a-date"
 
-    errors = collect_schema_errors(record)
-    assert "format" in {error.validator for error in errors}
+    assert "format" in collect_schema_error_validators(record)
 
 
 def test_timestamp_without_timezone_fails_validation() -> None:
     record = load_json(EXAMPLES_PATH / "valid-high-event-audit-record.json")
     record["timestamp"] = "2026-08-27T14:05:00"
 
-    errors = collect_schema_errors(record)
-    assert "format" in {error.validator for error in errors}
+    assert "format" in collect_schema_error_validators(record)
 
 
 def test_missing_evidence_window_fails_validation() -> None:
     record = load_json(EXAMPLES_PATH / "valid-high-event-audit-record.json")
     del record["evidence_window"]
 
-    errors = collect_schema_errors(record)
-    assert "required" in {error.validator for error in errors}
+    assert "required" in collect_schema_error_validators(record)
 
 
 def test_negative_evidence_window_duration_fails_validation() -> None:
     record = load_json(EXAMPLES_PATH / "valid-high-event-audit-record.json")
     record["evidence_window"]["duration_seconds"] = -1
 
-    errors = collect_schema_errors(record)
-    assert "minimum" in {error.validator for error in errors}
+    assert "minimum" in collect_schema_error_validators(record)
 
 
 def test_bad_risk_state_fails_schema_validation() -> None:
     record = load_json(EXAMPLES_PATH / "valid-high-event-audit-record.json")
     record["risk_state"] = "VERY_BAD"
 
-    errors = collect_schema_errors(record)
-    assert "enum" in {error.validator for error in errors}
+    assert "enum" in collect_schema_error_validators(record)
 
 
 def test_bad_input_quality_state_fails_schema_validation() -> None:
     record = load_json(EXAMPLES_PATH / "valid-high-event-audit-record.json")
     record["input_quality_state"] = "PERFECT"
 
-    errors = collect_schema_errors(record)
-    assert "enum" in {error.validator for error in errors}
+    assert "enum" in collect_schema_error_validators(record)
