@@ -142,34 +142,6 @@ PY
 
 Simple meaning: this opens the video and returns records about frames, such as frame ID, timestamp, size, frame rate, and frame hash. It does not inspect the river or decide flood risk.
 
-# Dipen Testing Note:
-
-- I used the video from [USGS](https://apps.usgs.gov/hivis/camera/CO_Colorado_River_at_Windy_Gap_near_Granby)
-- Added the video into data folder
-- Ran the script below
-
-
-```bash
-cd /Users/dipenlama/Downloads/workspace-local/git/OpenFloodAI
-source .venv/bin/activate
-python3 - <<'PY'
-from pathlib import Path
-
-from openfloodai.ingestion import read_video_metadata
-
-records = read_video_metadata(
-    Path("data/CO_Colorado_River_at_Windy_Gap_near_Granby_720.mp4"),
-    site_id="CO-Colorado-River-01",
-    camera_id="camera-north-east-01",
-)
-
-print(f"Frames read: {len(records)}")
-print(records[0])
-PY
-```
-
-
-
 ## Project Status
 
 Initial repository foundation only. See `CONTRIBUTING.md` and `SECURITY.md` before proposing functional changes.

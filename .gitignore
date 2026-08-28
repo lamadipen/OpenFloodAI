@@ -35,3 +35,6 @@ data/*
 !data/.gitkeep
 models/*
 !models/.gitkeep
+
+# Local-only project notes
+READMELOCAL.md
