@@ -14,6 +14,7 @@ authors = [
 ]
 dependencies = [
   "jsonschema[format]>=4.23",
+  "opencv-python-headless>=4.10",
 ]
 
 [project.optional-dependencies]

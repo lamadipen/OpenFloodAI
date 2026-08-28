@@ -35,11 +35,13 @@ configs/              Configuration examples and templates
 
 OpenFloodAI targets Python 3.12 or newer.
 
+On macOS and many Linux systems, use `python3`. On Windows, `py -3` is often the closest equivalent.
+
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -e ".[dev]"
+python3 -m pip install --upgrade pip
+python3 -m pip install -e ".[dev]"
 ```
 
 Run checks:
@@ -50,6 +52,123 @@ ruff format --check .
 mypy src tests
 pytest
 ```
+
+## Real Run Guide
+
+The project can now do two small real things:
+
+- Validate an event/audit JSON record.
+- Read a local video file and create basic frame metadata.
+
+It does not detect floods, run ML, score risk, send alerts, or store data in a database yet.
+
+### 1. Set Up The Environment
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install --upgrade pip
+python3 -m pip install -e ".[dev]"
+```
+
+### 2. Validate An Example Event Record
+
+Run this from the repository root:
+
+```bash
+python3 - <<'PY'
+import json
+from pathlib import Path
+
+from openfloodai.contracts import validate_event_record
+
+record_path = Path("examples/events/valid-high-event-audit-record.json")
+record = json.loads(record_path.read_text())
+
+errors = validate_event_record(record)
+
+if errors:
+    print("Invalid record:")
+    for error in errors:
+        print(f"- {error}")
+else:
+    print("Valid event record")
+PY
+```
+
+Simple meaning: this checks whether the JSON file has the required fields, valid timestamps, valid risk state, and valid reason codes.
+
+### 3. Try An Invalid Event Record
+
+```bash
+python3 - <<'PY'
+import json
+from pathlib import Path
+
+from openfloodai.contracts import validate_event_record
+
+record_path = Path("examples/events/invalid-normal-with-camera-offline.json")
+record = json.loads(record_path.read_text())
+
+for error in validate_event_record(record):
+    print(f"- {error}")
+PY
+```
+
+Simple meaning: this should fail because a camera-offline record must not look like `NORMAL`.
+
+### 4. Read Metadata From A Local Video
+
+Use your own small local video file. Do not use private camera footage unless you are allowed to process it.
+
+Replace `data/sample-video.mp4` with your video path:
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+
+from openfloodai.ingestion import read_video_metadata
+
+records = read_video_metadata(
+    Path("data/sample-video.mp4"),
+    site_id="site-demo-01",
+    camera_id="camera-demo-01",
+)
+
+print(f"Frames read: {len(records)}")
+print(records[0])
+PY
+```
+
+Simple meaning: this opens the video and returns records about frames, such as frame ID, timestamp, size, frame rate, and frame hash. It does not inspect the river or decide flood risk.
+
+# Dipen Testing Note:
+
+- I used the video from [USGS](https://apps.usgs.gov/hivis/camera/CO_Colorado_River_at_Windy_Gap_near_Granby)
+- Added the video into data folder
+- Ran the script below
+
+
+```bash
+cd /Users/dipenlama/Downloads/workspace-local/git/OpenFloodAI
+source .venv/bin/activate
+python3 - <<'PY'
+from pathlib import Path
+
+from openfloodai.ingestion import read_video_metadata
+
+records = read_video_metadata(
+    Path("data/CO_Colorado_River_at_Windy_Gap_near_Granby_720.mp4"),
+    site_id="CO-Colorado-River-01",
+    camera_id="camera-north-east-01",
+)
+
+print(f"Frames read: {len(records)}")
+print(records[0])
+PY
+```
+
+
 
 ## Project Status
 
