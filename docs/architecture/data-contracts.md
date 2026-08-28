@@ -871,6 +871,7 @@ Machine-readable schema:
 - `schemas/event.schema.json` provides a first simple schema for event/audit records.
 - Example records live in `examples/events/`.
 - Validation tests live in `tests/schema/`.
+- Shared validation helpers live in `src/openfloodai/contracts/event_validation.py`.
 - The schema is intentionally focused on event/audit records and should grow only when implementation stories need stricter validation.
 
 ## 21. Known Unknowns
