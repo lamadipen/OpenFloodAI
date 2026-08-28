@@ -1,0 +1,18 @@
+{
+  "contract_version": "v1",
+  "record_id": "event-bridge-01-20260827-141500",
+  "record_type": "event_audit_record",
+  "site_id": "site-bridge-01",
+  "camera_id": "camera-bridge-01-main",
+  "timestamp": "2026-08-27T14:15:00+05:45",
+  "event_type": "risk_state_changed",
+  "software_version": "0.1.0",
+  "config_version": "config-2026-08-27-a",
+  "input_quality_state": "USABLE",
+  "risk_state": "HIGH",
+  "evidence_window": {
+    "start": "2026-08-27T14:09:00+05:45",
+    "end": "2026-08-27T14:15:00+05:45",
+    "duration_seconds": 360
+  }
+}

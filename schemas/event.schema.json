@@ -72,6 +72,7 @@
       "type": "array",
       "items": {
         "type": "string",
+        "pattern": "^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$",
         "minLength": 1
       },
       "minItems": 1
@@ -120,5 +121,40 @@
     "restricted_fields": {
       "type": "object"
     }
-  }
+  },
+  "allOf": [
+    {
+      "not": {
+        "properties": {
+          "risk_state": {
+            "const": "NORMAL"
+          },
+          "reason_codes": {
+            "contains": {
+              "enum": ["CAMERA_OFFLINE", "STALE_FRAMES"]
+            }
+          }
+        },
+        "required": ["risk_state", "reason_codes"]
+      }
+    },
+    {
+      "not": {
+        "anyOf": [
+          {
+            "required": ["camera_password"]
+          },
+          {
+            "required": ["camera_stream_url"]
+          },
+          {
+            "required": ["private_contact_details"]
+          },
+          {
+            "required": ["exact_private_gps"]
+          }
+        ]
+      }
+    }
+  ]
 }
