@@ -145,3 +145,6 @@ Simple meaning: this opens the video and returns records about frames, such as f
 ## Project Status
 
 Initial repository foundation only. See `CONTRIBUTING.md` and `SECURITY.md` before proposing functional changes.
+
+## JOIN DISCORD FOR DISCUSSION
+[OPENFLOODAI DISCORD](https://discord.gg/2VzpADTZ3)
