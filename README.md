@@ -142,6 +142,39 @@ PY
 
 Simple meaning: this opens the video and returns records about frames, such as frame ID, timestamp, size, frame rate, and frame hash. It does not inspect the river or decide flood risk.
 
+### 5. Save Video Metadata To A Local File
+
+This is useful for manual validation. It lets you check that the video was read and that frame metadata was saved.
+
+Replace `data/sample-video.mp4` with your local video path:
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+
+from openfloodai.contracts import read_jsonl_records, write_jsonl_records
+from openfloodai.ingestion import read_video_metadata
+
+records = read_video_metadata(
+    Path("data/sample-video.mp4"),
+    site_id="site-demo-01",
+    camera_id="camera-demo-01",
+)
+
+output_path = Path("data/local-runs/frame-metadata.jsonl")
+write_jsonl_records(output_path, records)
+
+saved_records = read_jsonl_records(output_path)
+
+print(f"Frames read: {len(records)}")
+print(f"Records saved: {len(saved_records)}")
+print(f"Saved to: {output_path}")
+print(saved_records[0])
+PY
+```
+
+Simple meaning: this reads a local video, creates one metadata record for each frame, saves those records to a `.jsonl` file, and reads the file back to confirm it worked.
+
 ## Project Status
 
 Initial repository foundation only. See `CONTRIBUTING.md` and `SECURITY.md` before proposing functional changes.
