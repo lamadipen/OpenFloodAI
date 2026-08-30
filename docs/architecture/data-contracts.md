@@ -794,6 +794,8 @@ During network loss:
 - Records should be queued locally for later upload if upload is configured.
 - Upload may resume after connectivity returns.
 
+Early POC runs may write simple JSON Lines (`.jsonl`) files for debugging and review. Each line is one record. This is only a local file format, not a production database.
+
 During low disk:
 
 - The system should report degraded storage health.
@@ -872,6 +874,7 @@ Machine-readable schema:
 - Example records live in `examples/events/`.
 - Validation tests live in `tests/schema/`.
 - Shared validation helpers live in `src/openfloodai/contracts/event_validation.py`.
+- Local JSON Lines record helpers live in `src/openfloodai/contracts/local_store.py`.
 - Local video frame metadata helpers live in `src/openfloodai/ingestion/video_file.py`.
 - The schema is intentionally focused on event/audit records and should grow only when implementation stories need stricter validation.
 
