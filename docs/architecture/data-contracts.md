@@ -872,6 +872,7 @@ Machine-readable schema:
 - Example records live in `examples/events/`.
 - Validation tests live in `tests/schema/`.
 - Shared validation helpers live in `src/openfloodai/contracts/event_validation.py`.
+- Local video frame metadata helpers live in `src/openfloodai/ingestion/video_file.py`.
 - The schema is intentionally focused on event/audit records and should grow only when implementation stories need stricter validation.
 
 ## 21. Known Unknowns
