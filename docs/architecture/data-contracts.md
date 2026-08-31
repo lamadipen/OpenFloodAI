@@ -591,6 +591,21 @@ Privacy or safety concern:
 
 - A risk-engine output is not an official public warning.
 
+### Test-Only Risk-State Output Skeleton
+
+Early OF-011 code may also return `risk_state_output` records for simple rule-based tests.
+
+Allowed test states:
+
+- `NORMAL`: test signals are below the watch threshold.
+- `WATCH`: test signals crossed a cautious threshold.
+- `WARNING_CANDIDATE`: test signals crossed a stronger threshold and need human review.
+- `UNKNOWN`: camera/feed health is not OK, so the system cannot judge risk.
+
+Simple example: if camera health is `BROKEN`, the result should be `UNKNOWN`, not `NORMAL`.
+
+Safety boundary: `WARNING_CANDIDATE` is not a public warning. It only means a person or later review system should check the result.
+
 ## 14. Alert-Candidate Record
 
 An alert-candidate record says that a human or approved local process should review the situation.
