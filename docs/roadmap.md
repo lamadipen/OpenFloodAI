@@ -9,7 +9,7 @@ OpenFloodAI is moving toward an edge-first camera system that watches a configur
 | Phase | Focus | Status |
 | --- | --- | --- |
 | Phase 1 | Foundation and requirements | Mostly complete |
-| Phase 2 | Research existing technology and datasets | Planned |
+| Phase 2 | Research existing technology and datasets | Started |
 | Phase 3 | Build baseline flood detection | Planned |
 | Phase 4 | Historical-video testing | Planned |
 | Phase 5 | Real-time camera pipeline | Planned |
@@ -36,6 +36,29 @@ configured river area -> virtual ruler or reference region -> water-level or wat
 
 Simple example: a camera watches the same bridge every day. A marked part of the image works like a ruler. If water covers more of that marked area over time, OpenFloodAI should save evidence that a person can review.
 
+## Current Progress
+
+OpenFloodAI can now do the early local POC steps.
+
+Completed or started:
+
+- repository foundation, CI checks, and project structure
+- V1 requirements, architecture notes, reason codes, and data contracts
+- JSON schema validation for event/audit records
+- local JSON Lines record writing and reading
+- local video health checks
+- local video frame metadata extraction
+- simple visual signal records from frames
+- rule-based test risk-state evaluation
+- local POC pipeline from video to saved records
+- local replay summary report for saved POC records
+- safe site and camera config loading
+- privacy and retention policy for local POC data
+- MkDocs documentation site
+- research note for ML models, datasets, Google ML options, and public water-data inspiration
+
+Simple example: today a developer can run a local video through the POC pipeline, save records to `data/local-runs/poc-records.jsonl`, and print a short summary of what record types and risk states appeared.
+
 ## What Is Not Done Yet
 
 OpenFloodAI does not yet:
@@ -45,14 +68,16 @@ OpenFloodAI does not yet:
 - send alerts
 - run a public warning workflow
 - provide a dashboard
+- connect to live cameras
+- use real cloud ML services
 - replace local emergency decision-making
 
 ## What Comes Next
 
 Near-term work should stay small and testable:
 
-- create camera/feed health records
-- create simple visual signal records
-- connect visual signals to the risk-state skeleton
-- save local event and audit records for review
-- add replay tests using safe sample or generated data
+- define the first baseline water-region or virtual-ruler signal
+- add a simple labeling guide for safe local review
+- improve replay examples using generated or approved local data
+- connect site/camera config into the local POC pipeline
+- keep strengthening privacy, validation, and failure handling
