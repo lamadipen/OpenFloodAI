@@ -63,6 +63,18 @@ Safe infrastructure may include high ground, parks, elevated platforms, stairs, 
 
 Simple example: schools have fire alarms, but students also practice fire drills. In the same way, a village should know: "When this flood siren sounds, follow this route to this safe high-ground area."
 
+Another suggestion is to place clear public boards in flood-affected and landslide-affected areas. These boards should use simple language and local symbols so people know the danger area and what to do.
+
+The boards could show:
+
+- this area may flood or have landslides
+- where the safe route starts
+- where the nearest safe place or assembly point is
+- what to do when a siren, SMS, or official warning is received
+- emergency contact numbers approved by local authorities
+
+Simple example: near a river path, a board might say, "Flood risk area. If water rises or siren sounds, move to the school ground using the marked route." This helps visitors, children, and people without phones understand what to do.
+
 Community feedback: emergency preparedness should be practiced regularly, not only discussed after a disaster.
 
 One suggestion is that schools and workplaces should run four basic safety drills:
