@@ -76,11 +76,12 @@ For deployment, GitHub Pages should use **GitHub Actions** as the source. If Pag
 
 ## Real Run Guide
 
-The project can now do two small real things:
+The project can now do a few small real things:
 
 - Validate an event/audit JSON record.
 - Load a safe site and camera config.
 - Read a local video file and create basic frame metadata.
+- Summarize local POC records for review.
 
 It does not detect floods, run ML, score risk, send alerts, or store data in a database yet.
 
@@ -315,6 +316,26 @@ PY
 Simple meaning: this checks video health, reads frame metadata, creates simple visual signals, evaluates a test risk state, and saves the records locally.
 
 This is still a prototype. It does not detect real floods, send alerts, create public warnings, or write to a database.
+
+### 10. Summarize A Local POC Run
+
+Run this after the local POC pipeline creates `data/local-runs/poc-records.jsonl`.
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+
+from openfloodai.replay import render_summary_markdown, summarize_jsonl_records
+
+summary = summarize_jsonl_records(Path("data/local-runs/poc-records.jsonl"))
+
+print(render_summary_markdown(summary))
+PY
+```
+
+Simple meaning: this reads the saved JSON Lines file and prints a short report. For example, it can say how many records were created, what record types appeared, whether any `UNKNOWN` or degraded records appeared, and what the highest simple visual scores were.
+
+This report is only for local review and debugging. It does not create a public warning, publish anything, send alerts, or show private camera details.
 
 ## Project Status
 
