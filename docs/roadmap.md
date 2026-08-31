@@ -59,6 +59,71 @@ Completed or started:
 
 Simple example: today a developer can run a local video through the POC pipeline, save records to `data/local-runs/poc-records.jsonl`, and print a short summary of what record types and risk states appeared.
 
+## Next Direction
+
+The next direction is to turn the POC from "it creates records" into "it helps a person understand water change in one camera view."
+
+Focus on five small pieces:
+
+1. Reference region or virtual ruler
+
+   Let a user define the part of the image to watch.
+
+   Simple example: watch the lower half of a bridge pillar. The system should track changes in that area, not the whole image.
+
+2. Water change baseline
+
+   Create a simple baseline that compares the watched area over time.
+
+   Simple example: frame 1 looks normal, but frame 50 has more water-like change in the watched area, so the score increases.
+
+3. Human review output
+
+   Create output that is easy for a person to read after a run.
+
+   Simple example:
+
+   ```yaml
+   time_window: 00:00 to 00:30
+   watched_area_change: 42%
+   risk_state: WATCH
+   reason: Water-like area increased inside the reference region.
+   ```
+
+4. Labeling guide
+
+   Before ML training, define what humans should label.
+
+   Simple labels can include:
+
+   - normal water
+   - rising water
+   - high water
+   - unclear view
+   - camera moved
+   - poor visibility
+
+5. Small sample dataset plan
+
+   Do not collect a huge dataset yet. Start with a few safe clips.
+
+   Simple starting set:
+
+   - 2 normal clips
+   - 2 rising-water clips, if available and approved
+   - 2 bad-quality clips
+   - 1 missing or unreadable input case
+
+Important choice: do not jump straight into ML yet.
+
+The safer path is:
+
+```text
+reference region -> simple water/change scores -> saved records -> human review -> labels -> later ML
+```
+
+This keeps the project understandable, testable, and safer.
+
 ## What Is Not Done Yet
 
 OpenFloodAI does not yet:
