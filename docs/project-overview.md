@@ -20,6 +20,22 @@ Should the public evacuate right now?
 
 Official public warnings must stay with approved local authorities and trusted emergency processes.
 
+## Product Direction
+
+OpenFloodAI is inspired by systems that use smart cameras and computer vision to watch water level changes near rivers, bridges, and flood-prone areas.
+
+One useful reference is [Noema Flood Detection](https://noema.tech/flood/). Their page describes ideas such as edge camera processing, virtual rulers, water coverage monitoring, metadata output, and operator alarms.
+
+OpenFloodAI's open-source goal is similar in concept, but cautious:
+
+- run useful checks near the camera when possible
+- let a user configure the part of the image to watch
+- create simple records that explain what the system saw
+- support human review before public warning decisions
+- keep privacy, cost, and low-connectivity deployments in mind
+
+Simple example: a camera watches a river bridge. A marked region in the image acts like a virtual ruler. If water covers more of that region over time, OpenFloodAI should save clear evidence for review. It should not automatically tell the public to evacuate.
+
 ## How The Pieces Fit
 
 The first backend path is:

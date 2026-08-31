@@ -4,6 +4,8 @@ OpenFloodAI is an open-source, low-cost, edge-first camera-based river flood det
 
 This repository is in its foundation phase. The current scope is project structure, contribution standards, and development tooling. Flood detection logic, machine learning models, APIs, and application business logic are intentionally not implemented yet.
 
+OpenFloodAI is moving toward an edge-first camera system that watches a configured river area, measures simple water-level or water-coverage changes over time, saves clear metadata, and supports human review before any public warning action.
+
 ## Goals
 
 - Support affordable river monitoring with edge-first deployment.

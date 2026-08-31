@@ -2,6 +2,8 @@
 
 This roadmap is a simple first version. It will change as the project learns from tests, datasets, and field needs.
 
+OpenFloodAI is moving toward an edge-first camera system that watches a configured river area, measures simple water-level or water-coverage changes over time, saves clear metadata, and supports human review before any public warning action.
+
 ## Phases
 
 | Phase | Focus | Status |
@@ -25,6 +27,14 @@ video input -> feed health -> simple visual signals -> risk state -> saved local
 ```
 
 Simple example: first we prove that a local video can be read and records can be saved. Later we add real visual signals and stronger risk logic.
+
+The longer-term direction is:
+
+```text
+configured river area -> virtual ruler or reference region -> water-level or water-coverage change -> clear metadata -> human review before public warning
+```
+
+Simple example: a camera watches the same bridge every day. A marked part of the image works like a ruler. If water covers more of that marked area over time, OpenFloodAI should save evidence that a person can review.
 
 ## What Is Not Done Yet
 
