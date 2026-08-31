@@ -196,6 +196,53 @@ PY
 
 Simple meaning: this reads a local video, creates one metadata record for each frame, saves those records to a `.jsonl` file, and reads the file back to confirm it worked.
 
+### 6. Test Simple Visual Signals
+
+This uses tiny synthetic frames. It does not need a real video, internet, or a live camera.
+
+```bash
+python3 - <<'PY'
+import numpy as np
+
+from openfloodai.vision import compare_frames, extract_frame_signals
+
+dark_frame = np.zeros((8, 8, 3), dtype=np.uint8)
+bright_frame = np.full((8, 8, 3), 220, dtype=np.uint8)
+
+dark_result = extract_frame_signals(
+    dark_frame,
+    site_id="site-demo-01",
+    camera_id="camera-demo-01",
+)
+
+bright_result = extract_frame_signals(
+    bright_frame,
+    site_id="site-demo-01",
+    camera_id="camera-demo-01",
+)
+
+change_result = compare_frames(
+    dark_frame,
+    bright_frame,
+    site_id="site-demo-01",
+    camera_id="camera-demo-01",
+)
+
+print("Dark frame:")
+print(dark_result)
+
+print("\nBright frame:")
+print(bright_result)
+
+print("\nFrame comparison:")
+print(change_result)
+PY
+```
+
+Simple meaning: `extract_frame_signals()` looks at one frame. `compare_frames()` compares two frames. The bright frame should have a higher `brightness_score`, and the changed pair should have a `frame_change_score` greater than `0`.
+
+These are only simple visual numbers. They do not detect floods or send warnings.
+
 ## Project Status
 
 Initial repository foundation only. See `CONTRIBUTING.md` and `SECURITY.md` before proposing functional changes.

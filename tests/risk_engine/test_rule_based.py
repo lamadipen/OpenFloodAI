@@ -26,7 +26,7 @@ def visual_signal_record(**overrides: object) -> dict[str, object]:
     record: dict[str, object] = {
         "contract_version": "v1",
         "record_id": "signal-001",
-        "record_type": "vision_signal_output",
+        "record_type": "visual_signal_output",
         "site_id": "site-demo-01",
         "camera_id": "camera-demo-01",
         "timestamp": "2026-08-30T12:00:05+00:00",

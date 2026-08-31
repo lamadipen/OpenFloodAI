@@ -42,7 +42,7 @@ def test_writes_one_record_and_reads_it_back(tmp_path: Path) -> None:
 
 def test_writes_multiple_records_and_reads_them_back_in_order(tmp_path: Path) -> None:
     path = tmp_path / "records.jsonl"
-    first: dict[str, object] = {"record_id": "signal-001", "record_type": "vision_signal_output"}
+    first: dict[str, object] = {"record_id": "signal-001", "record_type": "visual_signal_output"}
     second: dict[str, object] = {"record_id": "risk-001", "record_type": "risk_engine_output"}
 
     write_jsonl_records(path, [first, second])
