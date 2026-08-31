@@ -901,6 +901,7 @@ Machine-readable schema:
 - Local video health helpers live in `src/openfloodai/ingestion/feed_health.py`.
 - Local video frame metadata helpers live in `src/openfloodai/ingestion/video_file.py`.
 - Simple visual signal helpers live in `src/openfloodai/vision/simple_signals.py`.
+- The local POC pipeline lives in `src/openfloodai/pipeline/local_poc.py`.
 - The schema is intentionally focused on event/audit records and should grow only when implementation stories need stricter validation.
 
 ## 21. Known Unknowns
