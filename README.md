@@ -267,6 +267,33 @@ Simple meaning: `extract_frame_signals()` looks at one frame. `compare_frames()`
 
 These are only simple visual numbers. They do not detect floods or send warnings.
 
+### 8. Run The Local POC Pipeline
+
+This connects the local pieces together and saves records to one JSON Lines file.
+
+Replace `data/sample-video.mp4` with your local video path:
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+
+from openfloodai.pipeline import run_local_poc_pipeline
+
+summary = run_local_poc_pipeline(
+    video_path=Path("data/sample-video.mp4"),
+    site_id="site-demo-01",
+    camera_id="camera-demo-01",
+    output_path=Path("data/local-runs/poc-records.jsonl"),
+)
+
+print(summary)
+PY
+```
+
+Simple meaning: this checks video health, reads frame metadata, creates simple visual signals, evaluates a test risk state, and saves the records locally.
+
+This is still a prototype. It does not detect real floods, send alerts, create public warnings, or write to a database.
+
 ## Project Status
 
 Initial repository foundation only. See `CONTRIBUTING.md` and `SECURITY.md` before proposing functional changes.
