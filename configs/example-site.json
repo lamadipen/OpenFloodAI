@@ -1,0 +1,14 @@
+{
+  "site_id": "site-demo-01",
+  "camera_id": "camera-demo-01",
+  "site_name": "Demo River Bridge",
+  "public_location": "Demo River near Example Town",
+  "input_type": "local_video",
+  "reference_region": {
+    "x": 0,
+    "y": 50,
+    "width": 100,
+    "height": 50
+  },
+  "privacy_notes": "This example uses a broad public location only."
+}
