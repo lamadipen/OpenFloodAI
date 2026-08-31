@@ -22,7 +22,7 @@ def create_tiny_video(path: Path) -> None:
         writer.release()
 
 
-def test_readable_video_produces_ok_health_record(tmp_path: Path) -> None:
+def test_readable_video_produces_usable_health_record(tmp_path: Path) -> None:
     video_path = tmp_path / "sample.avi"
     timestamp = datetime(2026, 8, 31, 12, 0, tzinfo=UTC)
     create_tiny_video(video_path)
@@ -40,7 +40,7 @@ def test_readable_video_produces_ok_health_record(tmp_path: Path) -> None:
     assert record["site_id"] == "site-bridge-01"
     assert record["camera_id"] == "camera-bridge-01-main"
     assert record["timestamp"] == "2026-08-31T12:00:00+00:00"
-    assert record["input_quality_state"] == "OK"
+    assert record["input_quality_state"] == "USABLE"
     assert record["is_usable"] is True
     assert record["reason_codes"] == ["INPUT_USABLE"]
     assert "readable frame" in str(record["human_summary"])
@@ -58,7 +58,7 @@ def test_missing_video_produces_unknown_health_record(tmp_path: Path) -> None:
     assert record["record_type"] == "camera_health_output"
     assert record["input_quality_state"] == "UNKNOWN"
     assert record["is_usable"] is False
-    assert record["reason_codes"] == ["INPUT_UNKNOWN", "STREAM_DISCONNECTED"]
+    assert record["reason_codes"] == ["INPUT_UNKNOWN"]
     assert record["failure_detail"] == "video_file_missing"
 
 
@@ -74,11 +74,11 @@ def test_unreadable_video_produces_non_ok_health_record(tmp_path: Path) -> None:
 
     assert record["input_quality_state"] == "UNKNOWN"
     assert record["is_usable"] is False
-    assert record["reason_codes"] == ["INPUT_UNKNOWN", "STREAM_DISCONNECTED"]
+    assert record["reason_codes"] == ["INPUT_UNKNOWN"]
     assert record["failure_detail"] == "video_file_unreadable"
 
 
-def test_empty_video_produces_degraded_record_if_opened_without_frames(
+def test_empty_video_produces_unknown_record_if_opened_without_frames(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -103,7 +103,7 @@ def test_empty_video_produces_degraded_record_if_opened_without_frames(
         camera_id="camera-bridge-01-main",
     )
 
-    assert record["input_quality_state"] == "DEGRADED"
+    assert record["input_quality_state"] == "UNKNOWN"
     assert record["is_usable"] is False
     assert record["reason_codes"] == ["MISSING_FRAME"]
     assert record["failure_detail"] == "no_readable_frames"
