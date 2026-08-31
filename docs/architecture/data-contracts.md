@@ -24,7 +24,7 @@ Simple example: instead of writing “big water problem” in one place and “h
 | `camera` | One camera at a site. | Camera setup, health checks, event tracing. |
 | `video_frame_metadata` | Information about a frame without storing the image itself. | Vision module, audit/replay tools. |
 | `camera_health_output` | Whether the camera/video feed is usable. | Risk engine, operators, audit records. |
-| `vision_signal_output` | What the ML/vision module thinks it sees. | Temporal analysis and risk engine. |
+| `visual_signal_output` | Simple visual evidence from a frame or frame pair. | Temporal analysis and risk engine. |
 | `temporal_analysis_output` | How evidence changes across time. | Risk engine and audit review. |
 | `risk_engine_input` | Evidence sent into the risk engine. | Risk engine tests and decision logic. |
 | `risk_engine_output` | The selected risk state and reasons. | Alert candidate logic, audit records. |
@@ -357,20 +357,22 @@ Privacy or safety concern:
 
 - Failure messages should not include camera passwords, tokens, or private stream URLs.
 
-## 10. Vision / ML Signal Output
+## 10. Visual / ML Signal Output
 
-A vision/ML signal output contains visual evidence from the image.
+A visual/ML signal output contains visual evidence from the image.
 
 What it is used for:
 
-- Describes what the vision module thinks it sees.
+- Describes simple measurements from the vision module.
 - Sends evidence to temporal analysis and the risk engine.
+
+Early POC helpers may produce simple values such as `brightness_score`, `sharpness_score`, and `frame_change_score`. These are test signals only. They do not detect floods.
 
 Required fields:
 
 - `contract_version`
 - `record_id`
-- `record_type`: `vision_signal_output`
+- `record_type`: `visual_signal_output`
 - `site_id`
 - `camera_id`
 - `timestamp`
@@ -394,8 +396,8 @@ Example:
 ```json
 {
   "contract_version": "v1",
-  "record_id": "vision-bridge-01-140500",
-  "record_type": "vision_signal_output",
+  "record_id": "visual-bridge-01-140500",
+  "record_type": "visual_signal_output",
   "site_id": "site-bridge-01",
   "camera_id": "camera-bridge-01-main",
   "timestamp": "2026-08-27T14:05:00+05:45",
@@ -891,6 +893,7 @@ Machine-readable schema:
 - Shared validation helpers live in `src/openfloodai/contracts/event_validation.py`.
 - Local JSON Lines record helpers live in `src/openfloodai/contracts/local_store.py`.
 - Local video frame metadata helpers live in `src/openfloodai/ingestion/video_file.py`.
+- Simple visual signal helpers live in `src/openfloodai/vision/simple_signals.py`.
 - The schema is intentionally focused on event/audit records and should grow only when implementation stories need stricter validation.
 
 ## 21. Known Unknowns
