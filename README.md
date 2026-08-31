@@ -86,6 +86,7 @@ The project can now do a few small real things:
 - Load a safe site and camera config.
 - Read a local video file and create basic frame metadata.
 - Summarize local POC records for review.
+- Turn POC output records into plain-language operator notes.
 
 It does not detect floods, run ML, score risk, send alerts, or store data in a database yet.
 
@@ -340,6 +341,27 @@ PY
 Simple meaning: this reads the saved JSON Lines file and prints a short report. For example, it can say how many records were created, what record types appeared, whether any `UNKNOWN` or degraded records appeared, and what the highest simple visual scores were.
 
 This report is only for local review and debugging. It does not create a public warning, publish anything, send alerts, or show private camera details.
+
+### 11. Explain A POC Output For A Human Reviewer
+
+This turns one output record into a short plain-language note.
+
+```bash
+python3 - <<'PY'
+from openfloodai.review import build_operator_note
+
+record = {
+    "risk_state": "WARNING_CANDIDATE",
+    "reason_codes": ["HIGH_WATER_COVERAGE", "HUMAN_REVIEW_NEEDED"],
+}
+
+print(build_operator_note(record))
+PY
+```
+
+Simple meaning: instead of only showing technical fields, the helper explains what the output means. For example, it can say that stronger visual evidence needs human review.
+
+This note is not an official public warning. It does not send alerts or decide emergency action.
 
 ## Project Status
 
