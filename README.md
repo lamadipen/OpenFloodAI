@@ -138,7 +138,31 @@ PY
 
 Simple meaning: this should fail because a camera-offline record must not look like `NORMAL`.
 
-### 4. Read Metadata From A Local Video
+### 4. Check Local Video Health
+
+Use this before reading frame metadata. It checks whether the video exists, opens, and has at least one readable frame.
+
+Replace `data/sample-video.mp4` with your video path:
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+
+from openfloodai.ingestion import check_video_file_health
+
+record = check_video_file_health(
+    Path("data/sample-video.mp4"),
+    site_id="site-demo-01",
+    camera_id="camera-demo-01",
+)
+
+print(record)
+PY
+```
+
+Simple meaning: this tells you whether the input video is usable. If the file is missing or unreadable, it returns a non-OK health record instead of pretending the river is normal.
+
+### 5. Read Metadata From A Local Video
 
 Use your own small local video file. Do not use private camera footage unless you are allowed to process it.
 
@@ -163,7 +187,7 @@ PY
 
 Simple meaning: this opens the video and returns records about frames, such as frame ID, timestamp, size, frame rate, and frame hash. It does not inspect the river or decide flood risk.
 
-### 5. Save Video Metadata To A Local File
+### 6. Save Video Metadata To A Local File
 
 This is useful for manual validation. It lets you check that the video was read and that frame metadata was saved.
 
@@ -196,7 +220,7 @@ PY
 
 Simple meaning: this reads a local video, creates one metadata record for each frame, saves those records to a `.jsonl` file, and reads the file back to confirm it worked.
 
-### 6. Test Simple Visual Signals
+### 7. Test Simple Visual Signals
 
 This uses tiny synthetic frames. It does not need a real video, internet, or a live camera.
 

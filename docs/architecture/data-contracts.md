@@ -357,6 +357,12 @@ Privacy or safety concern:
 
 - Failure messages should not include camera passwords, tokens, or private stream URLs.
 
+Implementation note:
+
+- Local video health helpers live in `src/openfloodai/ingestion/feed_health.py`.
+- The first helper checks whether a local video file exists, opens, and has at least one readable frame.
+- It does not inspect river conditions or decide flood risk.
+
 ## 10. Visual / ML Signal Output
 
 A visual/ML signal output contains visual evidence from the image.
@@ -892,6 +898,7 @@ Machine-readable schema:
 - Validation tests live in `tests/schema/`.
 - Shared validation helpers live in `src/openfloodai/contracts/event_validation.py`.
 - Local JSON Lines record helpers live in `src/openfloodai/contracts/local_store.py`.
+- Local video health helpers live in `src/openfloodai/ingestion/feed_health.py`.
 - Local video frame metadata helpers live in `src/openfloodai/ingestion/video_file.py`.
 - Simple visual signal helpers live in `src/openfloodai/vision/simple_signals.py`.
 - The schema is intentionally focused on event/audit records and should grow only when implementation stories need stricter validation.
