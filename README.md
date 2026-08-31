@@ -58,6 +58,8 @@ mkdocs build --strict
 
 OpenFloodAI has a small MkDocs documentation site in `docs/`.
 
+The documentation includes a [Privacy And Retention](docs/privacy-retention.md) page for safe local POC data handling.
+
 Build it locally:
 
 ```bash
