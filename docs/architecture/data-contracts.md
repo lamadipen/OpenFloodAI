@@ -372,7 +372,7 @@ What it is used for:
 - Describes simple measurements from the vision module.
 - Sends evidence to temporal analysis and the risk engine.
 
-Early POC helpers may produce simple values such as `brightness_score`, `sharpness_score`, and `frame_change_score`. These are test signals only. They do not detect floods.
+Early POC helpers may produce simple values such as `brightness_score`, `sharpness_score`, and `frame_change_score`. Region-based helpers may also produce `reference_region_used`, `region_brightness_score`, `region_sharpness_score`, `region_change_score`, `region_width`, and `region_height`. These are test signals only. They do not detect floods.
 
 Required fields:
 
@@ -395,6 +395,12 @@ Optional fields:
 - `confidence`
 - `uncertainty`
 - `region_reference`
+- `reference_region_used`
+- `region_brightness_score`
+- `region_sharpness_score`
+- `region_change_score`
+- `region_width`
+- `region_height`
 - `debug_artifact_reference`
 
 Example:

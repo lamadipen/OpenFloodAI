@@ -5,7 +5,14 @@ from typing import cast
 import numpy as np
 import pytest
 
-from openfloodai.vision import VisualSignalError, compare_frames, extract_frame_signals
+from openfloodai.config import ReferenceRegion
+from openfloodai.vision import (
+    VisualSignalError,
+    compare_frames,
+    compare_region_signals,
+    extract_frame_signals,
+    extract_region_signals,
+)
 
 
 def test_bright_frame_has_higher_brightness_score_than_dark_frame() -> None:
@@ -124,3 +131,103 @@ def test_empty_site_id_fails_clearly() -> None:
 
     with pytest.raises(VisualSignalError, match="site_id must be non-empty"):
         extract_frame_signals(frame, "", "camera-demo-01")
+
+
+def test_extract_region_signals_uses_selected_region_only() -> None:
+    frame = np.zeros((10, 10), dtype=np.uint8)
+    frame[:5, :] = 255
+    lower_half_region = {
+        "x": 0,
+        "y": 50,
+        "width": 100,
+        "height": 50,
+    }
+
+    full_frame_result = extract_frame_signals(frame, "site-demo-01", "camera-demo-01")
+    region_result = extract_region_signals(
+        frame,
+        lower_half_region,
+        "site-demo-01",
+        "camera-demo-01",
+    )
+
+    assert full_frame_result["brightness_score"] == 0.5
+    assert region_result["reference_region_used"] is True
+    assert region_result["region_x"] == 0.0
+    assert region_result["region_y"] == 5.0
+    assert region_result["region_width"] == 10.0
+    assert region_result["region_height"] == 5.0
+    assert region_result["region_brightness_score"] == 0.0
+    assert "reference region" in str(region_result["human_summary"]).lower()
+
+
+def test_compare_region_signals_scores_change_only_inside_selected_region() -> None:
+    previous_frame = np.zeros((10, 10), dtype=np.uint8)
+    current_frame = np.zeros((10, 10), dtype=np.uint8)
+    current_frame[:5, :] = 255
+    lower_half_region = {
+        "x": 0,
+        "y": 50,
+        "width": 100,
+        "height": 50,
+    }
+    upper_half_region = {
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 50,
+    }
+
+    lower_result = compare_region_signals(
+        previous_frame,
+        current_frame,
+        lower_half_region,
+        "site-demo-01",
+        "camera-demo-01",
+    )
+    upper_result = compare_region_signals(
+        previous_frame,
+        current_frame,
+        upper_half_region,
+        "site-demo-01",
+        "camera-demo-01",
+    )
+
+    assert lower_result["region_change_score"] == 0.0
+    assert upper_result["region_change_score"] == 1.0
+
+
+def test_region_signals_accept_config_reference_region_object() -> None:
+    frame = np.zeros((10, 10), dtype=np.uint8)
+    region = ReferenceRegion(x=0, y=50, width=100, height=50)
+
+    result = extract_region_signals(frame, region, "site-demo-01", "camera-demo-01")
+
+    assert result["reference_region_used"] is True
+    assert result["region_width"] == 10.0
+    assert result["region_height"] == 5.0
+
+
+def test_missing_reference_region_field_fails_clearly() -> None:
+    frame = np.zeros((10, 10), dtype=np.uint8)
+    bad_region = {
+        "x": 0,
+        "y": 50,
+        "width": 100,
+    }
+
+    with pytest.raises(VisualSignalError, match="height"):
+        extract_region_signals(frame, bad_region, "site-demo-01", "camera-demo-01")
+
+
+def test_reference_region_outside_image_area_fails_clearly() -> None:
+    frame = np.zeros((10, 10), dtype=np.uint8)
+    bad_region = {
+        "x": 70,
+        "y": 50,
+        "width": 40,
+        "height": 50,
+    }
+
+    with pytest.raises(VisualSignalError, match="0-100 image area"):
+        extract_region_signals(frame, bad_region, "site-demo-01", "camera-demo-01")

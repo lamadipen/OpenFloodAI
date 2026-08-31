@@ -87,6 +87,7 @@ The project can now do a few small real things:
 - Read a local video file and create basic frame metadata.
 - Summarize local POC records for review.
 - Turn POC output records into plain-language operator notes.
+- Measure simple visual signals inside a selected reference region.
 
 It does not detect floods, run ML, score risk, send alerts, or store data in a database yet.
 
@@ -362,6 +363,58 @@ PY
 Simple meaning: instead of only showing technical fields, the helper explains what the output means. For example, it can say that stronger visual evidence needs human review.
 
 This note is not an official public warning. It does not send alerts or decide emergency action.
+
+### 12. Test Visual Signals Inside A Reference Region
+
+This checks only the selected part of the image, like a virtual ruler.
+
+```bash
+python3 - <<'PY'
+import numpy as np
+
+from openfloodai.vision import compare_region_signals
+
+previous_frame = np.zeros((10, 10), dtype=np.uint8)
+current_frame = np.zeros((10, 10), dtype=np.uint8)
+current_frame[:5, :] = 255
+
+lower_half_region = {
+    "x": 0,
+    "y": 50,
+    "width": 100,
+    "height": 50,
+}
+
+upper_half_region = {
+    "x": 0,
+    "y": 0,
+    "width": 100,
+    "height": 50,
+}
+
+print("Lower half:")
+print(compare_region_signals(
+    previous_frame,
+    current_frame,
+    lower_half_region,
+    "site-demo-01",
+    "camera-demo-01",
+))
+
+print("\nUpper half:")
+print(compare_region_signals(
+    previous_frame,
+    current_frame,
+    upper_half_region,
+    "site-demo-01",
+    "camera-demo-01",
+))
+PY
+```
+
+Simple meaning: the top half changed, but the lower half did not. The selected region changes the result, which is what we need for a future virtual-ruler flow.
+
+This still does not detect floods. It only measures simple image change inside the selected area.
 
 ## Project Status
 
