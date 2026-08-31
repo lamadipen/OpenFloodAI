@@ -72,6 +72,8 @@ mkdocs serve
 
 The GitHub Pages workflow builds the site from the repository and publishes it from the `main` branch.
 
+For deployment, GitHub Pages should use **GitHub Actions** as the source. If Pages is set to deploy from the repository root or the `docs/` folder directly, it may show only raw Markdown pages instead of the full MkDocs site.
+
 ## Real Run Guide
 
 The project can now do two small real things:
