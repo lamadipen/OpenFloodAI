@@ -51,7 +51,26 @@ ruff check .
 ruff format --check .
 mypy src tests
 pytest
+mkdocs build --strict
 ```
+
+## Documentation Site
+
+OpenFloodAI has a small MkDocs documentation site in `docs/`.
+
+Build it locally:
+
+```bash
+mkdocs build --strict
+```
+
+Preview it locally:
+
+```bash
+mkdocs serve
+```
+
+The GitHub Pages workflow builds the site from the repository and publishes it from the `main` branch.
 
 ## Real Run Guide
 

@@ -19,6 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+  "mkdocs>=1.6",
   "mypy>=1.11",
   "pytest>=8.3",
   "ruff>=0.6",

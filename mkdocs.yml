@@ -1,0 +1,19 @@
+site_name: OpenFloodAI
+site_description: Open-source, low-cost, edge-first flood detection support.
+site_url: https://lamadipen.github.io/OpenFloodAI/
+repo_url: https://github.com/lamadipen/OpenFloodAI
+repo_name: lamadipen/OpenFloodAI
+
+theme:
+  name: mkdocs
+
+nav:
+  - Home: index.md
+  - Project Overview: project-overview.md
+  - Roadmap: roadmap.md
+  - V1 Requirements: product/requirements.md
+  - How to Contribute: contributing.md
+
+validation:
+  nav:
+    omitted_files: ignore
