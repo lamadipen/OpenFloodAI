@@ -79,6 +79,7 @@ For deployment, GitHub Pages should use **GitHub Actions** as the source. If Pag
 The project can now do two small real things:
 
 - Validate an event/audit JSON record.
+- Load a safe site and camera config.
 - Read a local video file and create basic frame metadata.
 
 It does not detect floods, run ML, score risk, send alerts, or store data in a database yet.
@@ -119,7 +120,28 @@ PY
 
 Simple meaning: this checks whether the JSON file has the required fields, valid timestamps, valid risk state, and valid reason codes.
 
-### 3. Try An Invalid Event Record
+### 3. Load A Site And Camera Config
+
+This reads a safe public config from `configs/example-site.json`.
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+
+from openfloodai.config import load_site_config
+
+config = load_site_config(Path("configs/example-site.json"))
+
+print(config)
+print(f"Site: {config.site_id}")
+print(f"Camera: {config.camera_id}")
+print(f"Public location: {config.public_location}")
+PY
+```
+
+Simple meaning: instead of typing the same camera details in many places, we keep them in one small file. The example uses a broad public location only, like "Demo River near Example Town". It does not include exact GPS, real camera URLs, passwords, or contact details.
+
+### 4. Try An Invalid Event Record
 
 ```bash
 python3 - <<'PY'
@@ -138,7 +160,7 @@ PY
 
 Simple meaning: this should fail because a camera-offline record must not look like `NORMAL`.
 
-### 4. Check Local Video Health
+### 5. Check Local Video Health
 
 Use this before reading frame metadata. It checks whether the video exists, opens, and has at least one readable frame.
 
@@ -162,7 +184,7 @@ PY
 
 Simple meaning: this tells you whether the input video is usable. If the file is missing or unreadable, it returns a non-OK health record instead of pretending the river is normal.
 
-### 5. Read Metadata From A Local Video
+### 6. Read Metadata From A Local Video
 
 Use your own small local video file. Do not use private camera footage unless you are allowed to process it.
 
@@ -187,7 +209,7 @@ PY
 
 Simple meaning: this opens the video and returns records about frames, such as frame ID, timestamp, size, frame rate, and frame hash. It does not inspect the river or decide flood risk.
 
-### 6. Save Video Metadata To A Local File
+### 7. Save Video Metadata To A Local File
 
 This is useful for manual validation. It lets you check that the video was read and that frame metadata was saved.
 
@@ -220,7 +242,7 @@ PY
 
 Simple meaning: this reads a local video, creates one metadata record for each frame, saves those records to a `.jsonl` file, and reads the file back to confirm it worked.
 
-### 7. Test Simple Visual Signals
+### 8. Test Simple Visual Signals
 
 This uses tiny synthetic frames. It does not need a real video, internet, or a live camera.
 
@@ -267,7 +289,7 @@ Simple meaning: `extract_frame_signals()` looks at one frame. `compare_frames()`
 
 These are only simple visual numbers. They do not detect floods or send warnings.
 
-### 8. Run The Local POC Pipeline
+### 9. Run The Local POC Pipeline
 
 This connects the local pieces together and saves records to one JSON Lines file.
 
