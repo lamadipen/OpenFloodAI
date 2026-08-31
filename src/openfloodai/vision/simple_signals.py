@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Protocol
 from uuid import uuid4
 
 import numpy as np
@@ -14,6 +17,25 @@ FrameArray = NDArray[np.generic]
 
 class VisualSignalError(ValueError):
     """Raised when a frame cannot be used for simple visual signals."""
+
+
+class ReferenceRegionLike(Protocol):
+    """Shape shared by config reference regions and test helpers."""
+
+    @property
+    def x(self) -> float: ...
+
+    @property
+    def y(self) -> float: ...
+
+    @property
+    def width(self) -> float: ...
+
+    @property
+    def height(self) -> float: ...
+
+
+type ReferenceRegionInput = Mapping[str, object] | ReferenceRegionLike
 
 
 def extract_frame_signals(
@@ -40,6 +62,40 @@ def extract_frame_signals(
             "sharpness_score": sharpness_score,
         },
         human_summary=_frame_summary(brightness_score, sharpness_score),
+    )
+
+
+def extract_region_signals(
+    frame: FrameArray,
+    reference_region: ReferenceRegionInput,
+    site_id: str,
+    camera_id: str,
+    *,
+    timestamp: str | None = None,
+    source_record_ids: list[str] | None = None,
+) -> dict[str, object]:
+    """Return simple visual measurements from one configured frame region."""
+
+    prepared_frame = _prepare_frame(frame)
+    crop = _crop_reference_region(prepared_frame, reference_region)
+    brightness_score = _brightness_score(crop.frame)
+    sharpness_score = _sharpness_score(crop.frame)
+
+    return _build_signal_record(
+        site_id=site_id,
+        camera_id=camera_id,
+        timestamp=timestamp,
+        source_record_ids=source_record_ids,
+        signal_values={
+            "reference_region_used": True,
+            "region_x": float(crop.x),
+            "region_y": float(crop.y),
+            "region_width": float(crop.width),
+            "region_height": float(crop.height),
+            "region_brightness_score": brightness_score,
+            "region_sharpness_score": sharpness_score,
+        },
+        human_summary=_region_frame_summary(brightness_score, sharpness_score),
     )
 
 
@@ -77,13 +133,55 @@ def compare_frames(
     )
 
 
+def compare_region_signals(
+    previous_frame: FrameArray,
+    current_frame: FrameArray,
+    reference_region: ReferenceRegionInput,
+    site_id: str,
+    camera_id: str,
+    *,
+    timestamp: str | None = None,
+    source_record_ids: list[str] | None = None,
+) -> dict[str, object]:
+    """Return simple visual measurements comparing a configured region across two frames."""
+
+    previous = _prepare_frame(previous_frame)
+    current = _prepare_frame(current_frame)
+    if previous.shape != current.shape:
+        raise VisualSignalError("Frames must have the same shape for comparison")
+
+    previous_crop = _crop_reference_region(previous, reference_region)
+    current_crop = _crop_reference_region(current, reference_region)
+    brightness_score = _brightness_score(current_crop.frame)
+    sharpness_score = _sharpness_score(current_crop.frame)
+    region_change_score = _frame_change_score(previous_crop.frame, current_crop.frame)
+
+    return _build_signal_record(
+        site_id=site_id,
+        camera_id=camera_id,
+        timestamp=timestamp,
+        source_record_ids=source_record_ids,
+        signal_values={
+            "reference_region_used": True,
+            "region_x": float(current_crop.x),
+            "region_y": float(current_crop.y),
+            "region_width": float(current_crop.width),
+            "region_height": float(current_crop.height),
+            "region_brightness_score": brightness_score,
+            "region_sharpness_score": sharpness_score,
+            "region_change_score": region_change_score,
+        },
+        human_summary=_region_comparison_summary(region_change_score),
+    )
+
+
 def _build_signal_record(
     *,
     site_id: str,
     camera_id: str,
     timestamp: str | None,
     source_record_ids: list[str] | None,
-    signal_values: Mapping[str, float],
+    signal_values: Mapping[str, object],
     human_summary: str,
 ) -> dict[str, object]:
     if not site_id:
@@ -107,6 +205,17 @@ def _build_signal_record(
     return record
 
 
+@dataclass(frozen=True)
+class RegionCrop:
+    """Prepared pixel crop from a percentage-based reference region."""
+
+    frame: NDArray[np.float64]
+    x: int
+    y: int
+    width: int
+    height: int
+
+
 def _prepare_frame(frame: FrameArray) -> NDArray[np.float64]:
     if not isinstance(frame, np.ndarray):
         raise VisualSignalError("Frame must be a NumPy array")
@@ -127,6 +236,58 @@ def _prepare_frame(frame: FrameArray) -> NDArray[np.float64]:
         numeric_frame = numeric_frame / 255.0
 
     return np.clip(numeric_frame, 0.0, 1.0)
+
+
+def _crop_reference_region(
+    frame: NDArray[np.float64],
+    reference_region: ReferenceRegionInput,
+) -> RegionCrop:
+    region_x = _region_value(reference_region, "x")
+    region_y = _region_value(reference_region, "y")
+    region_width = _region_value(reference_region, "width")
+    region_height = _region_value(reference_region, "height")
+
+    if region_x < 0 or region_y < 0:
+        raise VisualSignalError("Reference region x and y must be 0 or greater")
+    if region_width <= 0 or region_height <= 0:
+        raise VisualSignalError("Reference region width and height must be greater than 0")
+    if region_x + region_width > 100 or region_y + region_height > 100:
+        raise VisualSignalError("Reference region must fit inside the 0-100 image area")
+
+    frame_height, frame_width = frame.shape[:2]
+    left = math.floor(frame_width * region_x / 100.0)
+    top = math.floor(frame_height * region_y / 100.0)
+    right = math.ceil(frame_width * (region_x + region_width) / 100.0)
+    bottom = math.ceil(frame_height * (region_y + region_height) / 100.0)
+
+    left = min(max(left, 0), frame_width - 1)
+    top = min(max(top, 0), frame_height - 1)
+    right = min(max(right, left + 1), frame_width)
+    bottom = min(max(bottom, top + 1), frame_height)
+
+    return RegionCrop(
+        frame=frame[top:bottom, left:right],
+        x=left,
+        y=top,
+        width=right - left,
+        height=bottom - top,
+    )
+
+
+def _region_value(reference_region: ReferenceRegionInput, field_name: str) -> float:
+    if isinstance(reference_region, Mapping):
+        if field_name not in reference_region:
+            raise VisualSignalError(f"Reference region is missing '{field_name}'")
+        value = reference_region[field_name]
+    else:
+        try:
+            value = getattr(reference_region, field_name)
+        except AttributeError as error:
+            raise VisualSignalError(f"Reference region is missing '{field_name}'") from error
+
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise VisualSignalError(f"Reference region field '{field_name}' must be a number")
+    return float(value)
 
 
 def _brightness_score(frame: NDArray[np.float64]) -> float:
@@ -169,3 +330,20 @@ def _comparison_summary(frame_change_score: float) -> str:
     if frame_change_score > 0.0:
         return "The current frame changed slightly compared to the previous frame."
     return "The current frame looks unchanged compared to the previous frame."
+
+
+def _region_frame_summary(brightness_score: float, sharpness_score: float) -> str:
+    brightness_label = "bright" if brightness_score >= 0.5 else "dark"
+    sharpness_label = "sharp" if sharpness_score >= 0.2 else "low-detail"
+    return (
+        "The configured reference region is "
+        f"{brightness_label} with {sharpness_label} visual detail."
+    )
+
+
+def _region_comparison_summary(region_change_score: float) -> str:
+    if region_change_score >= 0.25:
+        return "The configured reference region changed clearly compared to the previous frame."
+    if region_change_score > 0.0:
+        return "The configured reference region changed slightly compared to the previous frame."
+    return "The configured reference region looks unchanged compared to the previous frame."

@@ -13,6 +13,9 @@ VISUAL_SIGNAL_FIELDS = (
     "brightness_score",
     "sharpness_score",
     "frame_change_score",
+    "region_brightness_score",
+    "region_sharpness_score",
+    "region_change_score",
     "water_coverage_score",
     "risk_signal_score",
 )
