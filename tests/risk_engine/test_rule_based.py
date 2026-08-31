@@ -46,7 +46,7 @@ def test_broken_health_produces_unknown_risk() -> None:
     assert result["record_type"] == "risk_state_output"
     assert result["risk_state"] == "UNKNOWN"
     assert result["confidence"] == 0.0
-    assert result["reason_codes"] == ["CAMERA_OFFLINE", "RISK_UNKNOWN_DUE_TO_HEALTH"]
+    assert result["reason_codes"] == ["CAMERA_OFFLINE", "DEGRADED_EVIDENCE_USED"]
     assert "not OK" in str(result["human_summary"])
 
 
@@ -70,7 +70,7 @@ def test_normal_visual_signals_produce_normal_risk() -> None:
     assert result["camera_id"] == "camera-demo-01"
     assert result["timestamp"] == "2026-08-30T12:00:05+00:00"
     assert result["risk_state"] == "NORMAL"
-    assert result["reason_codes"] == ["NORMAL_TEST_SIGNAL"]
+    assert result["reason_codes"] == ["NORMAL_CONDITIONS"]
     confidence = cast(float, result["confidence"])
     assert 0.0 <= confidence <= 1.0
 
@@ -82,7 +82,7 @@ def test_elevated_visual_signal_produces_watch() -> None:
     )
 
     assert result["risk_state"] == "WATCH"
-    assert result["reason_codes"] == ["WATCH_SIGNAL"]
+    assert result["reason_codes"] == ["ELEVATED_WATER_EVIDENCE"]
     assert result["confidence"] == 0.55
 
 
@@ -93,7 +93,7 @@ def test_stronger_visual_signal_produces_warning_candidate() -> None:
     )
 
     assert result["risk_state"] == "WARNING_CANDIDATE"
-    assert result["reason_codes"] == ["WARNING_CANDIDATE_SIGNAL", "HUMAN_REVIEW_NEEDED"]
+    assert result["reason_codes"] == ["HIGH_WATER_COVERAGE", "HUMAN_REVIEW_NEEDED"]
     assert result["confidence"] == 0.82
     assert "Human review" in str(result["human_summary"])
 

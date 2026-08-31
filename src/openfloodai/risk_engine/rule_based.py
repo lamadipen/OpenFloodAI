@@ -57,7 +57,7 @@ def evaluate_risk_state(
             camera_id=camera_id,
             timestamp=timestamp,
             risk_state="WARNING_CANDIDATE",
-            reason_codes=["WARNING_CANDIDATE_SIGNAL", "HUMAN_REVIEW_NEEDED"],
+            reason_codes=["HIGH_WATER_COVERAGE", "HUMAN_REVIEW_NEEDED"],
             confidence=signal_score,
             human_summary=(
                 "Test visual signal crossed the warning-candidate threshold. "
@@ -71,7 +71,7 @@ def evaluate_risk_state(
             camera_id=camera_id,
             timestamp=timestamp,
             risk_state="WATCH",
-            reason_codes=["WATCH_SIGNAL"],
+            reason_codes=["ELEVATED_WATER_EVIDENCE"],
             confidence=signal_score,
             human_summary="Test visual signal crossed the watch threshold. Keep reviewing.",
         )
@@ -81,7 +81,7 @@ def evaluate_risk_state(
         camera_id=camera_id,
         timestamp=timestamp,
         risk_state="NORMAL",
-        reason_codes=["NORMAL_TEST_SIGNAL"],
+        reason_codes=["NORMAL_CONDITIONS"],
         confidence=1.0 - signal_score,
         human_summary="Camera/feed health is OK and test visual signals are below thresholds.",
     )
@@ -135,9 +135,9 @@ def _health_is_ok(health_record: Mapping[str, object]) -> bool:
 def _health_reason_codes(health_record: Mapping[str, object]) -> list[str]:
     reason_codes = health_record.get("reason_codes")
     if isinstance(reason_codes, list) and all(isinstance(code, str) for code in reason_codes):
-        return [*reason_codes, "RISK_UNKNOWN_DUE_TO_HEALTH"]
+        return [*reason_codes, "DEGRADED_EVIDENCE_USED"]
 
-    return ["INPUT_UNKNOWN", "RISK_UNKNOWN_DUE_TO_HEALTH"]
+    return ["INPUT_UNKNOWN", "DEGRADED_EVIDENCE_USED"]
 
 
 def _visual_signal_score(visual_signal_record: Mapping[str, object]) -> float:
