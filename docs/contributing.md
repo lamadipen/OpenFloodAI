@@ -8,10 +8,11 @@ This project is about flood warning support, so clear and careful work matters m
 
 1. Read the [V1 Requirements](product/requirements.md).
 2. Read the [Community Feedback](community-feedback.md) page for public ideas and research questions.
-3. Check the [GitHub repository](https://github.com/lamadipen/OpenFloodAI).
-4. Pick a small issue.
-5. Keep changes focused.
-6. Add tests when behavior changes.
+3. Read the [Privacy And Retention](privacy-retention.md) page before using local data.
+4. Check the [GitHub repository](https://github.com/lamadipen/OpenFloodAI).
+5. Pick a small issue.
+6. Keep changes focused.
+7. Add tests when behavior changes.
 
 ## Local Setup
 

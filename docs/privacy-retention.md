@@ -1,0 +1,167 @@
+# Privacy And Retention
+
+This page explains how OpenFloodAI should handle local proof-of-concept data.
+
+Simple meaning: keep only what we need, avoid private data, and delete local test files when they are no longer useful.
+
+OpenFloodAI is not a public warning system yet. The current local POC is for learning, testing, and review.
+
+## What Can Be Kept Locally
+
+Local POC runs may keep small structured records, such as:
+
+- JSON Lines records from `data/local-runs/`
+- camera health records
+- frame metadata records
+- simple visual signal records
+- risk-state records from the test rule engine
+- local replay summary output
+
+Simple example: it is okay to keep a local `.jsonl` file that says a video had 100 frames and one `NORMAL` risk-state record.
+
+These records help developers answer basic questions:
+
+- Did the video open?
+- How many frames were read?
+- Did the POC create visual signal records?
+- Were any records `UNKNOWN` or degraded?
+
+## What Must Not Be Committed To GitHub
+
+Do not commit:
+
+- real camera footage
+- real images or snapshots from private cameras
+- exact private GPS coordinates
+- private camera stream URLs
+- passwords, keys, tokens, or certificates
+- personal phone numbers or email addresses
+- private field notes that identify people, homes, or restricted locations
+
+Simple example: do not commit a real `rtsp://...` camera URL. Use a fake example like `camera-demo-01` instead.
+
+## Raw Video And Images
+
+By default, do not keep full raw video.
+
+Raw video or snapshots may be kept only when they are needed for review, debugging, or field validation. If they are kept, they should be:
+
+- stored locally, not committed to GitHub
+- as short as possible
+- removed when review is finished
+- shared only with people who are allowed to see them
+
+Simple example: if a test fails because a video cannot be opened, a developer may keep a short local clip while debugging. After the fix is confirmed, the clip should be deleted.
+
+## Location Privacy
+
+Exact GPS coordinates can be sensitive.
+
+They may reveal the location of a private camera, a home, a bridge, a restricted site, or a vulnerable community. For early POC work, use broad public location text instead.
+
+Good example:
+
+```text
+Demo River near Example Town
+```
+
+Avoid committing:
+
+```text
+27.123456, 85.123456
+```
+
+If exact GPS is needed in a future field pilot, it should be treated as private data unless the site owner and project maintainers agree it can be public.
+
+## Camera URLs And Contacts
+
+Real camera URLs and contact details are private.
+
+Do not commit them in config files, docs, tests, examples, or screenshots.
+
+Good example:
+
+```text
+camera_id: camera-demo-01
+```
+
+Do not commit:
+
+```text
+camera_url: rtsp://real-user:real-password@example-camera/live
+```
+
+## Default POC Retention
+
+Use these defaults for local POC work:
+
+- Keep local JSON Lines records only while they are useful for debugging or review.
+- Delete local POC outputs when the issue or review is finished.
+- Do not keep raw video by default.
+- Keep short clips or snapshots only when needed.
+- Review local files before sharing a branch, patch, screenshot, or report.
+
+Simple rule: if the file came from a real place or a real camera, pause before sharing it.
+
+## How To Delete Local Test Outputs
+
+Local POC outputs usually live under `data/local-runs/`.
+
+To inspect them:
+
+```bash
+ls data/local-runs
+```
+
+To delete one local output file:
+
+```bash
+rm data/local-runs/poc-records.jsonl
+```
+
+To delete all local POC outputs:
+
+```bash
+rm -rf data/local-runs
+```
+
+Only run delete commands when you are sure you no longer need the files.
+
+## Future Field Pilots
+
+Before collecting real camera data, a field pilot should have permission from the camera owner or responsible local partner.
+
+The pilot plan should explain:
+
+- what data will be collected
+- why it is needed
+- who can access it
+- how long it will be kept
+- how it will be deleted
+- whether any location details can be public
+
+Simple example: if a school, bridge owner, local government, or community group provides a camera, they should understand what OpenFloodAI will record and what it will not publish.
+
+## Safe GitHub Examples
+
+Good to keep in GitHub:
+
+- synthetic test records
+- generated test frames
+- fake site and camera IDs
+- broad public demo locations
+- documentation examples
+
+Do not keep in GitHub:
+
+- real camera footage
+- private stream URLs
+- passwords
+- exact private GPS coordinates
+- personal phone numbers or emails
+
+## Current Boundary
+
+This policy does not add cloud upload, public sharing, tracking, a database, alerting, or flood detection logic.
+
+It only explains how contributors should handle local POC data safely.
