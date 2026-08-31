@@ -36,3 +36,6 @@ jobs:
 
       - name: Run pytest
         run: pytest
+
+      - name: Build documentation
+        run: mkdocs build --strict
