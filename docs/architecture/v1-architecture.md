@@ -19,6 +19,8 @@ OpenFloodAI V1 watches a fixed camera pointed at a river.
 
 The edge node is the small computer near the camera. It checks whether the video is usable, looks for river-water changes, combines evidence over time, and creates an alert candidate when the situation may need attention.
 
+OpenFloodAI is moving toward an edge-first camera system that watches a configured river area, measures simple water-level or water-coverage changes over time, saves clear metadata, and supports human review before any public warning action.
+
 An alert candidate is not an official public warning. It is a “please review this” message for a human operator or approved local process.
 
 Simple example: a camera watches a bridge. If water keeps covering more of the bridge support area for several minutes, the edge node may create an alert candidate. A human then decides what to do next.
