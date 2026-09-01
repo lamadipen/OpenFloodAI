@@ -30,6 +30,9 @@ dev = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/openfloodai"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"schemas" = "openfloodai/schemas"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
