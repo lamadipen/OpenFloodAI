@@ -6,4 +6,5 @@ Avoid committing copyrighted datasets, sensitive imagery, or private field obser
 
 ## Notes
 
+- [Human Labeling Guide For Water-Change Review](labeling-guide.md)
 - [ML Model, Dataset, And Cloud Options](ml-model-options.md)

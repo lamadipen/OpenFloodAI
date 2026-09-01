@@ -92,7 +92,7 @@ Focus on five small pieces:
 
 4. Labeling guide
 
-   Before ML training, define what humans should label.
+   Before ML training, define what humans should label. See the [Human Labeling Guide](research/labeling-guide.md).
 
    Simple labels can include:
 
