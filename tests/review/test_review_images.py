@@ -66,6 +66,29 @@ def test_draws_reference_region_box_when_region_is_provided(tmp_path: Path) -> N
     assert baseline_image[9, 9].tolist() == [0, 255, 0]
 
 
+def test_biggest_change_uses_reference_region_when_provided(tmp_path: Path) -> None:
+    baseline_frame = np.zeros((10, 10), dtype=np.uint8)
+    outside_region_change_frame = np.zeros((10, 10), dtype=np.uint8)
+    inside_region_change_frame = np.zeros((10, 10), dtype=np.uint8)
+    outside_region_change_frame[:5, :] = 255
+    inside_region_change_frame[5:, :] = 120
+    reference_region = {
+        "x": 0,
+        "y": 50,
+        "width": 100,
+        "height": 50,
+    }
+
+    result = generate_biggest_change_review_images(
+        [baseline_frame, outside_region_change_frame, inside_region_change_frame],
+        tmp_path,
+        reference_region=reference_region,
+    )
+
+    assert result.changed_frame_index == 2
+    assert result.change_score == pytest.approx(120 / 255)
+
+
 def test_accepts_config_reference_region_object(tmp_path: Path) -> None:
     baseline_frame = np.zeros((10, 10), dtype=np.uint8)
     changed_frame = np.full((10, 10), 180, dtype=np.uint8)

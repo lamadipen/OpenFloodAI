@@ -69,7 +69,10 @@ def generate_biggest_change_review_images(
 
     prepared_frames = [_prepare_image_frame(frame) for frame in frames]
     baseline_frame = prepared_frames[0]
-    changed_frame_index, change_score = _biggest_change_from_baseline(prepared_frames)
+    changed_frame_index, change_score = _biggest_change_from_baseline(
+        prepared_frames,
+        reference_region=reference_region,
+    )
     changed_frame = prepared_frames[changed_frame_index]
 
     if reference_region is not None:
@@ -128,9 +131,13 @@ def _prepare_image_frame(frame: FrameArray) -> NDArray[np.uint8]:
     return clipped_frame
 
 
-def _biggest_change_from_baseline(frames: Sequence[NDArray[np.uint8]]) -> tuple[int, float]:
+def _biggest_change_from_baseline(
+    frames: Sequence[NDArray[np.uint8]],
+    *,
+    reference_region: ReferenceRegionInput | None,
+) -> tuple[int, float]:
     baseline_frame = frames[0]
-    baseline_gray = _to_grayscale(baseline_frame)
+    baseline_compare_frame = _comparison_frame(baseline_frame, reference_region)
     biggest_index = 1
     biggest_score = -1.0
 
@@ -138,12 +145,23 @@ def _biggest_change_from_baseline(frames: Sequence[NDArray[np.uint8]]) -> tuple[
         if frame.shape != baseline_frame.shape:
             raise ReviewImageError("All frames must have the same shape")
 
-        score = _change_score(baseline_gray, _to_grayscale(frame))
+        score = _change_score(baseline_compare_frame, _comparison_frame(frame, reference_region))
         if score > biggest_score:
             biggest_index = frame_index
             biggest_score = score
 
     return biggest_index, round(biggest_score, 6)
+
+
+def _comparison_frame(
+    frame: NDArray[np.uint8],
+    reference_region: ReferenceRegionInput | None,
+) -> NDArray[np.float64]:
+    if reference_region is None:
+        return _to_grayscale(frame)
+
+    left, top, right, bottom = _reference_region_pixels(frame, reference_region)
+    return _to_grayscale(frame[top:bottom, left:right])
 
 
 def _change_score(
