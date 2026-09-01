@@ -28,6 +28,7 @@ src/openfloodai/      Python package source
   vision/             Camera and vision components
 tests/                Automated tests
 data/                 Local data placeholders; raw datasets are not committed
+  validation/         Validation dataset structure and local review folders
 models/               Local model placeholders; trained models are not committed
 scripts/              Development and operational scripts
 configs/              Configuration examples and templates
@@ -62,6 +63,8 @@ mkdocs build --strict
 OpenFloodAI has a small MkDocs documentation site in `docs/`.
 
 The documentation includes a [Privacy And Retention](docs/privacy-retention.md) page for safe local POC data handling.
+
+Validation videos, labels, human evidence, and review outputs should use the structure in [data/validation/README.md](data/validation/README.md).
 
 Build it locally:
 
