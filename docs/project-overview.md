@@ -56,6 +56,47 @@ Simple example:
 4. The risk engine turns those inputs into a test risk state.
 5. The result is saved locally so people can inspect what happened.
 
+## Current POC Status
+
+OpenFloodAI can now run small local proof-of-concept steps.
+
+It can:
+
+- read a local video file
+- check whether the video is usable
+- create frame metadata records
+- load safe site and camera config
+- measure simple full-frame visual signals
+- measure simple signals inside a configured reference region
+- write local JSON Lines records
+- create a test risk-state record
+- summarize saved records
+- turn technical records into plain-language operator notes
+- generate a few local review images for the biggest visual change
+- provide privacy, retention, ML research, and labeling guidance
+
+Simple example: a developer can run a local video, save records, generate a comparison image with the watched area marked, and use the labeling guide to describe what changed.
+
+OpenFloodAI still cannot:
+
+- detect real floods accurately
+- train or package ML models
+- connect to live cameras
+- send alerts
+- publish public warnings
+- provide a dashboard
+- replace local emergency decision-making
+
+## Next Practical Goal
+
+The next practical goal is:
+
+```text
+reference region -> region-based visual signals -> review images -> human labels -> later ML
+```
+
+Simple meaning: first watch one clear part of the image, measure simple change there, help a person review it, and collect clear labels. ML should come later, after the project has safe labeled examples and stronger evaluation.
+
 ## Safety Boundaries
 
 OpenFloodAI must be careful because flood warnings can affect real people.

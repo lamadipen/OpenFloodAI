@@ -51,13 +51,17 @@ Completed or started:
 - simple visual signal records from frames
 - rule-based test risk-state evaluation
 - local POC pipeline from video to saved records
+- region-based local POC pipeline using a configured reference region
 - local replay summary report for saved POC records
+- plain-language operator notes for POC outputs
+- local review images for biggest visual changes
 - safe site and camera config loading
 - privacy and retention policy for local POC data
 - MkDocs documentation site
 - research note for ML models, datasets, Google ML options, and public water-data inspiration
+- human labeling guide for water-change review
 
-Simple example: today a developer can run a local video through the POC pipeline, save records to `data/local-runs/poc-records.jsonl`, and print a short summary of what record types and risk states appeared.
+Simple example: today a developer can run a local video through the POC pipeline, save records to `data/local-runs/poc-records.jsonl`, print a short summary, create plain-language notes, and generate a few local review images.
 
 ## Next Direction
 
@@ -142,7 +146,7 @@ OpenFloodAI does not yet:
 Near-term work should stay small and testable:
 
 - define the first baseline water-region or virtual-ruler signal
-- add a simple labeling guide for safe local review
+- use the labeling guide on safe local examples
 - improve replay examples using generated or approved local data
-- connect site/camera config into the local POC pipeline
+- keep connecting reference-region config into local POC review tools
 - keep strengthening privacy, validation, and failure handling

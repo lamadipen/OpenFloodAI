@@ -482,7 +482,19 @@ These images are local review files only. Do not commit real review images to Gi
 
 ## Project Status
 
-Initial repository foundation only. See `CONTRIBUTING.md` and `SECURITY.md` before proposing functional changes.
+OpenFloodAI is in local proof-of-concept preparation.
+
+Current local helpers can read test videos, check video health, save records, load site/camera config, measure simple full-frame and reference-region signals, summarize saved records, generate local review images, and create plain-language operator notes.
+
+OpenFloodAI still does not detect real floods, train ML models, connect to live cameras, send alerts, publish public warnings, provide a dashboard, or replace local emergency decision-making.
+
+Next direction:
+
+```text
+reference region -> region-based visual signals -> review images -> human labels -> later ML
+```
+
+See the documentation site, `CONTRIBUTING.md`, and `SECURITY.md` before proposing functional changes.
 
 ## JOIN DISCORD FOR DISCUSSION
 [OPENFLOODAI DISCORD](https://discord.gg/2VzpADTZ3)
