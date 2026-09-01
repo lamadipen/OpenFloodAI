@@ -5,9 +5,17 @@ from openfloodai.pipeline.local_poc import (
     run_local_poc_pipeline,
     run_local_region_poc_pipeline,
 )
+from openfloodai.pipeline.local_smoke import (
+    LocalPocSmokeError,
+    LocalPocSmokeResult,
+    run_local_poc_smoke,
+)
 
 __all__ = [
     "LocalPocPipelineError",
+    "LocalPocSmokeError",
+    "LocalPocSmokeResult",
     "run_local_poc_pipeline",
+    "run_local_poc_smoke",
     "run_local_region_poc_pipeline",
 ]
