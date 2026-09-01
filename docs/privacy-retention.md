@@ -16,6 +16,7 @@ Local POC runs may keep small structured records, such as:
 - simple visual signal records
 - risk-state records from the test rule engine
 - local replay summary output
+- a few local review images for debugging, when needed
 
 Simple example: it is okay to keep a local `.jsonl` file that says a video had 100 frames and one `NORMAL` risk-state record.
 
@@ -48,10 +49,13 @@ Raw video or snapshots may be kept only when they are needed for review, debuggi
 
 - stored locally, not committed to GitHub
 - as short as possible
+- limited to a few useful files, not every frame
 - removed when review is finished
 - shared only with people who are allowed to see them
 
 Simple example: if a test fails because a video cannot be opened, a developer may keep a short local clip while debugging. After the fix is confirmed, the clip should be deleted.
+
+Review images are similar. A developer may generate `review-baseline.png`, `review-changed.png`, and `review-comparison.png` to understand one local POC run. Those files should stay local and should be deleted when no longer needed.
 
 ## Location Privacy
 
