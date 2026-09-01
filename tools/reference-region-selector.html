@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenFloodAI Reference Region Selector</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f4f7f6;
+        --ink: #14211f;
+        --muted: #53625f;
+        --panel: #ffffff;
+        --line: #c9d8d3;
+        --accent: #087f5b;
+        --accent-strong: #055f44;
+        --warn: #9a3412;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        line-height: 1.5;
+      }
+
+      main {
+        width: min(1120px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 28px 0 40px;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: clamp(1.7rem, 3vw, 2.4rem);
+        line-height: 1.1;
+      }
+
+      p {
+        margin: 0;
+      }
+
+      .intro {
+        max-width: 760px;
+        color: var(--muted);
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 340px;
+        gap: 18px;
+        margin-top: 24px;
+        align-items: start;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 16px;
+      }
+
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+
+      label,
+      button {
+        min-height: 40px;
+        border-radius: 6px;
+        font: inherit;
+      }
+
+      label.file-button,
+      button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        border: 1px solid var(--accent);
+        background: var(--accent);
+        color: white;
+        padding: 8px 12px;
+        cursor: pointer;
+      }
+
+      button.secondary,
+      label.file-button.secondary {
+        background: white;
+        color: var(--accent-strong);
+      }
+
+      button:disabled {
+        border-color: #9aa9a5;
+        background: #dce5e2;
+        color: #677672;
+        cursor: not-allowed;
+      }
+
+      input[type="file"] {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+      }
+
+      .canvas-wrap {
+        position: relative;
+        width: 100%;
+        min-height: 320px;
+        display: grid;
+        place-items: center;
+        overflow: auto;
+        border: 1px dashed var(--line);
+        border-radius: 8px;
+        background: #e8efec;
+      }
+
+      canvas {
+        display: block;
+        max-width: 100%;
+        height: auto;
+        cursor: crosshair;
+      }
+
+      .empty {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        color: var(--muted);
+        text-align: center;
+        pointer-events: none;
+      }
+
+      .empty.hidden {
+        display: none;
+      }
+
+      h2 {
+        margin: 0 0 10px;
+        font-size: 1.05rem;
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 150px;
+        resize: vertical;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 10px;
+        font: 0.9rem ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      }
+
+      .facts {
+        display: grid;
+        gap: 8px;
+        margin: 12px 0;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      .facts strong {
+        color: var(--ink);
+      }
+
+      .notice {
+        margin-top: 14px;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      .warning {
+        color: var(--warn);
+      }
+
+      @media (max-width: 880px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Reference Region Selector</h1>
+      <p class="intro">
+        Load one local frame, drag a box around the part of the image to watch, then copy the
+        percentage-based <code>reference_region</code> into a site config.
+      </p>
+
+      <div class="layout">
+        <section class="panel" aria-label="Image selector">
+          <div class="toolbar">
+            <label class="file-button" for="imageInput" title="Load an image from this computer">
+              Choose Image
+            </label>
+            <input id="imageInput" type="file" accept="image/*" />
+            <button id="demoButton" class="secondary" type="button" title="Use a generated demo frame">
+              Demo Frame
+            </button>
+            <button id="clearButton" class="secondary" type="button" title="Clear the selected box" disabled>
+              Clear Box
+            </button>
+          </div>
+
+          <div class="canvas-wrap">
+            <canvas id="imageCanvas" width="800" height="450" aria-label="Reference region canvas"></canvas>
+            <div id="emptyState" class="empty">
+              Choose an image or use the demo frame, then drag on the image to mark the watched area.
+            </div>
+          </div>
+        </section>
+
+        <aside class="panel" aria-label="Reference region output">
+          <h2>Config Output</h2>
+          <textarea id="output" readonly spellcheck="false"></textarea>
+          <div class="toolbar">
+            <button id="copyButton" type="button" title="Copy reference_region JSON" disabled>
+              Copy JSON
+            </button>
+          </div>
+          <div class="facts">
+            <p><strong>Image:</strong> <span id="imageFacts">No image loaded</span></p>
+            <p><strong>Selection:</strong> <span id="selectionFacts">No box selected</span></p>
+          </div>
+          <p class="notice">
+            This tool runs only in your browser. It does not upload images, detect floods, save alerts,
+            or commit anything to GitHub.
+          </p>
+          <p id="message" class="notice warning" role="status"></p>
+        </aside>
+      </div>
+    </main>
+
+    <script>
+      const canvas = document.querySelector("#imageCanvas");
+      const context = canvas.getContext("2d");
+      const imageInput = document.querySelector("#imageInput");
+      const demoButton = document.querySelector("#demoButton");
+      const clearButton = document.querySelector("#clearButton");
+      const copyButton = document.querySelector("#copyButton");
+      const output = document.querySelector("#output");
+      const emptyState = document.querySelector("#emptyState");
+      const imageFacts = document.querySelector("#imageFacts");
+      const selectionFacts = document.querySelector("#selectionFacts");
+      const message = document.querySelector("#message");
+
+      let image = null;
+      let selection = null;
+      let dragStart = null;
+
+      function roundPercent(value) {
+        return Number(value.toFixed(6));
+      }
+
+      function resizeCanvasForImage(nextImage) {
+        const maxWidth = 900;
+        const scale = Math.min(1, maxWidth / nextImage.naturalWidth);
+        canvas.width = Math.max(1, Math.round(nextImage.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(nextImage.naturalHeight * scale));
+      }
+
+      function canvasPoint(event) {
+        const rect = canvas.getBoundingClientRect();
+        return {
+          x: Math.max(0, Math.min(canvas.width, event.clientX - rect.left)),
+          y: Math.max(0, Math.min(canvas.height, event.clientY - rect.top)),
+        };
+      }
+
+      function toSourceRect(rect) {
+        const scaleX = image.naturalWidth / canvas.width;
+        const scaleY = image.naturalHeight / canvas.height;
+        return {
+          x: rect.x * scaleX,
+          y: rect.y * scaleY,
+          width: rect.width * scaleX,
+          height: rect.height * scaleY,
+        };
+      }
+
+      function toReferenceRegion(rect) {
+        const source = toSourceRect(rect);
+        return {
+          x: roundPercent((source.x / image.naturalWidth) * 100),
+          y: roundPercent((source.y / image.naturalHeight) * 100),
+          width: roundPercent((source.width / image.naturalWidth) * 100),
+          height: roundPercent((source.height / image.naturalHeight) * 100),
+        };
+      }
+
+      function draw() {
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        if (!image) {
+          return;
+        }
+
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+        if (!selection) {
+          return;
+        }
+
+        context.save();
+        context.fillStyle = "rgba(8, 127, 91, 0.18)";
+        context.strokeStyle = "#087f5b";
+        context.lineWidth = 3;
+        context.fillRect(selection.x, selection.y, selection.width, selection.height);
+        context.strokeRect(selection.x, selection.y, selection.width, selection.height);
+        context.restore();
+      }
+
+      function updateOutput() {
+        if (!image) {
+          output.value = "";
+          imageFacts.textContent = "No image loaded";
+          selectionFacts.textContent = "No box selected";
+          copyButton.disabled = true;
+          clearButton.disabled = true;
+          return;
+        }
+
+        imageFacts.textContent = `${image.naturalWidth} x ${image.naturalHeight} pixels`;
+        clearButton.disabled = !selection;
+
+        if (!selection) {
+          output.value = "";
+          selectionFacts.textContent = "No box selected";
+          copyButton.disabled = true;
+          return;
+        }
+
+        const source = toSourceRect(selection);
+        const referenceRegion = toReferenceRegion(selection);
+        output.value = JSON.stringify({ reference_region: referenceRegion }, null, 2);
+        selectionFacts.textContent =
+          `${Math.round(source.x)}, ${Math.round(source.y)}, ` +
+          `${Math.round(source.width)} x ${Math.round(source.height)} pixels`;
+        copyButton.disabled = false;
+      }
+
+      function setImage(nextImage) {
+        image = nextImage;
+        selection = null;
+        resizeCanvasForImage(nextImage);
+        emptyState.classList.add("hidden");
+        message.textContent = "";
+        draw();
+        updateOutput();
+      }
+
+      function loadImageFromDataUrl(dataUrl) {
+        const nextImage = new Image();
+        nextImage.onload = () => setImage(nextImage);
+        nextImage.onerror = () => {
+          message.textContent = "Could not load that image.";
+        };
+        nextImage.src = dataUrl;
+      }
+
+      function makeDemoFrame() {
+        const demo = document.createElement("canvas");
+        demo.width = 900;
+        demo.height = 520;
+        const demoContext = demo.getContext("2d");
+
+        demoContext.fillStyle = "#cfe8f3";
+        demoContext.fillRect(0, 0, demo.width, demo.height);
+        demoContext.fillStyle = "#4b7463";
+        demoContext.fillRect(0, 240, demo.width, 80);
+        demoContext.fillStyle = "#275f87";
+        demoContext.fillRect(0, 320, demo.width, 200);
+        demoContext.fillStyle = "#9baaa4";
+        demoContext.fillRect(390, 170, 70, 350);
+        demoContext.fillStyle = "#303b39";
+        demoContext.fillRect(0, 150, demo.width, 35);
+        demoContext.fillStyle = "rgba(255, 255, 255, 0.45)";
+        demoContext.fillRect(0, 360, demo.width, 18);
+        demoContext.fillStyle = "#173c57";
+        demoContext.fillRect(390, 355, 70, 165);
+
+        loadImageFromDataUrl(demo.toDataURL("image/png"));
+      }
+
+      function normalizedRect(start, end) {
+        const x = Math.min(start.x, end.x);
+        const y = Math.min(start.y, end.y);
+        const width = Math.abs(end.x - start.x);
+        const height = Math.abs(end.y - start.y);
+        return { x, y, width, height };
+      }
+
+      imageInput.addEventListener("change", () => {
+        const file = imageInput.files[0];
+        if (!file) {
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => loadImageFromDataUrl(String(reader.result));
+        reader.onerror = () => {
+          message.textContent = "Could not read that image file.";
+        };
+        reader.readAsDataURL(file);
+      });
+
+      demoButton.addEventListener("click", makeDemoFrame);
+
+      clearButton.addEventListener("click", () => {
+        selection = null;
+        message.textContent = "";
+        draw();
+        updateOutput();
+      });
+
+      copyButton.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(output.value);
+          message.textContent = "Copied reference_region JSON.";
+        } catch {
+          output.select();
+          message.textContent = "Select the JSON text and copy it manually.";
+        }
+      });
+
+      canvas.addEventListener("pointerdown", (event) => {
+        if (!image) {
+          message.textContent = "Choose an image first.";
+          return;
+        }
+        canvas.setPointerCapture(event.pointerId);
+        dragStart = canvasPoint(event);
+        selection = null;
+        draw();
+        updateOutput();
+      });
+
+      canvas.addEventListener("pointermove", (event) => {
+        if (!dragStart) {
+          return;
+        }
+        const current = canvasPoint(event);
+        selection = normalizedRect(dragStart, current);
+        draw();
+      });
+
+      canvas.addEventListener("pointerup", (event) => {
+        if (!dragStart) {
+          return;
+        }
+        const current = canvasPoint(event);
+        const nextSelection = normalizedRect(dragStart, current);
+        dragStart = null;
+
+        if (nextSelection.width < 2 || nextSelection.height < 2) {
+          selection = null;
+          message.textContent = "Draw a larger box.";
+        } else {
+          selection = nextSelection;
+          message.textContent = "";
+        }
+
+        draw();
+        updateOutput();
+      });
+
+      draw();
+      updateOutput();
+    </script>
+  </body>
+</html>

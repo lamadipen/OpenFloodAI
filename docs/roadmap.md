@@ -48,6 +48,7 @@ Completed or started:
 - local JSON Lines record writing and reading
 - local video health checks
 - local video frame metadata extraction
+- local reference-region selector for choosing a watched image area
 - simple visual signal records from frames
 - rule-based test risk-state evaluation
 - local POC pipeline from video to saved records
@@ -61,7 +62,7 @@ Completed or started:
 - research note for ML models, datasets, Google ML options, and public water-data inspiration
 - human labeling guide for water-change review
 
-Simple example: today a developer can run a local video through the POC pipeline, save records to `data/local-runs/poc-records.jsonl`, print a short summary, create plain-language notes, and generate a few local review images.
+Simple example: today a developer can choose a watched image area, run a local video through the POC pipeline, save records to `data/local-runs/poc-records.jsonl`, print a short summary, create plain-language notes, and generate a few local review images.
 
 ## Next Direction
 

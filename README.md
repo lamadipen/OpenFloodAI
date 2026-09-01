@@ -31,6 +31,7 @@ data/                 Local data placeholders; raw datasets are not committed
 models/               Local model placeholders; trained models are not committed
 scripts/              Development and operational scripts
 configs/              Configuration examples and templates
+tools/                Small local-only helper tools
 ```
 
 ## Development
@@ -87,6 +88,7 @@ The project can now do a few small real things:
 - Read a local video file and create basic frame metadata.
 - Summarize local POC records for review.
 - Turn POC output records into plain-language operator notes.
+- Choose a watched reference region from a local image.
 - Measure simple visual signals inside a selected reference region.
 - Generate a few local review images for the biggest visual change.
 
@@ -324,7 +326,41 @@ Simple meaning: this checks video health, reads frame metadata, creates simple v
 
 This is still a prototype. It does not detect real floods, send alerts, create public warnings, or write to a database.
 
-### 10. Run The Local Region POC Pipeline
+### 10. Choose A Reference Region From An Image
+
+Use the local selector when you want to mark the part of the camera view that OpenFloodAI should watch.
+
+Open this file in your browser:
+
+```text
+tools/reference-region-selector.html
+```
+
+Then:
+
+1. Click `Choose Image` and select a local frame, or click `Demo Frame`.
+2. Drag a box around the area you want to watch.
+3. Copy the JSON output.
+4. Paste the values into `configs/example-site.json` under `reference_region`.
+
+Simple example: if the camera sees a bridge pillar, draw a box around the lower part of the pillar. The tool may output something like this:
+
+```json
+{
+  "reference_region": {
+    "x": 43.333333,
+    "y": 32.692308,
+    "width": 7.777778,
+    "height": 48.076923
+  }
+}
+```
+
+Simple meaning: `x` and `y` say where the box starts. `width` and `height` say how big the box is. The numbers are percentages, so the same config still makes sense if the image is opened at a different display size.
+
+This tool runs locally in your browser. It does not upload images, detect floods, save alerts, or commit files.
+
+### 11. Run The Local Region POC Pipeline
 
 This is a separate pipeline that uses `reference_region` from `configs/example-site.json`.
 
@@ -352,7 +388,7 @@ The old `run_local_poc_pipeline(...)` still works without region config.
 
 This is still not flood detection. It only helps test the future virtual-ruler flow.
 
-### 11. Summarize A Local POC Run
+### 12. Summarize A Local POC Run
 
 Run this after the local POC pipeline creates `data/local-runs/poc-records.jsonl`.
 
@@ -372,7 +408,7 @@ Simple meaning: this reads the saved JSON Lines file and prints a short report. 
 
 This report is only for local review and debugging. It does not create a public warning, publish anything, send alerts, or show private camera details.
 
-### 12. Explain A POC Output For A Human Reviewer
+### 13. Explain A POC Output For A Human Reviewer
 
 This turns one output record into a short plain-language note.
 
@@ -393,7 +429,7 @@ Simple meaning: instead of only showing technical fields, the helper explains wh
 
 This note is not an official public warning. It does not send alerts or decide emergency action.
 
-### 13. Test Visual Signals Inside A Reference Region
+### 14. Test Visual Signals Inside A Reference Region
 
 This checks only the selected part of the image, like a virtual ruler.
 
@@ -445,7 +481,7 @@ Simple meaning: the top half changed, but the lower half did not. The selected r
 
 This still does not detect floods. It only measures simple image change inside the selected area.
 
-### 14. Generate Local Review Images
+### 15. Generate Local Review Images
 
 This saves a few images so a person can review the biggest visual change.
 
@@ -484,7 +520,7 @@ These images are local review files only. Do not commit real review images to Gi
 
 OpenFloodAI is in local proof-of-concept preparation.
 
-Current local helpers can read test videos, check video health, save records, load site/camera config, measure simple full-frame and reference-region signals, summarize saved records, generate local review images, and create plain-language operator notes.
+Current local helpers can read test videos, check video health, save records, load site/camera config, choose a watched reference region from a local image, measure simple full-frame and reference-region signals, summarize saved records, generate local review images, and create plain-language operator notes.
 
 OpenFloodAI still does not detect real floods, train ML models, connect to live cameras, send alerts, publish public warnings, provide a dashboard, or replace local emergency decision-making.
 
