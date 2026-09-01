@@ -273,9 +273,11 @@
 
       function canvasPoint(event) {
         const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
         return {
-          x: Math.max(0, Math.min(canvas.width, event.clientX - rect.left)),
-          y: Math.max(0, Math.min(canvas.height, event.clientY - rect.top)),
+          x: Math.max(0, Math.min(canvas.width, (event.clientX - rect.left) * scaleX)),
+          y: Math.max(0, Math.min(canvas.height, (event.clientY - rect.top) * scaleY)),
         };
       }
 
