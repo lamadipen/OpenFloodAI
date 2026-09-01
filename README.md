@@ -87,6 +87,7 @@ The project can now do a few small real things:
 - Load a safe site and camera config.
 - Read a local video file and create basic frame metadata.
 - Run one safe end-to-end local POC smoke test.
+- Run one local review workflow for your own video.
 - Summarize local POC records for review.
 - Turn POC output records into plain-language operator notes.
 - Choose a watched reference region from a local image.
@@ -410,7 +411,33 @@ Simple meaning: this is like a practice run. It creates a fake tiny river video,
 
 This does not use real footage. It does not detect floods, send alerts, upload files, connect to cameras, or write to a database.
 
-### 13. Summarize A Local POC Run
+### 13. Run A Local Review Workflow For Your Own Video
+
+This creates the same kind of review outputs as the smoke test, but it uses your local video file.
+
+Replace `data/sample-video.mp4` with your local video path:
+
+```bash
+python3 scripts/run_local_video_review.py \
+  --video-path data/sample-video.mp4 \
+  --config-path configs/example-site.json \
+  --output-dir data/local-runs/video-review
+```
+
+After it runs, check these local files:
+
+```text
+data/local-runs/video-review/records.jsonl
+data/local-runs/video-review/summary.md
+data/local-runs/video-review/operator-notes.txt
+data/local-runs/video-review/review-images/
+```
+
+Simple meaning: this reads your video, uses the `reference_region` from the config, saves records, creates a summary, writes plain-language notes, and saves review images.
+
+This still does not detect floods, send alerts, upload files, connect to live cameras, or write to a database.
+
+### 14. Summarize A Local POC Run
 
 Run this after the local POC pipeline creates `data/local-runs/poc-records.jsonl`.
 
@@ -430,7 +457,7 @@ Simple meaning: this reads the saved JSON Lines file and prints a short report. 
 
 This report is only for local review and debugging. It does not create a public warning, publish anything, send alerts, or show private camera details.
 
-### 14. Explain A POC Output For A Human Reviewer
+### 15. Explain A POC Output For A Human Reviewer
 
 This turns one output record into a short plain-language note.
 
@@ -451,7 +478,7 @@ Simple meaning: instead of only showing technical fields, the helper explains wh
 
 This note is not an official public warning. It does not send alerts or decide emergency action.
 
-### 15. Test Visual Signals Inside A Reference Region
+### 16. Test Visual Signals Inside A Reference Region
 
 This checks only the selected part of the image, like a virtual ruler.
 
@@ -503,7 +530,7 @@ Simple meaning: the top half changed, but the lower half did not. The selected r
 
 This still does not detect floods. It only measures simple image change inside the selected area.
 
-### 16. Generate Local Review Images
+### 17. Generate Local Review Images
 
 This saves a few images so a person can review the biggest visual change.
 
@@ -542,7 +569,7 @@ These images are local review files only. Do not commit real review images to Gi
 
 OpenFloodAI is in local proof-of-concept preparation.
 
-Current local helpers can read test videos, check video health, save records, load site/camera config, choose a watched reference region from a local image, run one safe end-to-end local smoke test, measure simple full-frame and reference-region signals, summarize saved records, generate local review images, and create plain-language operator notes.
+Current local helpers can read test videos, check video health, save records, load site/camera config, choose a watched reference region from a local image, run one safe end-to-end local smoke test, run a local review workflow for your own video, measure simple full-frame and reference-region signals, summarize saved records, generate local review images, and create plain-language operator notes.
 
 OpenFloodAI still does not detect real floods, train ML models, connect to live cameras, send alerts, publish public warnings, provide a dashboard, or replace local emergency decision-making.
 

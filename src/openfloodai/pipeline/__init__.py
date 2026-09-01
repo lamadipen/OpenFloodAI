@@ -9,6 +9,7 @@ from openfloodai.pipeline.local_smoke import (
     LocalPocSmokeError,
     LocalPocSmokeResult,
     run_local_poc_smoke,
+    run_local_video_review,
 )
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "run_local_poc_pipeline",
     "run_local_poc_smoke",
     "run_local_region_poc_pipeline",
+    "run_local_video_review",
 ]
