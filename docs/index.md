@@ -16,19 +16,39 @@ video input -> feed health -> simple visual signals -> risk state -> saved local
 
 Simple example: if a camera sees a riverbank every day, the system may later notice when water covers more of that bank. It should explain what it saw and ask for review. It should not tell the public to evacuate.
 
+The next practical direction is:
+
+```text
+reference region -> region-based visual signals -> review images -> human labels -> later ML
+```
+
+Simple example: a marked part of a bridge pillar can act like a virtual ruler. OpenFloodAI can measure simple changes in that watched area, save records, create a few local review images, and help a person label what happened.
+
 ## Current Status
 
-The project is still in foundation and proof-of-concept preparation.
+The project is still in proof-of-concept preparation.
 
-Current work includes:
+OpenFloodAI can currently:
 
 - shared data contracts
 - event/audit validation helpers
-- local video frame metadata
+- local video health checks
+- local video frame metadata extraction
 - local JSON Lines record storage
+- safe site and camera config loading
+- simple full-frame and reference-region visual signals
 - a small test-only risk-state evaluator
+- local POC pipelines that save review records
+- local replay summaries
+- plain-language operator notes
+- local review images for biggest visual changes
+- privacy and retention guidance
+- ML/model research notes
+- a human labeling guide
 
-Future work will add camera health checks, visual signal generation, better testing, and field validation.
+OpenFloodAI still does not detect real floods, train ML models, send alerts, publish warnings, run live camera deployments, or replace local emergency decision-making.
+
+Near-term work should stay focused on simple reference-region baselines, review images, human labels, and safer test datasets.
 
 ## Follow The Project
 
