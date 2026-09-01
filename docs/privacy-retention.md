@@ -57,6 +57,23 @@ Simple example: if a test fails because a video cannot be opened, a developer ma
 
 Review images are similar. A developer may generate `review-baseline.png`, `review-changed.png`, and `review-comparison.png` to understand one local POC run. Those files should stay local and should be deleted when no longer needed.
 
+The reference-region selector is also local only. It lets a developer open an image in their browser and draw the watched area. The image is not uploaded by the tool. Only the percentage box values should be copied into config.
+
+Simple example: it is okay to copy this safe config-style value:
+
+```json
+{
+  "reference_region": {
+    "x": 40,
+    "y": 50,
+    "width": 20,
+    "height": 30
+  }
+}
+```
+
+Do not commit the real frame used to choose that box unless it is synthetic or clearly approved for public use.
+
 ## Location Privacy
 
 Exact GPS coordinates can be sensitive.
