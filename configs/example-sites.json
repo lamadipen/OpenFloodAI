@@ -1,0 +1,32 @@
+[
+  {
+    "site_id": "potomac-little-falls",
+    "camera_id": "cam-potomac-01",
+    "latitude": 38.9346,
+    "longitude": -77.1278,
+    "usgs_site_number": "01646500",
+    "nws_zone": "MDZ013",
+    "flood_stage_ft": 10.0,
+    "description": "Potomac River at Little Falls near Washington, D.C."
+  },
+  {
+    "site_id": "colorado-austin",
+    "camera_id": "cam-colorado-01",
+    "latitude": 30.2435,
+    "longitude": -97.7195,
+    "usgs_site_number": "08158000",
+    "nws_zone": "TXZ192",
+    "flood_stage_ft": 21.0,
+    "description": "Colorado River at Austin, TX"
+  },
+  {
+    "site_id": "american-fair-oaks",
+    "camera_id": "cam-american-01",
+    "latitude": 38.6358,
+    "longitude": -121.2261,
+    "usgs_site_number": "11446500",
+    "nws_zone": "CAZ017",
+    "flood_stage_ft": 35.0,
+    "description": "American River at Fair Oaks, CA"
+  }
+]
