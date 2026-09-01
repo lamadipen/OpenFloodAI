@@ -88,6 +88,7 @@ The project can now do a few small real things:
 - Summarize local POC records for review.
 - Turn POC output records into plain-language operator notes.
 - Measure simple visual signals inside a selected reference region.
+- Generate a few local review images for the biggest visual change.
 
 It does not detect floods, run ML, score risk, send alerts, or store data in a database yet.
 
@@ -443,6 +444,41 @@ PY
 Simple meaning: the top half changed, but the lower half did not. The selected region changes the result, which is what we need for a future virtual-ruler flow.
 
 This still does not detect floods. It only measures simple image change inside the selected area.
+
+### 14. Generate Local Review Images
+
+This saves a few images so a person can review the biggest visual change.
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+
+import numpy as np
+
+from openfloodai.review import generate_biggest_change_review_images
+
+baseline_frame = np.zeros((10, 10), dtype=np.uint8)
+small_change_frame = np.full((10, 10), 30, dtype=np.uint8)
+biggest_change_frame = np.full((10, 10), 200, dtype=np.uint8)
+
+result = generate_biggest_change_review_images(
+    [baseline_frame, small_change_frame, biggest_change_frame],
+    Path("data/local-runs/review-images"),
+    reference_region={
+        "x": 0,
+        "y": 50,
+        "width": 100,
+        "height": 50,
+    },
+)
+
+print(result)
+PY
+```
+
+Simple meaning: this creates `review-baseline.png`, `review-changed.png`, and `review-comparison.png`. The green box shows the watched reference region.
+
+These images are local review files only. Do not commit real review images to GitHub.
 
 ## Project Status
 
