@@ -101,3 +101,5 @@ Note: The human saw water change, and the system measured visual change.
 This report does not train a model, send alerts, upload data, or publish warnings.
 
 It only helps developers and reviewers see where the current POC agrees or disagrees with human review.
+
+To try different visual-change thresholds, see [Prototype Threshold Tuning](threshold-tuning.md).

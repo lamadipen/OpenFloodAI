@@ -22,16 +22,29 @@ from openfloodai.review.review_images import (
     ReviewImageSet,
     generate_biggest_change_review_images,
 )
+from openfloodai.review.threshold_tuning import (
+    DEFAULT_CANDIDATE_THRESHOLDS,
+    ThresholdTuningError,
+    ThresholdTuningReport,
+    ThresholdTuningResult,
+    render_threshold_tuning_report,
+    tune_threshold_files,
+    tune_threshold_records,
+)
 
 __all__ = [
     "ALLOWED_CONFIDENCE_LEVELS",
     "ALLOWED_HUMAN_LABELS",
+    "DEFAULT_CANDIDATE_THRESHOLDS",
     "HumanLabelError",
     "LabelComparison",
     "LabelComparisonError",
     "LabelComparisonReport",
     "ReviewImageError",
     "ReviewImageSet",
+    "ThresholdTuningError",
+    "ThresholdTuningReport",
+    "ThresholdTuningResult",
     "build_operator_note",
     "compare_label_files",
     "compare_label_records",
@@ -39,5 +52,8 @@ __all__ = [
     "is_valid_human_label_record",
     "load_human_label_records",
     "render_label_comparison_report",
+    "render_threshold_tuning_report",
+    "tune_threshold_files",
+    "tune_threshold_records",
     "validate_human_label_record",
 ]

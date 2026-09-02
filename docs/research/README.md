@@ -9,4 +9,5 @@ Avoid committing copyrighted datasets, sensitive imagery, or private field obser
 - [Human Labeling Guide For Water-Change Review](labeling-guide.md)
 - [Human Label Format](human-label-format.md)
 - [Human Label Comparison](human-label-comparison.md)
+- [Prototype Threshold Tuning](threshold-tuning.md)
 - [ML Model, Dataset, And Cloud Options](ml-model-options.md)
