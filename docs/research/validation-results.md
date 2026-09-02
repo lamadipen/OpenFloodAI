@@ -14,7 +14,7 @@ So far, validation is local and small.
 | --- | --- | --- |
 | Video health | Missing, empty, and readable local videos | The code can say when a video is missing or unreadable. |
 | Frame metadata | Local videos and generated test videos | The code can save frame IDs, timestamps, size, FPS, and frame hashes. |
-| Visual signals | Full-frame and reference-region image changes | The code can create simple brightness and change scores. |
+| Visual signals | Full-frame and reference-region image changes | The code can create simple brightness, change, and watched-region band scores. |
 | Region POC pipeline | A configured watched area inside a video | The code can save records for the selected area. |
 | Review images | Biggest local visual changes | The code can save images so a person can review what changed. |
 | Human labels | Small example label files | The code can read labels like `water_rising`, `no_clear_change`, and `cannot_judge`. |
@@ -32,11 +32,12 @@ Simple example: a developer can run one local video, save POC records, add a hum
 - The project can keep records grouped by site and video.
 - A user can mark a reference region, like the lower part of a bridge pillar.
 - The system can create simple scores for full frames and selected regions.
+- Region comparison now shows whether the upper, middle, or lower part of the watched area changed most.
 - Review images can help a person inspect the biggest changes.
 - Human labels can be compared with system output in a simple report.
 - `cannot_compare` stays separate and is not counted as success.
 
-Simple example: if a person says a clip shows `water_rising`, and the system shows strong visual change in the watched area, the comparison may say `agree`.
+Simple example: if a person says a clip shows `water_rising`, and the system shows stronger change in the lower part of a watched bridge pillar while the upper part stays steady, the comparison may say `agree`.
 
 ## What Did Not Work Yet
 
@@ -47,6 +48,7 @@ Current gaps:
 - The sample validation set is too small.
 - The system does not yet know what water is with high confidence.
 - A visual change may come from rain, glare, shadows, people, debris, camera movement, or compression.
+- If the whole watched region changes, the signal stays cautious because it may not be water-level movement.
 - The risk engine is still simple and test-oriented.
 - Threshold tuning is one `video_id` at a time, not a full dataset study.
 - Multi-video validation is local only and still depends on small, reviewed examples.
