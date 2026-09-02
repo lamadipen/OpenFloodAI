@@ -2,7 +2,7 @@
 
 OpenFloodAI is an open-source, low-cost, edge-first camera-based river flood detection and warning-support system.
 
-This repository is in its foundation phase. The current scope is project structure, contribution standards, and development tooling. Flood detection logic, machine learning models, APIs, and application business logic are intentionally not implemented yet.
+The foundation and validation-prep phase is now in place. The project has local proof-of-concept tools for video review, reference-region signals, human labels, comparison reports, threshold tuning, and validation tracking.
 
 OpenFloodAI is moving toward an edge-first camera system that watches a configured river area, measures simple water-level or water-coverage changes over time, saves clear metadata, and supports human review before any public warning action.
 
@@ -62,6 +62,8 @@ mkdocs build --strict
 
 OpenFloodAI has a small MkDocs documentation site in `docs/`.
 
+The docs site now includes a completed-phase summary and next validation priorities in [docs/index.md](docs/index.md), [docs/project-overview.md](docs/project-overview.md), and [docs/roadmap.md](docs/roadmap.md).
+
 The documentation includes a [Privacy And Retention](docs/privacy-retention.md) page for safe local POC data handling.
 
 Validation videos, labels, human evidence, and review outputs should use the structure in [data/validation/README.md](data/validation/README.md).
@@ -71,6 +73,8 @@ Human video review labels should use the format in [docs/research/human-label-fo
 Human labels can be compared with local system output using [docs/research/human-label-comparison.md](docs/research/human-label-comparison.md).
 
 Prototype thresholds can be reviewed using [docs/research/threshold-tuning.md](docs/research/threshold-tuning.md).
+
+Current validation progress and known limits are tracked in [docs/research/validation-results.md](docs/research/validation-results.md).
 
 Build it locally:
 
@@ -106,6 +110,16 @@ The project can now do a few small real things:
 - Generate a few local review images for the biggest visual change.
 
 It does not detect floods, run ML, score risk, send alerts, or store data in a database yet.
+
+Current output means "please review this evidence," not "there is a confirmed flood."
+
+Recommended next issue order:
+
+1. OF-031: add a multi-video validation runner.
+2. OF-032: generate a validation summary report.
+3. OF-034: add hard-case validation examples and expected behavior.
+4. OF-033: improve the water-level change signal using the reference region.
+5. OF-035: update documentation with current validation progress and next goals.
 
 ### 1. Set Up The Environment
 
