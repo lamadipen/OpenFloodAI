@@ -4,9 +4,11 @@ import numpy as np
 
 from openfloodai.common import SiteConfig
 from openfloodai.edge.monitor import (
+    DataSourceCache,
     MonitorConfig,
     build_monitor_config,
     create_monitor,
+    fetch_data_sources,
     process_frame,
 )
 from openfloodai.ingestion.stream import StreamConfig
@@ -96,3 +98,51 @@ def test_multiple_frames_track_state() -> None:
     for _ in range(5):
         process_frame(_green_frame(), config, state)
     assert state.frames_processed == 5
+
+
+def test_data_source_cache_defaults() -> None:
+    cache = DataSourceCache()
+    assert cache.sources_available == 0
+    assert cache.external_risk_state == "NORMAL"
+    assert cache.escalation_reasons == []
+
+
+def test_external_escalation_applied() -> None:
+    config = _config()
+    state = create_monitor(config)
+    state.data_sources = DataSourceCache(
+        external_risk_state="WARNING_CANDIDATE",
+        escalation_reasons=["M7.0 earthquake -- GLOF/landslide risk"],
+        sources_available=1,
+    )
+    result = process_frame(_green_frame(), config, state)
+    assert result["instant_risk_state"] == "WARNING_CANDIDATE"
+    assert result["data_sources_active"] == 1
+    assert result["external_risk_state"] == "WARNING_CANDIDATE"
+
+
+def test_external_does_not_deescalate() -> None:
+    config = _config()
+    state = create_monitor(config)
+    state.data_sources = DataSourceCache(
+        external_risk_state="NORMAL",
+        sources_available=3,
+    )
+    result = process_frame(_blue_frame(), config, state)
+    assert result["instant_risk_state"] in ("WATCH", "WARNING_CANDIDATE")
+
+
+def test_process_frame_includes_data_source_fields() -> None:
+    config = _config()
+    state = create_monitor(config)
+    result = process_frame(_green_frame(), config, state)
+    assert "data_sources_active" in result
+    assert "external_risk_state" in result
+
+
+def test_fetch_data_sources_no_coords() -> None:
+    site = SiteConfig(site_id="no-coords", camera_id="cam")
+    cache = fetch_data_sources(site)
+    assert cache.earthquake is None
+    assert cache.eonet is None
+    assert cache.precipitation is None

@@ -37,9 +37,31 @@ from openfloodai.vision.water_detection import (
 
 logger = logging.getLogger("openfloodai.edge")
 
+_RISK_LEVELS: dict[str, int] = {
+    "UNKNOWN": -1,
+    "NORMAL": 0,
+    "WATCH": 1,
+    "WARNING_CANDIDATE": 2,
+}
+
 
 class MonitorError(RuntimeError):
     """Raised when the monitoring loop cannot proceed."""
+
+
+@dataclass
+class DataSourceCache:
+    """Cached results from external data source queries."""
+
+    earthquake: dict[str, object] | None = None
+    eonet: dict[str, object] | None = None
+    precipitation: dict[str, object] | None = None
+    reliefweb: dict[str, object] | None = None
+    usgs_water: dict[str, object] | None = None
+    escalation_reasons: list[str] = field(default_factory=list)
+    external_risk_state: str = "NORMAL"
+    last_fetch: float = 0.0
+    sources_available: int = 0
 
 
 @dataclass
@@ -70,6 +92,7 @@ class MonitorState:
     last_data_source_fetch: float = 0.0
     running: bool = False
     reconnect_failures: int = 0
+    data_sources: DataSourceCache = field(default_factory=DataSourceCache)
 
 
 def create_monitor(config: MonitorConfig) -> MonitorState:
@@ -167,6 +190,8 @@ def process_frame(
         risk_state = "NORMAL"
         confidence = 1.0 - water_ratio
 
+    risk_state = _apply_external_escalation(risk_state, state.data_sources)
+
     if state.temporal_window is not None:
         state.temporal_window.add_sample(
             risk_state=risk_state,
@@ -183,7 +208,7 @@ def process_frame(
     state.frames_processed += 1
 
     if should_alert(temporal_state, previous_state):
-        reason = f"Water coverage {water_ratio:.1%}"
+        reason = _build_alert_reason(water_ratio, state.data_sources)
         for webhook in config.webhooks:
             try:
                 send_alert(
@@ -207,11 +232,86 @@ def process_frame(
         "instant_risk_state": risk_state,
         "temporal_risk_state": temporal_state,
         "frames_processed": state.frames_processed,
+        "data_sources_active": state.data_sources.sources_available,
+        "external_risk_state": state.data_sources.external_risk_state,
     }
+
+
+def fetch_data_sources(site: SiteConfig) -> DataSourceCache:
+    """Query all available external data sources for a site.
+
+    Each source is fetched independently; failures are logged and skipped.
+    """
+
+    cache = DataSourceCache(last_fetch=time.monotonic())
+    reasons: list[str] = []
+    ext_state = "NORMAL"
+
+    if site.latitude is not None and site.longitude is not None:
+        cache.earthquake = _fetch_earthquake(site.latitude, site.longitude)
+        if cache.earthquake is not None:
+            cache.sources_available += 1
+            eq_state, eq_reasons = _assess_earthquake(cache.earthquake)
+            if _risk_level(eq_state) > _risk_level(ext_state):
+                ext_state = eq_state
+            reasons.extend(eq_reasons)
+
+        cache.eonet = _fetch_eonet(site.latitude, site.longitude)
+        if cache.eonet is not None:
+            cache.sources_available += 1
+            eo_state, eo_reasons = _assess_eonet_cache(cache.eonet)
+            if _risk_level(eo_state) > _risk_level(ext_state):
+                ext_state = eo_state
+            reasons.extend(eo_reasons)
+
+        cache.precipitation = _fetch_precipitation(site.latitude, site.longitude)
+        if cache.precipitation is not None:
+            cache.sources_available += 1
+            pr_state, pr_reasons = _assess_precipitation_cache(cache.precipitation)
+            if _risk_level(pr_state) > _risk_level(ext_state):
+                ext_state = pr_state
+            reasons.extend(pr_reasons)
+
+    cache.reliefweb = _fetch_reliefweb()
+    if cache.reliefweb is not None:
+        cache.sources_available += 1
+        rw_state, rw_reasons = _assess_reliefweb_cache(cache.reliefweb)
+        if _risk_level(rw_state) > _risk_level(ext_state):
+            ext_state = rw_state
+        reasons.extend(rw_reasons)
+
+    if site.usgs_site_number is not None:
+        cache.usgs_water = _fetch_usgs_water(
+            site.usgs_site_number,
+            site.flood_stage_ft,
+        )
+        if cache.usgs_water is not None:
+            cache.sources_available += 1
+            us_state, us_reasons = _assess_usgs_cache(cache.usgs_water, site.flood_stage_ft)
+            if _risk_level(us_state) > _risk_level(ext_state):
+                ext_state = us_state
+            reasons.extend(us_reasons)
+
+    cache.external_risk_state = ext_state
+    cache.escalation_reasons = reasons
+
+    logger.info(
+        "Data sources refreshed for %s: %d sources, external_state=%s",
+        site.site_id,
+        cache.sources_available,
+        ext_state,
+    )
+
+    return cache
 
 
 def _monitor_tick(config: MonitorConfig, state: MonitorState) -> None:
     """One iteration of the monitoring loop."""
+
+    now = time.monotonic()
+    if now - state.last_data_source_fetch >= config.data_source_interval_seconds:
+        state.data_sources = fetch_data_sources(config.site)
+        state.last_data_source_fetch = now
 
     if state.stream_state is None or not state.stream_state.is_connected:
         if state.reconnect_failures >= config.max_reconnect_failures:
@@ -264,3 +364,196 @@ def build_monitor_config(
         temporal_config=TemporalConfig(window_minutes=window_minutes),
         webhooks=webhooks,
     )
+
+
+def _risk_level(state: str) -> int:
+    return _RISK_LEVELS.get(state, -1)
+
+
+def _apply_external_escalation(
+    visual_state: str,
+    cache: DataSourceCache,
+) -> str:
+    """Escalate visual risk based on external data sources."""
+
+    if _risk_level(cache.external_risk_state) > _risk_level(visual_state):
+        return cache.external_risk_state
+    return visual_state
+
+
+def _build_alert_reason(
+    water_ratio: float,
+    cache: DataSourceCache,
+) -> str:
+    parts = [f"Water coverage {water_ratio:.1%}"]
+    if cache.escalation_reasons:
+        parts.extend(cache.escalation_reasons[:3])
+    return "; ".join(parts)
+
+
+def _fetch_earthquake(
+    lat: float,
+    lon: float,
+) -> dict[str, object] | None:
+    try:
+        from openfloodai.data_sources.usgs_earthquake import (
+            assess_seismic_flood_risk,
+            fetch_nearby_earthquakes,
+        )
+
+        quakes = fetch_nearby_earthquakes(lat, lon)
+        return assess_seismic_flood_risk(quakes)
+    except Exception:
+        logger.debug("Earthquake data source unavailable", exc_info=True)
+        return None
+
+
+def _fetch_eonet(
+    lat: float,
+    lon: float,
+) -> dict[str, object] | None:
+    try:
+        from openfloodai.data_sources.nasa_eonet import (
+            fetch_events_near,
+            summarize_events,
+        )
+
+        events = fetch_events_near(lat, lon)
+        return summarize_events(events)
+    except Exception:
+        logger.debug("EONET data source unavailable", exc_info=True)
+        return None
+
+
+def _fetch_precipitation(
+    lat: float,
+    lon: float,
+) -> dict[str, object] | None:
+    try:
+        from openfloodai.data_sources.open_meteo import fetch_precipitation
+
+        return fetch_precipitation(lat, lon)
+    except Exception:
+        logger.debug("Precipitation data source unavailable", exc_info=True)
+        return None
+
+
+def _fetch_reliefweb() -> dict[str, object] | None:
+    try:
+        from openfloodai.data_sources.reliefweb import (
+            fetch_flood_reports,
+            summarize_reports,
+        )
+
+        reports = fetch_flood_reports(country="Nepal")
+        return summarize_reports(reports)
+    except Exception:
+        logger.debug("ReliefWeb data source unavailable", exc_info=True)
+        return None
+
+
+def _fetch_usgs_water(
+    site_number: str,
+    flood_stage_ft: float | None,
+) -> dict[str, object] | None:
+    try:
+        from openfloodai.data_sources.usgs_water import fetch_site_conditions
+
+        result = fetch_site_conditions(site_number)
+        if flood_stage_ft is not None:
+            result["flood_stage_ft"] = flood_stage_ft
+        return result
+    except Exception:
+        logger.debug("USGS water data source unavailable", exc_info=True)
+        return None
+
+
+def _assess_earthquake(
+    data: dict[str, object],
+) -> tuple[str, list[str]]:
+    risk_state = str(data.get("seismic_risk_state", "NONE")).upper()
+    max_mag = data.get("max_magnitude", 0)
+    reasons: list[str] = []
+
+    if risk_state in {"EXTREME", "HIGH"}:
+        reasons.append(f"M{max_mag} earthquake -- GLOF/landslide risk")
+        return "WARNING_CANDIDATE", reasons
+    if risk_state == "MODERATE":
+        reasons.append(f"M{max_mag} earthquake -- monitoring for secondary flooding")
+        return "WATCH", reasons
+    return "NORMAL", reasons
+
+
+def _assess_eonet_cache(
+    data: dict[str, object],
+) -> tuple[str, list[str]]:
+    flood_count = data.get("flood_count", 0)
+    landslide_count = data.get("landslide_count", 0)
+    storm_count = data.get("storm_count", 0)
+    reasons: list[str] = []
+
+    if isinstance(flood_count, int) and flood_count > 0:
+        reasons.append(f"NASA EONET: {flood_count} active flood event(s)")
+        return "WARNING_CANDIDATE", reasons
+    if isinstance(landslide_count, int) and landslide_count > 0:
+        reasons.append(f"NASA EONET: {landslide_count} landslide event(s)")
+        return "WATCH", reasons
+    if isinstance(storm_count, int) and storm_count > 0:
+        reasons.append(f"NASA EONET: {storm_count} severe storm(s)")
+        return "WATCH", reasons
+    return "NORMAL", reasons
+
+
+def _assess_precipitation_cache(
+    data: dict[str, object],
+) -> tuple[str, list[str]]:
+    total_mm = data.get("precipitation_sum_mm")
+    reasons: list[str] = []
+
+    if not isinstance(total_mm, (int, float)):
+        return "NORMAL", reasons
+    if total_mm >= 50.0:
+        reasons.append(f"Heavy precipitation forecast: {total_mm:.0f}mm")
+        return "WATCH", reasons
+    if total_mm >= 25.0:
+        reasons.append(f"Moderate precipitation forecast: {total_mm:.0f}mm")
+        return "WATCH", reasons
+    return "NORMAL", reasons
+
+
+def _assess_reliefweb_cache(
+    data: dict[str, object],
+) -> tuple[str, list[str]]:
+    report_state = str(data.get("report_state", "CLEAR")).upper()
+    report_count = data.get("report_count", 0)
+    reasons: list[str] = []
+
+    if report_state == "ACTIVE_DISASTER":
+        if isinstance(report_count, int) and report_count >= 5:
+            reasons.append(f"ReliefWeb: {report_count} humanitarian reports -- major disaster")
+            return "WARNING_CANDIDATE", reasons
+        reasons.append("ReliefWeb: active disaster reports")
+        return "WATCH", reasons
+    return "NORMAL", reasons
+
+
+def _assess_usgs_cache(
+    data: dict[str, object],
+    flood_stage_ft: float | None,
+) -> tuple[str, list[str]]:
+    gage_height = data.get("gage_height_ft")
+    reasons: list[str] = []
+
+    if not isinstance(gage_height, (int, float)):
+        return "NORMAL", reasons
+    if flood_stage_ft is None or flood_stage_ft <= 0:
+        return "NORMAL", reasons
+
+    ratio = gage_height / flood_stage_ft
+    if ratio >= 0.9:
+        reasons.append(f"USGS gage at {ratio:.0%} of flood stage ({gage_height:.1f}ft)")
+        return "WARNING_CANDIDATE", reasons
+    if ratio >= 0.7:
+        reasons.append(f"USGS gage at {ratio:.0%} of flood stage ({gage_height:.1f}ft)")
+        return "WATCH", reasons
+    return "NORMAL", reasons
