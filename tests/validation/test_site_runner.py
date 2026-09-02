@@ -121,6 +121,7 @@ def test_run_site_validation_reports_multiple_video_results(tmp_path: Path) -> N
 
     assert report.processed_count == 3
     assert report.failed_count == 2
+    assert report.label_window_count == 6
     assert report.agree_count == 1
     assert report.disagree_count == 1
     assert report.cannot_compare_count == 4
@@ -138,6 +139,11 @@ def test_run_site_validation_reports_multiple_video_results(tmp_path: Path) -> N
     assert (site_dir / "outputs" / "validation-report.md").exists()
     assert (site_dir / "outputs" / "rising-001" / "records.jsonl").exists()
     assert (site_dir / "outputs" / "rising-001" / "label-comparison.md").exists()
+    table_header = "| Video | Processed | Human label | System result | Result | Windows | Note |"
+    rising_row = "| rising-001.avi | yes | multiple | water_change_seen | cannot_compare | 2 |"
+    assert table_header in rendered
+    assert rising_row in rendered
+    assert "- Label windows compared: 6" in rendered
     assert "Cases marked `cannot_compare` are not counted as success." in rendered
 
 
@@ -156,6 +162,7 @@ def test_run_site_validation_handles_missing_human_label(tmp_path: Path) -> None
     assert report.results[0].video_id == "unlabeled-001"
     assert report.results[0].human_label == "missing"
     assert report.results[0].result == "cannot_compare"
+    assert report.label_window_count == 1
 
 
 def test_run_site_validation_without_videos_still_reports_label_only_cases(
@@ -169,6 +176,7 @@ def test_run_site_validation_without_videos_still_reports_label_only_cases(
 
     assert report.processed_count == 0
     assert report.failed_count == 4
+    assert report.label_window_count == 5
     assert {result.system_result for result in report.results} == {"missing_video"}
     rising_result = next(result for result in report.results if result.video_id == "rising-001")
     assert len(rising_result.comparisons) == 2
@@ -186,6 +194,10 @@ def test_combined_report_output_is_stable_and_simple(tmp_path: Path) -> None:
 
     assert "# Site Validation Report" in rendered
     assert "Validation Site: example-site" in rendered
+    assert "## Summary Table" in rendered
+    rising_row = "| rising-001.avi | yes | multiple | water_change_seen | cannot_compare | 2 |"
+    assert rising_row in rendered
+    assert "## Detailed Results" in rendered
     assert "### rising-001" in rendered
     assert "- Video: rising-001.avi" in rendered
     assert "- Human label: multiple" in rendered

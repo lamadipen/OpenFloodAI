@@ -514,6 +514,12 @@ data/sites/example-site/outputs/<video-id>/label-comparison.md
 
 Simple meaning: this runs each local video, compares it with any matching human label, and creates one combined report for the site.
 
+The combined report includes:
+
+- totals for processed videos, failed or missing videos, `agree`, `disagree`, and `cannot_compare`
+- a summary table with one row per video
+- detailed per-window comparison notes
+
 Missing labels, bad videos, and unclear cases stay visible as `cannot_compare`. They are not counted as success.
 
 If one video has multiple human label time windows, the combined report lists each label window under that video.

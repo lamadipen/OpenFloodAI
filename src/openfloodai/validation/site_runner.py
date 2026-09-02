@@ -88,6 +88,7 @@ class SiteValidationReport:
     results: list[SiteValidationResult]
     processed_count: int
     failed_count: int
+    label_window_count: int
     agree_count: int
     disagree_count: int
     cannot_compare_count: int
@@ -167,15 +168,36 @@ def render_site_validation_report(report: SiteValidationReport) -> str:
         "## Counts",
         f"- Videos processed: {report.processed_count}",
         f"- Videos failed or missing: {report.failed_count}",
+        f"- Label windows compared: {report.label_window_count}",
         f"- Agree: {report.agree_count}",
         f"- Disagree: {report.disagree_count}",
         f"- Cannot compare: {report.cannot_compare_count}",
         "",
-        "## Video Results",
+        "## Summary Table",
     ]
 
     if not report.results:
         lines.append("- No videos or labels were found.")
+    else:
+        lines.extend(
+            [
+                "| Video | Processed | Human label | System result | Result | Windows | Note |",
+                "| --- | --- | --- | --- | --- | ---: | --- |",
+            ]
+        )
+        for result in report.results:
+            lines.append(
+                "| "
+                f"{_table_cell(result.video_filename)} | "
+                f"{'yes' if result.processed else 'no'} | "
+                f"{_table_cell(result.human_label)} | "
+                f"{_table_cell(result.system_result)} | "
+                f"{_table_cell(result.result)} | "
+                f"{len(result.comparisons)} | "
+                f"{_table_cell(result.note)} |"
+            )
+
+    lines.extend(["", "## Detailed Results"])
 
     for result in report.results:
         lines.extend(
@@ -288,6 +310,7 @@ def _build_report(
         results=results,
         processed_count=sum(result.processed for result in results),
         failed_count=sum(not result.processed for result in results),
+        label_window_count=sum(len(result.comparisons) for result in results),
         agree_count=sum(
             comparison.result == "agree" for result in results for comparison in result.comparisons
         ),
@@ -362,6 +385,10 @@ def _comparison_field_summary(values: Iterable[str], *, fallback: str) -> str:
     if len(unique_values) == 1:
         return unique_values[0]
     return "multiple"
+
+
+def _table_cell(value: str) -> str:
+    return value.replace("|", "\\|").replace("\n", " ").strip()
 
 
 def _text(value: object, *, fallback: str = "") -> str:

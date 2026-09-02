@@ -21,7 +21,7 @@ So far, validation is local and small.
 | Label comparison | System output compared with human labels | The report can show `agree`, `disagree`, and `cannot_compare`. |
 | Threshold tuning | A few prototype visual-change thresholds | The report can show how different threshold numbers change the comparison result. |
 | Validation tracking | A plain-language known-limits page | The docs can now show what is tested, what is weak, and what should come next. |
-| Multi-video site validation | A folder of local videos for one site | The runner can create one combined report for several videos and multiple label windows. |
+| Multi-video site validation | A folder of local videos for one site | The runner can create one combined summary table for several videos and multiple label windows. |
 
 Simple example: a developer can run one local video, save POC records, add a human label, and compare whether the system output pointed in the same broad direction.
 
