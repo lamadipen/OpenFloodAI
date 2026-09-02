@@ -1,0 +1,35 @@
+version: "3.8"
+
+services:
+  monitor-koshi:
+    build: .
+    restart: unless-stopped
+    volumes:
+      - ./examples/sites/nepal-rivers.json:/data/config/sites.json:ro
+      - alerts-data:/data/alerts
+    environment:
+      - PYTHONUNBUFFERED=1
+    command:
+      - monitor
+      - --config=/data/config/sites.json
+      - --site=koshi-chatara
+      - --stream=${KOSHI_STREAM_URL:-rtsp://camera-koshi:554/stream}
+      - --webhook=${ALERT_WEBHOOK_URL:-http://localhost:8080/webhook}
+
+  monitor-narayani:
+    build: .
+    restart: unless-stopped
+    volumes:
+      - ./examples/sites/nepal-rivers.json:/data/config/sites.json:ro
+      - alerts-data:/data/alerts
+    environment:
+      - PYTHONUNBUFFERED=1
+    command:
+      - monitor
+      - --config=/data/config/sites.json
+      - --site=narayani-narayangarh
+      - --stream=${NARAYANI_STREAM_URL:-rtsp://camera-narayani:554/stream}
+      - --webhook=${ALERT_WEBHOOK_URL:-http://localhost:8080/webhook}
+
+volumes:
+  alerts-data:

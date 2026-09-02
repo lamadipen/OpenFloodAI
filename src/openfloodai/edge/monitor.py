@@ -67,6 +67,7 @@ class DataSourceCache:
     reliefweb: dict[str, object] | None = None
     usgs_water: dict[str, object] | None = None
     dhm_nepal: dict[str, object] | None = None
+    nws_alerts: dict[str, object] | None = None
     escalation_reasons: list[str] = field(default_factory=list)
     external_risk_state: str = "NORMAL"
     last_fetch: float = 0.0
@@ -315,6 +316,14 @@ def fetch_data_sources(site: SiteConfig) -> DataSourceCache:
             if _risk_level(pr_state) > _risk_level(ext_state):
                 ext_state = pr_state
             reasons.extend(pr_reasons)
+
+        cache.nws_alerts = _fetch_nws_alerts(site.latitude, site.longitude)
+        if cache.nws_alerts is not None:
+            cache.sources_available += 1
+            nws_state, nws_reasons = _assess_nws_cache(cache.nws_alerts)
+            if _risk_level(nws_state) > _risk_level(ext_state):
+                ext_state = nws_state
+            reasons.extend(nws_reasons)
 
     cache.reliefweb = _fetch_reliefweb()
     if cache.reliefweb is not None:
@@ -650,5 +659,36 @@ def _assess_dhm_cache(
         return "WARNING_CANDIDATE", reasons
     if risk_state == "WARNING":
         reasons.append("DHM Nepal: warning level exceeded")
+        return "WATCH", reasons
+    return "NORMAL", reasons
+
+
+def _fetch_nws_alerts(lat: float, lon: float) -> dict[str, object] | None:
+    try:
+        from openfloodai.data_sources.nws_alerts import (
+            fetch_active_flood_alerts,
+            summarize_alerts,
+        )
+
+        alerts = fetch_active_flood_alerts(lat, lon)
+        return summarize_alerts(alerts)
+    except Exception:
+        logger.debug("NWS alerts data source unavailable", exc_info=True)
+        return None
+
+
+def _assess_nws_cache(data: dict[str, object]) -> tuple[str, list[str]]:
+    alert_state = str(data.get("alert_state", "CLEAR")).upper()
+    alert_count = data.get("alert_count", 0)
+    reasons: list[str] = []
+
+    if alert_state == "EXTREME":
+        reasons.append(f"NWS: extreme flood alert active ({alert_count} alert(s))")
+        return "WARNING_CANDIDATE", reasons
+    if alert_state == "WARNING":
+        reasons.append(f"NWS: flood warning active ({alert_count} alert(s))")
+        return "WARNING_CANDIDATE", reasons
+    if alert_state == "WATCH":
+        reasons.append(f"NWS: flood watch active ({alert_count} alert(s))")
         return "WATCH", reasons
     return "NORMAL", reasons

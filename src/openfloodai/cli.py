@@ -30,6 +30,7 @@ def main(argv: list[str] | None = None) -> int:
     _add_validate_config_parser(subparsers)
     _add_validate_video_parser(subparsers)
     _add_sites_parser(subparsers)
+    _add_monitor_all_parser(subparsers)
 
     args = parser.parse_args(argv)
 
@@ -116,10 +117,30 @@ def _add_sites_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPa
     p.add_argument("config", help="Path to site config JSON")
 
 
+def _add_monitor_all_parser(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    p = subparsers.add_parser(
+        "monitor-all",
+        help="Monitor multiple sites concurrently",
+    )
+    p.add_argument("--config", required=True, help="Path to site config JSON (multiple sites)")
+    p.add_argument(
+        "--streams",
+        required=True,
+        help="Comma-separated site_id=url pairs (e.g. site1=rtsp://...,site2=rtsp://...)",
+    )
+    p.add_argument("--webhook", action="append", default=[], help="Webhook URL for alerts")
+    p.add_argument("--fps", type=float, default=1.0, help="Target frames per second")
+    p.add_argument("--window", type=int, default=10, help="Temporal window in minutes")
+
+
 def _dispatch(args: argparse.Namespace) -> int:
     command: str = args.command
     if command == "monitor":
         return _cmd_monitor(args)
+    if command == "monitor-all":
+        return _cmd_monitor_all(args)
     if command == "check-sources":
         return _cmd_check_sources(args)
     if command == "validate-config":
@@ -157,6 +178,44 @@ def _cmd_monitor(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_monitor_all(args: argparse.Namespace) -> int:
+    from openfloodai.alerts.webhook import WebhookConfig
+    from openfloodai.edge.multi_site import MultiSiteConfig, run_multi_site
+
+    sites = load_site_config(Path(args.config))
+    if not sites:
+        print("No sites found in config", file=sys.stderr)
+        return 1
+
+    stream_urls: dict[str, str] = {}
+    for pair in args.streams.split(","):
+        pair = pair.strip()
+        if "=" not in pair:
+            print(f"Invalid stream mapping: {pair!r} (expected site_id=url)", file=sys.stderr)
+            return 1
+        site_id, url = pair.split("=", 1)
+        stream_urls[site_id.strip()] = url.strip()
+
+    webhooks = [WebhookConfig(url=u) for u in args.webhook]
+
+    multi_config = MultiSiteConfig(
+        sites=sites,
+        stream_urls=stream_urls,
+        webhooks=webhooks,
+        target_fps=args.fps,
+        window_minutes=args.window,
+    )
+
+    print(f"Starting concurrent monitoring for {len(sites)} site(s)...")
+    for site in sites:
+        has_stream = site.site_id in stream_urls
+        status = "ready" if has_stream else "no stream (will skip)"
+        print(f"  {site.site_id}: {status}")
+
+    run_multi_site(multi_config)
+    return 0
+
+
 def _cmd_check_sources(args: argparse.Namespace) -> int:
     from openfloodai.common import find_site
 
@@ -174,6 +233,7 @@ def _cmd_check_sources(args: argparse.Namespace) -> int:
     _check_eonet_source(site, results)
     _check_reliefweb_source(results)
     _check_precipitation_source(site, results)
+    _check_nws_source(site, results)
 
     if site.usgs_site_number:
         _check_usgs_source(site, results)
@@ -288,6 +348,27 @@ def _check_dhm_source(results: dict[str, object]) -> None:
     except Exception as exc:
         results["dhm_nepal_error"] = str(exc)
         print(f"  DHM Nepal: error - {exc}")
+
+
+def _check_nws_source(site: SiteConfig, results: dict[str, object]) -> None:
+    if site.latitude is None or site.longitude is None:
+        print("  NWS alerts: skipped (no coordinates)")
+        return
+    try:
+        from openfloodai.data_sources.nws_alerts import (
+            fetch_active_flood_alerts,
+            summarize_alerts,
+        )
+
+        alerts = fetch_active_flood_alerts(site.latitude, site.longitude)
+        summary = summarize_alerts(alerts)
+        results["nws_alerts"] = summary
+        count = summary.get("alert_count", 0)
+        state = summary.get("alert_state", "CLEAR")
+        print(f"  NWS alerts: {count} active, state={state}")
+    except Exception as exc:
+        results["nws_alerts_error"] = str(exc)
+        print(f"  NWS alerts: error - {exc}")
 
 
 def _cmd_validate_video(args: argparse.Namespace) -> int:
