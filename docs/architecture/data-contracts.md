@@ -376,6 +376,13 @@ Early POC helpers may produce simple values such as `brightness_score`, `sharpne
 
 Simple example: if a user watches a bridge pillar, the helper can say the lower part of that watched box changed more than the upper part. That may be useful water-level evidence, but a person still needs to review it.
 
+Current `water_level_evidence_state` values:
+
+- `useful_water_level_evidence`: the watched area changed in a way that may help human water-level review.
+- `weak_visual_evidence`: the change is small or not clearly useful.
+- `cannot_judge_whole_region_changed`: the whole watched area changed, so it may be lighting, blur, or camera movement.
+- `cannot_judge_region_too_small`: the watched area is too small to judge safely.
+
 Required fields:
 
 - `contract_version`
