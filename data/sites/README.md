@@ -141,6 +141,12 @@ python3 scripts/run_site_validation.py \
 
 Simple meaning: the runner finds videos in `inputs/videos/`, runs the current local review workflow for each one, compares matching labels when possible, and writes one combined report.
 
+The combined `validation-report.md` includes:
+
+- totals for processed videos, failed or missing videos, `agree`, `disagree`, and `cannot_compare`
+- a summary table with one row per video
+- detailed per-window comparison notes
+
 Outputs are grouped by video:
 
 ```text
