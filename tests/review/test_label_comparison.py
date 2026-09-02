@@ -55,6 +55,57 @@ def test_compare_label_records_reports_disagree_for_change_label_and_low_signal(
     assert report.comparisons[0].system_result == "no_clear_change"
 
 
+def test_compare_label_records_filters_system_records_by_video_id() -> None:
+    report = compare_label_records(
+        video_id="demo-river-001",
+        human_labels=[
+            {
+                "video_id": "demo-river-001",
+                "time_window_seconds": [0, 30],
+                "human_label": "water_rising",
+            }
+        ],
+        system_records=[
+            {
+                "video_id": "demo-river-001",
+                "record_type": "visual_signal_output",
+                "region_change_score": 0.01,
+            },
+            {
+                "video_id": "demo-river-999",
+                "record_type": "visual_signal_output",
+                "region_change_score": 0.95,
+            },
+        ],
+    )
+
+    assert report.disagree_count == 1
+    assert report.comparisons[0].system_result == "no_clear_change"
+
+
+def test_compare_label_records_does_not_use_other_video_system_records() -> None:
+    report = compare_label_records(
+        video_id="demo-river-001",
+        human_labels=[
+            {
+                "video_id": "demo-river-001",
+                "time_window_seconds": [0, 30],
+                "human_label": "water_rising",
+            }
+        ],
+        system_records=[
+            {
+                "video_id": "demo-river-999",
+                "record_type": "visual_signal_output",
+                "region_change_score": 0.95,
+            },
+        ],
+    )
+
+    assert report.cannot_compare_count == 1
+    assert report.comparisons[0].system_result == "missing_system_output"
+
+
 def test_compare_label_records_reports_missing_human_label() -> None:
     report = compare_label_records(
         video_id="missing-video",

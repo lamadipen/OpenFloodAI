@@ -458,6 +458,8 @@ python3 scripts/compare_human_labels.py \
 
 Simple meaning: this compares what a person wrote with what the system measured. It reports `agree`, `disagree`, or `cannot_compare`.
 
+If system records include `video_id`, only records for the requested video are compared. If old records do not include `video_id`, keep one video per records file.
+
 This does not prove flood detection accuracy. It only helps reviewers find where the POC output seems to match or miss human review.
 
 ### 15. Summarize A Local POC Run

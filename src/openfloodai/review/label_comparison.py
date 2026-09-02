@@ -62,7 +62,8 @@ def compare_label_records(
         raise LabelComparisonError("change_signal_threshold must be between 0.0 and 1.0")
 
     labels_for_video = [label for label in human_labels if _text(label.get("video_id")) == video_id]
-    system_result = _system_result(system_records, change_signal_threshold)
+    system_records_for_video = _system_records_for_video(system_records, video_id)
+    system_result = _system_result(system_records_for_video, change_signal_threshold)
 
     if not labels_for_video:
         comparisons = [
@@ -234,6 +235,24 @@ def _system_result(
     if highest_change_score >= change_signal_threshold:
         return "water_change_seen"
     return "no_clear_change"
+
+
+def _system_records_for_video(
+    system_records: Iterable[Mapping[str, object]],
+    video_id: str,
+) -> list[Mapping[str, object]]:
+    records = list(system_records)
+    scoped_records = [record for record in records if _text(record.get("video_id"))]
+    matching_records = [
+        record for record in scoped_records if _text(record.get("video_id")) == video_id
+    ]
+
+    if matching_records:
+        return matching_records
+    if scoped_records:
+        return []
+
+    return records
 
 
 def _highest_change_score(record: Mapping[str, object]) -> float:

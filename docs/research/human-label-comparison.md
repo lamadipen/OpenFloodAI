@@ -23,6 +23,32 @@ Report: agree
 
 The current simple visual signal can say that the watched area changed. It cannot safely say whether water is rising or falling yet.
 
+## Video Matching
+
+The command uses `--video-id` to choose which human labels to compare.
+
+If system records also include `video_id`, only records with the same `video_id` are used.
+
+Simple example:
+
+```text
+--video-id demo-river-001
+```
+
+This will use:
+
+```text
+system record video_id = demo-river-001
+```
+
+It will ignore:
+
+```text
+system record video_id = demo-river-999
+```
+
+If old system records do not include `video_id`, the comparison treats the records file as one video run. Do not mix multiple videos in one records file unless each system record includes `video_id`.
+
 So, for now:
 
 - `water_rising` can agree with a strong visual-change signal
