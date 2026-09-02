@@ -11,8 +11,9 @@ from uuid import uuid4
 
 import cv2
 
+from openfloodai.common import FrameArray
+
 FrameMetadata = dict[str, object]
-FrameArray = Any
 
 
 class VideoIngestionError(RuntimeError):
