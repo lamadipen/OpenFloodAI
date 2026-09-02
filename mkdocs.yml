@@ -19,6 +19,7 @@ nav:
       - Labeling Guide: research/labeling-guide.md
       - Human Label Format: research/human-label-format.md
       - Human Label Comparison: research/human-label-comparison.md
+      - Prototype Threshold Tuning: research/threshold-tuning.md
       - ML Model Options: research/ml-model-options.md
   - How to Contribute: contributing.md
 
