@@ -37,3 +37,11 @@ data/validation/sites/colorado-river-windy-gap/
 ```
 
 Real videos and real images should stay local unless they are approved for public sharing.
+
+The safe demo label file is:
+
+```text
+labels/example-labels.jsonl
+```
+
+Simple meaning: this file shows the label format without using private video or private camera images.

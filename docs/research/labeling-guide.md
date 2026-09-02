@@ -6,6 +6,8 @@ Simple meaning: before training ML, reviewers need to use the same words for the
 
 This guide does not prove flood danger. It does not create alerts or public warnings.
 
+For the machine-checkable label file format, see [Human Label Format](human-label-format.md).
+
 ## Why Labels Matter
 
 Good labels help the project learn from human review.

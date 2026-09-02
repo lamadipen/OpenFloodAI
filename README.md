@@ -66,6 +66,8 @@ The documentation includes a [Privacy And Retention](docs/privacy-retention.md) 
 
 Validation videos, labels, human evidence, and review outputs should use the structure in [data/validation/README.md](data/validation/README.md).
 
+Human video review labels should use the format in [docs/research/human-label-format.md](docs/research/human-label-format.md).
+
 Build it locally:
 
 ```bash

@@ -17,6 +17,7 @@ nav:
   - Research:
       - Research Notes: research/README.md
       - Labeling Guide: research/labeling-guide.md
+      - Human Label Format: research/human-label-format.md
       - ML Model Options: research/ml-model-options.md
   - How to Contribute: contributing.md
 
