@@ -12,7 +12,7 @@ import cv2
 import numpy as np
 from numpy.typing import NDArray
 
-from openfloodai.vision.simple_signals import FrameArray
+from openfloodai.common import FrameArray
 
 
 class ReviewImageError(ValueError):

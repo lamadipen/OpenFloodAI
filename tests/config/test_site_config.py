@@ -31,7 +31,9 @@ def valid_config_payload() -> dict[str, object]:
 
 
 def test_example_site_config_loads_successfully() -> None:
-    config = load_site_config(Path("configs/example-site.json"))
+    configs = load_site_config(Path("configs/example-site.json"))
+    assert len(configs) == 1
+    config = configs[0]
 
     assert config.site_id == "site-demo-01"
     assert config.camera_id == "camera-demo-01"
@@ -41,13 +43,20 @@ def test_example_site_config_loads_successfully() -> None:
     assert config.reference_region == ReferenceRegion(x=0, y=50, width=100, height=50)
 
 
+def test_single_object_json_auto_wrapped(tmp_path: Path) -> None:
+    config_path = write_config(tmp_path / "single.json", valid_config_payload())
+    configs = load_site_config(config_path)
+    assert len(configs) == 1
+    assert configs[0].site_id == "site-demo-01"
+
+
 def test_required_fields_are_enforced(tmp_path: Path) -> None:
     payload = valid_config_payload()
-    del payload["site_name"]
+    del payload["site_id"]
 
-    config_path = write_config(tmp_path / "missing-site-name.json", payload)
+    config_path = write_config(tmp_path / "missing-field.json", payload)
 
-    with pytest.raises(SiteConfigError, match="site_name"):
+    with pytest.raises(SiteConfigError, match="site_id"):
         load_site_config(config_path)
 
 
@@ -83,7 +92,7 @@ def test_reference_region_is_optional(tmp_path: Path) -> None:
 
     config_path = write_config(tmp_path / "no-region.json", payload)
 
-    assert load_site_config(config_path).reference_region is None
+    assert load_site_config(config_path)[0].reference_region is None
 
 
 def test_example_config_does_not_commit_private_fields() -> None:
@@ -105,3 +114,13 @@ def test_example_config_does_not_commit_private_fields() -> None:
     ]
 
     assert all(term not in text for term in private_terms)
+
+
+def test_unsupported_fields_rejected(tmp_path: Path) -> None:
+    payload = valid_config_payload()
+    payload["bad_field"] = "x"
+
+    config_path = write_config(tmp_path / "bad-field.json", payload)
+
+    with pytest.raises(SiteConfigError, match="unsupported"):
+        load_site_config(config_path)

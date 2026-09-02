@@ -87,9 +87,7 @@ def test_risk_state_boundaries() -> None:
 
 
 def test_haversine_same_point() -> None:
-    assert _haversine_km(27.7, 85.3, 27.7, 85.3) == pytest.approx(
-        0.0, abs=0.01
-    )
+    assert _haversine_km(27.7, 85.3, 27.7, 85.3) == pytest.approx(0.0, abs=0.01)
 
 
 def test_haversine_kathmandu_to_pokhara() -> None:

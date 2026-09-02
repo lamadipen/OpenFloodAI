@@ -90,7 +90,10 @@ def run_local_video_review(
     if isinstance(records_written, bool) or not isinstance(records_written, int):
         raise LocalPocSmokeError("Local POC smoke workflow returned an invalid record count")
 
-    site_config = load_site_config(config_path)
+    site_configs = load_site_config(config_path)
+    if not site_configs:
+        raise LocalPocSmokeError("Site config file contains no entries")
+    site_config = site_configs[0]
     if site_config.reference_region is None:
         raise LocalPocSmokeError("Local POC smoke workflow requires a reference_region")
 

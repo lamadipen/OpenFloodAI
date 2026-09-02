@@ -470,9 +470,7 @@ def _assess_reliefweb(
             )
         else:
             signal["suggested_state"] = "WATCH"
-            reasons.append(
-                f"ReliefWeb tracking {report_count} humanitarian report(s){country_str}"
-            )
+            reasons.append(f"ReliefWeb tracking {report_count} humanitarian report(s){country_str}")
 
     signal["reasons"] = reasons
     return signal

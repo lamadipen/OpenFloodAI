@@ -7,6 +7,7 @@ from typing import cast
 
 import cv2
 
+from openfloodai.common import FrameArray
 from openfloodai.config import ReferenceRegion, load_site_config
 from openfloodai.contracts import write_jsonl_records
 from openfloodai.ingestion import check_video_file_health, read_video_metadata
@@ -17,7 +18,6 @@ from openfloodai.vision import (
     extract_frame_signals,
     extract_region_signals,
 )
-from openfloodai.vision.simple_signals import FrameArray
 
 PipelineRecord = dict[str, object]
 
@@ -73,7 +73,10 @@ def run_local_region_poc_pipeline(
 ) -> dict[str, object]:
     """Run the local POC flow using the configured reference region."""
 
-    site_config = load_site_config(config_path)
+    site_configs = load_site_config(config_path)
+    if not site_configs:
+        raise LocalPocPipelineError("Site config file contains no entries")
+    site_config = site_configs[0]
     if site_config.input_type != "local_video":
         raise LocalPocPipelineError("Region POC pipeline currently supports local_video input only")
     if site_config.reference_region is None:

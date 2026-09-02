@@ -1,0 +1,56 @@
+[
+  {
+    "site_id": "koshi-chatara",
+    "camera_id": "cam-koshi-bridge",
+    "latitude": 26.8167,
+    "longitude": 87.1667,
+    "site_name": "Koshi River at Chatara",
+    "public_location": "Chatara, Sunsari District, Province 1",
+    "description": "Koshi River monitoring at Chatara barrage - one of the most flood-prone rivers in Nepal. The Koshi has historically shifted course and caused massive flooding in the Terai plains."
+  },
+  {
+    "site_id": "narayani-narayangarh",
+    "camera_id": "cam-narayani-bridge",
+    "latitude": 27.6939,
+    "longitude": 84.4353,
+    "site_name": "Narayani River at Narayangarh",
+    "public_location": "Narayangarh, Chitwan District, Bagmati Province",
+    "description": "Narayani (Gandaki) River at Narayangarh bridge. Drains the Annapurna and Manaslu massifs - high GLOF risk from glacial lake outburst floods."
+  },
+  {
+    "site_id": "bagmati-chovar",
+    "camera_id": "cam-bagmati-chovar",
+    "latitude": 27.6636,
+    "longitude": 85.2889,
+    "site_name": "Bagmati River at Chovar",
+    "public_location": "Chovar, Kathmandu District, Bagmati Province",
+    "description": "Bagmati River at Chovar gorge - the sole natural outlet for the Kathmandu Valley. Flooding here directly threatens the capital."
+  },
+  {
+    "site_id": "karnali-chisapani",
+    "camera_id": "cam-karnali-chisapani",
+    "latitude": 28.6331,
+    "longitude": 81.2786,
+    "site_name": "Karnali River at Chisapani",
+    "public_location": "Chisapani, Bardiya District, Lumbini Province",
+    "description": "Karnali River at Chisapani - Nepal's longest river and a major flood source for the western Terai. DHM maintains a key hydrological station here."
+  },
+  {
+    "site_id": "melamchi-helambu",
+    "camera_id": "cam-melamchi-helambu",
+    "latitude": 27.9156,
+    "longitude": 85.5539,
+    "site_name": "Melamchi River at Helambu",
+    "public_location": "Helambu, Sindhupalchok District, Bagmati Province",
+    "description": "Melamchi River monitoring - the June 2021 flood and debris flow here destroyed the newly built Melamchi water supply tunnel intake and downstream settlements."
+  },
+  {
+    "site_id": "rapti-kusum",
+    "camera_id": "cam-rapti-kusum",
+    "latitude": 27.5978,
+    "longitude": 83.2742,
+    "site_name": "West Rapti River at Kusum",
+    "public_location": "Kusum, Dang District, Lumbini Province",
+    "description": "West Rapti River - frequent monsoon flooding affects Dang valley communities. September 2024 floods caused severe damage in this basin."
+  }
+]

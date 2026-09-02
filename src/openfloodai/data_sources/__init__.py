@@ -1,5 +1,11 @@
 """External data source integrations for OpenFloodAI."""
 
+from openfloodai.data_sources.dhm_nepal import (
+    DHMNepalError,
+    assess_dhm_flood_risk,
+    fetch_flood_bulletin,
+    summarize_bulletin,
+)
 from openfloodai.data_sources.nasa_eonet import (
     NASAEONETError,
     fetch_events_near,
@@ -35,18 +41,21 @@ from openfloodai.data_sources.usgs_water import (
 )
 
 __all__ = [
+    "DHMNepalError",
     "NASAEONETError",
     "NWSAlertError",
     "OpenMeteoError",
     "ReliefWebError",
     "USGSDataError",
     "USGSEarthquakeError",
+    "assess_dhm_flood_risk",
     "assess_precipitation_risk",
     "assess_seismic_flood_risk",
     "compute_flood_proximity",
     "fetch_active_disasters",
     "fetch_active_flood_alerts",
     "fetch_events_near",
+    "fetch_flood_bulletin",
     "fetch_flood_events",
     "fetch_flood_reports",
     "fetch_flood_stage",
@@ -54,6 +63,7 @@ __all__ = [
     "fetch_precipitation",
     "fetch_site_conditions",
     "summarize_alerts",
+    "summarize_bulletin",
     "summarize_events",
     "summarize_reports",
 ]
