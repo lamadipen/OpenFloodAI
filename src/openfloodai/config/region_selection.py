@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from openfloodai.config.site_config import ReferenceRegion
+from openfloodai.common.site_config import ReferenceRegion
 
 Number = int | float
 

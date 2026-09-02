@@ -7,7 +7,7 @@ from openfloodai.config.region_selection import (
 )
 from openfloodai.config.site_config import (
     ReferenceRegion,
-    SiteCameraConfig,
+    SiteConfig,
     SiteConfigError,
     load_site_config,
 )
@@ -15,7 +15,7 @@ from openfloodai.config.site_config import (
 __all__ = [
     "ReferenceRegion",
     "RegionSelectionError",
-    "SiteCameraConfig",
+    "SiteConfig",
     "SiteConfigError",
     "load_site_config",
     "pixel_selection_to_reference_region",

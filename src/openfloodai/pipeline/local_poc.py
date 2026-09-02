@@ -73,7 +73,10 @@ def run_local_region_poc_pipeline(
 ) -> dict[str, object]:
     """Run the local POC flow using the configured reference region."""
 
-    site_config = load_site_config(config_path)
+    site_configs = load_site_config(config_path)
+    if not site_configs:
+        raise LocalPocPipelineError("Site config file contains no entries")
+    site_config = site_configs[0]
     if site_config.input_type != "local_video":
         raise LocalPocPipelineError("Region POC pipeline currently supports local_video input only")
     if site_config.reference_region is None:

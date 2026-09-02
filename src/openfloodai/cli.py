@@ -157,6 +157,9 @@ def _cmd_check_sources(args: argparse.Namespace) -> int:
 
 
 def _check_earthquake_source(site: SiteConfig, results: dict[str, object]) -> None:
+    if site.latitude is None or site.longitude is None:
+        print("  Earthquakes: skipped (no coordinates)")
+        return
     try:
         from openfloodai.data_sources.usgs_earthquake import (
             assess_seismic_flood_risk,
@@ -175,6 +178,9 @@ def _check_earthquake_source(site: SiteConfig, results: dict[str, object]) -> No
 
 
 def _check_eonet_source(site: SiteConfig, results: dict[str, object]) -> None:
+    if site.latitude is None or site.longitude is None:
+        print("  EONET events: skipped (no coordinates)")
+        return
     try:
         from openfloodai.data_sources.nasa_eonet import (
             fetch_events_near,
@@ -207,6 +213,9 @@ def _check_reliefweb_source(results: dict[str, object]) -> None:
 
 
 def _check_precipitation_source(site: SiteConfig, results: dict[str, object]) -> None:
+    if site.latitude is None or site.longitude is None:
+        print("  Precipitation: skipped (no coordinates)")
+        return
     try:
         from openfloodai.data_sources.open_meteo import fetch_precipitation
 

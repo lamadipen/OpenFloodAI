@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from openfloodai.common.site_config import (
+    ReferenceRegion,
     SiteConfig,
     SiteConfigError,
     find_site,
@@ -52,11 +53,12 @@ def test_load_multiple_sites(tmp_path: Path) -> None:
     assert len(configs) == 2
 
 
-def test_load_rejects_non_list(tmp_path: Path) -> None:
-    config_file = tmp_path / "sites.json"
-    _write_json(config_file, {"site_id": "s1"})
-    with pytest.raises(SiteConfigError, match="JSON array"):
-        load_site_config(config_file)
+def test_load_single_object_auto_wrapped(tmp_path: Path) -> None:
+    config_file = tmp_path / "site.json"
+    _write_json(config_file, {"site_id": "s1", "camera_id": "c1"})
+    configs = load_site_config(config_file)
+    assert len(configs) == 1
+    assert configs[0].site_id == "s1"
 
 
 def test_load_rejects_non_dict_entry(tmp_path: Path) -> None:
@@ -66,10 +68,13 @@ def test_load_rejects_non_dict_entry(tmp_path: Path) -> None:
         load_site_config(config_file)
 
 
-def test_load_rejects_invalid_fields(tmp_path: Path) -> None:
+def test_load_rejects_unsupported_fields(tmp_path: Path) -> None:
     config_file = tmp_path / "sites.json"
-    _write_json(config_file, [{"site_id": "s1", "bad_field": True}])
-    with pytest.raises(SiteConfigError, match="invalid fields"):
+    _write_json(
+        config_file,
+        [{"site_id": "s1", "camera_id": "c1", "bad_field": True}],
+    )
+    with pytest.raises(SiteConfigError, match="unsupported"):
         load_site_config(config_file)
 
 
@@ -104,10 +109,20 @@ def test_save_and_reload(tmp_path: Path) -> None:
     assert reloaded[0].flood_stage_ft == 21.0
 
 
+def test_save_omits_none_and_empty(tmp_path: Path) -> None:
+    config_file = tmp_path / "sites.json"
+    configs = [SiteConfig(site_id="s1", camera_id="c1")]
+    save_site_config(configs, config_file)
+    data = json.loads(config_file.read_text(encoding="utf-8"))
+    assert len(data) == 1
+    assert "latitude" not in data[0]
+    assert "site_name" not in data[0]
+
+
 def test_find_site_returns_match() -> None:
     configs = [
-        SiteConfig(site_id="a", camera_id="c1", latitude=0.0, longitude=0.0),
-        SiteConfig(site_id="b", camera_id="c2", latitude=1.0, longitude=1.0),
+        SiteConfig(site_id="a", camera_id="c1"),
+        SiteConfig(site_id="b", camera_id="c2"),
     ]
     result = find_site(configs, "b")
     assert result is not None
@@ -116,12 +131,54 @@ def test_find_site_returns_match() -> None:
 
 def test_find_site_returns_none_for_missing() -> None:
     configs = [
-        SiteConfig(site_id="a", camera_id="c1", latitude=0.0, longitude=0.0),
+        SiteConfig(site_id="a", camera_id="c1"),
     ]
     assert find_site(configs, "nope") is None
 
 
 def test_site_config_is_frozen() -> None:
-    cfg = SiteConfig(site_id="s", camera_id="c", latitude=0.0, longitude=0.0)
+    cfg = SiteConfig(site_id="s", camera_id="c")
     with pytest.raises(AttributeError):
         cfg.site_id = "other"  # type: ignore[misc]
+
+
+def test_unified_config_has_all_fields() -> None:
+    cfg = SiteConfig(
+        site_id="test",
+        camera_id="cam",
+        latitude=27.7,
+        longitude=85.3,
+        site_name="Test River",
+        public_location="Test Town",
+        description="A test site",
+        input_type="camera_stream",
+        reference_region=ReferenceRegion(x=0, y=50, width=100, height=50),
+        privacy_notes="Test only",
+        usgs_site_number="01646500",
+        nws_zone="MDZ013",
+        flood_stage_ft=10.0,
+    )
+    assert cfg.site_id == "test"
+    assert cfg.latitude == 27.7
+    assert cfg.site_name == "Test River"
+    assert cfg.input_type == "camera_stream"
+    assert cfg.reference_region is not None
+    assert cfg.usgs_site_number == "01646500"
+
+
+def test_load_with_reference_region(tmp_path: Path) -> None:
+    config_file = tmp_path / "site.json"
+    _write_json(
+        config_file,
+        {
+            "site_id": "s1",
+            "camera_id": "c1",
+            "input_type": "local_video",
+            "reference_region": {"x": 10, "y": 20, "width": 30, "height": 40},
+        },
+    )
+    configs = load_site_config(config_file)
+    region = configs[0].reference_region
+    assert region is not None
+    assert region.x == 10
+    assert region.width == 30
