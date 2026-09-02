@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OpenFloodAI Learning Guide - From Video to Flood Detection</title>
+  <style>
+    :root{--navy:#0b2f4f;--blue:#0d6ea8;--cyan:#18a9cf;--light:#f5f9fc;--border:#d8e4ec;--text:#183042;--muted:#617483;--green:#19734a;--amber:#a56c13;--red:#a33b35}
+    *{box-sizing:border-box}body{margin:0;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;color:var(--text);line-height:1.65;background:#fff}
+    header{background:linear-gradient(135deg,var(--navy),var(--blue));color:white;padding:54px 22px}.wrap{max-width:980px;margin:auto}h1{margin:0 0 10px;font-size:clamp(2rem,5vw,3.2rem)}h2{color:var(--navy);margin-top:0}h3{color:var(--blue)}
+    .intro,.card{margin:24px 0;padding:24px;border-radius:14px}.intro{background:var(--light);border-left:5px solid var(--cyan)}.card{border:1px solid var(--border);box-shadow:0 5px 18px rgba(12,48,76,.06)}
+    .tag{display:inline-block;font-size:.78rem;font-weight:700;padding:5px 9px;border-radius:999px;background:#eaf6fb;color:var(--blue);margin-bottom:10px}.ok{color:var(--green)}.partial{color:var(--amber)}.todo{color:var(--red)}
+    pre{background:#0f2433;color:#f2f8fb;padding:16px;border-radius:10px;overflow:auto}.example,.note{padding:14px 16px;border-radius:9px;margin-top:14px}.example{background:#f7fafc;border-left:4px solid var(--cyan)}.note{background:#f2faf6;border-left:4px solid var(--green)}
+    table{width:100%;border-collapse:collapse;margin:14px 0}th,td{border:1px solid var(--border);padding:11px;text-align:left;vertical-align:top}th{background:var(--light)}code{background:#eef4f7;padding:2px 5px;border-radius:4px}footer{margin-top:40px;background:#eef5f8;padding:28px 22px;color:var(--muted)}
+  </style>
+</head>
+<body>
+<header><div class="wrap"><h1>How OpenFloodAI Works</h1><p>A beginner-friendly learning guide that maps the current codebase to the full flood-detection pipeline.</p></div></header>
+<main class="wrap">
+<section class="intro"><strong>The big idea</strong><br>OpenFloodAI is not one giant AI model. It is a pipeline. Some parts are normal software, some parts are computer vision, some parts may use ML later, and the final risk decision should remain explainable.</section>
+
+<section class="card"><span class="tag">Pipeline overview</span><h2>From Video to Warning Support</h2><pre>VIDEO
+  ↓
+1. Can we read the video?               ✅ DONE
+  ↓
+2. Extract frames / metadata            ✅ DONE
+  ↓
+3. Select the river region (ROI)        ✅ DONE
+  ↓
+4. Measure change in that region        ✅ BASIC VERSION DONE
+  ↓
+5. Identify actual WATER                ❌ NOT DONE YET
+  ↓
+6. Track water level/coverage over time ❌ NEEDS IMPROVEMENT
+  ↓
+7. Convert signals into risk            🟡 PROTOTYPE ONLY
+  ↓
+8. Human review / validation            ✅ BASIC TOOLS DONE
+  ↓
+9. ML model                             ❌ NOT STARTED
+  ↓
+10. Live camera / edge device           ❌ LATER
+  ↓
+11. Alert / siren / app                 ❌ LATER</pre></section>
+
+<section class="card"><span class="tag">1 · Video Input</span><h2><span class="ok">Done:</span> Read a Video and Create Frame Metadata</h2><p><code>src/openfloodai/ingestion/video_file.py</code> opens a local video using OpenCV and walks through the frames. It records information such as frame number, timestamp, frame size, FPS, and a frame hash.</p><div class="example"><strong>Layman example:</strong> Think of a video as a flipbook. This part of the system opens the flipbook and numbers every page so later parts of OpenFloodAI know exactly which frame they are looking at.</div></section>
+
+<section class="card"><span class="tag">2 · Input Health</span><h2><span class="ok">Done:</span> Check Whether the Video Can Be Trusted</h2><p><code>src/openfloodai/ingestion/feed_health.py</code> checks whether the input exists, opens correctly, and has readable frames.</p><pre>Camera unavailable
+      ↓
+Do NOT say: NORMAL
+      ↓
+Say: UNKNOWN / DEGRADED</pre><div class="example"><strong>Layman example:</strong> If a thermometer is broken, you should not say the temperature is normal. You should say, “I do not have a trustworthy reading.”</div></section>
+
+<section class="card"><span class="tag">3 · ROI</span><h2><span class="ok">Done:</span> Select the River Area to Watch</h2><p>OpenFloodAI supports a configured <strong>reference region</strong>, also called an ROI (Region of Interest). Instead of analyzing the entire image, we can monitor only the useful area, such as the lower part of a bridge pillar or a river channel.</p><pre>Full camera image
+┌─────────────────────────────┐
+│ trees / road / sky          │
+│                             │
+│   ┌─────────────────────┐   │
+│   │ WATCH THIS AREA     │   │
+│   │ ~~~~~ river ~~~~~   │   │
+│   └─────────────────────┘   │
+└─────────────────────────────┘</pre></section>
+
+<section class="card"><span class="tag">4 · Visual Change</span><h2><span class="partial">Basic version done:</span> Compare the Selected Region</h2><p><code>src/openfloodai/vision/simple_signals.py</code> can compare two frames or the same selected region across two frames and produce a <code>region_change_score</code>.</p><pre>Frame 1 ROI
+     ↓
+compare
+     ↓
+Frame 2 ROI
+     ↓
+region_change_score</pre><p>This tells us that <strong>something changed</strong>, but it does not yet tell us what changed.</p><div class="example"><strong>Important limitation:</strong> A high score could mean rising water, but it could also be sunlight, rain, a person, camera shake, fog, shadows, or moving trees.</div></section>
+
+<section class="card"><span class="tag">5 · Water Recognition</span><h2><span class="todo">Missing:</span> Identify Which Pixels Are Actually Water</h2><p>This is the major ML/computer-vision gap. Today we mostly know that pixels changed. Later, a water-segmentation model can help answer a better question:</p><pre>IMAGE
+  ↓
+ML segmentation model
+  ↓
+Which pixels are WATER?</pre><p>A segmentation model could produce something conceptually like:</p><pre>0 0 0 0 0 0 0
+0 0 0 0 0 0 0
+0 0 1 1 1 1 0
+0 1 1 1 1 1 1
+
+0 = not water
+1 = water</pre><p>Then normal code can calculate water coverage, for example <code>38%</code>, <code>45%</code>, or <code>62%</code>.</p></section>
+
+<section class="card"><span class="tag">6 · Time</span><h2><span class="todo">Needs work:</span> Track Change Across the Whole Video</h2><p>Flood behavior is about change over time, not only two frames. We want a time series such as:</p><pre>00:00 → 31% water coverage
+00:10 → 33%
+00:20 → 36%
+00:30 → 43%
+00:40 → 52%
+00:50 → 64%</pre><div class="example"><strong>Layman example:</strong> One photo showing a full river is useful. But five measurements showing the river rising every ten minutes tell us much more about danger.</div></section>
+
+<section class="card"><span class="tag">7 · Risk Engine</span><h2><span class="partial">Prototype:</span> Convert Evidence into a Risk State</h2><p><code>src/openfloodai/risk_engine/rule_based.py</code> already contains a rule-based skeleton that can produce states such as <code>NORMAL</code>, <code>WATCH</code>, <code>WARNING_CANDIDATE</code>, or <code>UNKNOWN</code>.</p><p>The current thresholds are test thresholds only. They are not validated flood thresholds.</p><pre>Visual / water evidence
+        +
+Camera health
+        ↓
+Rule-based risk engine
+        ↓
+NORMAL / WATCH / WARNING_CANDIDATE / UNKNOWN</pre><div class="note"><strong>Why this matters:</strong> The ML model should provide evidence such as “water coverage = 61%.” The risk engine decides what that evidence means in context. This keeps the system easier to test and explain.</div></section>
+
+<section class="card"><span class="tag">8 · End-to-End POC</span><h2><span class="ok">Done:</span> A Small Pipeline Already Connects the Pieces</h2><p><code>src/openfloodai/pipeline/local_poc.py</code> connects the current software pieces:</p><pre>Video
+ ↓
+Health check
+ ↓
+Frame metadata
+ ↓
+Read first frames
+ ↓
+Reference region
+ ↓
+Visual comparison
+ ↓
+Risk engine
+ ↓
+Save records</pre><p>This is a proof of concept. It proves the software pieces can work together. It does <strong>not</strong> prove that OpenFloodAI detects real floods.</p></section>
+
+<section class="card"><span class="tag">9 · Current Status</span><h2>What We Have vs. What We Still Need</h2><table><tr><th>Piece</th><th>Status</th></tr><tr><td>Video ingestion</td><td class="ok">Done</td></tr><tr><td>Frame handling / metadata</td><td class="ok">Done</td></tr><tr><td>Camera/video health</td><td class="ok">Done</td></tr><tr><td>ROI / reference region</td><td class="ok">Done</td></tr><tr><td>Basic frame comparison</td><td class="ok">Done</td></tr><tr><td>Data contracts and saved records</td><td class="ok">Done</td></tr><tr><td>Risk-engine skeleton</td><td class="partial">Prototype</td></tr><tr><td>Human review / validation tools</td><td class="ok">Basic tools done</td></tr><tr><td>Water segmentation model</td><td class="todo">Not done</td></tr><tr><td>Training dataset</td><td class="todo">Not done</td></tr><tr><td>Model training</td><td class="todo">Not done</td></tr><tr><td>Real flood validation</td><td class="todo">Not done</td></tr><tr><td>Live camera pipeline</td><td class="todo">Later</td></tr><tr><td>Alerts / siren / app</td><td class="todo">Later</td></tr></table></section>
+
+<section class="card"><span class="tag">10 · Recommended Next Learning Step</span><h2>Before ML: Make One Video Produce a Time-Series</h2><p>The best next learning/building step is to take one real river video, select one ROI, and calculate how that region changes across many frames instead of only the first two.</p><pre>Frame 1
+Frame 10
+Frame 20
+Frame 30
+Frame 40
+...
+Frame 500
+       ↓
+Create a time-series
+       ↓
+See how the watched river area changes over time</pre><p>Once that works clearly, the next improvement is to replace generic pixel-change measurements with a water-aware signal, such as water segmentation.</p></section>
+
+<section class="card"><span class="tag">Mental Model</span><h2>The Simplest Way to Remember It</h2><pre>Current system:
+ROI → pixel / visual change → risk prototype
+
+Future system:
+ROI → ML water segmentation → water coverage / level over time
+    → risk engine → human review → alert support</pre><div class="note"><strong>Main lesson:</strong> ML is not the whole system. ML helps answer “where is the water?” Normal software can then track how that water changes over time, and an explainable risk engine can decide what the evidence means.</div></section>
+</main>
+<footer><div class="wrap"><strong>OpenFloodAI Learning Guide</strong><br>Beginner-friendly project learning documentation. This page explains the current proof of concept and should not be interpreted as validated flood-warning capability.</div></footer>
+</body>
+</html>
