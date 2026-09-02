@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from functools import lru_cache
+from importlib.resources import files
 from pathlib import Path
 from typing import Any, cast
 
@@ -44,6 +45,13 @@ def _event_validator() -> Draft202012Validator:
 
 
 def _load_event_schema() -> dict[str, Any]:
+    try:
+        resource = files("openfloodai").joinpath("schemas", "event.schema.json")
+        schema_text = resource.read_text(encoding="utf-8")
+        return cast(dict[str, Any], json.loads(schema_text))
+    except (FileNotFoundError, TypeError, ModuleNotFoundError):
+        pass
+
     with event_schema_path().open(encoding="utf-8") as schema_file:
         return cast(dict[str, Any], json.load(schema_file))
 

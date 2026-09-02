@@ -9,7 +9,7 @@ from uuid import uuid4
 import numpy as np
 from numpy.typing import NDArray
 
-FrameArray = NDArray[np.generic]
+from openfloodai.common import FrameArray
 
 
 class VisualSignalError(ValueError):
@@ -119,12 +119,14 @@ def _prepare_frame(frame: FrameArray) -> NDArray[np.float64]:
     if not np.issubdtype(frame.dtype, np.number):
         raise VisualSignalError("Frame values must be numeric")
 
-    numeric_frame = frame.astype(np.float64)
+    if np.issubdtype(frame.dtype, np.integer):
+        max_val = float(np.iinfo(frame.dtype).max)  # type: ignore[type-var]
+        numeric_frame = frame.astype(np.float64) / max_val
+    else:
+        numeric_frame = frame.astype(np.float64)
+
     if not bool(np.isfinite(numeric_frame).all()):
         raise VisualSignalError("Frame values must be finite")
-
-    if numeric_frame.max() > 1.0:
-        numeric_frame = numeric_frame / 255.0
 
     return np.clip(numeric_frame, 0.0, 1.0)
 

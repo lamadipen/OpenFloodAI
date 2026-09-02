@@ -68,7 +68,7 @@ def test_normal_visual_signals_produce_normal_risk() -> None:
     assert result["contract_version"] == "v1"
     assert result["site_id"] == "site-demo-01"
     assert result["camera_id"] == "camera-demo-01"
-    assert result["timestamp"] == "2026-08-30T12:00:05+00:00"
+    assert result["timestamp"] == "2026-08-30T12:00:00+00:00"
     assert result["risk_state"] == "NORMAL"
     assert result["reason_codes"] == ["NORMAL_CONDITIONS"]
     confidence = cast(float, result["confidence"])

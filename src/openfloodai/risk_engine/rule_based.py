@@ -187,7 +187,7 @@ def _timestamp_field(
     primary_record: Mapping[str, object],
     secondary_record: Mapping[str, object],
 ) -> str:
-    for record in (secondary_record, primary_record):
+    for record in (primary_record, secondary_record):
         value = record.get("timestamp")
         if isinstance(value, str) and value:
             return value
