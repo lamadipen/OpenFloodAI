@@ -53,6 +53,13 @@ def write_labels(path: Path) -> None:
                 ),
                 json.dumps(
                     {
+                        "video_id": "rising-001",
+                        "time_window_seconds": [30, 60],
+                        "human_label": "cannot_judge",
+                    }
+                ),
+                json.dumps(
+                    {
                         "video_id": "normal-001",
                         "time_window_seconds": [0, 30],
                         "human_label": "water_rising",
@@ -116,8 +123,14 @@ def test_run_site_validation_reports_multiple_video_results(tmp_path: Path) -> N
     assert report.failed_count == 2
     assert report.agree_count == 1
     assert report.disagree_count == 1
-    assert report.cannot_compare_count == 3
-    assert results_by_video_id["rising-001"].result == "agree"
+    assert report.cannot_compare_count == 4
+    assert results_by_video_id["rising-001"].result == "cannot_compare"
+    assert results_by_video_id["rising-001"].human_label == "multiple"
+    assert len(results_by_video_id["rising-001"].comparisons) == 2
+    assert {comparison.result for comparison in results_by_video_id["rising-001"].comparisons} == {
+        "agree",
+        "cannot_compare",
+    }
     assert results_by_video_id["normal-001"].result == "disagree"
     assert results_by_video_id["unclear-001"].result == "cannot_compare"
     assert results_by_video_id["bad-001"].system_result == "processing_failed"
@@ -157,6 +170,8 @@ def test_run_site_validation_without_videos_still_reports_label_only_cases(
     assert report.processed_count == 0
     assert report.failed_count == 4
     assert {result.system_result for result in report.results} == {"missing_video"}
+    rising_result = next(result for result in report.results if result.video_id == "rising-001")
+    assert len(rising_result.comparisons) == 2
 
 
 def test_combined_report_output_is_stable_and_simple(tmp_path: Path) -> None:
@@ -173,5 +188,9 @@ def test_combined_report_output_is_stable_and_simple(tmp_path: Path) -> None:
     assert "Validation Site: example-site" in rendered
     assert "### rising-001" in rendered
     assert "- Video: rising-001.avi" in rendered
-    assert "- Result: agree" in rendered
+    assert "- Human label: multiple" in rendered
+    assert "- Result: cannot_compare" in rendered
+    assert "- Label windows compared: 2" in rendered
+    assert "Window 1:" in rendered
+    assert "Window 2:" in rendered
     assert "does not prove flood detection accuracy" in rendered

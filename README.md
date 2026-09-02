@@ -516,6 +516,10 @@ Simple meaning: this runs each local video, compares it with any matching human 
 
 Missing labels, bad videos, and unclear cases stay visible as `cannot_compare`. They are not counted as success.
 
+If one video has multiple human label time windows, the combined report lists each label window under that video.
+
+Current limit: each label window is compared with the broad system result for the whole video. Later we should compare labels with system output from the same time window.
+
 This still does not prove flood detection accuracy, send alerts, upload files, or create public warnings.
 
 ### 16. Try Prototype Thresholds Against Human Labels

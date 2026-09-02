@@ -156,6 +156,10 @@ outputs/
 
 Missing labels, bad videos, and unclear cases stay visible as `cannot_compare`. They are not counted as success.
 
+If one video has multiple human label time windows, the combined report lists each label window under that video.
+
+Current limit: each label window is compared with the broad system result for the whole video. Later we should compare labels with system output from the same time window.
+
 ## Privacy Rules
 
 Do not commit private real videos or real camera images by default.

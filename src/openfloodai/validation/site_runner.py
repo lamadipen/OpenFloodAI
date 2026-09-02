@@ -10,6 +10,7 @@ from openfloodai.contracts import read_jsonl_records
 from openfloodai.contracts.local_store import JsonObject
 from openfloodai.pipeline import LocalPocSmokeError, run_local_video_review
 from openfloodai.review import (
+    LabelComparison,
     compare_label_records,
     load_human_label_records,
     render_label_comparison_report,
@@ -29,11 +30,52 @@ class SiteValidationResult:
     video_id: str
     video_filename: str
     processed: bool
-    human_label: str
-    system_result: str
-    result: str
-    note: str
+    comparisons: list[LabelComparison]
     output_dir: str | None
+
+    @property
+    def human_label(self) -> str:
+        """Return a short label summary for this video."""
+
+        return _comparison_field_summary(
+            (comparison.human_label for comparison in self.comparisons),
+            fallback="missing",
+        )
+
+    @property
+    def system_result(self) -> str:
+        """Return a short system-result summary for this video."""
+
+        return _comparison_field_summary(
+            (comparison.system_result for comparison in self.comparisons),
+            fallback="missing_system_output",
+        )
+
+    @property
+    def result(self) -> str:
+        """Return a conservative video-level result summary."""
+
+        results = {comparison.result for comparison in self.comparisons}
+        if "disagree" in results:
+            return "disagree"
+        if "cannot_compare" in results:
+            return "cannot_compare"
+        if results == {"agree"}:
+            return "agree"
+        return "cannot_compare"
+
+    @property
+    def note(self) -> str:
+        """Return a short note summary for this video."""
+
+        if not self.comparisons:
+            return "No comparison was available for this video."
+        if len(self.comparisons) == 1:
+            return self.comparisons[0].note
+        return (
+            f"{len(self.comparisons)} label windows were compared. "
+            "See the per-window results below."
+        )
 
 
 @dataclass(frozen=True)
@@ -85,16 +127,21 @@ def run_site_validation(
         )
 
     for video_id in sorted(set(labels_by_video_id) - seen_video_ids):
-        label = labels_by_video_id[video_id][0]
         results.append(
             SiteValidationResult(
                 video_id=video_id,
                 video_filename="missing",
                 processed=False,
-                human_label=_text(label.get("human_label"), fallback="unknown"),
-                system_result="missing_video",
-                result="cannot_compare",
-                note="A human label exists, but no matching local video file was found.",
+                comparisons=[
+                    LabelComparison(
+                        video_id=video_id,
+                        human_label=_text(label.get("human_label"), fallback="unknown"),
+                        system_result="missing_video",
+                        result="cannot_compare",
+                        note="A human label exists, but no matching local video file was found.",
+                    )
+                    for label in labels_by_video_id[video_id]
+                ],
                 output_dir=None,
             )
         )
@@ -141,10 +188,23 @@ def render_site_validation_report(report: SiteValidationReport) -> str:
                 f"- System result: {result.system_result}",
                 f"- Result: {result.result}",
                 f"- Note: {result.note}",
+                f"- Label windows compared: {len(result.comparisons)}",
             ]
         )
         if result.output_dir is not None:
             lines.append(f"- Output folder: {result.output_dir}")
+        if result.comparisons:
+            lines.append("- Per-window comparisons:")
+            for index, comparison in enumerate(result.comparisons, start=1):
+                lines.extend(
+                    [
+                        f"  - Window {index}:",
+                        f"    - Human label: {comparison.human_label}",
+                        f"    - System result: {comparison.system_result}",
+                        f"    - Result: {comparison.result}",
+                        f"    - Note: {comparison.note}",
+                    ]
+                )
 
     lines.extend(
         [
@@ -182,10 +242,15 @@ def _run_one_video(
             video_id=video_id,
             video_filename=video_path.name,
             processed=False,
-            human_label=_first_label_text(labels, video_id),
-            system_result="processing_failed",
-            result="cannot_compare",
-            note=f"Video could not be processed: {error}",
+            comparisons=[
+                LabelComparison(
+                    video_id=video_id,
+                    human_label=_first_label_text(labels, video_id),
+                    system_result="processing_failed",
+                    result="cannot_compare",
+                    note=f"Video could not be processed: {error}",
+                )
+            ],
             output_dir=str(output_dir),
         )
 
@@ -200,16 +265,12 @@ def _run_one_video(
         render_label_comparison_report(comparison_report),
         encoding="utf-8",
     )
-    comparison = comparison_report.comparisons[0]
 
     return SiteValidationResult(
         video_id=video_id,
         video_filename=video_path.name,
         processed=True,
-        human_label=comparison.human_label,
-        system_result=comparison.system_result,
-        result=comparison.result,
-        note=comparison.note,
+        comparisons=comparison_report.comparisons,
         output_dir=str(output_dir),
     )
 
@@ -227,9 +288,19 @@ def _build_report(
         results=results,
         processed_count=sum(result.processed for result in results),
         failed_count=sum(not result.processed for result in results),
-        agree_count=sum(result.result == "agree" for result in results),
-        disagree_count=sum(result.result == "disagree" for result in results),
-        cannot_compare_count=sum(result.result == "cannot_compare" for result in results),
+        agree_count=sum(
+            comparison.result == "agree" for result in results for comparison in result.comparisons
+        ),
+        disagree_count=sum(
+            comparison.result == "disagree"
+            for result in results
+            for comparison in result.comparisons
+        ),
+        cannot_compare_count=sum(
+            comparison.result == "cannot_compare"
+            for result in results
+            for comparison in result.comparisons
+        ),
     )
 
 
@@ -282,6 +353,15 @@ def _first_label_text(labels: list[JsonObject], video_id: str) -> str:
         if _text(label.get("video_id")) == video_id:
             return _text(label.get("human_label"), fallback="unknown")
     return "missing"
+
+
+def _comparison_field_summary(values: Iterable[str], *, fallback: str) -> str:
+    unique_values = sorted({value for value in values if value})
+    if not unique_values:
+        return fallback
+    if len(unique_values) == 1:
+        return unique_values[0]
+    return "multiple"
 
 
 def _text(value: object, *, fallback: str = "") -> str:
