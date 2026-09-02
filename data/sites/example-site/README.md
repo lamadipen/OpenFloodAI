@@ -1,6 +1,6 @@
 # Example Validation Site
 
-This is a placeholder site folder that shows how one validation site should be organized.
+This is a placeholder site folder that shows how one site should be organized.
 
 Simple meaning: each site gets its own videos, labels, configs, human evidence, and system outputs.
 
@@ -8,15 +8,19 @@ Simple meaning: each site gets its own videos, labels, configs, human evidence, 
 
 ```text
 configs/                  Safe site/camera configs for this site
-videos/                   Local validation videos
+inputs/
+  videos/                 Local validation videos
+  other/                  Other local inputs, such as reference frames
 labels/                   Human labels for frames or time windows
 human-evidence/
   flood-images/           Images a person selected as possible flood evidence
   notes/                  Human review notes
 outputs/
-  records/                JSONL records from local POC runs
-  summaries/              Markdown summaries from local POC runs
-  operator-notes/         Plain-language notes from local POC runs
+  records.jsonl           JSONL records from a local POC run
+  summary.md              Markdown summary from a local POC run
+  operator-notes.txt      Plain-language notes from a local POC run
+  label-comparison.md     Optional human-label comparison report
+  threshold-tuning.md     Optional prototype threshold tuning report
   review-images/          System-generated review images
 ```
 
@@ -25,15 +29,16 @@ outputs/
 A future real site might look like:
 
 ```text
-data/validation/sites/colorado-river-windy-gap/
+data/sites/colorado-river-windy-gap/
   configs/site-config.json
-  videos/local-sample.mp4
+  inputs/videos/local-sample.mp4
+  inputs/other/reference-frame.png
   labels/labels.jsonl
   human-evidence/flood-images/high-water-frame.png
-  outputs/records/run-001.jsonl
-  outputs/summaries/run-001.md
-  outputs/operator-notes/run-001.txt
-  outputs/review-images/run-001/
+  outputs/records.jsonl
+  outputs/summary.md
+  outputs/operator-notes.txt
+  outputs/review-images/
 ```
 
 Real videos and real images should stay local unless they are approved for public sharing.

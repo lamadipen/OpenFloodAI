@@ -13,6 +13,7 @@ nav:
   - Roadmap: roadmap.md
   - Community Feedback: community-feedback.md
   - Learning:
+      - Learning Home: learning/index.md
       - OpenFloodAI Pipeline Basics: learning/openfloodai-pipeline-learning.html
   - Privacy And Retention: privacy-retention.md
   - V1 Requirements: product/requirements.md

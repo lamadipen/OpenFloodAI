@@ -28,8 +28,8 @@ Threshold 0.200 says: visual change of 0.10 does not count as change.
 
 ```bash
 python3 scripts/tune_thresholds.py \
-  --records-path data/local-runs/video-review/records.jsonl \
-  --labels-path data/validation/sites/example-site/labels/example-labels.jsonl \
+  --records-path data/sites/example-site/outputs/records.jsonl \
+  --labels-path data/sites/example-site/labels/example-labels.jsonl \
   --video-id demo-river-001 \
   --threshold 0.02 \
   --threshold 0.05 \
@@ -40,10 +40,10 @@ To save the report:
 
 ```bash
 python3 scripts/tune_thresholds.py \
-  --records-path data/local-runs/video-review/records.jsonl \
-  --labels-path data/validation/sites/example-site/labels/example-labels.jsonl \
+  --records-path data/sites/example-site/outputs/records.jsonl \
+  --labels-path data/sites/example-site/labels/example-labels.jsonl \
   --video-id demo-river-001 \
-  --output-path data/local-runs/video-review/threshold-tuning.md
+  --output-path data/sites/example-site/outputs/threshold-tuning.md
 ```
 
 ## Report Meaning

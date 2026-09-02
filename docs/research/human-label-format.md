@@ -67,13 +67,13 @@ Simple example: if water may be rising but glare makes it hard to see, use `conf
 Put labels in the validation dataset structure:
 
 ```text
-data/validation/sites/<site-name>/labels/
+data/sites/<site-name>/labels/
 ```
 
 Safe demo example:
 
 ```text
-data/validation/sites/example-site/labels/example-labels.jsonl
+data/sites/example-site/labels/example-labels.jsonl
 ```
 
 Real label files may contain sensitive notes. Keep them local unless they are approved for public sharing.
@@ -89,7 +89,7 @@ from pathlib import Path
 from openfloodai.review import load_human_label_records
 
 records = load_human_label_records(
-    Path("data/validation/sites/example-site/labels/example-labels.jsonl")
+    Path("data/sites/example-site/labels/example-labels.jsonl")
 )
 
 print(f"Valid labels: {len(records)}")
