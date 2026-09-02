@@ -38,6 +38,7 @@ def test_summarizes_small_jsonl_file(tmp_path: Path) -> None:
                 "record_id": "risk-001",
                 "timestamp": "2026-08-31T00:00:03+00:00",
                 "risk_state": "WATCH",
+                "confidence": 0.72,
             },
         ],
     )
@@ -56,6 +57,7 @@ def test_summarizes_small_jsonl_file(tmp_path: Path) -> None:
     assert summary.last_timestamp == "2026-08-31T00:00:03+00:00"
     assert summary.highest_visual_signals["frame_change_score"] == 0.5
     assert summary.highest_visual_signals["brightness_score"] == 0.4
+    assert summary.highest_risk_confidence == 0.72
 
 
 def test_counts_unknown_and_degraded_records(tmp_path: Path) -> None:
@@ -128,6 +130,7 @@ def test_markdown_report_is_simple_and_does_not_dump_private_fields(tmp_path: Pa
                 "record_type": "risk_state_output",
                 "timestamp": "2026-08-31T00:00:01+00:00",
                 "risk_state": "NORMAL",
+                "confidence": 0.93,
             },
         ],
     )
@@ -137,6 +140,34 @@ def test_markdown_report_is_simple_and_does_not_dump_private_fields(tmp_path: Pa
     assert "# POC Summary" in markdown
     assert "- camera_health_output: 1" in markdown
     assert "- NORMAL: 1" in markdown
+    assert "## Prototype Confidence" in markdown
+    assert "- Highest risk confidence: 0.930" in markdown
+    assert "not flood probability" in markdown
     assert "No public warning was created" in markdown
     assert "rtsp://" not in markdown
     assert "private@example.com" not in markdown
+
+
+def test_summary_ignores_invalid_risk_confidence_values(tmp_path: Path) -> None:
+    path = tmp_path / "records.jsonl"
+    write_jsonl_records(
+        path,
+        [
+            {
+                "record_type": "risk_state_output",
+                "risk_state": "NORMAL",
+                "confidence": 1.5,
+            },
+            {
+                "record_type": "risk_state_output",
+                "risk_state": "WATCH",
+                "confidence": "high",
+            },
+        ],
+    )
+
+    summary = summarize_jsonl_records(path)
+    markdown = render_summary_markdown(summary)
+
+    assert summary.highest_risk_confidence is None
+    assert "- Highest risk confidence: Not found" in markdown

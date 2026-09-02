@@ -517,6 +517,10 @@ PY
 
 Simple meaning: this reads the saved JSON Lines file and prints a short report. For example, it can say how many records were created, what record types appeared, whether any `UNKNOWN` or degraded records appeared, and what the highest simple visual scores were.
 
+If the run has risk-state records, the summary also shows the highest prototype risk confidence.
+
+Simple meaning: this is the confidence from the current simple rule engine. It is not flood probability and it is not proof that the system is correct.
+
 This report is only for local review and debugging. It does not create a public warning, publish anything, send alerts, or show private camera details.
 
 ### 17. Explain A POC Output For A Human Reviewer

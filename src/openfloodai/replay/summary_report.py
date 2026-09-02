@@ -36,6 +36,7 @@ class ReplaySummary:
     first_timestamp: str | None
     last_timestamp: str | None
     highest_visual_signals: dict[str, float]
+    highest_risk_confidence: float | None
     notes: list[str]
 
 
@@ -51,6 +52,7 @@ def summarize_jsonl_records(path: Path) -> ReplaySummary:
     risk_state_counts: Counter[str] = Counter()
     timestamps: list[str] = []
     highest_visual_signals: dict[str, float] = {}
+    highest_risk_confidence: float | None = None
     unknown_or_degraded_records = 0
 
     for record in records:
@@ -71,6 +73,12 @@ def summarize_jsonl_records(path: Path) -> ReplaySummary:
         if record_type == "visual_signal_output":
             _update_highest_visual_signals(record, highest_visual_signals)
 
+        if record_type == "risk_state_output":
+            highest_risk_confidence = _highest_risk_confidence(
+                record,
+                current_highest=highest_risk_confidence,
+            )
+
     return ReplaySummary(
         total_records=len(records),
         record_type_counts=dict(sorted(record_type_counts.items())),
@@ -79,11 +87,13 @@ def summarize_jsonl_records(path: Path) -> ReplaySummary:
         first_timestamp=timestamps[0] if timestamps else None,
         last_timestamp=timestamps[-1] if timestamps else None,
         highest_visual_signals=dict(sorted(highest_visual_signals.items())),
+        highest_risk_confidence=highest_risk_confidence,
         notes=_build_notes(
             total_records=len(records),
             record_type_counts=record_type_counts,
             risk_state_counts=risk_state_counts,
             unknown_or_degraded_records=unknown_or_degraded_records,
+            highest_risk_confidence=highest_risk_confidence,
         ),
     )
 
@@ -133,6 +143,13 @@ def render_summary_markdown(summary: ReplaySummary) -> str:
         )
     else:
         lines.append("- None found")
+
+    lines.extend(["", "## Prototype Confidence"])
+    if summary.highest_risk_confidence is None:
+        lines.append("- Highest risk confidence: Not found")
+    else:
+        lines.append(f"- Highest risk confidence: {summary.highest_risk_confidence:.3f}")
+    lines.append("- This is a prototype rule score, not flood probability.")
 
     lines.extend(["", "## Plain Notes"])
     lines.extend(f"- {note}" for note in summary.notes)
@@ -185,12 +202,32 @@ def _update_highest_visual_signals(
             highest_visual_signals[field_name] = numeric_value
 
 
+def _highest_risk_confidence(
+    record: JsonObject,
+    *,
+    current_highest: float | None,
+) -> float | None:
+    value = record.get("confidence")
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return current_highest
+
+    numeric_value = float(value)
+    if not 0.0 <= numeric_value <= 1.0:
+        return current_highest
+
+    if current_highest is None or numeric_value > current_highest:
+        return numeric_value
+
+    return current_highest
+
+
 def _build_notes(
     *,
     total_records: int,
     record_type_counts: Counter[str],
     risk_state_counts: Counter[str],
     unknown_or_degraded_records: int,
+    highest_risk_confidence: float | None,
 ) -> list[str]:
     notes: list[str] = []
 
@@ -214,6 +251,9 @@ def _build_notes(
         notes.append("One or more records were unknown or degraded and should be reviewed.")
     else:
         notes.append("No unknown or degraded records were found.")
+
+    if highest_risk_confidence is not None:
+        notes.append("Risk confidence is a prototype rule score, not flood probability.")
 
     notes.append("No public warning was created by this report.")
     return notes
