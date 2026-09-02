@@ -20,6 +20,7 @@ data/sites/
       flood-images/
       notes/
     outputs/
+      validation-report.md
       records.jsonl
       summary.md
       operator-notes.txt
@@ -128,6 +129,36 @@ Use `data/local-runs/` only for quick temporary runs.
 Simple example: a smoke test can write to `data/local-runs/smoke-test/` because it is only checking that the code runs.
 
 For real validation review, prefer `data/sites/<site-name>/`.
+
+## Multi-Video Validation
+
+Use the site validation runner when a site has more than one local video.
+
+```bash
+python3 scripts/run_site_validation.py \
+  --site-dir data/sites/example-site
+```
+
+Simple meaning: the runner finds videos in `inputs/videos/`, runs the current local review workflow for each one, compares matching labels when possible, and writes one combined report.
+
+Outputs are grouped by video:
+
+```text
+outputs/
+  validation-report.md
+  rising-001/
+    records.jsonl
+    summary.md
+    operator-notes.txt
+    review-images/
+    label-comparison.md
+```
+
+Missing labels, bad videos, and unclear cases stay visible as `cannot_compare`. They are not counted as success.
+
+If one video has multiple human label time windows, the combined report lists each label window under that video.
+
+Current limit: each label window is compared with the broad system result for the whole video. Later we should compare labels with system output from the same time window.
 
 ## Privacy Rules
 
