@@ -14,6 +14,14 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
+from openfloodai.alerts.buffer import (
+    BufferConfig,
+    BufferState,
+    buffer_alert,
+    create_buffer,
+    flush_buffer,
+    should_flush,
+)
 from openfloodai.alerts.webhook import WebhookConfig, send_alert, should_alert
 from openfloodai.common import FrameArray, SiteConfig
 from openfloodai.ingestion.stream import (
@@ -58,6 +66,7 @@ class DataSourceCache:
     precipitation: dict[str, object] | None = None
     reliefweb: dict[str, object] | None = None
     usgs_water: dict[str, object] | None = None
+    dhm_nepal: dict[str, object] | None = None
     escalation_reasons: list[str] = field(default_factory=list)
     external_risk_state: str = "NORMAL"
     last_fetch: float = 0.0
@@ -74,6 +83,7 @@ class MonitorConfig:
     health_thresholds: HealthThresholds = field(default_factory=HealthThresholds)
     temporal_config: TemporalConfig = field(default_factory=TemporalConfig)
     webhooks: list[WebhookConfig] = field(default_factory=list)
+    buffer_config: BufferConfig | None = None
     max_reconnect_failures: int = 5
     data_source_interval_seconds: float = 300.0
     log_dir: Path | None = None
@@ -93,13 +103,19 @@ class MonitorState:
     running: bool = False
     reconnect_failures: int = 0
     data_sources: DataSourceCache = field(default_factory=DataSourceCache)
+    alert_buffer_state: BufferState | None = None
 
 
 def create_monitor(config: MonitorConfig) -> MonitorState:
     """Create and initialize monitor state for a site."""
 
+    buf_state: BufferState | None = None
+    if config.buffer_config is not None:
+        _, buf_state = create_buffer(config.buffer_config)
+
     return MonitorState(
         temporal_window=TemporalWindow(config=config.temporal_config),
+        alert_buffer_state=buf_state,
     )
 
 
@@ -211,7 +227,7 @@ def process_frame(
         reason = _build_alert_reason(water_ratio, state.data_sources)
         for webhook in config.webhooks:
             try:
-                send_alert(
+                result = send_alert(
                     webhook,
                     site_id=site.site_id,
                     camera_id=site.camera_id,
@@ -219,9 +235,37 @@ def process_frame(
                     previous_risk_state=previous_state,
                     reason=reason,
                 )
-                state.alerts_sent += 1
+                if result.get("delivered"):
+                    state.alerts_sent += 1
+                elif config.buffer_config is not None and state.alert_buffer_state is not None:
+                    buffer_alert(
+                        config.buffer_config,
+                        state.alert_buffer_state,
+                        webhook=webhook,
+                        site_id=site.site_id,
+                        camera_id=site.camera_id,
+                        risk_state=temporal_state,
+                        previous_risk_state=previous_state,
+                        reason=reason,
+                        timestamp=ts,
+                    )
             except Exception:
                 logger.exception("Failed to send webhook alert")
+                if config.buffer_config is not None and state.alert_buffer_state is not None:
+                    try:
+                        buffer_alert(
+                            config.buffer_config,
+                            state.alert_buffer_state,
+                            webhook=webhook,
+                            site_id=site.site_id,
+                            camera_id=site.camera_id,
+                            risk_state=temporal_state,
+                            previous_risk_state=previous_state,
+                            reason=reason,
+                            timestamp=ts,
+                        )
+                    except Exception:
+                        logger.exception("Failed to buffer alert")
 
     return {
         "site_id": site.site_id,
@@ -292,6 +336,14 @@ def fetch_data_sources(site: SiteConfig) -> DataSourceCache:
                 ext_state = us_state
             reasons.extend(us_reasons)
 
+    cache.dhm_nepal = _fetch_dhm_nepal()
+    if cache.dhm_nepal is not None:
+        cache.sources_available += 1
+        dh_state, dh_reasons = _assess_dhm_cache(cache.dhm_nepal)
+        if _risk_level(dh_state) > _risk_level(ext_state):
+            ext_state = dh_state
+        reasons.extend(dh_reasons)
+
     cache.external_risk_state = ext_state
     cache.escalation_reasons = reasons
 
@@ -312,6 +364,16 @@ def _monitor_tick(config: MonitorConfig, state: MonitorState) -> None:
     if now - state.last_data_source_fetch >= config.data_source_interval_seconds:
         state.data_sources = fetch_data_sources(config.site)
         state.last_data_source_fetch = now
+
+    if (
+        config.buffer_config is not None
+        and state.alert_buffer_state is not None
+        and should_flush(config.buffer_config, state.alert_buffer_state)
+    ):
+        delivered = flush_buffer(config.buffer_config, state.alert_buffer_state)
+        if delivered > 0:
+            state.alerts_sent += delivered
+            logger.info("Flushed %d buffered alerts", delivered)
 
     if state.stream_state is None or not state.stream_state.is_connected:
         if state.reconnect_failures >= config.max_reconnect_failures:
@@ -555,5 +617,38 @@ def _assess_usgs_cache(
         return "WARNING_CANDIDATE", reasons
     if ratio >= 0.7:
         reasons.append(f"USGS gage at {ratio:.0%} of flood stage ({gage_height:.1f}ft)")
+        return "WATCH", reasons
+    return "NORMAL", reasons
+
+
+def _fetch_dhm_nepal() -> dict[str, object] | None:
+    try:
+        from openfloodai.data_sources.dhm_nepal import (
+            assess_dhm_flood_risk,
+            fetch_flood_bulletin,
+        )
+
+        stations = fetch_flood_bulletin()
+        return assess_dhm_flood_risk(stations)
+    except Exception:
+        logger.debug("DHM Nepal data source unavailable", exc_info=True)
+        return None
+
+
+def _assess_dhm_cache(
+    data: dict[str, object],
+) -> tuple[str, list[str]]:
+    risk_state = str(data.get("dhm_risk_state", "NONE")).upper()
+    reasons: list[str] = []
+    highest = data.get("highest_risk_station")
+
+    if risk_state == "DANGER":
+        station_name = ""
+        if isinstance(highest, dict):
+            station_name = str(highest.get("station_name", ""))
+        reasons.append(f"DHM Nepal: danger level exceeded at {station_name}")
+        return "WARNING_CANDIDATE", reasons
+    if risk_state == "WARNING":
+        reasons.append("DHM Nepal: warning level exceeded")
         return "WATCH", reasons
     return "NORMAL", reasons
