@@ -197,6 +197,82 @@ def test_compare_region_signals_scores_change_only_inside_selected_region() -> N
     assert upper_result["region_change_score"] == 1.0
 
 
+def test_compare_region_signals_reports_strongest_changed_band() -> None:
+    previous_frame = np.zeros((9, 6), dtype=np.uint8)
+    current_frame = np.zeros((9, 6), dtype=np.uint8)
+    current_frame[6:9, :] = 180
+    full_region = {
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 100,
+    }
+
+    result = compare_region_signals(
+        previous_frame,
+        current_frame,
+        full_region,
+        "site-demo-01",
+        "camera-demo-01",
+    )
+
+    assert result["upper_region_change_score"] == 0.0
+    assert result["middle_region_change_score"] == 0.0
+    assert cast(float, result["lower_region_change_score"]) > 0.0
+    assert result["strongest_changed_area"] == "lower"
+    assert result["water_level_evidence_state"] == "useful_water_level_evidence"
+    assert "not proof of flooding" in str(result["human_summary"]).lower()
+
+
+def test_compare_region_signals_marks_whole_region_change_as_cannot_judge() -> None:
+    previous_frame = np.zeros((9, 6), dtype=np.uint8)
+    current_frame = np.full((9, 6), 180, dtype=np.uint8)
+    full_region = {
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 100,
+    }
+
+    result = compare_region_signals(
+        previous_frame,
+        current_frame,
+        full_region,
+        "site-demo-01",
+        "camera-demo-01",
+    )
+
+    assert cast(float, result["upper_region_change_score"]) > 0.0
+    assert cast(float, result["middle_region_change_score"]) > 0.0
+    assert cast(float, result["lower_region_change_score"]) > 0.0
+    assert result["water_level_evidence_state"] == "cannot_judge_whole_region_changed"
+    assert "lighting" in str(result["human_summary"]).lower()
+
+
+def test_compare_region_signals_marks_tiny_region_as_cannot_judge() -> None:
+    previous_frame = np.zeros((2, 2), dtype=np.uint8)
+    current_frame = np.ones((2, 2), dtype=np.uint8)
+    tiny_region = {
+        "x": 0,
+        "y": 0,
+        "width": 50,
+        "height": 50,
+    }
+
+    result = compare_region_signals(
+        previous_frame,
+        current_frame,
+        tiny_region,
+        "site-demo-01",
+        "camera-demo-01",
+    )
+
+    assert result["region_width"] == 1.0
+    assert result["region_height"] == 1.0
+    assert result["water_level_evidence_state"] == "cannot_judge_region_too_small"
+    assert "too small" in str(result["human_summary"]).lower()
+
+
 def test_region_signals_accept_config_reference_region_object() -> None:
     frame = np.zeros((10, 10), dtype=np.uint8)
     region = ReferenceRegion(x=0, y=50, width=100, height=50)

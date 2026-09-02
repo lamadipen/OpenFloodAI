@@ -372,7 +372,9 @@ What it is used for:
 - Describes simple measurements from the vision module.
 - Sends evidence to temporal analysis and the risk engine.
 
-Early POC helpers may produce simple values such as `brightness_score`, `sharpness_score`, and `frame_change_score`. Region-based helpers may also produce `reference_region_used`, `region_x`, `region_y`, `region_brightness_score`, `region_sharpness_score`, `region_change_score`, `region_width`, and `region_height`. These are test signals only. They do not detect floods.
+Early POC helpers may produce simple values such as `brightness_score`, `sharpness_score`, and `frame_change_score`. Region-based helpers may also produce `reference_region_used`, `region_x`, `region_y`, `region_brightness_score`, `region_sharpness_score`, `region_change_score`, `region_width`, `region_height`, `upper_region_change_score`, `middle_region_change_score`, `lower_region_change_score`, `strongest_changed_area`, and `water_level_evidence_state`. These are test signals only. They do not detect floods.
+
+Simple example: if a user watches a bridge pillar, the helper can say the lower part of that watched box changed more than the upper part. That may be useful water-level evidence, but a person still needs to review it.
 
 Required fields:
 
@@ -403,6 +405,11 @@ Optional fields:
 - `region_change_score`
 - `region_width`
 - `region_height`
+- `upper_region_change_score`
+- `middle_region_change_score`
+- `lower_region_change_score`
+- `strongest_changed_area`
+- `water_level_evidence_state`
 - `debug_artifact_reference`
 
 Example:

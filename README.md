@@ -605,7 +605,7 @@ from openfloodai.vision import compare_region_signals
 
 previous_frame = np.zeros((10, 10), dtype=np.uint8)
 current_frame = np.zeros((10, 10), dtype=np.uint8)
-current_frame[:5, :] = 255
+current_frame[5:, :] = 180
 
 lower_half_region = {
     "x": 0,
@@ -641,7 +641,9 @@ print(compare_region_signals(
 PY
 ```
 
-Simple meaning: the top half changed, but the lower half did not. The selected region changes the result, which is what we need for a future virtual-ruler flow.
+Simple meaning: this compares the watched box over time. The output includes `upper_region_change_score`, `middle_region_change_score`, `lower_region_change_score`, `strongest_changed_area`, and `water_level_evidence_state`.
+
+Layman example: if the lower part of a bridge pillar changes but the upper part stays steady, that may be useful water-level evidence. If the whole box changes, it may be rain, glare, blur, or camera movement, so the result stays cautious.
 
 This still does not detect floods. It only measures simple image change inside the selected area.
 

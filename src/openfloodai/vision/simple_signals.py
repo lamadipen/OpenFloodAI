@@ -155,6 +155,13 @@ def compare_region_signals(
     brightness_score = _brightness_score(current_crop.frame)
     sharpness_score = _sharpness_score(current_crop.frame)
     region_change_score = _frame_change_score(previous_crop.frame, current_crop.frame)
+    band_scores = _region_band_change_scores(previous_crop.frame, current_crop.frame)
+    strongest_changed_area = _strongest_changed_area(band_scores)
+    evidence_state = _water_level_evidence_state(
+        crop=current_crop,
+        region_change_score=region_change_score,
+        band_scores=band_scores,
+    )
 
     return _build_signal_record(
         site_id=site_id,
@@ -170,8 +177,17 @@ def compare_region_signals(
             "region_brightness_score": brightness_score,
             "region_sharpness_score": sharpness_score,
             "region_change_score": region_change_score,
+            "upper_region_change_score": band_scores["upper"],
+            "middle_region_change_score": band_scores["middle"],
+            "lower_region_change_score": band_scores["lower"],
+            "strongest_changed_area": strongest_changed_area,
+            "water_level_evidence_state": evidence_state,
         },
-        human_summary=_region_comparison_summary(region_change_score),
+        human_summary=_region_comparison_summary(
+            region_change_score=region_change_score,
+            strongest_changed_area=strongest_changed_area,
+            evidence_state=evidence_state,
+        ),
     )
 
 
@@ -305,7 +321,55 @@ def _frame_change_score(
     previous_frame: NDArray[np.float64],
     current_frame: NDArray[np.float64],
 ) -> float:
+    if previous_frame.size == 0 or current_frame.size == 0:
+        return 0.0
     return _rounded_score(float(np.abs(current_frame - previous_frame).mean()))
+
+
+def _region_band_change_scores(
+    previous_region: NDArray[np.float64],
+    current_region: NDArray[np.float64],
+) -> dict[str, float]:
+    previous_bands = np.array_split(previous_region, 3, axis=0)
+    current_bands = np.array_split(current_region, 3, axis=0)
+    return {
+        band_name: _frame_change_score(previous_band, current_band)
+        for band_name, previous_band, current_band in zip(
+            ("upper", "middle", "lower"),
+            previous_bands,
+            current_bands,
+            strict=True,
+        )
+    }
+
+
+def _strongest_changed_area(band_scores: Mapping[str, float]) -> str:
+    return max(("upper", "middle", "lower"), key=lambda name: band_scores[name])
+
+
+def _water_level_evidence_state(
+    *,
+    crop: RegionCrop,
+    region_change_score: float,
+    band_scores: Mapping[str, float],
+) -> str:
+    upper_change = band_scores["upper"]
+    middle_change = band_scores["middle"]
+    lower_change = band_scores["lower"]
+    max_change = max(band_scores.values())
+    min_change = min(band_scores.values())
+
+    if crop.width < 2 or crop.height < 3:
+        return "cannot_judge_region_too_small"
+    if region_change_score <= 0.02:
+        return "weak_visual_evidence"
+    if min_change >= 0.08 and max_change - min_change <= 0.05:
+        return "cannot_judge_whole_region_changed"
+    if lower_change >= 0.05 and upper_change <= 0.05:
+        return "useful_water_level_evidence"
+    if middle_change >= 0.05 and upper_change <= 0.05:
+        return "useful_water_level_evidence"
+    return "weak_visual_evidence"
 
 
 def _to_grayscale(frame: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -341,9 +405,28 @@ def _region_frame_summary(brightness_score: float, sharpness_score: float) -> st
     )
 
 
-def _region_comparison_summary(region_change_score: float) -> str:
-    if region_change_score >= 0.25:
-        return "The configured reference region changed clearly compared to the previous frame."
+def _region_comparison_summary(
+    *,
+    region_change_score: float,
+    strongest_changed_area: str,
+    evidence_state: str,
+) -> str:
+    if evidence_state == "cannot_judge_region_too_small":
+        return "The watched region is too small to judge water-level evidence safely."
+    if evidence_state == "cannot_judge_whole_region_changed":
+        return (
+            "The whole watched region changed, so this may be lighting, blur, "
+            "or camera movement and needs human review."
+        )
+    if evidence_state == "useful_water_level_evidence":
+        return (
+            "The watched region changed most in the "
+            f"{strongest_changed_area} part, which may be useful water-level evidence. "
+            "This is not proof of flooding."
+        )
     if region_change_score > 0.0:
-        return "The configured reference region changed slightly compared to the previous frame."
-    return "The configured reference region looks unchanged compared to the previous frame."
+        return (
+            "The watched region changed only a little, so the water-level evidence "
+            "is weak and needs human review."
+        )
+    return "The watched region looks unchanged compared to the previous frame."
