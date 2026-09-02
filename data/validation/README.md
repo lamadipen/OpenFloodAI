@@ -47,6 +47,24 @@ Simple example: one short clip from a river camera can live here while a develop
 
 Simple example: a reviewer may label a time window as `normal water`, `rising water`, `high water`, `unclear view`, or `camera moved`.
 
+Use JSON Lines for labels, with one label record per line.
+
+Safe example:
+
+```json
+{"video_id":"demo-river-001","time_window_seconds":[0,30],"human_label":"water_rising","confidence":"medium","note":"Water appears to move higher against the bridge pillar."}
+```
+
+Allowed `human_label` values are:
+
+- `water_rising`
+- `water_falling`
+- `no_clear_change`
+- `camera_video_problem`
+- `cannot_judge`
+
+See the Human Label Format documentation for the full field list and validation command.
+
 `human-evidence/flood-images/` keeps images selected by a person as possible flood or high-water evidence.
 
 Simple example: a reviewer sees a frame where water looks high and saves that frame here for later comparison.

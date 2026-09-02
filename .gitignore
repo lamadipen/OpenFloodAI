@@ -45,6 +45,7 @@ data/*
 !data/validation/sites/*/videos/.gitkeep
 !data/validation/sites/*/labels/
 !data/validation/sites/*/labels/.gitkeep
+!data/validation/sites/*/labels/example-labels.jsonl
 !data/validation/sites/*/human-evidence/
 !data/validation/sites/*/human-evidence/flood-images/
 !data/validation/sites/*/human-evidence/flood-images/.gitkeep
@@ -63,6 +64,9 @@ data/validation/sites/*/videos/*
 !data/validation/sites/*/videos/.gitkeep
 data/validation/sites/*/human-evidence/flood-images/*
 !data/validation/sites/*/human-evidence/flood-images/.gitkeep
+data/validation/sites/*/labels/*
+!data/validation/sites/*/labels/.gitkeep
+!data/validation/sites/*/labels/example-labels.jsonl
 data/validation/sites/*/outputs/records/*
 !data/validation/sites/*/outputs/records/.gitkeep
 data/validation/sites/*/outputs/summaries/*

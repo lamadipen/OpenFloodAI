@@ -1,0 +1,2 @@
+{"video_id":"demo-river-001","site_id":"site-demo-01","camera_id":"camera-demo-01","time_window_seconds":[0,30],"human_label":"water_rising","confidence":"medium","note":"Water appears to move higher against the bridge pillar."}
+{"video_id":"demo-river-002","site_id":"site-demo-01","camera_id":"camera-demo-01","time_window_seconds":[0,20],"human_label":"cannot_judge","confidence":"low","note":"The image is too dark to judge safely."}
