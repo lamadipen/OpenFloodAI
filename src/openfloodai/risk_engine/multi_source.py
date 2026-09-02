@@ -50,13 +50,17 @@ def evaluate_multi_source_risk(
     water_conditions: Mapping[str, object] | None = None,
     flood_alerts: Mapping[str, object] | None = None,
     precipitation: Mapping[str, object] | None = None,
+    seismic_risk: Mapping[str, object] | None = None,
+    eonet_summary: Mapping[str, object] | None = None,
+    reliefweb_summary: Mapping[str, object] | None = None,
     thresholds: MultiSourceThresholds | None = None,
 ) -> dict[str, object]:
     """Evaluate a risk state by combining visual signals with external data.
 
     Starts with the base visual risk from :func:`evaluate_risk_state` and
-    then enriches it with USGS water conditions, NWS flood alerts, and
-    precipitation forecasts when those are provided.  Sources that are
+    then enriches it with USGS water conditions, NWS flood alerts,
+    precipitation forecasts, seismic activity, NASA EONET events, and
+    ReliefWeb disaster reports when those are provided.  Sources that are
     ``None`` are silently skipped (graceful degradation).
 
     Returns a record with ``record_type="multi_source_risk_output"``.
@@ -119,6 +123,45 @@ def evaluate_multi_source_risk(
             if _level(suggested) > _level(escalated_state):
                 escalated_state = suggested
                 reasons = precip_signal.get("reasons")
+                for reason in reasons if isinstance(reasons, list) else []:
+                    escalation_reasons.append(str(reason))
+
+    # --- Seismic activity ------------------------------------------------
+    if seismic_risk is not None:
+        data_sources_used.append("earthquake")
+        eq_signal = _assess_seismic(seismic_risk)
+        source_signals["earthquake"] = eq_signal
+        if eq_signal["suggested_state"] is not None:
+            suggested = str(eq_signal["suggested_state"])
+            if _level(suggested) > _level(escalated_state):
+                escalated_state = suggested
+                reasons = eq_signal.get("reasons")
+                for reason in reasons if isinstance(reasons, list) else []:
+                    escalation_reasons.append(str(reason))
+
+    # --- NASA EONET events -----------------------------------------------
+    if eonet_summary is not None:
+        data_sources_used.append("eonet")
+        eonet_signal = _assess_eonet(eonet_summary)
+        source_signals["eonet"] = eonet_signal
+        if eonet_signal["suggested_state"] is not None:
+            suggested = str(eonet_signal["suggested_state"])
+            if _level(suggested) > _level(escalated_state):
+                escalated_state = suggested
+                reasons = eonet_signal.get("reasons")
+                for reason in reasons if isinstance(reasons, list) else []:
+                    escalation_reasons.append(str(reason))
+
+    # --- ReliefWeb disaster reports --------------------------------------
+    if reliefweb_summary is not None:
+        data_sources_used.append("reliefweb")
+        rw_signal = _assess_reliefweb(reliefweb_summary)
+        source_signals["reliefweb"] = rw_signal
+        if rw_signal["suggested_state"] is not None:
+            suggested = str(rw_signal["suggested_state"])
+            if _level(suggested) > _level(escalated_state):
+                escalated_state = suggested
+                reasons = rw_signal.get("reasons")
                 for reason in reasons if isinstance(reasons, list) else []:
                     escalation_reasons.append(str(reason))
 
@@ -327,6 +370,112 @@ def _total_precipitation_mm(precipitation: Mapping[str, object]) -> float | None
         return total if total > 0.0 else None
 
     return None
+
+
+def _assess_seismic(
+    seismic_risk: Mapping[str, object],
+) -> dict[str, object]:
+    """Derive a suggested risk state from seismic activity data."""
+
+    risk_state = str(seismic_risk.get("seismic_risk_state", "NONE")).upper()
+    max_mag = _optional_float(seismic_risk.get("max_magnitude")) or 0.0
+    eq_count = seismic_risk.get("earthquake_count", 0)
+
+    signal: dict[str, object] = {
+        "seismic_risk_state": risk_state,
+        "max_magnitude": max_mag,
+        "earthquake_count": eq_count,
+        "suggested_state": None,
+        "reasons": [],
+    }
+    reasons: list[str] = []
+
+    if risk_state in {"EXTREME", "HIGH"}:
+        signal["suggested_state"] = "WARNING_CANDIDATE"
+        reasons.append(
+            f"M{max_mag} earthquake detected nearby -- landslide dam and GLOF risk elevated"
+        )
+    elif risk_state == "MODERATE":
+        signal["suggested_state"] = "WATCH"
+        reasons.append(
+            f"M{max_mag} earthquake detected nearby -- monitoring for secondary flooding"
+        )
+
+    signal["reasons"] = reasons
+    return signal
+
+
+def _assess_eonet(
+    eonet_summary: Mapping[str, object],
+) -> dict[str, object]:
+    """Derive a suggested risk state from NASA EONET event summary."""
+
+    event_state = str(eonet_summary.get("event_state", "CLEAR")).upper()
+    flood_count = eonet_summary.get("flood_count", 0)
+    landslide_count = eonet_summary.get("landslide_count", 0)
+    storm_count = eonet_summary.get("storm_count", 0)
+    event_count = eonet_summary.get("event_count", 0)
+
+    signal: dict[str, object] = {
+        "event_state": event_state,
+        "event_count": event_count,
+        "suggested_state": None,
+        "reasons": [],
+    }
+    reasons: list[str] = []
+
+    if isinstance(flood_count, int) and flood_count > 0:
+        signal["suggested_state"] = "WARNING_CANDIDATE"
+        reasons.append(f"NASA EONET tracking {flood_count} active flood event(s) nearby")
+    elif isinstance(landslide_count, int) and landslide_count > 0:
+        signal["suggested_state"] = "WATCH"
+        reasons.append(
+            f"NASA EONET tracking {landslide_count} landslide event(s) nearby "
+            "-- secondary flood risk"
+        )
+    elif isinstance(storm_count, int) and storm_count > 0:
+        signal["suggested_state"] = "WATCH"
+        reasons.append(f"NASA EONET tracking {storm_count} severe storm(s) nearby")
+
+    signal["reasons"] = reasons
+    return signal
+
+
+def _assess_reliefweb(
+    reliefweb_summary: Mapping[str, object],
+) -> dict[str, object]:
+    """Derive a suggested risk state from ReliefWeb disaster reports."""
+
+    report_state = str(reliefweb_summary.get("report_state", "CLEAR")).upper()
+    report_count = reliefweb_summary.get("report_count", 0)
+    countries = reliefweb_summary.get("countries_affected", [])
+
+    signal: dict[str, object] = {
+        "report_state": report_state,
+        "report_count": report_count,
+        "suggested_state": None,
+        "reasons": [],
+    }
+    reasons: list[str] = []
+
+    if report_state == "ACTIVE_DISASTER":
+        country_str = ""
+        if isinstance(countries, list) and countries:
+            country_str = f" in {', '.join(str(c) for c in countries[:3])}"
+        if isinstance(report_count, int) and report_count >= 5:
+            signal["suggested_state"] = "WARNING_CANDIDATE"
+            reasons.append(
+                f"ReliefWeb tracking {report_count} humanitarian reports{country_str} "
+                "-- major flood disaster in progress"
+            )
+        else:
+            signal["suggested_state"] = "WATCH"
+            reasons.append(
+                f"ReliefWeb tracking {report_count} humanitarian report(s){country_str}"
+            )
+
+    signal["reasons"] = reasons
+    return signal
 
 
 def _matches_any(*values: str, targets: set[str]) -> bool:
