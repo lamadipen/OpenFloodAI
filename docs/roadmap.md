@@ -57,6 +57,7 @@ Completed or started:
 - validation dataset folder structure for multiple sites
 - local comparison report for system output and human labels
 - prototype threshold tuning report for comparing visual-change settings with human labels
+- validation results and known-limits tracker
 - local replay summary report for saved POC records
 - plain-language operator notes for POC outputs
 - local review images for biggest visual changes
@@ -66,7 +67,7 @@ Completed or started:
 - research note for ML models, datasets, Google ML options, and public water-data inspiration
 - human labeling guide for water-change review
 
-Simple example: today a developer can choose a watched image area, run a local video through the POC pipeline, save records to `data/local-runs/poc-records.jsonl`, print a short summary, create plain-language notes, generate a few local review images, organize validation data by site, compare labels with system output, try prototype thresholds against labels, or run one safe smoke test that checks the full local review flow.
+Simple example: today a developer can choose a watched image area, run a local video through the POC pipeline, save records to `data/local-runs/poc-records.jsonl`, print a short summary, create plain-language notes, generate a few local review images, organize validation data by site, compare labels with system output, try prototype thresholds against labels, update the validation status page, or run one safe smoke test that checks the full local review flow.
 
 ## Next Direction
 
@@ -152,6 +153,7 @@ Near-term work should stay small and testable:
 
 - define the first baseline water-region or virtual-ruler signal
 - use the labeling guide on safe local examples
+- keep updating the [validation results and known-limits tracker](research/validation-results.md)
 - improve replay examples using generated or approved local data
 - keep connecting reference-region config into local POC review tools
 - keep strengthening privacy, validation, and failure handling

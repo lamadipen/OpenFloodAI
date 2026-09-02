@@ -1,0 +1,111 @@
+# Validation Results And Known Limits
+
+This page tracks what OpenFloodAI has tested so far, what the result looked like, and what we still do not know.
+
+Simple meaning: this is the project truth page for validation. It should help a new reader understand how far the proof of concept has gone.
+
+OpenFloodAI is still a proof of concept. These results are not public flood warnings, do not prove real flood detection accuracy, and do not replace local emergency judgment.
+
+## What We Tested
+
+So far, validation is local and small.
+
+| Area | What Was Tested | Simple Result |
+| --- | --- | --- |
+| Video health | Missing, empty, and readable local videos | The code can say when a video is missing or unreadable. |
+| Frame metadata | Local videos and generated test videos | The code can save frame IDs, timestamps, size, FPS, and frame hashes. |
+| Visual signals | Full-frame and reference-region image changes | The code can create simple brightness and change scores. |
+| Region POC pipeline | A configured watched area inside a video | The code can save records for the selected area. |
+| Review images | Biggest local visual changes | The code can save images so a person can review what changed. |
+| Human labels | Small example label files | The code can read labels like `water_rising`, `no_clear_change`, and `cannot_judge`. |
+| Label comparison | System output compared with human labels | The report can show `agree`, `disagree`, and `cannot_compare`. |
+| Threshold tuning | A few prototype visual-change thresholds | The report can show how different threshold numbers change the comparison result. |
+
+Simple example: a developer can run one local video, save POC records, add a human label, and compare whether the system output pointed in the same broad direction.
+
+## What Worked
+
+- Local video files can be checked before processing.
+- Local records can be saved as JSON Lines files.
+- The project can keep records grouped by site and video.
+- A user can mark a reference region, like the lower part of a bridge pillar.
+- The system can create simple scores for full frames and selected regions.
+- Review images can help a person inspect the biggest changes.
+- Human labels can be compared with system output in a simple report.
+- `cannot_compare` stays separate and is not counted as success.
+
+Simple example: if a person says a clip shows `water_rising`, and the system shows strong visual change in the watched area, the comparison may say `agree`.
+
+## What Did Not Work Yet
+
+OpenFloodAI has not yet proven that it can detect real floods.
+
+Current gaps:
+
+- The sample validation set is too small.
+- The system does not yet know what water is with high confidence.
+- A visual change may come from rain, glare, shadows, people, debris, camera movement, or compression.
+- The risk engine is still simple and test-oriented.
+- Threshold tuning is one `video_id` at a time, not a full dataset study.
+- There is no locked test set yet.
+- There is no field pilot evidence yet.
+
+Simple example: if sunlight changes on the river surface, the system may see a visual change. That does not always mean water is rising.
+
+## Known Limits
+
+These limits should stay visible until better evidence exists.
+
+- This is a proof of concept, not a finished warning system.
+- Current outputs are for human review and development only.
+- Current reports do not prove accuracy.
+- Current reports do not prove safety.
+- OpenFloodAI must not send public warnings by itself.
+- Local emergency teams and community judgment remain responsible for real decisions.
+- Private or sensitive videos should not be committed to git.
+- More testing is needed across different rivers, cameras, weather, seasons, and lighting.
+
+Simple example: a `WATCH` or changed score in a local run means "please review this evidence." It does not mean "tell people to evacuate."
+
+## Current Validation Record
+
+The current validation record is early and should be updated as more reviewed examples are added.
+
+| Evidence | Current Status |
+| --- | --- |
+| Unit and contract tests | Available for current POC helpers. |
+| Synthetic smoke test | Available for a safe end-to-end local check. |
+| Local real-video workflow | Available for local-only review. Real videos should stay out of git unless license and size rules are handled. |
+| Human label examples | Available as small example JSON Lines files. |
+| Comparison report | Available for one video at a time. |
+| Threshold tuning report | Available for one video at a time. |
+| Field validation | Not started. |
+| Production readiness | Not started. |
+
+## Next Validation Goals
+
+Near-term validation should stay small and reviewable.
+
+1. Add a few approved validation clips for different conditions.
+2. Label each clip with simple human labels.
+3. Compare system output with human labels.
+4. Track where the system agrees, disagrees, or cannot compare.
+5. Keep unclear cases visible instead of hiding them.
+6. Add a locked validation split before any ML training.
+7. Test difficult cases like glare, rain, darkness, camera shake, and blocked views.
+8. Document every result in simple language.
+
+Simple example: start with two normal clips, two possible rising-water clips, two bad-visibility clips, and one missing-video test. Then write down what happened for each one.
+
+## How To Update This Page
+
+When a new validation run is reviewed, add:
+
+- the site or public label used for the video
+- whether the clip was synthetic, public, or local-only
+- the human label
+- the system output
+- whether the result was `agree`, `disagree`, or `cannot_compare`
+- any weak spot noticed by the reviewer
+
+Do not add private camera details, exact sensitive locations, faces, license plates, or large raw videos to the repository.
