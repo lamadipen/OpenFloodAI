@@ -158,3 +158,165 @@ def test_output_has_required_fields() -> None:
     assert "base_confidence" in result
     assert "escalation_reasons" in result
     assert "source_signals" in result
+
+
+# --- Earthquake / seismic risk -------------------------------------------
+
+
+def test_seismic_extreme_escalates() -> None:
+    seismic = {"seismic_risk_state": "EXTREME", "max_magnitude": 7.8, "earthquake_count": 1}
+    result = evaluate_multi_source_risk(_health(), _visual(), seismic_risk=seismic)
+    sources = cast(list[str], result["data_sources_used"])
+    assert "earthquake" in sources
+    assert result["final_risk_state"] == "WARNING_CANDIDATE"
+
+
+def test_seismic_high_escalates() -> None:
+    seismic = {"seismic_risk_state": "HIGH", "max_magnitude": 6.5, "earthquake_count": 2}
+    result = evaluate_multi_source_risk(_health(), _visual(), seismic_risk=seismic)
+    assert result["final_risk_state"] == "WARNING_CANDIDATE"
+
+
+def test_seismic_moderate_escalates_to_watch() -> None:
+    seismic = {"seismic_risk_state": "MODERATE", "max_magnitude": 5.5, "earthquake_count": 1}
+    result = evaluate_multi_source_risk(_health(), _visual(), seismic_risk=seismic)
+    assert result["final_risk_state"] in {"WATCH", "WARNING_CANDIDATE"}
+
+
+def test_seismic_low_no_escalation() -> None:
+    seismic = {"seismic_risk_state": "LOW", "max_magnitude": 4.2, "earthquake_count": 1}
+    result = evaluate_multi_source_risk(_health(), _visual(), seismic_risk=seismic)
+    assert result["final_risk_state"] == result["base_risk_state"]
+
+
+def test_seismic_none_skipped() -> None:
+    result = evaluate_multi_source_risk(_health(), _visual(), seismic_risk=None)
+    sources = cast(list[str], result["data_sources_used"])
+    assert "earthquake" not in sources
+
+
+# --- NASA EONET events ---------------------------------------------------
+
+
+def test_eonet_flood_escalates() -> None:
+    eonet: dict[str, object] = {
+        "event_state": "ACTIVE_FLOOD",
+        "flood_count": 2,
+        "storm_count": 0,
+        "landslide_count": 0,
+        "event_count": 2,
+    }
+    result = evaluate_multi_source_risk(
+        _health(), _visual(), eonet_summary=eonet
+    )
+    sources = cast(list[str], result["data_sources_used"])
+    assert "eonet" in sources
+    assert result["final_risk_state"] == "WARNING_CANDIDATE"
+
+
+def test_eonet_landslide_escalates_to_watch() -> None:
+    eonet: dict[str, object] = {
+        "event_state": "ACTIVE_FLOOD",
+        "flood_count": 0,
+        "storm_count": 0,
+        "landslide_count": 1,
+        "event_count": 1,
+    }
+    result = evaluate_multi_source_risk(
+        _health(), _visual(), eonet_summary=eonet
+    )
+    assert result["final_risk_state"] in {"WATCH", "WARNING_CANDIDATE"}
+
+
+def test_eonet_storm_escalates_to_watch() -> None:
+    eonet: dict[str, object] = {
+        "event_state": "ACTIVE_STORM",
+        "flood_count": 0,
+        "storm_count": 3,
+        "landslide_count": 0,
+        "event_count": 3,
+    }
+    result = evaluate_multi_source_risk(
+        _health(), _visual(), eonet_summary=eonet
+    )
+    assert result["final_risk_state"] in {"WATCH", "WARNING_CANDIDATE"}
+
+
+def test_eonet_clear_no_escalation() -> None:
+    eonet: dict[str, object] = {
+        "event_state": "CLEAR",
+        "flood_count": 0,
+        "storm_count": 0,
+        "landslide_count": 0,
+        "event_count": 0,
+    }
+    result = evaluate_multi_source_risk(
+        _health(), _visual(), eonet_summary=eonet
+    )
+    assert result["final_risk_state"] == result["base_risk_state"]
+
+
+# --- ReliefWeb disaster reports ------------------------------------------
+
+
+def test_reliefweb_active_disaster_escalates() -> None:
+    rw = {"report_state": "ACTIVE_DISASTER", "report_count": 8, "countries_affected": ["Nepal"]}
+    result = evaluate_multi_source_risk(_health(), _visual(), reliefweb_summary=rw)
+    sources = cast(list[str], result["data_sources_used"])
+    assert "reliefweb" in sources
+    assert result["final_risk_state"] == "WARNING_CANDIDATE"
+
+
+def test_reliefweb_few_reports_escalates_to_watch() -> None:
+    rw = {"report_state": "ACTIVE_DISASTER", "report_count": 2, "countries_affected": ["Nepal"]}
+    result = evaluate_multi_source_risk(_health(), _visual(), reliefweb_summary=rw)
+    assert result["final_risk_state"] in {"WATCH", "WARNING_CANDIDATE"}
+
+
+def test_reliefweb_clear_no_escalation() -> None:
+    rw = {"report_state": "CLEAR", "report_count": 0, "countries_affected": []}
+    result = evaluate_multi_source_risk(_health(), _visual(), reliefweb_summary=rw)
+    assert result["final_risk_state"] == result["base_risk_state"]
+
+
+# --- All sources combined (including new ones) ---------------------------
+
+
+def test_all_six_sources_combined() -> None:
+    water = {"gage_height_ft": 9.0, "flood_stage_ft": 10.0}
+    alerts = {"alert_type": "FLOOD WARNING", "severity": "SEVERE"}
+    precip = {"precipitation_sum_mm": 55.0}
+    seismic = {
+        "seismic_risk_state": "MODERATE",
+        "max_magnitude": 5.5,
+        "earthquake_count": 1,
+    }
+    eonet: dict[str, object] = {
+        "event_state": "ACTIVE_FLOOD",
+        "flood_count": 1,
+        "storm_count": 0,
+        "landslide_count": 0,
+        "event_count": 1,
+    }
+    rw = {
+        "report_state": "ACTIVE_DISASTER",
+        "report_count": 10,
+        "countries_affected": ["Nepal"],
+    }
+    result = evaluate_multi_source_risk(
+        _health(),
+        _visual(),
+        water_conditions=water,
+        flood_alerts=alerts,
+        precipitation=precip,
+        seismic_risk=seismic,
+        eonet_summary=eonet,
+        reliefweb_summary=rw,
+    )
+    sources = cast(list[str], result["data_sources_used"])
+    expected = {
+        "visual", "usgs", "nws", "precipitation",
+        "earthquake", "eonet", "reliefweb",
+    }
+    assert set(sources) == expected
+    assert result["final_risk_state"] == "WARNING_CANDIDATE"

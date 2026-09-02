@@ -1,0 +1,58 @@
+[
+  {
+    "site_id": "koshi-chatara",
+    "camera_id": "cam-koshi-01",
+    "latitude": 26.8167,
+    "longitude": 87.1500,
+    "description": "Koshi River at Chatara, Nepal -- one of Nepal's largest rivers, historically prone to devastating floods; the 2008 Koshi flood displaced over 60,000 people"
+  },
+  {
+    "site_id": "narayani-narayanghat",
+    "camera_id": "cam-narayani-01",
+    "latitude": 27.6975,
+    "longitude": 84.4286,
+    "description": "Narayani River at Narayanghat, Nepal -- major river draining central Nepal; feeds into the Ganges system; monsoon flooding regularly affects Chitwan district"
+  },
+  {
+    "site_id": "bagmati-kathmandu",
+    "camera_id": "cam-bagmati-01",
+    "latitude": 27.6917,
+    "longitude": 85.3217,
+    "description": "Bagmati River at Kathmandu, Nepal -- flows through the capital; urban flooding during monsoon season impacts millions"
+  },
+  {
+    "site_id": "rapti-nepalgunj",
+    "camera_id": "cam-rapti-01",
+    "latitude": 28.0500,
+    "longitude": 81.6167,
+    "description": "Rapti River at Nepalgunj, Nepal -- Terai lowlands river; severe flooding in 2024 killed hundreds and displaced thousands"
+  },
+  {
+    "site_id": "melamchi-sindhupalchok",
+    "camera_id": "cam-melamchi-01",
+    "latitude": 27.8667,
+    "longitude": 85.5500,
+    "description": "Melamchi River in Sindhupalchok District, Nepal -- GLOF and landslide-dam flood risk zone; 2021 Melamchi flood killed dozens and destroyed the newly built water supply tunnel"
+  },
+  {
+    "site_id": "sunkoshi-dolalghat",
+    "camera_id": "cam-sunkoshi-01",
+    "latitude": 27.6414,
+    "longitude": 85.7139,
+    "description": "Sun Koshi River at Dolalghat, Nepal -- landslide-dammed in 2014 Jure landslide, creating a massive flood risk; earthquake-triggered GLOF corridor"
+  },
+  {
+    "site_id": "karnali-chisapani",
+    "camera_id": "cam-karnali-01",
+    "latitude": 28.6333,
+    "longitude": 81.2833,
+    "description": "Karnali River at Chisapani, Nepal -- Nepal's longest river; extreme flood risk during monsoon; 2024 floods devastated downstream communities"
+  },
+  {
+    "site_id": "west-rapti-kusum",
+    "camera_id": "cam-wrapti-01",
+    "latitude": 27.9833,
+    "longitude": 82.2167,
+    "description": "West Rapti River near Kusum, Nepal -- severely affected in September 2024 floods that killed over 200 people across Nepal"
+  }
+]
