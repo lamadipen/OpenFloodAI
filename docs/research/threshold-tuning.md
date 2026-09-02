@@ -15,6 +15,8 @@ The tuning helper reads:
 - one `video_id`
 - one or more candidate thresholds
 
+This first helper tunes one `video_id` at a time. Full multi-video dataset tuning can come later.
+
 Simple example:
 
 ```text
@@ -73,7 +75,14 @@ The current prototype candidates are:
 - `0.10`
 - `0.20`
 
-These are starting points for review, not final defaults.
+These values are intentionally small prototype steps:
+
+- `0.02` checks a very sensitive setting.
+- `0.05` checks the current simple comparison default.
+- `0.10` checks a more conservative setting.
+- `0.20` checks a much stricter setting.
+
+They were chosen to help reviewers see how the report changes from sensitive to strict. They are not final flood-detection thresholds.
 
 ## Current Boundary
 
