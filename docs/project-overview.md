@@ -60,6 +60,21 @@ Simple example:
 
 OpenFloodAI can now run small local proof-of-concept steps.
 
+The completed foundation phase means the project can now connect the basic local review flow:
+
+```text
+local video
+-> health check
+-> selected reference region
+-> simple visual-change records
+-> review images
+-> human labels
+-> comparison and threshold reports
+-> validation notes
+```
+
+Simple example: a reviewer can watch one video, label it as `water_rising`, and compare that label with the simple system output.
+
 It can:
 
 - read a local video file
@@ -73,6 +88,10 @@ It can:
 - summarize saved records
 - turn technical records into plain-language operator notes
 - generate a few local review images for the biggest visual change
+- read human labels
+- compare human labels with local system output
+- try prototype visual-change thresholds
+- track validation results and known limits
 - provide privacy, retention, ML research, and labeling guidance
 
 Simple example: a developer can run a local video, save records, generate a comparison image with the watched area marked, and use the labeling guide to describe what changed.
@@ -92,10 +111,18 @@ OpenFloodAI still cannot:
 The next practical goal is:
 
 ```text
-reference region -> region-based visual signals -> review images -> human labels -> later ML
+multi-video validation -> summary report -> hard-case examples -> stronger reference-region signal -> later ML
 ```
 
-Simple meaning: first watch one clear part of the image, measure simple change there, help a person review it, and collect clear labels. ML should come later, after the project has safe labeled examples and stronger evaluation.
+Simple meaning: first test several reviewed videos, summarize where the system agrees or disagrees with people, then improve the selected-region water-change signal. ML should come later, after the project has safe labeled examples and stronger evaluation.
+
+Recommended next issue order:
+
+1. OF-031: add a multi-video validation runner.
+2. OF-032: generate a validation summary report.
+3. OF-034: add hard-case validation examples and expected behavior.
+4. OF-033: improve the water-level change signal using the reference region.
+5. OF-035: update documentation with current validation progress and next goals.
 
 ## Safety Boundaries
 

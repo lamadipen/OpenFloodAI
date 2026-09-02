@@ -8,10 +8,10 @@ OpenFloodAI is moving toward an edge-first camera system that watches a configur
 
 | Phase | Focus | Status |
 | --- | --- | --- |
-| Phase 1 | Foundation and requirements | Mostly complete |
-| Phase 2 | Research existing technology and datasets | Started |
-| Phase 3 | Build baseline flood detection | Planned |
-| Phase 4 | Historical-video testing | Planned |
+| Phase 1 | Foundation and requirements | Complete |
+| Phase 2 | Research and validation preparation | Complete |
+| Phase 3 | Multi-video validation and reporting | Next |
+| Phase 4 | Better reference-region water-change baseline | Planned |
 | Phase 5 | Real-time camera pipeline | Planned |
 | Phase 6 | Edge-device deployment | Planned |
 | Phase 7 | Alert system | Planned |
@@ -68,6 +68,27 @@ Completed or started:
 - human labeling guide for water-change review
 
 Simple example: today a developer can choose a watched image area, run a local video through the POC pipeline, save records to `data/local-runs/poc-records.jsonl`, print a short summary, create plain-language notes, generate a few local review images, organize validation data by site, compare labels with system output, try prototype thresholds against labels, update the validation status page, or run one safe smoke test that checks the full local review flow.
+
+## Completed Phase Summary
+
+The foundation and validation-prep work is now in place.
+
+In simple terms, OpenFloodAI can now:
+
+```text
+take a local video
+check if it is usable
+look at a selected area
+measure simple visual change
+save records
+generate review images
+let a human label the video
+compare human label vs system output
+try different thresholds
+document what worked and what did not
+```
+
+This does not prove flood detection. It gives developers and reviewers a small, repeatable way to inspect evidence.
 
 ## Next Direction
 
@@ -151,9 +172,12 @@ OpenFloodAI does not yet:
 
 Near-term work should stay small and testable:
 
-- define the first baseline water-region or virtual-ruler signal
-- use the labeling guide on safe local examples
-- keep updating the [validation results and known-limits tracker](research/validation-results.md)
-- improve replay examples using generated or approved local data
-- keep connecting reference-region config into local POC review tools
-- keep strengthening privacy, validation, and failure handling
+1. OF-031: add a multi-video validation runner.
+2. OF-032: generate a validation summary report.
+3. OF-034: add hard-case validation examples and expected behavior.
+4. OF-033: improve the water-level change signal using the reference region.
+5. OF-035: update documentation with current validation progress and next goals.
+
+Simple meaning: first run more reviewed videos, then summarize the results, then test difficult cases, then improve the signal.
+
+Also keep strengthening privacy, validation, and failure handling as the project grows.

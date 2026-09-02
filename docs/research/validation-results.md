@@ -20,6 +20,7 @@ So far, validation is local and small.
 | Human labels | Small example label files | The code can read labels like `water_rising`, `no_clear_change`, and `cannot_judge`. |
 | Label comparison | System output compared with human labels | The report can show `agree`, `disagree`, and `cannot_compare`. |
 | Threshold tuning | A few prototype visual-change thresholds | The report can show how different threshold numbers change the comparison result. |
+| Validation tracking | A plain-language known-limits page | The docs can now show what is tested, what is weak, and what should come next. |
 
 Simple example: a developer can run one local video, save POC records, add a human label, and compare whether the system output pointed in the same broad direction.
 
@@ -86,14 +87,26 @@ The current validation record is early and should be updated as more reviewed ex
 
 Near-term validation should stay small and reviewable.
 
-1. Add a few approved validation clips for different conditions.
-2. Label each clip with simple human labels.
-3. Compare system output with human labels.
-4. Track where the system agrees, disagrees, or cannot compare.
-5. Keep unclear cases visible instead of hiding them.
-6. Add a locked validation split before any ML training.
-7. Test difficult cases like glare, rain, darkness, camera shake, and blocked views.
-8. Document every result in simple language.
+Recommended next issue order:
+
+1. OF-031: add a multi-video validation runner.
+2. OF-032: generate a validation summary report.
+3. OF-034: add hard-case validation examples and expected behavior.
+4. OF-033: improve the water-level change signal using the reference region.
+5. OF-035: update documentation with current validation progress and next goals.
+
+Simple meaning: first run more reviewed videos, then summarize the results, then test difficult cases, then improve the signal.
+
+General validation goals:
+
+- Add a few approved validation clips for different conditions.
+- Label each clip with simple human labels.
+- Compare system output with human labels.
+- Track where the system agrees, disagrees, or cannot compare.
+- Keep unclear cases visible instead of hiding them.
+- Add a locked validation split before any ML training.
+- Test difficult cases like glare, rain, darkness, camera shake, and blocked views.
+- Document every result in simple language.
 
 Simple example: start with two normal clips, two possible rising-water clips, two bad-visibility clips, and one missing-video test. Then write down what happened for each one.
 
