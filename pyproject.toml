@@ -18,6 +18,9 @@ dependencies = [
   "opencv-python-headless>=4.10",
 ]
 
+[project.scripts]
+openfloodai = "openfloodai.cli:main"
+
 [project.optional-dependencies]
 dev = [
   "mkdocs>=1.6",

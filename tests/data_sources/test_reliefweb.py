@@ -30,7 +30,8 @@ def test_single_report() -> None:
     result = summarize_reports([_report("Nepal Flood Update")])
     assert result["report_count"] == 1
     assert result["report_state"] == "ACTIVE_DISASTER"
-    assert "Nepal" in result["countries_affected"]
+    countries = result["countries_affected"]
+    assert isinstance(countries, list) and "Nepal" in countries
 
 
 def test_multiple_countries() -> None:

@@ -7,6 +7,7 @@ from typing import cast
 
 import cv2
 
+from openfloodai.common import FrameArray
 from openfloodai.config import ReferenceRegion, load_site_config
 from openfloodai.contracts import write_jsonl_records
 from openfloodai.ingestion import check_video_file_health, read_video_metadata
@@ -17,7 +18,6 @@ from openfloodai.vision import (
     extract_frame_signals,
     extract_region_signals,
 )
-from openfloodai.vision.simple_signals import FrameArray
 
 PipelineRecord = dict[str, object]
 

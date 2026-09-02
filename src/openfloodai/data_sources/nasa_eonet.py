@@ -23,11 +23,13 @@ _FLOOD_CATEGORY_ID = "floods"
 _SEVERE_STORM_CATEGORY_ID = "severeStorms"
 _LANDSLIDE_CATEGORY_ID = "landslides"
 
-_RELEVANT_CATEGORIES = frozenset({
-    _FLOOD_CATEGORY_ID,
-    _SEVERE_STORM_CATEGORY_ID,
-    _LANDSLIDE_CATEGORY_ID,
-})
+_RELEVANT_CATEGORIES = frozenset(
+    {
+        _FLOOD_CATEGORY_ID,
+        _SEVERE_STORM_CATEGORY_ID,
+        _LANDSLIDE_CATEGORY_ID,
+    }
+)
 
 
 class NASAEONETError(RuntimeError):
@@ -239,10 +241,12 @@ def _extract_sources(sources: object) -> list[dict[str, str]]:
     result: list[dict[str, str]] = []
     for src in sources:
         if isinstance(src, dict):
-            result.append({
-                "id": str(src.get("id", "")),
-                "url": str(src.get("url", "")),
-            })
+            result.append(
+                {
+                    "id": str(src.get("id", "")),
+                    "url": str(src.get("url", "")),
+                }
+            )
     return result
 
 

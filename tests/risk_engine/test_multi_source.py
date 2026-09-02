@@ -206,9 +206,7 @@ def test_eonet_flood_escalates() -> None:
         "landslide_count": 0,
         "event_count": 2,
     }
-    result = evaluate_multi_source_risk(
-        _health(), _visual(), eonet_summary=eonet
-    )
+    result = evaluate_multi_source_risk(_health(), _visual(), eonet_summary=eonet)
     sources = cast(list[str], result["data_sources_used"])
     assert "eonet" in sources
     assert result["final_risk_state"] == "WARNING_CANDIDATE"
@@ -222,9 +220,7 @@ def test_eonet_landslide_escalates_to_watch() -> None:
         "landslide_count": 1,
         "event_count": 1,
     }
-    result = evaluate_multi_source_risk(
-        _health(), _visual(), eonet_summary=eonet
-    )
+    result = evaluate_multi_source_risk(_health(), _visual(), eonet_summary=eonet)
     assert result["final_risk_state"] in {"WATCH", "WARNING_CANDIDATE"}
 
 
@@ -236,9 +232,7 @@ def test_eonet_storm_escalates_to_watch() -> None:
         "landslide_count": 0,
         "event_count": 3,
     }
-    result = evaluate_multi_source_risk(
-        _health(), _visual(), eonet_summary=eonet
-    )
+    result = evaluate_multi_source_risk(_health(), _visual(), eonet_summary=eonet)
     assert result["final_risk_state"] in {"WATCH", "WARNING_CANDIDATE"}
 
 
@@ -250,9 +244,7 @@ def test_eonet_clear_no_escalation() -> None:
         "landslide_count": 0,
         "event_count": 0,
     }
-    result = evaluate_multi_source_risk(
-        _health(), _visual(), eonet_summary=eonet
-    )
+    result = evaluate_multi_source_risk(_health(), _visual(), eonet_summary=eonet)
     assert result["final_risk_state"] == result["base_risk_state"]
 
 
@@ -315,8 +307,13 @@ def test_all_six_sources_combined() -> None:
     )
     sources = cast(list[str], result["data_sources_used"])
     expected = {
-        "visual", "usgs", "nws", "precipitation",
-        "earthquake", "eonet", "reliefweb",
+        "visual",
+        "usgs",
+        "nws",
+        "precipitation",
+        "earthquake",
+        "eonet",
+        "reliefweb",
     }
     assert set(sources) == expected
     assert result["final_risk_state"] == "WARNING_CANDIDATE"

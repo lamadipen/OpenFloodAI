@@ -22,16 +22,18 @@ from uuid import uuid4
 _BASE_URL = "https://api.reliefweb.int/v1"
 _USER_AGENT = "OpenFloodAI/0.1.0 (open-source flood detection; github.com/openfloodai)"
 
-_FLOOD_DISASTER_TYPES = frozenset({
-    "Flood",
-    "Flash Flood",
-    "Storm Surge",
-    "Monsoon",
-    "Cyclone",
-    "Tsunami",
-    "Landslide",
-    "Mudslide",
-})
+_FLOOD_DISASTER_TYPES = frozenset(
+    {
+        "Flood",
+        "Flash Flood",
+        "Storm Surge",
+        "Monsoon",
+        "Cyclone",
+        "Tsunami",
+        "Landslide",
+        "Mudslide",
+    }
+)
 
 
 class ReliefWebError(RuntimeError):
