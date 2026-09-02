@@ -101,6 +101,7 @@ The project can now do a few small real things:
 - Read a local video file and create basic frame metadata.
 - Run one safe end-to-end local POC smoke test.
 - Run one local review workflow for your own video.
+- Run one multi-video validation report for a site folder.
 - Compare local system output against human labels.
 - Try prototype visual-change thresholds against human labels.
 - Summarize local POC records for review.
@@ -479,7 +480,45 @@ If system records include `video_id`, only records for the requested video are c
 
 This does not prove flood detection accuracy. It only helps reviewers find where the POC output seems to match or miss human review.
 
-### 15. Try Prototype Thresholds Against Human Labels
+### 15. Run Multi-Video Site Validation
+
+Use this when one site has multiple videos under `data/sites/<site-name>/inputs/videos/`.
+
+Example site layout:
+
+```text
+data/sites/example-site/
+  configs/site-config.json
+  inputs/videos/rising-001.mp4
+  inputs/videos/normal-001.mp4
+  labels/labels.jsonl
+```
+
+Run:
+
+```bash
+python3 scripts/run_site_validation.py \
+  --site-dir data/sites/example-site
+```
+
+After it runs, check:
+
+```text
+data/sites/example-site/outputs/validation-report.md
+data/sites/example-site/outputs/<video-id>/records.jsonl
+data/sites/example-site/outputs/<video-id>/summary.md
+data/sites/example-site/outputs/<video-id>/operator-notes.txt
+data/sites/example-site/outputs/<video-id>/review-images/
+data/sites/example-site/outputs/<video-id>/label-comparison.md
+```
+
+Simple meaning: this runs each local video, compares it with any matching human label, and creates one combined report for the site.
+
+Missing labels, bad videos, and unclear cases stay visible as `cannot_compare`. They are not counted as success.
+
+This still does not prove flood detection accuracy, send alerts, upload files, or create public warnings.
+
+### 16. Try Prototype Thresholds Against Human Labels
 
 Run this after you have a local records file and a human label file.
 
@@ -499,7 +538,7 @@ Cannot-compare cases stay separate. They are not counted as success.
 
 This does not choose final flood thresholds. It only helps us learn from validation examples.
 
-### 16. Summarize A Local POC Run
+### 17. Summarize A Local POC Run
 
 Run this after the local POC pipeline creates `data/local-runs/poc-records.jsonl`.
 
@@ -523,7 +562,7 @@ Simple meaning: this is the confidence from the current simple rule engine. It i
 
 This report is only for local review and debugging. It does not create a public warning, publish anything, send alerts, or show private camera details.
 
-### 17. Explain A POC Output For A Human Reviewer
+### 18. Explain A POC Output For A Human Reviewer
 
 This turns one output record into a short plain-language note.
 
@@ -544,7 +583,7 @@ Simple meaning: instead of only showing technical fields, the helper explains wh
 
 This note is not an official public warning. It does not send alerts or decide emergency action.
 
-### 18. Test Visual Signals Inside A Reference Region
+### 19. Test Visual Signals Inside A Reference Region
 
 This checks only the selected part of the image, like a virtual ruler.
 
@@ -596,7 +635,7 @@ Simple meaning: the top half changed, but the lower half did not. The selected r
 
 This still does not detect floods. It only measures simple image change inside the selected area.
 
-### 19. Generate Local Review Images
+### 20. Generate Local Review Images
 
 This saves a few images so a person can review the biggest visual change.
 

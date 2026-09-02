@@ -1,0 +1,28 @@
+"""Run local validation for all videos in one site folder."""
+
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
+from openfloodai.validation import render_site_validation_report, run_site_validation
+
+
+def main() -> None:
+    """Run a local multi-video validation report."""
+
+    parser = argparse.ArgumentParser(
+        description="Run OpenFloodAI local validation for one site folder."
+    )
+    parser.add_argument("--site-dir", required=True, type=Path)
+    parser.add_argument("--config-path", type=Path)
+    args = parser.parse_args()
+
+    report = run_site_validation(args.site_dir, config_path=args.config_path)
+
+    print(render_site_validation_report(report))
+    print(f"Combined report written to: {report.output_path}")
+
+
+if __name__ == "__main__":
+    main()

@@ -56,6 +56,7 @@ Completed or started:
 - end-to-end local POC smoke workflow using safe synthetic input
 - validation dataset folder structure for multiple sites
 - local comparison report for system output and human labels
+- multi-video local validation runner for one site folder
 - prototype threshold tuning report for comparing visual-change settings with human labels
 - validation results and known-limits tracker
 - local replay summary report for saved POC records
@@ -67,7 +68,7 @@ Completed or started:
 - research note for ML models, datasets, Google ML options, and public water-data inspiration
 - human labeling guide for water-change review
 
-Simple example: today a developer can choose a watched image area, run a local video through the POC pipeline, save records to `data/local-runs/poc-records.jsonl`, print a short summary, create plain-language notes, generate a few local review images, organize validation data by site, compare labels with system output, try prototype thresholds against labels, update the validation status page, or run one safe smoke test that checks the full local review flow.
+Simple example: today a developer can choose a watched image area, run a local video through the POC pipeline, save records to `data/local-runs/poc-records.jsonl`, print a short summary, create plain-language notes, generate a few local review images, organize validation data by site, run multi-video site validation, compare labels with system output, try prototype thresholds against labels, update the validation status page, or run one safe smoke test that checks the full local review flow.
 
 ## Completed Phase Summary
 

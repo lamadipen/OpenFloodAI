@@ -103,3 +103,10 @@ This report does not train a model, send alerts, upload data, or publish warning
 It only helps developers and reviewers see where the current POC agrees or disagrees with human review.
 
 To try different visual-change thresholds, see [Prototype Threshold Tuning](threshold-tuning.md).
+
+To compare several videos in one site folder, use the site validation runner:
+
+```bash
+python3 scripts/run_site_validation.py \
+  --site-dir data/sites/example-site
+```

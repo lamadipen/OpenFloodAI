@@ -21,6 +21,7 @@ So far, validation is local and small.
 | Label comparison | System output compared with human labels | The report can show `agree`, `disagree`, and `cannot_compare`. |
 | Threshold tuning | A few prototype visual-change thresholds | The report can show how different threshold numbers change the comparison result. |
 | Validation tracking | A plain-language known-limits page | The docs can now show what is tested, what is weak, and what should come next. |
+| Multi-video site validation | A folder of local videos for one site | The runner can create one combined report for several videos. |
 
 Simple example: a developer can run one local video, save POC records, add a human label, and compare whether the system output pointed in the same broad direction.
 
@@ -48,6 +49,7 @@ Current gaps:
 - A visual change may come from rain, glare, shadows, people, debris, camera movement, or compression.
 - The risk engine is still simple and test-oriented.
 - Threshold tuning is one `video_id` at a time, not a full dataset study.
+- Multi-video validation is local only and still depends on small, reviewed examples.
 - There is no locked test set yet.
 - There is no field pilot evidence yet.
 
