@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 from openfloodai.alerts.buffer import (
@@ -107,7 +108,7 @@ def test_should_flush_respects_interval(tmp_path: Path) -> None:
         timestamp="2024-09-15T12:00:00Z",
     )
 
-    state.last_flush_attempt = 0.0
+    state.last_flush_attempt = time.monotonic() - config.retry_interval_seconds - 1
     assert should_flush(config, state)
 
 
