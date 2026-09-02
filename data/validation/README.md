@@ -65,6 +65,10 @@ Allowed `human_label` values are:
 
 See the Human Label Format documentation for the full field list and validation command.
 
+After a local POC run, compare labels with system output using the Human Label Comparison guide.
+
+Simple example: compare `labels/example-labels.jsonl` with `outputs/records/run-001.jsonl` to see whether the human label and system visual-change result agree.
+
 `human-evidence/flood-images/` keeps images selected by a person as possible flood or high-water evidence.
 
 Simple example: a reviewer sees a frame where water looks high and saves that frame here for later comparison.

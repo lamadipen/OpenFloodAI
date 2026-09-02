@@ -99,6 +99,8 @@ PY
 
 Simple meaning: this checks that each label has the required fields, uses an allowed label value, and has a valid time window.
 
+After labels are valid, compare them with system output using the [Human Label Comparison](human-label-comparison.md) guide.
+
 ## Current Boundary
 
 This format does not train a model, score flood risk, send alerts, upload data, or create public warnings.
