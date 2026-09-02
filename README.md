@@ -68,6 +68,8 @@ Validation videos, labels, human evidence, and review outputs should use the str
 
 Human video review labels should use the format in [docs/research/human-label-format.md](docs/research/human-label-format.md).
 
+Human labels can be compared with local system output using [docs/research/human-label-comparison.md](docs/research/human-label-comparison.md).
+
 Build it locally:
 
 ```bash
@@ -93,6 +95,7 @@ The project can now do a few small real things:
 - Read a local video file and create basic frame metadata.
 - Run one safe end-to-end local POC smoke test.
 - Run one local review workflow for your own video.
+- Compare local system output against human labels.
 - Summarize local POC records for review.
 - Turn POC output records into plain-language operator notes.
 - Choose a watched reference region from a local image.
@@ -442,7 +445,22 @@ Simple meaning: this reads your video, uses the `reference_region` from the conf
 
 This still does not detect floods, send alerts, upload files, connect to live cameras, or write to a database.
 
-### 14. Summarize A Local POC Run
+### 14. Compare Human Labels With System Output
+
+Run this after you have a local records file and a human label file.
+
+```bash
+python3 scripts/compare_human_labels.py \
+  --records-path data/local-runs/video-review/records.jsonl \
+  --labels-path data/validation/sites/example-site/labels/example-labels.jsonl \
+  --video-id demo-river-001
+```
+
+Simple meaning: this compares what a person wrote with what the system measured. It reports `agree`, `disagree`, or `cannot_compare`.
+
+This does not prove flood detection accuracy. It only helps reviewers find where the POC output seems to match or miss human review.
+
+### 15. Summarize A Local POC Run
 
 Run this after the local POC pipeline creates `data/local-runs/poc-records.jsonl`.
 
@@ -462,7 +480,7 @@ Simple meaning: this reads the saved JSON Lines file and prints a short report. 
 
 This report is only for local review and debugging. It does not create a public warning, publish anything, send alerts, or show private camera details.
 
-### 15. Explain A POC Output For A Human Reviewer
+### 16. Explain A POC Output For A Human Reviewer
 
 This turns one output record into a short plain-language note.
 
@@ -483,7 +501,7 @@ Simple meaning: instead of only showing technical fields, the helper explains wh
 
 This note is not an official public warning. It does not send alerts or decide emergency action.
 
-### 16. Test Visual Signals Inside A Reference Region
+### 17. Test Visual Signals Inside A Reference Region
 
 This checks only the selected part of the image, like a virtual ruler.
 
@@ -535,7 +553,7 @@ Simple meaning: the top half changed, but the lower half did not. The selected r
 
 This still does not detect floods. It only measures simple image change inside the selected area.
 
-### 17. Generate Local Review Images
+### 18. Generate Local Review Images
 
 This saves a few images so a person can review the biggest visual change.
 
@@ -574,7 +592,7 @@ These images are local review files only. Do not commit real review images to Gi
 
 OpenFloodAI is in local proof-of-concept preparation.
 
-Current local helpers can read test videos, check video health, save records, load site/camera config, choose a watched reference region from a local image, run one safe end-to-end local smoke test, run a local review workflow for your own video, measure simple full-frame and reference-region signals, summarize saved records, generate local review images, and create plain-language operator notes.
+Current local helpers can read test videos, check video health, save records, load site/camera config, choose a watched reference region from a local image, run one safe end-to-end local smoke test, run a local review workflow for your own video, compare system output with human labels, measure simple full-frame and reference-region signals, summarize saved records, generate local review images, and create plain-language operator notes.
 
 OpenFloodAI still does not detect real floods, train ML models, connect to live cameras, send alerts, publish public warnings, provide a dashboard, or replace local emergency decision-making.
 

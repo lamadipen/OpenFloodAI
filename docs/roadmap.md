@@ -55,6 +55,7 @@ Completed or started:
 - region-based local POC pipeline using a configured reference region
 - end-to-end local POC smoke workflow using safe synthetic input
 - validation dataset folder structure for multiple sites
+- local comparison report for system output and human labels
 - local replay summary report for saved POC records
 - plain-language operator notes for POC outputs
 - local review images for biggest visual changes
@@ -64,7 +65,7 @@ Completed or started:
 - research note for ML models, datasets, Google ML options, and public water-data inspiration
 - human labeling guide for water-change review
 
-Simple example: today a developer can choose a watched image area, run a local video through the POC pipeline, save records to `data/local-runs/poc-records.jsonl`, print a short summary, create plain-language notes, generate a few local review images, organize validation data by site, or run one safe smoke test that checks the full local review flow.
+Simple example: today a developer can choose a watched image area, run a local video through the POC pipeline, save records to `data/local-runs/poc-records.jsonl`, print a short summary, create plain-language notes, generate a few local review images, organize validation data by site, compare labels with system output, or run one safe smoke test that checks the full local review flow.
 
 ## Next Direction
 
