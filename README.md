@@ -66,7 +66,7 @@ The docs site now includes a completed-phase summary and next validation priorit
 
 The documentation includes a [Privacy And Retention](docs/privacy-retention.md) page for safe local POC data handling.
 
-Validation videos, labels, human evidence, and review outputs should use the structure in [data/validation/README.md](data/validation/README.md).
+Site configs, input videos, labels, human evidence, and review outputs should use the structure in [data/sites/README.md](data/sites/README.md).
 
 Human video review labels should use the format in [docs/research/human-label-format.md](docs/research/human-label-format.md).
 
@@ -446,16 +446,16 @@ Replace `data/sample-video.mp4` with your local video path:
 python3 scripts/run_local_video_review.py \
   --video-path data/sample-video.mp4 \
   --config-path configs/example-site.json \
-  --output-dir data/local-runs/video-review
+  --output-dir data/sites/example-site/outputs
 ```
 
 After it runs, check these local files:
 
 ```text
-data/local-runs/video-review/records.jsonl
-data/local-runs/video-review/summary.md
-data/local-runs/video-review/operator-notes.txt
-data/local-runs/video-review/review-images/
+data/sites/example-site/outputs/records.jsonl
+data/sites/example-site/outputs/summary.md
+data/sites/example-site/outputs/operator-notes.txt
+data/sites/example-site/outputs/review-images/
 ```
 
 Simple meaning: this reads your video, uses the `reference_region` from the config, saves records, creates a summary, writes plain-language notes, and saves review images.
@@ -468,8 +468,8 @@ Run this after you have a local records file and a human label file.
 
 ```bash
 python3 scripts/compare_human_labels.py \
-  --records-path data/local-runs/video-review/records.jsonl \
-  --labels-path data/validation/sites/example-site/labels/example-labels.jsonl \
+  --records-path data/sites/example-site/outputs/records.jsonl \
+  --labels-path data/sites/example-site/labels/example-labels.jsonl \
   --video-id demo-river-001
 ```
 
@@ -485,8 +485,8 @@ Run this after you have a local records file and a human label file.
 
 ```bash
 python3 scripts/tune_thresholds.py \
-  --records-path data/local-runs/video-review/records.jsonl \
-  --labels-path data/validation/sites/example-site/labels/example-labels.jsonl \
+  --records-path data/sites/example-site/outputs/records.jsonl \
+  --labels-path data/sites/example-site/labels/example-labels.jsonl \
   --video-id demo-river-001 \
   --threshold 0.02 \
   --threshold 0.05 \
@@ -516,6 +516,10 @@ PY
 ```
 
 Simple meaning: this reads the saved JSON Lines file and prints a short report. For example, it can say how many records were created, what record types appeared, whether any `UNKNOWN` or degraded records appeared, and what the highest simple visual scores were.
+
+If the run has risk-state records, the summary also shows the highest prototype risk confidence.
+
+Simple meaning: this is the confidence from the current simple rule engine. It is not flood probability and it is not proof that the system is correct.
 
 This report is only for local review and debugging. It does not create a public warning, publish anything, send alerts, or show private camera details.
 

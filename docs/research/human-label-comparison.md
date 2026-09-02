@@ -63,8 +63,8 @@ Use the demo label file and a local POC records file:
 
 ```bash
 python3 scripts/compare_human_labels.py \
-  --records-path data/local-runs/video-review/records.jsonl \
-  --labels-path data/validation/sites/example-site/labels/example-labels.jsonl \
+  --records-path data/sites/example-site/outputs/records.jsonl \
+  --labels-path data/sites/example-site/labels/example-labels.jsonl \
   --video-id demo-river-001
 ```
 
@@ -72,10 +72,10 @@ To save the report:
 
 ```bash
 python3 scripts/compare_human_labels.py \
-  --records-path data/local-runs/video-review/records.jsonl \
-  --labels-path data/validation/sites/example-site/labels/example-labels.jsonl \
+  --records-path data/sites/example-site/outputs/records.jsonl \
+  --labels-path data/sites/example-site/labels/example-labels.jsonl \
   --video-id demo-river-001 \
-  --output-path data/local-runs/video-review/label-comparison.md
+  --output-path data/sites/example-site/outputs/label-comparison.md
 ```
 
 ## Result Values

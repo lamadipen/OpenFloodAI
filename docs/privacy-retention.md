@@ -76,24 +76,25 @@ Do not commit the real frame used to choose that box unless it is synthetic or c
 
 ## Validation Dataset Structure
 
-Future validation data should use `data/validation/`.
+Future validation data should use `data/sites/`.
 
 Use one folder per site so different rivers and cameras do not get mixed together.
 
 Simple example:
 
 ```text
-data/validation/sites/colorado-river-windy-gap/
+data/sites/colorado-river-windy-gap/
   configs/
-  videos/
+  inputs/videos/
+  inputs/other/
   labels/
   human-evidence/
     flood-images/
     notes/
   outputs/
-    records/
-    summaries/
-    operator-notes/
+    records.jsonl
+    summary.md
+    operator-notes.txt
     review-images/
 ```
 

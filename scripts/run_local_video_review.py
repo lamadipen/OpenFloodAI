@@ -16,7 +16,11 @@ def main() -> None:
     )
     parser.add_argument("--video-path", required=True, type=Path)
     parser.add_argument("--config-path", default=Path("configs/example-site.json"), type=Path)
-    parser.add_argument("--output-dir", default=Path("data/local-runs/video-review"), type=Path)
+    parser.add_argument(
+        "--output-dir",
+        default=Path("data/sites/example-site/outputs"),
+        type=Path,
+    )
     args = parser.parse_args()
 
     result = run_local_video_review(
