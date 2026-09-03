@@ -24,6 +24,7 @@ nav:
       - Human Label Comparison: research/human-label-comparison.md
       - Prototype Threshold Tuning: research/threshold-tuning.md
       - Validation Results And Known Limits: research/validation-results.md
+      - Hard-Case Validation Examples: research/hard-case-validation.md
       - ML Model Options: research/ml-model-options.md
   - How to Contribute: contributing.md
 
