@@ -140,6 +140,7 @@ def run_site_validation(
                         system_result="missing_video",
                         result="cannot_compare",
                         note="A human label exists, but no matching local video file was found.",
+                        time_window_seconds=_label_time_window_seconds(label),
                     )
                     for label in labels_by_video_id[video_id]
                 ],
@@ -224,6 +225,7 @@ def render_site_validation_report(report: SiteValidationReport) -> str:
                         f"    - Human label: {comparison.human_label}",
                         f"    - System result: {comparison.system_result}",
                         f"    - Result: {comparison.result}",
+                        f"    - Time window: {_time_window_text(comparison.time_window_seconds)}",
                         f"    - Note: {comparison.note}",
                     ]
                 )
@@ -271,6 +273,7 @@ def _run_one_video(
                     system_result="processing_failed",
                     result="cannot_compare",
                     note=f"Video could not be processed: {error}",
+                    time_window_seconds=_label_time_window_seconds(_first_label(labels, video_id)),
                 )
             ],
             output_dir=str(output_dir),
@@ -372,10 +375,42 @@ def _labels_by_video_id(
 
 
 def _first_label_text(labels: list[JsonObject], video_id: str) -> str:
+    label = _first_label(labels, video_id)
+    if label is not None:
+        return _text(label.get("human_label"), fallback="unknown")
+    return "missing"
+
+
+def _first_label(labels: list[JsonObject], video_id: str) -> JsonObject | None:
     for label in labels:
         if _text(label.get("video_id")) == video_id:
-            return _text(label.get("human_label"), fallback="unknown")
-    return "missing"
+            return label
+    return None
+
+
+def _label_time_window_seconds(label: Mapping[str, object] | None) -> tuple[float, float] | None:
+    if label is None:
+        return None
+    value = label.get("time_window_seconds")
+    if not isinstance(value, list) or len(value) != 2:
+        return None
+
+    start, end = value
+    if not _is_number(start) or not _is_number(end):
+        return None
+
+    start_second = float(start)
+    end_second = float(end)
+    if start_second < 0 or end_second <= start_second:
+        return None
+    return (start_second, end_second)
+
+
+def _time_window_text(time_window_seconds: tuple[float, float] | None) -> str:
+    if time_window_seconds is None:
+        return "missing"
+    start_second, end_second = time_window_seconds
+    return f"{start_second:g}s to {end_second:g}s"
 
 
 def _comparison_field_summary(values: Iterable[str], *, fallback: str) -> str:
@@ -395,3 +430,7 @@ def _text(value: object, *, fallback: str = "") -> str:
     if isinstance(value, str) and value:
         return value
     return fallback
+
+
+def _is_number(value: object) -> bool:
+    return not isinstance(value, bool) and isinstance(value, int | float)

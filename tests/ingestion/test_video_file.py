@@ -50,6 +50,7 @@ def test_read_video_metadata_returns_frame_records(tmp_path: Path) -> None:
     assert records[0]["site_id"] == "site-bridge-01"
     assert records[0]["camera_id"] == "camera-bridge-01-main"
     assert records[0]["timestamp"] == "2026-08-28T12:00:00+00:00"
+    assert [record["video_time_seconds"] for record in records] == [0.0, 0.5, 1.0]
     assert records[0]["frame_id"] == "frame-000000"
     assert records[0]["frame_width"] == 8
     assert records[0]["frame_height"] == 8

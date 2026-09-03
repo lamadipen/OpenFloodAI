@@ -140,10 +140,12 @@ def test_run_site_validation_reports_multiple_video_results(tmp_path: Path) -> N
     assert (site_dir / "outputs" / "rising-001" / "records.jsonl").exists()
     assert (site_dir / "outputs" / "rising-001" / "label-comparison.md").exists()
     table_header = "| Video | Processed | Human label | System result | Result | Windows | Note |"
-    rising_row = "| rising-001.avi | yes | multiple | water_change_seen | cannot_compare | 2 |"
+    rising_row = "| rising-001.avi | yes | multiple | multiple | cannot_compare | 2 |"
     assert table_header in rendered
     assert rising_row in rendered
     assert "- Label windows compared: 6" in rendered
+    assert "Time window: 0s to 30s" in rendered
+    assert "Time window: 30s to 60s" in rendered
     assert "Cases marked `cannot_compare` are not counted as success." in rendered
 
 
@@ -195,7 +197,7 @@ def test_combined_report_output_is_stable_and_simple(tmp_path: Path) -> None:
     assert "# Site Validation Report" in rendered
     assert "Validation Site: example-site" in rendered
     assert "## Summary Table" in rendered
-    rising_row = "| rising-001.avi | yes | multiple | water_change_seen | cannot_compare | 2 |"
+    rising_row = "| rising-001.avi | yes | multiple | multiple | cannot_compare | 2 |"
     assert rising_row in rendered
     assert "## Detailed Results" in rendered
     assert "### rising-001" in rendered
@@ -205,4 +207,6 @@ def test_combined_report_output_is_stable_and_simple(tmp_path: Path) -> None:
     assert "- Label windows compared: 2" in rendered
     assert "Window 1:" in rendered
     assert "Window 2:" in rendered
+    assert "Time window: 0s to 30s" in rendered
+    assert "Time window: 30s to 60s" in rendered
     assert "does not prove flood detection accuracy" in rendered

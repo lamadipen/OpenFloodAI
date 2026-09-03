@@ -109,6 +109,7 @@ def _build_frame_metadata(
         "site_id": site_id,
         "camera_id": camera_id,
         "timestamp": timestamp.isoformat(),
+        "video_time_seconds": _frame_time_seconds(frame_index, frame_rate),
         "frame_id": f"frame-{frame_index:06d}",
         "frame_hash": _frame_hash(frame),
         "dropped_frame_count": 0,
@@ -126,6 +127,12 @@ def _frame_timestamp(base_time: datetime, frame_index: int, frame_rate: float | 
     if frame_rate is None or frame_rate <= 0:
         return base_time
     return base_time + timedelta(seconds=frame_index / frame_rate)
+
+
+def _frame_time_seconds(frame_index: int, frame_rate: float | None) -> float:
+    if frame_rate is None or frame_rate <= 0:
+        return 0.0
+    return round(frame_index / frame_rate, 6)
 
 
 def _frame_hash(frame: FrameArray) -> str:

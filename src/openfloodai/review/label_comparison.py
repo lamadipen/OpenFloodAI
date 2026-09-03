@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from openfloodai.contracts import read_jsonl_records
@@ -34,6 +35,7 @@ class LabelComparison:
     system_result: str
     result: str
     note: str
+    time_window_seconds: tuple[float, float] | None = None
 
 
 @dataclass(frozen=True)
@@ -63,35 +65,24 @@ def compare_label_records(
 
     labels_for_video = [label for label in human_labels if _text(label.get("video_id")) == video_id]
     system_records_for_video = _system_records_for_video(system_records, video_id)
-    system_result = _system_result(system_records_for_video, change_signal_threshold)
 
     if not labels_for_video:
         comparisons = [
             LabelComparison(
                 video_id=video_id,
                 human_label="missing",
-                system_result=system_result,
+                system_result=_system_result(system_records_for_video, change_signal_threshold),
                 result="cannot_compare",
                 note="No human label was found for this video.",
             )
         ]
-    elif system_result == "missing_system_output":
-        comparisons = [
-            LabelComparison(
-                video_id=video_id,
-                human_label=_text(label.get("human_label"), fallback="unknown"),
-                system_result=system_result,
-                result="cannot_compare",
-                note="No visual signal or risk-state output was found to compare.",
-            )
-            for label in labels_for_video
-        ]
     else:
         comparisons = [
-            _compare_one_label(
+            _compare_one_label_window(
                 label,
                 video_id=video_id,
-                system_result=system_result,
+                system_records=system_records_for_video,
+                change_signal_threshold=change_signal_threshold,
             )
             for label in labels_for_video
         ]
@@ -150,6 +141,7 @@ def render_label_comparison_report(report: LabelComparisonReport) -> str:
                 f"Human label: {comparison.human_label}",
                 f"System result: {comparison.system_result}",
                 f"Result: {comparison.result}",
+                f"Time window: {_time_window_text(comparison.time_window_seconds)}",
                 f"Note: {comparison.note}",
             ]
         )
@@ -164,11 +156,55 @@ def render_label_comparison_report(report: LabelComparisonReport) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _compare_one_label_window(
+    label: Mapping[str, object],
+    *,
+    video_id: str,
+    system_records: list[Mapping[str, object]],
+    change_signal_threshold: float,
+) -> LabelComparison:
+    time_window = _time_window_seconds(label)
+    human_label = _text(label.get("human_label"), fallback="unknown")
+
+    if time_window is None:
+        return LabelComparison(
+            video_id=video_id,
+            human_label=human_label,
+            system_result="missing_system_output",
+            result="cannot_compare",
+            note="The human label time window is missing or invalid.",
+            time_window_seconds=None,
+        )
+
+    matching_records = _system_records_in_time_window(system_records, time_window)
+    system_result = _system_result(matching_records, change_signal_threshold)
+    if system_result == "missing_system_output":
+        return LabelComparison(
+            video_id=video_id,
+            human_label=human_label,
+            system_result=system_result,
+            result="cannot_compare",
+            note=(
+                "No matching visual signal or risk-state output was found for "
+                f"{_time_window_text(time_window)}."
+            ),
+            time_window_seconds=time_window,
+        )
+
+    return _compare_one_label(
+        label,
+        video_id=video_id,
+        system_result=system_result,
+        time_window_seconds=time_window,
+    )
+
+
 def _compare_one_label(
     label: Mapping[str, object],
     *,
     video_id: str,
     system_result: str,
+    time_window_seconds: tuple[float, float] | None,
 ) -> LabelComparison:
     human_label = _text(label.get("human_label"), fallback="unknown")
 
@@ -179,6 +215,7 @@ def _compare_one_label(
             system_result=system_result,
             result="cannot_compare",
             note="The human label or system output says this case is unclear.",
+            time_window_seconds=time_window_seconds,
         )
 
     if human_label in CHANGE_LABELS and system_result == "water_change_seen":
@@ -191,6 +228,7 @@ def _compare_one_label(
                 "The human saw water change, and the system measured visual change. "
                 "The current simple signal does not know direction yet."
             ),
+            time_window_seconds=time_window_seconds,
         )
 
     if human_label in NO_CHANGE_LABELS and system_result == "no_clear_change":
@@ -200,6 +238,7 @@ def _compare_one_label(
             system_result=system_result,
             result="agree",
             note="The human saw no clear change, and the system change signal stayed low.",
+            time_window_seconds=time_window_seconds,
         )
 
     return LabelComparison(
@@ -208,6 +247,7 @@ def _compare_one_label(
         system_result=system_result,
         result="disagree",
         note="The human label and system visual-change result do not match.",
+        time_window_seconds=time_window_seconds,
     )
 
 
@@ -253,6 +293,114 @@ def _system_records_for_video(
         return []
 
     return records
+
+
+def _system_records_in_time_window(
+    system_records: Iterable[Mapping[str, object]],
+    time_window_seconds: tuple[float, float],
+) -> list[Mapping[str, object]]:
+    records = list(system_records)
+    base_timestamp = _base_timestamp(records)
+    record_ids_in_window = {
+        _text(record.get("record_id"))
+        for record in records
+        if _record_time_is_in_window(record, time_window_seconds, base_timestamp)
+        and _text(record.get("record_id"))
+    }
+
+    return [
+        record
+        for record in records
+        if _record_time_is_in_window(record, time_window_seconds, base_timestamp)
+        or _source_records_overlap_window(record, record_ids_in_window)
+    ]
+
+
+def _record_time_is_in_window(
+    record: Mapping[str, object],
+    time_window_seconds: tuple[float, float],
+    base_timestamp: datetime | None,
+) -> bool:
+    record_second = _record_video_second(record, base_timestamp)
+    if record_second is None:
+        return False
+
+    start_second, end_second = time_window_seconds
+    return start_second <= record_second <= end_second
+
+
+def _source_records_overlap_window(
+    record: Mapping[str, object],
+    record_ids_in_window: set[str],
+) -> bool:
+    source_record_ids = record.get("source_record_ids")
+    if not isinstance(source_record_ids, list):
+        return False
+    return any(
+        _text(source_record_id) in record_ids_in_window for source_record_id in source_record_ids
+    )
+
+
+def _record_video_second(
+    record: Mapping[str, object],
+    base_timestamp: datetime | None,
+) -> float | None:
+    for field_name in ("video_time_seconds", "time_offset_seconds", "relative_time_seconds"):
+        score = _score_value(record.get(field_name))
+        if score is not None:
+            return score
+
+    if base_timestamp is None:
+        return None
+
+    timestamp = _parse_timestamp(_text(record.get("timestamp")))
+    if timestamp is None:
+        return None
+
+    return (timestamp - base_timestamp).total_seconds()
+
+
+def _base_timestamp(records: Iterable[Mapping[str, object]]) -> datetime | None:
+    timestamps = [
+        timestamp
+        for record in records
+        if (timestamp := _parse_timestamp(_text(record.get("timestamp")))) is not None
+    ]
+    if not timestamps:
+        return None
+    return min(timestamps)
+
+
+def _parse_timestamp(value: str) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _time_window_seconds(label: Mapping[str, object]) -> tuple[float, float] | None:
+    value = label.get("time_window_seconds")
+    if not isinstance(value, list) or len(value) != 2:
+        return None
+
+    start, end = value
+    if _score_value(start) is None or _score_value(end) is None:
+        return None
+
+    start_second = float(start)
+    end_second = float(end)
+    if start_second < 0 or end_second <= start_second:
+        return None
+    return (start_second, end_second)
+
+
+def _time_window_text(time_window_seconds: tuple[float, float] | None) -> str:
+    if time_window_seconds is None:
+        return "missing"
+    start_second, end_second = time_window_seconds
+    return f"{start_second:g}s to {end_second:g}s"
 
 
 def _highest_change_score(record: Mapping[str, object]) -> float:

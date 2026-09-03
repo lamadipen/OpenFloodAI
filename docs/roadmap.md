@@ -12,7 +12,7 @@ OpenFloodAI is moving toward an edge-first camera system that watches a configur
 | Phase 2 | Research and validation preparation | Complete |
 | Phase 3 | Multi-video validation and reporting | Complete |
 | Phase 4 | Better reference-region water-change baseline | Started |
-| Phase 5 | Larger validation set and time-window comparison | Next |
+| Phase 5 | Larger validation set and time-window comparison | Started |
 | Phase 6 | Edge-device deployment | Planned |
 | Phase 7 | Alert system | Planned |
 | Phase 8 | Field pilot | Planned |
@@ -61,6 +61,7 @@ Completed or started:
 - prototype threshold tuning report for comparing visual-change settings with human labels
 - hard-case expected behavior for confusing inputs
 - improved reference-region signal with upper, middle, and lower band scores
+- time-window comparison between human labels and matching machine records
 - validation results and known-limits tracker
 - local replay summary report for saved POC records
 - plain-language operator notes for POC outputs
@@ -106,11 +107,11 @@ Focus on five small pieces:
 
    Simple example: use a few normal clips, a few possible rising-water clips, and a few unclear clips.
 
-2. Time-window comparison
+2. More machine outputs inside each label window
 
-   Compare a human label for `00:00 to 00:30` with system output from that same time range.
+   The comparison can use matching time windows now. Next, the pipeline should create more useful machine records inside each reviewed window.
 
-   Simple example: if the human labels only the first 30 seconds, do not compare it with the whole video.
+   Simple example: if the human labels `00:30 to 01:00`, create machine evidence inside that same range, not only near the video start.
 
 3. Real hard-case evidence
 
@@ -158,7 +159,7 @@ OpenFloodAI does not yet:
 Near-term work should stay small and testable:
 
 1. Add more reviewed clips for one or two site folders.
-2. Match human label windows with system output windows.
+2. Create more machine outputs inside each reviewed time window.
 3. Add safe real examples for hard cases.
 4. Define a small locked validation set.
 5. Keep improving the reference-region signal and review report.

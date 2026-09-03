@@ -27,6 +27,7 @@ def test_tune_threshold_records_shows_how_thresholds_change_agreement() -> None:
             {
                 "video_id": "demo-river-001",
                 "record_type": "visual_signal_output",
+                "video_time_seconds": 10,
                 "region_change_score": 0.1,
             }
         ],
@@ -52,6 +53,7 @@ def test_tune_threshold_records_keeps_cannot_compare_separate() -> None:
             {
                 "video_id": "demo-river-001",
                 "record_type": "risk_state_output",
+                "video_time_seconds": 10,
                 "risk_state": "UNKNOWN",
             }
         ],
@@ -87,6 +89,7 @@ def test_render_threshold_tuning_report_is_stable() -> None:
         system_records=[
             {
                 "record_type": "visual_signal_output",
+                "video_time_seconds": 10,
                 "region_change_score": 0.1,
             }
         ],
@@ -103,7 +106,7 @@ def test_tune_threshold_files_reads_local_jsonl_inputs(tmp_path: Path) -> None:
     labels_path = tmp_path / "labels.jsonl"
     system_path.write_text(
         '{"video_id":"demo-river-001","record_type":"visual_signal_output",'
-        '"region_change_score":0.1}\n',
+        '"video_time_seconds":10,"region_change_score":0.1}\n',
         encoding="utf-8",
     )
     labels_path.write_text(

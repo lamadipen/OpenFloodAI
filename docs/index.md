@@ -21,6 +21,7 @@ save records
 generate review images
 let a human label the video
 compare human label vs system output
+compare matching time windows
 try different thresholds
 check hard-case expectations
 document what worked and what did not
@@ -67,6 +68,7 @@ OpenFloodAI can currently:
 - write plain-language operator notes
 - generate local review images for biggest visual changes
 - read human labels and compare them with system output
+- compare human labels with machine records from the same time window
 - try prototype thresholds against human labels
 - run multi-video local validation for one site folder
 - create a combined validation summary report
@@ -76,14 +78,14 @@ OpenFloodAI can currently:
 
 OpenFloodAI still does not detect real floods, train ML models, send alerts, publish warnings, run live camera deployments, or replace local emergency decision-making.
 
-Near-term work should stay focused on more reviewed clips, time-window comparison, hard-case evidence, stronger reference-region baselines, and safer test datasets.
+Near-term work should stay focused on more reviewed clips, more machine outputs inside each label window, hard-case evidence, stronger reference-region baselines, and safer test datasets.
 
 ## Next Priorities
 
 Next goals:
 
 1. Add more approved validation clips.
-2. Compare labels with system output from the same time window.
+2. Create more machine outputs inside each reviewed time window.
 3. Add real hard-case examples when they are safe to share.
 4. Create a small locked validation set before ML training.
 5. Keep the docs honest about what is proven and what is not.
