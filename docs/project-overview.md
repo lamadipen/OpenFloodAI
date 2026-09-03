@@ -69,6 +69,7 @@ local video
 -> simple visual-change records
 -> review images
 -> human labels
+-> time-window comparison
 -> comparison and threshold reports
 -> validation notes
 -> hard-case expectations
@@ -91,6 +92,7 @@ It can:
 - generate a few local review images for the biggest visual change
 - read human labels
 - compare human labels with local system output
+- compare label windows with machine records from the same time range
 - try prototype visual-change thresholds
 - run multi-video local validation and create a combined summary report
 - document hard-case expected behavior for confusing inputs
@@ -114,15 +116,16 @@ OpenFloodAI still cannot:
 The current validation direction is:
 
 ```text
-more reviewed clips -> time-window comparison -> hard-case evidence -> locked validation set -> later ML
+more reviewed clips -> more records inside each label window -> hard-case evidence -> locked validation set -> later ML
 ```
 
-Simple meaning: first test more reviewed videos, compare the system and human labels more carefully, and keep confusing cases visible. ML should come later, after the project has safe labeled examples and stronger evaluation.
+Simple meaning: first test more reviewed videos, compare the system and human labels over the same seconds, and keep confusing cases visible. ML should come later, after the project has safe labeled examples and stronger evaluation.
 
 What is already in place:
 
 - multi-video validation for one local site folder
 - combined validation summary report
+- comparison between human label windows and matching machine records
 - improved reference-region signal with upper, middle, and lower region change scores
 - documented hard-case expected behavior
 - known-limits tracking
@@ -130,7 +133,7 @@ What is already in place:
 What should come next:
 
 1. Add more approved validation clips for different conditions.
-2. Compare human label windows with system output from the same time window.
+2. Create more machine outputs inside each reviewed time window.
 3. Add real hard-case samples when they are safe to share.
 4. Define a small locked validation set before ML training.
 5. Keep review outputs simple enough for local teams and non-technical reviewers.

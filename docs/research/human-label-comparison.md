@@ -17,6 +17,8 @@ Simple example:
 
 ```text
 System output: region_change_score = 0.42
+System output time: 12s
+Human label window: 0s to 30s
 Human label: water_rising
 Report: agree
 ```
@@ -48,6 +50,42 @@ system record video_id = demo-river-999
 ```
 
 If old system records do not include `video_id`, the comparison treats the records file as one video run. Do not mix multiple videos in one records file unless each system record includes `video_id`.
+
+## Time Window Matching
+
+Each human label has `time_window_seconds`.
+
+The comparison now uses only machine records from the same time window.
+
+Simple example:
+
+```text
+Human label: 30s to 60s
+Machine record: 12s
+Result: ignored for this label
+
+Human label: 30s to 60s
+Machine record: 42s
+Result: used for this label
+```
+
+If there are no matching machine records in that window, the result is `cannot_compare`.
+
+A machine record at exactly the start second is included. A machine record at exactly the end second belongs to the next window.
+
+Simple boundary example:
+
+```text
+Machine record: 30s
+Window: 0s to 30s
+Result: not used
+
+Machine record: 30s
+Window: 30s to 60s
+Result: used
+```
+
+Simple meaning: compare the same part of the video on both sides.
 
 So, for now:
 
@@ -93,6 +131,7 @@ Video: demo-river-001
 Human label: water_rising
 System result: water_change_seen
 Result: agree
+Time window: 0s to 30s
 Note: The human saw water change, and the system measured visual change.
 ```
 
@@ -101,6 +140,8 @@ Note: The human saw water change, and the system measured visual change.
 This report does not train a model, send alerts, upload data, or publish warnings.
 
 It only helps developers and reviewers see where the current POC agrees or disagrees with human review.
+
+If a video has no human label, the system can still process the video and create machine output. The comparison result stays `cannot_compare` because there is no human review to compare against.
 
 To try different visual-change thresholds, see [Prototype Threshold Tuning](threshold-tuning.md).
 

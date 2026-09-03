@@ -18,7 +18,7 @@ So far, validation is local and small.
 | Region POC pipeline | A configured watched area inside a video | The code can save records for the selected area. |
 | Review images | Biggest local visual changes | The code can save images so a person can review what changed. |
 | Human labels | Small example label files | The code can read labels like `water_rising`, `no_clear_change`, and `cannot_judge`. |
-| Label comparison | System output compared with human labels | The report can show `agree`, `disagree`, and `cannot_compare`. |
+| Label comparison | System output compared with human labels | The report can compare matching time windows and show `agree`, `disagree`, and `cannot_compare`. |
 | Threshold tuning | A few prototype visual-change thresholds | The report can show how different threshold numbers change the comparison result. |
 | Validation tracking | A plain-language known-limits page | The docs can now show what is tested, what is weak, and what should come next. |
 | Multi-video site validation | A folder of local videos for one site | The runner can create one combined summary table for several videos and multiple label windows. |
@@ -38,6 +38,7 @@ Current local validation can also run a whole site folder, create one combined r
 - Region comparison now shows whether the upper, middle, or lower part of the watched area changed most.
 - Review images can help a person inspect the biggest changes.
 - Human labels can be compared with system output in a simple report.
+- Human label windows can be compared with machine records from the same time range.
 - `cannot_compare` stays separate and is not counted as success.
 - Hard-case expectations are documented for confusing inputs like glare, darkness, camera shake, and blocked views.
 
@@ -56,7 +57,7 @@ Current gaps:
 - The risk engine is still simple and test-oriented.
 - Threshold tuning is one `video_id` at a time, not a full dataset study.
 - Multi-video validation is local only and still depends on small, reviewed examples.
-- Label windows are currently compared with the broad system result for the whole video, not exact matching time-window outputs.
+- Time-window comparison depends on machine records having usable timing or source-frame links.
 - There is no locked test set yet.
 - There is no field pilot evidence yet.
 
@@ -90,6 +91,7 @@ The current validation record is early and should be updated as more reviewed ex
 | Comparison report | Available for one video at a time. |
 | Threshold tuning report | Available for one video at a time. |
 | Multi-video validation report | Available for one local site folder. |
+| Time-window comparison | Available when machine records have matching timing evidence. |
 | Reference-region band signal | Available as prototype evidence for human review. |
 | Hard-case expected behavior | Documented with a safe example fixture. |
 | Field validation | Not started. |
@@ -105,8 +107,9 @@ What is now in place:
 2. Combined validation summary reports.
 3. Human label comparison.
 4. Prototype threshold tuning.
-5. Improved reference-region signal with upper, middle, and lower change scores.
-6. Hard-case expected behavior for confusing inputs.
+5. Human label windows matched to machine records from the same time range.
+6. Improved reference-region signal with upper, middle, and lower change scores.
+7. Hard-case expected behavior for confusing inputs.
 
 Simple meaning: OpenFloodAI can now run local validation practice and explain what happened, but it still has not proven real flood detection.
 
@@ -115,7 +118,7 @@ General validation goals:
 - Add a few approved validation clips for different conditions.
 - Label each clip with simple human labels.
 - Compare system output with human labels.
-- Compare labels with system output from the same time window.
+- Add more machine outputs inside each reviewed time window.
 - Track where the system agrees, disagrees, or cannot compare.
 - Keep unclear cases visible instead of hiding them.
 - Add a locked validation split before any ML training.

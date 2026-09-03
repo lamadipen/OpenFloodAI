@@ -277,6 +277,7 @@ Required fields:
 
 Optional fields:
 
+- `video_time_seconds`
 - `frame_width`
 - `frame_height`
 - `frame_rate`
@@ -296,6 +297,7 @@ Example:
   "site_id": "site-bridge-01",
   "camera_id": "camera-bridge-01-main",
   "timestamp": "2026-08-27T14:05:00+05:45",
+  "video_time_seconds": 12.3,
   "frame_id": "frame-000123",
   "frame_width": 1280,
   "frame_height": 720
@@ -306,6 +308,7 @@ Privacy or safety concern:
 
 - This record should point to a clip or snapshot only when storage is allowed by site policy.
 - A frame hash can help detect repeated frames without storing the image.
+- `video_time_seconds` helps compare human labels with machine records from the same part of a local video.
 
 ## 9. Camera / Feed Health Output
 

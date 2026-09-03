@@ -485,9 +485,13 @@ python3 scripts/compare_human_labels.py \
   --video-id demo-river-001
 ```
 
-Simple meaning: this compares what a person wrote with what the system measured. It reports `agree`, `disagree`, or `cannot_compare`.
+Simple meaning: this compares what a person wrote with what the system measured during the same label time window. It reports `agree`, `disagree`, or `cannot_compare`.
 
 If system records include `video_id`, only records for the requested video are compared. If old records do not include `video_id`, keep one video per records file.
+
+If the human label says `time_window_seconds: [30, 60]`, machine records outside 30s to 60s are ignored for that label.
+
+A machine record at exactly 30s belongs to the 30s to 60s window, not the previous 0s to 30s window.
 
 This does not prove flood detection accuracy. It only helps reviewers find where the POC output seems to match or miss human review.
 
@@ -533,9 +537,9 @@ The combined report includes:
 
 Missing labels, bad videos, and unclear cases stay visible as `cannot_compare`. They are not counted as success.
 
-If one video has multiple human label time windows, the combined report lists each label window under that video.
+If one video has multiple human label time windows, the combined report lists each label window under that video. Each label window is compared with matching machine records from the same time range when possible.
 
-Current limit: each label window is compared with the broad system result for the whole video. Later we should compare labels with system output from the same time window.
+If a video has no human label, the system still creates machine records, review images, notes, and report output. The comparison result stays `cannot_compare` because there is no human review to compare against.
 
 This still does not prove flood detection accuracy, send alerts, upload files, or create public warnings.
 
