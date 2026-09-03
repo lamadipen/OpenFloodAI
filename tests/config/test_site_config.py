@@ -31,7 +31,7 @@ def valid_config_payload() -> dict[str, object]:
 
 
 def test_example_site_config_loads_successfully() -> None:
-    config = load_site_config(Path("configs/example-site.json"))
+    config = load_site_config(Path("data/sites/example-site/configs/example-site.json"))
 
     assert config.site_id == "site-demo-01"
     assert config.camera_id == "camera-demo-01"
@@ -87,7 +87,9 @@ def test_reference_region_is_optional(tmp_path: Path) -> None:
 
 
 def test_example_config_does_not_commit_private_fields() -> None:
-    payload = json.loads(Path("configs/example-site.json").read_text(encoding="utf-8"))
+    payload = json.loads(
+        Path("data/sites/example-site/configs/example-site.json").read_text(encoding="utf-8")
+    )
     text = json.dumps(payload).lower()
 
     private_terms = [
