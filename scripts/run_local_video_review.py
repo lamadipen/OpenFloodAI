@@ -15,7 +15,11 @@ def main() -> None:
         description="Create local OpenFloodAI POC review outputs from a local video."
     )
     parser.add_argument("--video-path", required=True, type=Path)
-    parser.add_argument("--config-path", default=Path("configs/example-site.json"), type=Path)
+    parser.add_argument(
+        "--config-path",
+        default=Path("data/sites/example-site/configs/example-site.json"),
+        type=Path,
+    )
     parser.add_argument(
         "--output-dir",
         default=Path("data/sites/example-site/outputs"),

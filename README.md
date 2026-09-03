@@ -28,10 +28,9 @@ src/openfloodai/      Python package source
   vision/             Camera and vision components
 tests/                Automated tests
 data/                 Local data placeholders; raw datasets are not committed
-  validation/         Validation dataset structure and local review folders
+  sites/              Per-site configs, inputs, labels, evidence, and outputs
 models/               Local model placeholders; trained models are not committed
 scripts/              Development and operational scripts
-configs/              Configuration examples and templates
 tools/                Small local-only helper tools
 ```
 
@@ -171,7 +170,7 @@ Simple meaning: this checks whether the JSON file has the required fields, valid
 
 ### 3. Load A Site And Camera Config
 
-This reads a safe public config from `configs/example-site.json`.
+This reads a safe public config from `data/sites/example-site/configs/example-site.json`.
 
 ```bash
 python3 - <<'PY'
@@ -179,7 +178,7 @@ from pathlib import Path
 
 from openfloodai.config import load_site_config
 
-config = load_site_config(Path("configs/example-site.json"))
+config = load_site_config(Path("data/sites/example-site/configs/example-site.json"))
 
 print(config)
 print(f"Site: {config.site_id}")
@@ -277,7 +276,7 @@ records = read_video_metadata(
     camera_id="camera-demo-01",
 )
 
-output_path = Path("data/local-runs/frame-metadata.jsonl")
+output_path = Path("data/sites/example-site/outputs/frame-metadata.jsonl")
 write_jsonl_records(output_path, records)
 
 saved_records = read_jsonl_records(output_path)
@@ -354,7 +353,7 @@ summary = run_local_poc_pipeline(
     video_path=Path("data/sample-video.mp4"),
     site_id="site-demo-01",
     camera_id="camera-demo-01",
-    output_path=Path("data/local-runs/poc-records.jsonl"),
+    output_path=Path("data/sites/example-site/outputs/poc-records.jsonl"),
 )
 
 print(summary)
@@ -380,7 +379,7 @@ Then:
 1. Click `Choose Image` and select a local frame, or click `Demo Frame`.
 2. Drag a box around the area you want to watch.
 3. Copy the JSON output.
-4. Paste the values into `configs/example-site.json` under `reference_region`.
+4. Paste the values into `data/sites/example-site/configs/example-site.json` under `reference_region`.
 
 Simple example: if the camera sees a bridge pillar, draw a box around the lower part of the pillar. The tool may output something like this:
 
@@ -401,7 +400,7 @@ This tool runs locally in your browser. It does not upload images, detect floods
 
 ### 11. Run The Local Region POC Pipeline
 
-This is a separate pipeline that uses `reference_region` from `configs/example-site.json`.
+This is a separate pipeline that uses `reference_region` from `data/sites/example-site/configs/example-site.json`.
 
 Replace `data/sample-video.mp4` with your local video path:
 
@@ -413,8 +412,8 @@ from openfloodai.pipeline import run_local_region_poc_pipeline
 
 summary = run_local_region_poc_pipeline(
     video_path=Path("data/sample-video.mp4"),
-    config_path=Path("configs/example-site.json"),
-    output_path=Path("data/local-runs/region-poc-records.jsonl"),
+    config_path=Path("data/sites/example-site/configs/example-site.json"),
+    output_path=Path("data/sites/example-site/outputs/region-poc-records.jsonl"),
 )
 
 print(summary)
@@ -438,10 +437,10 @@ python3 scripts/run_local_poc_smoke.py
 After it runs, check these local files:
 
 ```text
-data/local-runs/smoke-test/records.jsonl
-data/local-runs/smoke-test/summary.md
-data/local-runs/smoke-test/operator-notes.txt
-data/local-runs/smoke-test/review-images/
+data/sites/example-site/outputs/smoke-test/records.jsonl
+data/sites/example-site/outputs/smoke-test/summary.md
+data/sites/example-site/outputs/smoke-test/operator-notes.txt
+data/sites/example-site/outputs/smoke-test/review-images/
 ```
 
 Simple meaning: this is like a practice run. It creates a fake tiny river video, loads a fake safe config, uses the selected `reference_region`, saves records, creates a summary, creates review images, and writes plain-language notes.
@@ -457,7 +456,7 @@ Replace `data/sample-video.mp4` with your local video path:
 ```bash
 python3 scripts/run_local_video_review.py \
   --video-path data/sample-video.mp4 \
-  --config-path configs/example-site.json \
+  --config-path data/sites/example-site/configs/example-site.json \
   --output-dir data/sites/example-site/outputs
 ```
 
@@ -565,7 +564,7 @@ This does not choose final flood thresholds. It only helps us learn from validat
 
 ### 17. Summarize A Local POC Run
 
-Run this after the local POC pipeline creates `data/local-runs/poc-records.jsonl`.
+Run this after the local POC pipeline creates `data/sites/example-site/outputs/poc-records.jsonl`.
 
 ```bash
 python3 - <<'PY'
@@ -573,7 +572,7 @@ from pathlib import Path
 
 from openfloodai.replay import render_summary_markdown, summarize_jsonl_records
 
-summary = summarize_jsonl_records(Path("data/local-runs/poc-records.jsonl"))
+summary = summarize_jsonl_records(Path("data/sites/example-site/outputs/poc-records.jsonl"))
 
 print(render_summary_markdown(summary))
 PY
@@ -680,7 +679,7 @@ biggest_change_frame = np.full((10, 10), 200, dtype=np.uint8)
 
 result = generate_biggest_change_review_images(
     [baseline_frame, small_change_frame, biggest_change_frame],
-    Path("data/local-runs/review-images"),
+    Path("data/sites/example-site/outputs/review-images"),
     reference_region={
         "x": 0,
         "y": 50,

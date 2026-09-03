@@ -8,9 +8,9 @@ from openfloodai.pipeline import run_local_poc_smoke
 
 
 def main() -> None:
-    """Create synthetic local smoke-test outputs under data/local-runs."""
+    """Create synthetic local smoke-test outputs under the example site folder."""
 
-    result = run_local_poc_smoke(Path("data/local-runs/smoke-test"))
+    result = run_local_poc_smoke(Path("data/sites/example-site/outputs/smoke-test"))
 
     print("Local POC smoke workflow completed.")
     print(f"Records: {result.records_path}")

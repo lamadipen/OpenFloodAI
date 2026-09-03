@@ -10,7 +10,7 @@ OpenFloodAI is not a public warning system yet. The current local POC is for lea
 
 Local POC runs may keep small structured records, such as:
 
-- JSON Lines records from `data/local-runs/`
+- JSON Lines records from a site `outputs/` folder
 - camera health records
 - frame metadata records
 - simple visual signal records
@@ -156,24 +156,24 @@ Simple rule: if the file came from a real place or a real camera, pause before s
 
 ## How To Delete Local Test Outputs
 
-Local POC outputs usually live under `data/local-runs/`.
+Local POC outputs should live under the matching site `outputs/` folder.
 
 To inspect them:
 
 ```bash
-ls data/local-runs
+ls data/sites/example-site/outputs
 ```
 
 To delete one local output file:
 
 ```bash
-rm data/local-runs/poc-records.jsonl
+rm data/sites/example-site/outputs/poc-records.jsonl
 ```
 
 To delete all local POC outputs:
 
 ```bash
-rm -rf data/local-runs
+rm -rf data/sites/example-site/outputs/*
 ```
 
 Only run delete commands when you are sure you no longer need the files.
