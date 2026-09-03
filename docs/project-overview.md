@@ -71,6 +71,7 @@ local video
 -> human labels
 -> comparison and threshold reports
 -> validation notes
+-> hard-case expectations
 ```
 
 Simple example: a reviewer can watch one video, label it as `water_rising`, and compare that label with the simple system output.
@@ -91,6 +92,8 @@ It can:
 - read human labels
 - compare human labels with local system output
 - try prototype visual-change thresholds
+- run multi-video local validation and create a combined summary report
+- document hard-case expected behavior for confusing inputs
 - track validation results and known limits
 - provide privacy, retention, ML research, and labeling guidance
 
@@ -106,23 +109,31 @@ OpenFloodAI still cannot:
 - provide a dashboard
 - replace local emergency decision-making
 
-## Next Practical Goal
+## Current Validation Direction
 
-The next practical goal is:
+The current validation direction is:
 
 ```text
-multi-video validation -> summary report -> hard-case examples -> stronger reference-region signal -> later ML
+more reviewed clips -> time-window comparison -> hard-case evidence -> locked validation set -> later ML
 ```
 
-Simple meaning: first test several reviewed videos, summarize where the system agrees or disagrees with people, then improve the selected-region water-change signal. ML should come later, after the project has safe labeled examples and stronger evaluation.
+Simple meaning: first test more reviewed videos, compare the system and human labels more carefully, and keep confusing cases visible. ML should come later, after the project has safe labeled examples and stronger evaluation.
 
-Recommended next issue order:
+What is already in place:
 
-1. OF-031: add a multi-video validation runner.
-2. OF-032: generate a validation summary report.
-3. OF-034: add hard-case validation examples and expected behavior.
-4. OF-033: improve the water-level change signal using the reference region.
-5. OF-035: update documentation with current validation progress and next goals.
+- multi-video validation for one local site folder
+- combined validation summary report
+- improved reference-region signal with upper, middle, and lower region change scores
+- documented hard-case expected behavior
+- known-limits tracking
+
+What should come next:
+
+1. Add more approved validation clips for different conditions.
+2. Compare human label windows with system output from the same time window.
+3. Add real hard-case samples when they are safe to share.
+4. Define a small locked validation set before ML training.
+5. Keep review outputs simple enough for local teams and non-technical reviewers.
 
 ## Safety Boundaries
 

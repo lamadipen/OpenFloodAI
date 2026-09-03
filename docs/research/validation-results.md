@@ -26,6 +26,8 @@ So far, validation is local and small.
 
 Simple example: a developer can run one local video, save POC records, add a human label, and compare whether the system output pointed in the same broad direction.
 
+Current local validation can also run a whole site folder, create one combined report, and keep missing or unclear cases visible.
+
 ## What Worked
 
 - Local video files can be checked before processing.
@@ -87,6 +89,8 @@ The current validation record is early and should be updated as more reviewed ex
 | Human label examples | Available as small example JSON Lines files. |
 | Comparison report | Available for one video at a time. |
 | Threshold tuning report | Available for one video at a time. |
+| Multi-video validation report | Available for one local site folder. |
+| Reference-region band signal | Available as prototype evidence for human review. |
 | Hard-case expected behavior | Documented with a safe example fixture. |
 | Field validation | Not started. |
 | Production readiness | Not started. |
@@ -95,21 +99,23 @@ The current validation record is early and should be updated as more reviewed ex
 
 Near-term validation should stay small and reviewable.
 
-Recommended next issue order:
+What is now in place:
 
-1. OF-031: add a multi-video validation runner.
-2. OF-032: generate a validation summary report.
-3. OF-034: add hard-case validation examples and expected behavior.
-4. OF-033: improve the water-level change signal using the reference region.
-5. OF-035: update documentation with current validation progress and next goals.
+1. Multi-video local validation for one site folder.
+2. Combined validation summary reports.
+3. Human label comparison.
+4. Prototype threshold tuning.
+5. Improved reference-region signal with upper, middle, and lower change scores.
+6. Hard-case expected behavior for confusing inputs.
 
-Simple meaning: first run more reviewed videos, then summarize the results, then test difficult cases, then improve the signal.
+Simple meaning: OpenFloodAI can now run local validation practice and explain what happened, but it still has not proven real flood detection.
 
 General validation goals:
 
 - Add a few approved validation clips for different conditions.
 - Label each clip with simple human labels.
 - Compare system output with human labels.
+- Compare labels with system output from the same time window.
 - Track where the system agrees, disagrees, or cannot compare.
 - Keep unclear cases visible instead of hiding them.
 - Add a locked validation split before any ML training.
