@@ -22,6 +22,7 @@ So far, validation is local and small.
 | Threshold tuning | A few prototype visual-change thresholds | The report can show how different threshold numbers change the comparison result. |
 | Validation tracking | A plain-language known-limits page | The docs can now show what is tested, what is weak, and what should come next. |
 | Multi-video site validation | A folder of local videos for one site | The runner can create one combined summary table for several videos and multiple label windows. |
+| Hard-case expected behavior | Missing, unreadable, dark, glare, noisy, shaky, and blocked-view cases | The docs say these should stay `UNKNOWN`, `DEGRADED`, or `cannot_compare` instead of success. |
 
 Simple example: a developer can run one local video, save POC records, add a human label, and compare whether the system output pointed in the same broad direction.
 
@@ -36,6 +37,7 @@ Simple example: a developer can run one local video, save POC records, add a hum
 - Review images can help a person inspect the biggest changes.
 - Human labels can be compared with system output in a simple report.
 - `cannot_compare` stays separate and is not counted as success.
+- Hard-case expectations are documented for confusing inputs like glare, darkness, camera shake, and blocked views.
 
 Simple example: if a person says a clip shows `water_rising`, and the system shows stronger change in the lower part of a watched bridge pillar while the upper part stays steady, the comparison may say `agree`.
 
@@ -85,6 +87,7 @@ The current validation record is early and should be updated as more reviewed ex
 | Human label examples | Available as small example JSON Lines files. |
 | Comparison report | Available for one video at a time. |
 | Threshold tuning report | Available for one video at a time. |
+| Hard-case expected behavior | Documented with a safe example fixture. |
 | Field validation | Not started. |
 | Production readiness | Not started. |
 
@@ -114,6 +117,8 @@ General validation goals:
 - Document every result in simple language.
 
 Simple example: start with two normal clips, two possible rising-water clips, two bad-visibility clips, and one missing-video test. Then write down what happened for each one.
+
+See [Hard-Case Validation Examples](hard-case-validation.md) for the current expected behavior list.
 
 ## How To Update This Page
 

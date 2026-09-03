@@ -12,6 +12,7 @@ inputs/
   videos/                 Local validation videos
   other/                  Other local inputs, such as reference frames
 labels/                   Human labels for frames or time windows
+expected-behavior/        Expected safe behavior for hard validation cases
 human-evidence/
   flood-images/           Images a person selected as possible flood evidence
   notes/                  Human review notes
@@ -50,3 +51,11 @@ labels/example-labels.jsonl
 ```
 
 Simple meaning: this file shows the label format without using private video or private camera images.
+
+The safe hard-case expectation file is:
+
+```text
+expected-behavior/hard-cases.jsonl
+```
+
+Simple meaning: this file lists confusing cases, like missing video or glare, and says they should stay visible as `UNKNOWN`, `DEGRADED`, or `cannot_compare`.

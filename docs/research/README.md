@@ -11,4 +11,5 @@ Avoid committing copyrighted datasets, sensitive imagery, or private field obser
 - [Human Label Comparison](human-label-comparison.md)
 - [Prototype Threshold Tuning](threshold-tuning.md)
 - [Validation Results And Known Limits](validation-results.md)
+- [Hard-Case Validation Examples](hard-case-validation.md)
 - [ML Model, Dataset, And Cloud Options](ml-model-options.md)
