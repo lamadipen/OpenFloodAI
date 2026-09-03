@@ -491,6 +491,8 @@ If system records include `video_id`, only records for the requested video are c
 
 If the human label says `time_window_seconds: [30, 60]`, machine records outside 30s to 60s are ignored for that label.
 
+A machine record at exactly 30s belongs to the 30s to 60s window, not the previous 0s to 30s window.
+
 This does not prove flood detection accuracy. It only helps reviewers find where the POC output seems to match or miss human review.
 
 ### 15. Run Multi-Video Site Validation

@@ -71,6 +71,20 @@ Result: used for this label
 
 If there are no matching machine records in that window, the result is `cannot_compare`.
 
+A machine record at exactly the start second is included. A machine record at exactly the end second belongs to the next window.
+
+Simple boundary example:
+
+```text
+Machine record: 30s
+Window: 0s to 30s
+Result: not used
+
+Machine record: 30s
+Window: 30s to 60s
+Result: used
+```
+
 Simple meaning: compare the same part of the video on both sides.
 
 So, for now:

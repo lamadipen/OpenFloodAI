@@ -270,6 +270,36 @@ def test_compare_label_records_handles_multiple_windows_for_one_video() -> None:
     ]
 
 
+def test_compare_label_records_uses_half_open_time_windows() -> None:
+    report = compare_label_records(
+        video_id="demo-river-001",
+        human_labels=[
+            {
+                "video_id": "demo-river-001",
+                "time_window_seconds": [0, 30],
+                "human_label": "water_rising",
+            },
+            {
+                "video_id": "demo-river-001",
+                "time_window_seconds": [30, 60],
+                "human_label": "water_rising",
+            },
+        ],
+        system_records=[
+            {
+                "record_type": "visual_signal_output",
+                "video_time_seconds": 30,
+                "region_change_score": 0.42,
+            },
+        ],
+    )
+
+    assert report.comparisons[0].system_result == "missing_system_output"
+    assert report.comparisons[0].result == "cannot_compare"
+    assert report.comparisons[1].system_result == "water_change_seen"
+    assert report.comparisons[1].result == "agree"
+
+
 def test_compare_label_records_uses_visual_records_linked_to_frame_metadata() -> None:
     report = compare_label_records(
         video_id="demo-river-001",

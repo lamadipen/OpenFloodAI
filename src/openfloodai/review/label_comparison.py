@@ -326,7 +326,7 @@ def _record_time_is_in_window(
         return False
 
     start_second, end_second = time_window_seconds
-    return start_second <= record_second <= end_second
+    return start_second <= record_second < end_second
 
 
 def _source_records_overlap_window(
