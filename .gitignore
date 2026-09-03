@@ -73,6 +73,8 @@ data/sites/*/outputs/review-images/*
 !data/sites/*/outputs/review-images/.gitkeep
 models/*
 !models/.gitkeep
+# Local-only site runs
+data/sites/colorado-site/
 
 # Local-only project notes
 READMELOCAL.md
