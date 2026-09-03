@@ -10,9 +10,9 @@ OpenFloodAI is moving toward an edge-first camera system that watches a configur
 | --- | --- | --- |
 | Phase 1 | Foundation and requirements | Complete |
 | Phase 2 | Research and validation preparation | Complete |
-| Phase 3 | Multi-video validation and reporting | Next |
-| Phase 4 | Better reference-region water-change baseline | Planned |
-| Phase 5 | Real-time camera pipeline | Planned |
+| Phase 3 | Multi-video validation and reporting | Complete |
+| Phase 4 | Better reference-region water-change baseline | Started |
+| Phase 5 | Larger validation set and time-window comparison | Next |
 | Phase 6 | Edge-device deployment | Planned |
 | Phase 7 | Alert system | Planned |
 | Phase 8 | Field pilot | Planned |
@@ -57,7 +57,10 @@ Completed or started:
 - validation dataset folder structure for multiple sites
 - local comparison report for system output and human labels
 - multi-video local validation runner for one site folder
+- combined validation summary report with totals and per-video rows
 - prototype threshold tuning report for comparing visual-change settings with human labels
+- hard-case expected behavior for confusing inputs
+- improved reference-region signal with upper, middle, and lower band scores
 - validation results and known-limits tracker
 - local replay summary report for saved POC records
 - plain-language operator notes for POC outputs
@@ -93,58 +96,39 @@ This does not prove flood detection. It gives developers and reviewers a small, 
 
 ## Next Direction
 
-The next direction is to turn the POC from "it creates records" into "it helps a person understand water change in one camera view."
+The next direction is to turn local validation from "it runs one demo" into "it helps us compare many reviewed examples honestly."
 
 Focus on five small pieces:
 
-1. Reference region or virtual ruler
+1. More approved validation clips
 
-   Let a user define the part of the image to watch.
+   Add a small set of videos that are safe to use and easy to review.
 
-   Simple example: watch the lower half of a bridge pillar. The system should track changes in that area, not the whole image.
+   Simple example: use a few normal clips, a few possible rising-water clips, and a few unclear clips.
 
-2. Water change baseline
+2. Time-window comparison
 
-   Create a simple baseline that compares the watched area over time.
+   Compare a human label for `00:00 to 00:30` with system output from that same time range.
 
-   Simple example: frame 1 looks normal, but frame 50 has more water-like change in the watched area, so the score increases.
+   Simple example: if the human labels only the first 30 seconds, do not compare it with the whole video.
 
-3. Human review output
+3. Real hard-case evidence
 
-   Create output that is easy for a person to read after a run.
+   Add safe examples for glare, darkness, camera shake, blocked views, and unreadable input.
 
-   Simple example:
+   Simple example: a dark video should stay `DEGRADED` or `cannot_compare`, not success.
 
-   ```yaml
-   time_window: 00:00 to 00:30
-   watched_area_change: 42%
-   risk_state: WATCH
-   reason: Water-like area increased inside the reference region.
-   ```
+4. Locked validation set
 
-4. Labeling guide
+   Keep a small set of reviewed examples that are not changed every time thresholds are tuned.
 
-   Before ML training, define what humans should label. See the [Human Labeling Guide](research/labeling-guide.md).
+   Simple example: tune on practice clips, then check against a separate fixed set.
 
-   Simple labels can include:
+5. Clear review outputs
 
-   - normal water
-   - rising water
-   - high water
-   - unclear view
-   - camera moved
-   - poor visibility
+   Keep reports simple enough for people who are not ML engineers.
 
-5. Small sample dataset plan
-
-   Do not collect a huge dataset yet. Start with a few safe clips.
-
-   Simple starting set:
-
-   - 2 normal clips
-   - 2 rising-water clips, if available and approved
-   - 2 bad-quality clips
-   - 1 missing or unreadable input case
+   Simple example: "lower watched area changed, but this is not proof of flooding."
 
 Important choice: do not jump straight into ML yet.
 
@@ -173,12 +157,12 @@ OpenFloodAI does not yet:
 
 Near-term work should stay small and testable:
 
-1. OF-031: add a multi-video validation runner.
-2. OF-032: generate a validation summary report.
-3. OF-034: add hard-case validation examples and expected behavior.
-4. OF-033: improve the water-level change signal using the reference region.
-5. OF-035: update documentation with current validation progress and next goals.
+1. Add more reviewed clips for one or two site folders.
+2. Match human label windows with system output windows.
+3. Add safe real examples for hard cases.
+4. Define a small locked validation set.
+5. Keep improving the reference-region signal and review report.
 
-Simple meaning: first run more reviewed videos, then summarize the results, then test difficult cases, then improve the signal.
+Simple meaning: first gather better reviewed examples, then make comparison fairer, then decide whether ML work is ready.
 
 Also keep strengthening privacy, validation, and failure handling as the project grows.

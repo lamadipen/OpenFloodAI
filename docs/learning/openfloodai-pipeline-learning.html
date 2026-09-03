@@ -116,15 +116,15 @@ Save records</pre><p>This is a proof of concept. It proves the software pieces c
 
 <section class="card"><span class="tag">9 · Current Status</span><h2>What We Have vs. What We Still Need</h2><table><tr><th>Piece</th><th>Status</th></tr><tr><td>Video ingestion</td><td class="ok">Done</td></tr><tr><td>Frame handling / metadata</td><td class="ok">Done</td></tr><tr><td>Camera/video health</td><td class="ok">Done</td></tr><tr><td>ROI / reference region</td><td class="ok">Done</td></tr><tr><td>Basic frame comparison</td><td class="ok">Done</td></tr><tr><td>Data contracts and saved records</td><td class="ok">Done</td></tr><tr><td>Risk-engine skeleton</td><td class="partial">Prototype</td></tr><tr><td>Human review / validation tools</td><td class="ok">Basic tools done</td></tr><tr><td>Water segmentation model</td><td class="todo">Not done</td></tr><tr><td>Training dataset</td><td class="todo">Not done</td></tr><tr><td>Model training</td><td class="todo">Not done</td></tr><tr><td>Real flood validation</td><td class="todo">Not done</td></tr><tr><td>Live camera pipeline</td><td class="todo">Later</td></tr><tr><td>Alerts / siren / app</td><td class="todo">Later</td></tr></table></section>
 
-<section class="card"><span class="tag">10 · Recommended Next Learning Step</span><h2>Before ML: Validate More Videos</h2><p>The next roadmap step is to test more reviewed videos before making the signal smarter.</p><pre>OF-031: run multiple validation videos
+<section class="card"><span class="tag">10 · Recommended Next Learning Step</span><h2>Before ML: Validate More Videos</h2><p>The current validation base can run multiple local videos, create one summary report, document hard cases, and explain upper, middle, and lower reference-region changes.</p><pre>Now: local multi-video validation
   ↓
-OF-032: generate one summary report
+Next: compare matching time windows
   ↓
-OF-034: add hard cases like glare, rain, darkness, and camera shake
+Next: add safe hard-case clips
   ↓
-OF-033: improve the reference-region water-change signal
+Next: create a small locked validation set
   ↓
-Later: ML only after better labels and validation evidence</pre><p>Simple meaning: first run more videos and write down where the system agrees or disagrees with people. Then improve the selected-region signal using that evidence.</p></section>
+Later: ML only after better labels and validation evidence</pre><p>Simple meaning: first test more reviewed videos and write down where the system agrees, disagrees, or cannot compare. Then improve the selected-region signal using that evidence.</p></section>
 
 <section class="card"><span class="tag">Mental Model</span><h2>The Simplest Way to Remember It</h2><pre>Current system:
 ROI → pixel / visual change → risk prototype

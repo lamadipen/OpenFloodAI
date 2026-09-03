@@ -22,6 +22,7 @@ generate review images
 let a human label the video
 compare human label vs system output
 try different thresholds
+check hard-case expectations
 document what worked and what did not
 ```
 
@@ -67,24 +68,27 @@ OpenFloodAI can currently:
 - generate local review images for biggest visual changes
 - read human labels and compare them with system output
 - try prototype thresholds against human labels
+- run multi-video local validation for one site folder
+- create a combined validation summary report
+- document hard-case expected behavior for missing, dark, glare, shaky, and blocked-view inputs
 - track validation results and known limits
 - provide privacy, retention, ML research, and labeling guidance
 
 OpenFloodAI still does not detect real floods, train ML models, send alerts, publish warnings, run live camera deployments, or replace local emergency decision-making.
 
-Near-term work should stay focused on simple reference-region baselines, review images, human labels, and safer test datasets.
+Near-term work should stay focused on more reviewed clips, time-window comparison, hard-case evidence, stronger reference-region baselines, and safer test datasets.
 
 ## Next Priorities
 
-Recommended next issue order:
+Next goals:
 
-1. OF-031: add a multi-video validation runner.
-2. OF-032: generate a validation summary report.
-3. OF-034: add hard-case validation examples and expected behavior.
-4. OF-033: improve the water-level change signal using the reference region.
-5. OF-035: update documentation with current validation progress and next goals.
+1. Add more approved validation clips.
+2. Compare labels with system output from the same time window.
+3. Add real hard-case examples when they are safe to share.
+4. Create a small locked validation set before ML training.
+5. Keep the docs honest about what is proven and what is not.
 
-Simple meaning: first run more videos, then summarize the results, then test hard cases, then improve the signal.
+Simple meaning: test more reviewed videos, keep unclear cases visible, and improve the watched-region signal slowly.
 
 ## Follow The Project
 

@@ -2,7 +2,7 @@
 
 OpenFloodAI is an open-source, low-cost, edge-first camera-based river flood detection and warning-support system.
 
-The foundation and validation-prep phase is now in place. The project has local proof-of-concept tools for video review, reference-region signals, human labels, comparison reports, threshold tuning, and validation tracking.
+The foundation and first validation-prep phase is now in place. The project has local proof-of-concept tools for video review, reference-region signals, human labels, comparison reports, threshold tuning, hard-case expectations, and validation tracking.
 
 OpenFloodAI is moving toward an edge-first camera system that watches a configured river area, measures simple water-level or water-coverage changes over time, saves clear metadata, and supports human review before any public warning action.
 
@@ -76,6 +76,8 @@ Prototype thresholds can be reviewed using [docs/research/threshold-tuning.md](d
 
 Current validation progress and known limits are tracked in [docs/research/validation-results.md](docs/research/validation-results.md).
 
+Hard cases like missing video, glare, darkness, camera shake, and blocked views are listed in [docs/research/hard-case-validation.md](docs/research/hard-case-validation.md).
+
 Build it locally:
 
 ```bash
@@ -102,6 +104,7 @@ The project can now do a few small real things:
 - Run one safe end-to-end local POC smoke test.
 - Run one local review workflow for your own video.
 - Run one multi-video validation report for a site folder.
+- Review hard-case expected behavior for missing, unreadable, dark, glare, shaky, and blocked-view inputs.
 - Compare local system output against human labels.
 - Try prototype visual-change thresholds against human labels.
 - Summarize local POC records for review.
@@ -110,17 +113,25 @@ The project can now do a few small real things:
 - Measure simple visual signals inside a selected reference region.
 - Generate a few local review images for the biggest visual change.
 
-It does not detect floods, run ML, score risk, send alerts, or store data in a database yet.
+It does not prove real flood detection accuracy, train ML, send alerts, publish warnings, connect to live cameras, or store data in a database yet.
 
 Current output means "please review this evidence," not "there is a confirmed flood."
 
-Recommended next issue order:
+Current local validation can now:
 
-1. OF-031: add a multi-video validation runner.
-2. OF-032: generate a validation summary report.
-3. OF-034: add hard-case validation examples and expected behavior.
-4. OF-033: improve the water-level change signal using the reference region.
-5. OF-035: update documentation with current validation progress and next goals.
+1. run one or more local videos for a site
+2. save system records and review images
+3. compare system output with human labels
+4. summarize the result in plain language
+5. keep unclear cases visible as `cannot_compare`
+
+Next goals:
+
+1. Add more approved validation clips for different rivers, lighting, weather, and camera quality.
+2. Compare human label windows with system output from the same time window.
+3. Add real hard-case examples when they are safe and approved to use.
+4. Start a small locked validation set before any ML training.
+5. Keep improving the reference-region signal without claiming confirmed flooding.
 
 ### 1. Set Up The Environment
 
@@ -684,16 +695,16 @@ These images are local review files only. Do not commit real review images to Gi
 
 ## Project Status
 
-OpenFloodAI is in local proof-of-concept preparation.
+OpenFloodAI is in local proof-of-concept validation.
 
-Current local helpers can read test videos, check video health, save records, load site/camera config, choose a watched reference region from a local image, run one safe end-to-end local smoke test, run a local review workflow for your own video, compare system output with human labels, try prototype thresholds against labels, measure simple full-frame and reference-region signals, summarize saved records, generate local review images, and create plain-language operator notes.
+Current local helpers can read test videos, check video health, save records, load site/camera config, choose a watched reference region from a local image, run one safe end-to-end local smoke test, run a local review workflow for your own video, run multi-video site validation, compare system output with human labels, try prototype thresholds against labels, measure simple full-frame and reference-region signals, summarize saved records, generate local review images, document hard-case expectations, and create plain-language operator notes.
 
 OpenFloodAI still does not detect real floods, train ML models, connect to live cameras, send alerts, publish public warnings, provide a dashboard, or replace local emergency decision-making.
 
 Next direction:
 
 ```text
-reference region -> region-based visual signals -> review images -> human labels -> later ML
+more reviewed clips -> time-window comparison -> hard-case evidence -> locked validation set -> later ML
 ```
 
 See the documentation site, `CONTRIBUTING.md`, and `SECURITY.md` before proposing functional changes.
