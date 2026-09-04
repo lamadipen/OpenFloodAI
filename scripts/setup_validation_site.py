@@ -60,7 +60,7 @@ def main() -> None:
     args = parser.parse_args()
 
     sites_base_dir = Path(args.sites_dir)
-    
+
     result = setup_validation_site(
         sites_base_dir=sites_base_dir,
         folder_name=args.folder_name,

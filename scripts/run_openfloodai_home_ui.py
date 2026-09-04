@@ -70,10 +70,10 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             "site_dir": str(result.site_dir) if result.created else None,
             "config_path": str(result.config_path) if result.created else None,
         }
-        
+
         status_code = 200 if result.created else 400
         response_body = json.dumps(response_payload).encode("utf-8")
-        
+
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(response_body)))

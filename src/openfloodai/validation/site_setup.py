@@ -68,7 +68,7 @@ def setup_validation_site(
 
     for subdir in subdirs:
         (site_dir / subdir).mkdir(parents=True, exist_ok=True)
-        # Add a .gitkeep to ensure empty folders are tracked if needed, 
+        # Add a .gitkeep to ensure empty folders are tracked if needed,
         # though usually these are for local use.
         (site_dir / subdir / ".gitkeep").touch()
 
@@ -79,17 +79,12 @@ def setup_validation_site(
         "site_name": site_name,
         "public_location": public_location,
         "input_type": "local_video",
-        "reference_region": {
-            "x": 0,
-            "y": 50,
-            "width": 100,
-            "height": 50
-        },
-        "privacy_notes": privacy_notes or "This site uses a broad public location only."
+        "reference_region": {"x": 0, "y": 50, "width": 100, "height": 50},
+        "privacy_notes": privacy_notes or "This site uses a broad public location only.",
     }
 
     config_path = site_dir / "configs" / f"{folder_name}.json"
-    
+
     if not config_path.exists() or overwrite:
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=2)
