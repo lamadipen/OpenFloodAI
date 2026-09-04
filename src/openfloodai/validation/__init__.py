@@ -1,11 +1,8 @@
 """Local validation runners for OpenFloodAI."""
 
-from openfloodai.validation.site_runner import (
-    SiteValidationReport,
-    SiteValidationResult,
-    ValidationRunnerError,
-    render_site_validation_report,
-    run_site_validation,
+from openfloodai.validation.site_setup import (
+    ValidationSiteSetupResult,
+    setup_validation_site,
 )
 from openfloodai.validation.site_status import (
     ValidationSiteStatus,
@@ -13,13 +10,20 @@ from openfloodai.validation.site_status import (
     read_validation_site_status,
 )
 
+def run_site_validation(*args, **kwargs):
+    from openfloodai.validation.site_runner import run_site_validation as _run
+    return _run(*args, **kwargs)
+
+def render_site_validation_report(*args, **kwargs):
+    from openfloodai.validation.site_runner import render_site_validation_report as _render
+    return _render(*args, **kwargs)
+
 __all__ = [
-    "SiteValidationReport",
-    "SiteValidationResult",
     "ValidationSiteStatus",
-    "ValidationRunnerError",
+    "ValidationSiteSetupResult",
     "discover_validation_site_statuses",
     "read_validation_site_status",
-    "render_site_validation_report",
     "run_site_validation",
+    "render_site_validation_report",
+    "setup_validation_site",
 ]

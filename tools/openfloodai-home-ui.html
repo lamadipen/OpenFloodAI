@@ -298,8 +298,46 @@
           <div class="meta" id="sitesDir">Loading site folder...</div>
           <div class="safety" id="safetyNote"></div>
         </div>
-        <button type="button" id="refreshButton">Refresh</button>
+        <div style="display: flex; gap: 8px;">
+          <button type="button" id="createSiteButton" style="background: var(--ok); border-color: var(--ok);">Create Site</button>
+          <button type="button" id="refreshButton">Refresh</button>
+        </div>
       </section>
+
+      <section id="setupForm" style="display: none; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 24px; margin-bottom: 22px; box-shadow: var(--shadow);">
+        <h2 style="margin-top: 0;">Setup New Validation Site</h2>
+        <form id="siteForm" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Folder Name *</label>
+            <input type="text" name="folder_name" placeholder="e.g. demo-bridge" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Site ID *</label>
+            <input type="text" name="site_id" placeholder="e.g. site-demo-bridge" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Camera ID *</label>
+            <input type="text" name="camera_id" placeholder="e.g. camera-demo-bridge-01" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Site Name *</label>
+            <input type="text" name="site_name" placeholder="e.g. Demo Bridge" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+          </div>
+          <div style="grid-column: span 2;">
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Public Location *</label>
+            <input type="text" name="public_location" placeholder="e.g. Demo River near Bridge St" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+          </div>
+          <div style="grid-column: span 2;">
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Privacy Notes</label>
+            <textarea name="privacy_notes" placeholder="Optional notes about privacy..." style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px; min-height: 60px;"></textarea>
+          </div>
+          <div style="grid-column: span 2; display: flex; gap: 12px; margin-top: 8px;">
+            <button type="submit" style="background: var(--ok); border-color: var(--ok);">Create Folder Structure</button>
+            <button type="button" id="cancelSetup" style="background: transparent; color: var(--muted); border-color: var(--line);">Cancel</button>
+          </div>
+        </form>
+      </section>
+
       <section class="overview" id="overview" aria-label="Site overview"></section>
       <section class="site-grid" id="siteGrid" aria-live="polite"></section>
     </main>
@@ -310,6 +348,10 @@
       const sitesDir = document.querySelector("#sitesDir");
       const safetyNote = document.querySelector("#safetyNote");
       const refreshButton = document.querySelector("#refreshButton");
+      const createSiteButton = document.querySelector("#createSiteButton");
+      const setupForm = document.querySelector("#setupForm");
+      const siteForm = document.querySelector("#siteForm");
+      const cancelSetup = document.querySelector("#cancelSetup");
 
       function escapeHtml(value) {
         return String(value)
@@ -440,6 +482,47 @@
       }
 
       refreshButton.addEventListener("click", loadSites);
+
+      createSiteButton.addEventListener("click", () => {
+        setupForm.style.display = "block";
+        createSiteButton.style.display = "none";
+      });
+
+      cancelSetup.addEventListener("click", () => {
+        setupForm.style.display = "none";
+        createSiteButton.style.display = "inline-block";
+        siteForm.reset();
+      });
+
+      siteForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const formData = new FormData(siteForm);
+        const data = Object.fromEntries(formData.entries());
+
+        try {
+          const response = await fetch("/api/setup-site", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(data),
+          });
+
+          const result = await response.json();
+          if (response.ok) {
+            alert(result.message);
+            setupForm.style.display = "none";
+            createSiteButton.style.display = "inline-block";
+            siteForm.reset();
+            loadSites();
+          } else {
+            alert(`Error: ${result.message}`);
+          }
+        } catch (error) {
+          alert(`Failed to create site: ${error.message}`);
+        }
+      });
+
       loadSites();
     </script>
   </body>

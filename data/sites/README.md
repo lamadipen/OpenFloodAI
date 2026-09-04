@@ -189,7 +189,7 @@ Current limit: each label window is compared with the broad system result for th
 
 ## Local Home UI
 
-Use the local home UI to see site readiness in one screen.
+Use the local home UI to see site readiness in one screen and to setup new validation sites.
 
 ```bash
 python3 scripts/run_openfloodai_home_ui.py
@@ -201,11 +201,26 @@ Then open:
 http://127.0.0.1:8765/openfloodai-home-ui.html
 ```
 
-Simple meaning: the UI shows whether each site has config, videos, labels, manifest, outputs, and a latest report.
+Simple meaning: the UI shows whether each site has config, videos, labels, manifest, outputs, and a latest report. It also includes a **Create Site** button to initialize new site folders and starter configs without manual work.
 
 Machine review needs config and video. Human comparison also needs labels and a manifest.
 
 This UI reads local folder status only. It does not upload files, connect to cameras, send alerts, train ML, or publish warnings.
+
+## Command-Line Site Setup
+
+For a quick scripted setup, use the site setup helper:
+
+```bash
+python3 scripts/setup_validation_site.py \
+  --folder-name "demo-bridge" \
+  --site-id "site-demo-bridge" \
+  --camera-id "camera-01" \
+  --site-name "Demo Bridge" \
+  --public-location "Main Street Bridge"
+```
+
+Simple meaning: this script creates the folder structure and a starter JSON config in one step, ensuring the site is ready for videos and validation.
 
 ## Privacy Rules
 
