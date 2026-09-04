@@ -22,6 +22,7 @@ nav:
       - Labeling Guide: research/labeling-guide.md
       - Human Label Format: research/human-label-format.md
       - Human Label Comparison: research/human-label-comparison.md
+      - Validation Dataset Manifest: research/validation-dataset-manifest.md
       - Prototype Threshold Tuning: research/threshold-tuning.md
       - Validation Results And Known Limits: research/validation-results.md
       - Hard-Case Validation Examples: research/hard-case-validation.md

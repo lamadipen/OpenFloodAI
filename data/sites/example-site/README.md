@@ -8,6 +8,7 @@ Simple meaning: each site gets its own videos, labels, configs, human evidence, 
 
 ```text
 configs/                  Safe site/camera configs for this site
+manifest.jsonl            List of validation videos and their review status
 inputs/
   videos/                 Local validation videos
   other/                  Other local inputs, such as reference frames
@@ -43,6 +44,14 @@ data/sites/colorado-river-windy-gap/
 ```
 
 Real videos and real images should stay local unless they are approved for public sharing.
+
+The safe demo manifest file is:
+
+```text
+manifest.jsonl
+```
+
+Simple meaning: this file explains what a validation video is for, whether it has a human label, and whether it is safe to commit.
 
 The safe demo label file is:
 
