@@ -44,9 +44,7 @@ def test_invalid_split_fails_clearly() -> None:
     record = valid_manifest_record()
     record["split"] = "training"
 
-    assert validate_manifest_record(record) == [
-        "split must be one of: locked_validation, practice"
-    ]
+    assert validate_manifest_record(record) == ["split must be one of: locked_validation, practice"]
 
 
 def test_approved_for_repo_must_be_boolean() -> None:
