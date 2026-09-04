@@ -33,6 +33,7 @@ def test_generates_before_after_and_comparison_images_from_synthetic_frames(
     assert result.changed_frame_index == 2
     assert result.change_score > 0.7
     assert result.reference_region_used is False
+    assert result.overlay_image_paths == ()
     assert sorted(path.name for path in tmp_path.iterdir()) == [
         "demo-baseline.png",
         "demo-changed.png",
@@ -43,7 +44,9 @@ def test_generates_before_after_and_comparison_images_from_synthetic_frames(
     assert load_image(result.comparison_image_path).shape == (10, 20, 3)
 
 
-def test_draws_reference_region_box_when_region_is_provided(tmp_path: Path) -> None:
+def test_saves_reference_region_overlay_images_when_region_is_provided(
+    tmp_path: Path,
+) -> None:
     baseline_frame = np.zeros((10, 10), dtype=np.uint8)
     changed_frame = np.full((10, 10), 180, dtype=np.uint8)
     reference_region = {
@@ -60,10 +63,39 @@ def test_draws_reference_region_box_when_region_is_provided(tmp_path: Path) -> N
     )
 
     baseline_image = load_image(result.baseline_image_path)
+    baseline_overlay_image = load_image(result.overlay_image_paths[0])
+    comparison_overlay_image = load_image(result.overlay_image_paths[2])
 
     assert result.reference_region_used is True
-    assert baseline_image[5, 0].tolist() == [0, 255, 0]
-    assert baseline_image[9, 9].tolist() == [0, 255, 0]
+    assert len(result.overlay_image_paths) == 3
+    assert sorted(path.name for path in tmp_path.iterdir()) == [
+        "review-baseline-overlay.png",
+        "review-baseline.png",
+        "review-changed-overlay.png",
+        "review-changed.png",
+        "review-comparison-overlay.png",
+        "review-comparison.png",
+    ]
+    assert baseline_image[5, 0].tolist() == [0, 0, 0]
+    assert baseline_overlay_image[5, 0].tolist() == [0, 255, 255]
+    assert baseline_overlay_image[9, 9].tolist() == [0, 255, 255]
+    assert comparison_overlay_image.shape == (10, 20, 3)
+
+
+def test_reference_region_overlay_handles_edge_region(tmp_path: Path) -> None:
+    baseline_frame = np.zeros((10, 10), dtype=np.uint8)
+    changed_frame = np.full((10, 10), 180, dtype=np.uint8)
+
+    result = generate_biggest_change_review_images(
+        [baseline_frame, changed_frame],
+        tmp_path,
+        reference_region={"x": 90, "y": 90, "width": 10, "height": 10},
+    )
+
+    overlay_image = load_image(result.overlay_image_paths[0])
+
+    assert overlay_image.shape == (10, 10, 3)
+    assert overlay_image[9, 9].tolist() == [0, 255, 255]
 
 
 def test_biggest_change_uses_reference_region_when_provided(tmp_path: Path) -> None:
@@ -101,6 +133,7 @@ def test_accepts_config_reference_region_object(tmp_path: Path) -> None:
     )
 
     assert result.reference_region_used is True
+    assert len(result.overlay_image_paths) == 3
 
 
 def test_requires_at_least_two_frames(tmp_path: Path) -> None:

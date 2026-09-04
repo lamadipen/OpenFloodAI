@@ -48,6 +48,7 @@ class ReviewImageSet:
     baseline_image_path: str
     changed_image_path: str
     comparison_image_path: str
+    overlay_image_paths: tuple[str, ...]
     reference_region_used: bool
 
 
@@ -74,21 +75,34 @@ def generate_biggest_change_review_images(
         reference_region=reference_region,
     )
     changed_frame = prepared_frames[changed_frame_index]
-
-    if reference_region is not None:
-        baseline_frame = _draw_reference_region_box(baseline_frame, reference_region)
-        changed_frame = _draw_reference_region_box(changed_frame, reference_region)
-
     comparison_frame = np.hstack([baseline_frame, changed_frame])
 
     output_dir.mkdir(parents=True, exist_ok=True)
     baseline_path = output_dir / f"{prefix}-baseline.png"
     changed_path = output_dir / f"{prefix}-changed.png"
     comparison_path = output_dir / f"{prefix}-comparison.png"
+    overlay_paths: tuple[str, ...] = ()
 
     _write_image(baseline_path, baseline_frame)
     _write_image(changed_path, changed_frame)
     _write_image(comparison_path, comparison_frame)
+
+    if reference_region is not None:
+        baseline_overlay_frame = _draw_reference_region_box(baseline_frame, reference_region)
+        changed_overlay_frame = _draw_reference_region_box(changed_frame, reference_region)
+        comparison_overlay_frame = np.hstack([baseline_overlay_frame, changed_overlay_frame])
+        baseline_overlay_path = output_dir / f"{prefix}-baseline-overlay.png"
+        changed_overlay_path = output_dir / f"{prefix}-changed-overlay.png"
+        comparison_overlay_path = output_dir / f"{prefix}-comparison-overlay.png"
+
+        _write_image(baseline_overlay_path, baseline_overlay_frame)
+        _write_image(changed_overlay_path, changed_overlay_frame)
+        _write_image(comparison_overlay_path, comparison_overlay_frame)
+        overlay_paths = (
+            str(baseline_overlay_path),
+            str(changed_overlay_path),
+            str(comparison_overlay_path),
+        )
 
     return ReviewImageSet(
         baseline_frame_index=0,
@@ -97,6 +111,7 @@ def generate_biggest_change_review_images(
         baseline_image_path=str(baseline_path),
         changed_image_path=str(changed_path),
         comparison_image_path=str(comparison_path),
+        overlay_image_paths=overlay_paths,
         reference_region_used=reference_region is not None,
     )
 
@@ -181,7 +196,8 @@ def _draw_reference_region_box(
 ) -> NDArray[np.uint8]:
     left, top, right, bottom = _reference_region_pixels(frame, reference_region)
     output_frame = frame.copy()
-    cv2.rectangle(output_frame, (left, top), (right - 1, bottom - 1), (0, 255, 0), 1)
+    cv2.rectangle(output_frame, (left, top), (right - 1, bottom - 1), (0, 0, 0), 3)
+    cv2.rectangle(output_frame, (left, top), (right - 1, bottom - 1), (0, 255, 255), 1)
     return output_frame
 
 
