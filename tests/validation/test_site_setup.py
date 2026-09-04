@@ -6,8 +6,6 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-import pytest
-
 from openfloodai.validation import setup_validation_site
 
 

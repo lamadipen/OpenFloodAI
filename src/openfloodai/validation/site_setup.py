@@ -35,7 +35,10 @@ def setup_validation_site(
             site_dir=Path(),
             config_path=Path(),
             created=False,
-            message="Missing required fields: folder_name, site_id, camera_id, site_name, and public_location are all required.",
+            message=(
+                "Missing required fields: folder_name, site_id, camera_id, "
+                "site_name, and public_location are all required."
+            ),
         )
 
     site_dir = sites_base_dir / folder_name
@@ -45,7 +48,10 @@ def setup_validation_site(
             site_dir=site_dir,
             config_path=Path(),
             created=False,
-            message=f"Site folder already exists: {site_dir}. Use overwrite=True if you want to modify it.",
+            message=(
+                f"Site folder already exists: {site_dir}. "
+                "Use overwrite=True if you want to modify it."
+            ),
         )
 
     # Create directory structure
