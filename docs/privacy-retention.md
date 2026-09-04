@@ -104,6 +104,10 @@ Simple meaning: keep "what the human saw" separate from "what the system generat
 
 Real videos, human-selected images, and generated outputs from real footage should stay local unless they are clearly approved for public sharing.
 
+Hard-case metadata may be committed only when it is safe and broad.
+
+Simple example: `camera shake made the view unclear` is okay. A note with a private camera URL, exact GPS point, or details about a nearby home is not okay.
+
 ## Location Privacy
 
 Exact GPS coordinates can be sensitive.

@@ -17,6 +17,9 @@ data/sites/
       videos/
       other/
     labels/
+    expected-behavior/
+      hard-cases.jsonl
+      real-hard-case-samples.jsonl
     human-evidence/
       flood-images/
       notes/
@@ -86,6 +89,10 @@ After a local POC run, compare labels with system output using the Human Label C
 
 Simple example: compare `labels/example-labels.jsonl` with `outputs/records.jsonl` to see whether the human label and system visual-change result agree.
 
+`expected-behavior/` keeps hard-case expectations and real hard-case sample metadata.
+
+Simple example: a `camera_shake` row can say the expected result is `cannot_compare`, because the whole image moved and the system should not pretend the water definitely changed.
+
 `human-evidence/flood-images/` keeps images selected by a person as possible flood or high-water evidence.
 
 Simple example: a reviewer sees a frame where water looks high and saves that frame here for later comparison.
@@ -133,11 +140,11 @@ That comparison will help later with labels, QA, and ML training.
 
 ## Scratch Runs
 
-Use `data/local-runs/` only for quick temporary runs.
+Use a site `outputs/` folder for quick temporary runs.
 
-Simple example: a smoke test can write to `data/local-runs/smoke-test/` because it is only checking that the code runs.
+Simple example: a smoke test can write to `data/sites/example-site/outputs/smoke-test/` because it is only checking that the code runs.
 
-For real validation review, prefer `data/sites/<site-name>/`.
+For real validation review, keep outputs under the matching site folder.
 
 ## Multi-Video Validation
 

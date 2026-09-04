@@ -26,6 +26,7 @@ nav:
       - Prototype Threshold Tuning: research/threshold-tuning.md
       - Validation Results And Known Limits: research/validation-results.md
       - Hard-Case Validation Examples: research/hard-case-validation.md
+      - Real Hard-Case Sample Workflow: research/real-hard-case-sample-workflow.md
       - ML Model Options: research/ml-model-options.md
   - How to Contribute: contributing.md
 
