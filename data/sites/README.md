@@ -182,6 +182,26 @@ If one video has multiple human label time windows, the combined report lists ea
 
 Current limit: each label window is compared with the broad system result for the whole video. Later we should compare labels with system output from the same time window.
 
+## Local Home UI
+
+Use the local home UI to see site readiness in one screen.
+
+```bash
+python3 scripts/run_openfloodai_home_ui.py
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8765/openfloodai-home-ui.html
+```
+
+Simple meaning: the UI shows whether each site has config, videos, labels, manifest, outputs, and a latest report.
+
+Machine review needs config and video. Human comparison also needs labels and a manifest.
+
+This UI reads local folder status only. It does not upload files, connect to cameras, send alerts, train ML, or publish warnings.
+
 ## Privacy Rules
 
 Do not commit private real videos or real camera images by default.

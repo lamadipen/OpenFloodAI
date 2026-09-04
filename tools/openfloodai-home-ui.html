@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenFloodAI Home UI</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #eef3f6;
+        --panel: #ffffff;
+        --ink: #1f2933;
+        --muted: #667085;
+        --line: #d9e1e8;
+        --soft-line: #edf1f5;
+        --ok: #176c4f;
+        --warn: #9a5b13;
+        --missing: #9b1c31;
+        --accent: #1769aa;
+        --accent-strong: #0d4d7d;
+        --surface-blue: #e9f4fb;
+        --surface-green: #e8f6ef;
+        --surface-yellow: #fff6df;
+        --surface-red: #fff0f3;
+        --shadow: 0 18px 45px rgba(31, 41, 51, 0.1);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background:
+          linear-gradient(180deg, #ddebf2 0, rgba(238, 243, 246, 0) 300px),
+          var(--bg);
+        color: var(--ink);
+        font: 16px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      header,
+      main {
+        margin: 0 auto;
+        max-width: 1180px;
+        padding: 28px;
+      }
+
+      header {
+        padding-bottom: 10px;
+        padding-top: 36px;
+      }
+
+      h1 {
+        margin: 0 0 10px;
+        font-size: 38px;
+        font-weight: 800;
+        letter-spacing: 0;
+      }
+
+      .subhead {
+        margin: 0;
+        color: var(--muted);
+        max-width: 760px;
+      }
+
+      .eyebrow {
+        color: var(--accent-strong);
+        font-size: 13px;
+        font-weight: 800;
+        letter-spacing: 0;
+        margin-bottom: 8px;
+        text-transform: uppercase;
+      }
+
+      .toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin: 10px 0 22px;
+        padding: 16px;
+        background: rgba(255, 255, 255, 0.82);
+        border: 1px solid rgba(255, 255, 255, 0.8);
+        border-radius: 8px;
+        box-shadow: 0 10px 26px rgba(31, 41, 51, 0.06);
+      }
+
+      button {
+        border: 1px solid var(--accent-strong);
+        border-radius: 6px;
+        background: var(--accent-strong);
+        color: #fff;
+        cursor: pointer;
+        font: inherit;
+        font-weight: 700;
+        min-height: 44px;
+        padding: 10px 16px;
+        transition:
+          background 160ms ease,
+          transform 160ms ease,
+          box-shadow 160ms ease;
+      }
+
+      button:hover {
+        background: var(--accent);
+        box-shadow: 0 8px 18px rgba(23, 105, 170, 0.22);
+        transform: translateY(-1px);
+      }
+
+      button:focus {
+        outline: 3px solid #a7d3f4;
+        outline-offset: 2px;
+      }
+
+      .meta,
+      .safety {
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .site-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+        gap: 18px;
+      }
+
+      .overview {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+
+      .metric {
+        background: rgba(255, 255, 255, 0.88);
+        border: 1px solid rgba(255, 255, 255, 0.85);
+        border-radius: 8px;
+        box-shadow: 0 10px 26px rgba(31, 41, 51, 0.06);
+        padding: 14px;
+      }
+
+      .metric-label {
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .metric-value {
+        font-size: 26px;
+        font-weight: 800;
+        line-height: 1.2;
+      }
+
+      .site-card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .site-card.ready-card {
+        border-color: #b7e4cf;
+      }
+
+      .site-card.needs-card {
+        border-color: #f0d59b;
+      }
+
+      .site-title {
+        align-items: flex-start;
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 18px 18px 14px;
+        background: linear-gradient(180deg, #ffffff, #f8fafc);
+      }
+
+      .site-name {
+        font-size: 21px;
+        font-weight: 800;
+        overflow-wrap: anywhere;
+      }
+
+      .site-path {
+        color: var(--muted);
+        font-size: 13px;
+        overflow-wrap: anywhere;
+      }
+
+      .badge {
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 800;
+        padding: 6px 10px;
+        white-space: nowrap;
+      }
+
+      .ready {
+        background: var(--surface-green);
+        color: var(--ok);
+      }
+
+      .not-ready {
+        background: var(--surface-yellow);
+        color: var(--warn);
+      }
+
+      .status-list {
+        display: grid;
+        gap: 0;
+        padding: 0 18px 18px;
+      }
+
+      .status-row {
+        align-items: center;
+        border-top: 1px solid var(--soft-line);
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        min-height: 44px;
+        padding: 10px 0;
+      }
+
+      .status-label {
+        color: var(--muted);
+        font-weight: 650;
+      }
+
+      .status-value {
+        border-radius: 999px;
+        font-weight: 700;
+        max-width: 60%;
+        overflow-wrap: anywhere;
+        padding: 4px 9px;
+        text-align: right;
+      }
+
+      .ok {
+        background: var(--surface-green);
+        color: var(--ok);
+      }
+
+      .warn {
+        background: var(--surface-yellow);
+        color: var(--warn);
+      }
+
+      .missing {
+        background: var(--surface-red);
+        color: var(--missing);
+      }
+
+      .empty {
+        background: var(--panel);
+        border: 1px dashed var(--line);
+        border-radius: 8px;
+        color: var(--muted);
+        padding: 28px;
+      }
+
+      @media (max-width: 640px) {
+        header,
+        main {
+          padding: 18px;
+        }
+
+        h1 {
+          font-size: 28px;
+        }
+
+        .toolbar,
+        .site-title,
+        .status-row {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .status-value {
+          max-width: 100%;
+          text-align: left;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="eyebrow">Local validation workspace</div>
+      <h1>OpenFloodAI Home UI</h1>
+      <p class="subhead">
+        Local validation readiness for site folders. This screen helps you see what is ready
+        and what is missing before running local validation.
+      </p>
+    </header>
+    <main>
+      <section class="toolbar" aria-label="Local UI controls">
+        <div>
+          <div class="meta" id="sitesDir">Loading site folder...</div>
+          <div class="safety" id="safetyNote"></div>
+        </div>
+        <button type="button" id="refreshButton">Refresh</button>
+      </section>
+      <section class="overview" id="overview" aria-label="Site overview"></section>
+      <section class="site-grid" id="siteGrid" aria-live="polite"></section>
+    </main>
+
+    <script>
+      const siteGrid = document.querySelector("#siteGrid");
+      const overview = document.querySelector("#overview");
+      const sitesDir = document.querySelector("#sitesDir");
+      const safetyNote = document.querySelector("#safetyNote");
+      const refreshButton = document.querySelector("#refreshButton");
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      function yesNo(value) {
+        return value ? "found" : "missing";
+      }
+
+      function classForFound(value) {
+        return value ? "ok" : "missing";
+      }
+
+      function countText(count, singular, plural) {
+        return count === 1 ? `1 ${singular}` : `${count} ${plural}`;
+      }
+
+      function row(label, value, className = "") {
+        return `
+          <div class="status-row">
+            <div class="status-label">${escapeHtml(label)}</div>
+            <div class="status-value ${className}">${escapeHtml(value)}</div>
+          </div>
+        `;
+      }
+
+      function renderOverview(sites) {
+        const readySites = sites.filter((site) => site.ready_for_machine_review).length;
+        const comparisonReadySites = sites.filter(
+          (site) => site.ready_for_human_comparison
+        ).length;
+        const videoCount = sites.reduce((total, site) => total + site.video_count, 0);
+        const reportCount = sites.reduce((total, site) => total + site.report_count, 0);
+        return `
+          <div class="metric">
+            <div class="metric-label">Sites</div>
+            <div class="metric-value">${sites.length}</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Machine ready</div>
+            <div class="metric-value">${readySites}</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Compare ready</div>
+            <div class="metric-value">${comparisonReadySites}</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Videos</div>
+            <div class="metric-value">${videoCount}</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Reports</div>
+            <div class="metric-value">${reportCount}</div>
+          </div>
+        `;
+      }
+
+      function renderSite(site) {
+        const readyClass = site.ready_for_machine_review ? "ready" : "not-ready";
+        const cardClass = site.ready_for_machine_review ? "ready-card" : "needs-card";
+        const readyText = site.ready_for_machine_review
+          ? "Machine ready"
+          : "Needs config or video";
+        const latestReport = site.latest_report_path || "not found";
+        const machineReviewText = site.ready_for_machine_review
+          ? "Ready"
+          : "Needs config or video";
+        const humanComparisonText = site.ready_for_human_comparison
+          ? "Ready"
+          : "Needs labels or manifest";
+
+        return `
+          <article class="site-card ${cardClass}">
+            <div class="site-title">
+              <div>
+                <div class="site-name">${escapeHtml(site.site_name)}</div>
+                <div class="site-path">${escapeHtml(site.site_path)}</div>
+              </div>
+              <div class="badge ${readyClass}">${escapeHtml(readyText)}</div>
+            </div>
+            <div class="status-list">
+              ${row("Machine review", machineReviewText, site.ready_for_machine_review ? "ok" : "missing")}
+              ${row("Human comparison", humanComparisonText, site.ready_for_human_comparison ? "ok" : "warn")}
+              ${row("Config", `${yesNo(site.config_found)} (${site.config_count})`, classForFound(site.config_found))}
+              ${row("Videos", countText(site.video_count, "video", "videos"), site.video_count > 0 ? "ok" : "missing")}
+              ${row("Labels", `${yesNo(site.labels_found)} (${site.label_count})`, classForFound(site.labels_found))}
+              ${row("Manifest", yesNo(site.manifest_found), classForFound(site.manifest_found))}
+              ${row("Output reports", countText(site.report_count, "report", "reports"), site.report_count > 0 ? "ok" : "warn")}
+              ${row("Latest report", latestReport, site.latest_report_path ? "ok" : "warn")}
+            </div>
+          </article>
+        `;
+      }
+
+      async function loadSites() {
+        siteGrid.innerHTML = '<div class="empty">Loading local site status...</div>';
+        overview.innerHTML = "";
+        try {
+          const response = await fetch("/api/sites");
+          if (!response.ok) {
+            throw new Error(`Request failed: ${response.status}`);
+          }
+          const payload = await response.json();
+          sitesDir.textContent = `Site folder: ${payload.sites_dir}`;
+          safetyNote.textContent = payload.safety_note;
+          overview.innerHTML = renderOverview(payload.sites);
+
+          if (!payload.sites.length) {
+            siteGrid.innerHTML = '<div class="empty">No site folders found under data/sites.</div>';
+            return;
+          }
+          siteGrid.innerHTML = payload.sites.map(renderSite).join("");
+        } catch (error) {
+          siteGrid.innerHTML = `
+            <div class="empty">
+              Could not load local site status. Start this page with
+              <strong>python3 scripts/run_openfloodai_home_ui.py</strong>.
+            </div>
+          `;
+          sitesDir.textContent = "Site folder: unavailable";
+          safetyNote.textContent = String(error);
+        }
+      }
+
+      refreshButton.addEventListener("click", loadSites);
+      loadSites();
+    </script>
+  </body>
+</html>
