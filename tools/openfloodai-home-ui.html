@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenFloodAI Home UI</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f6f7f9;
+        --panel: #ffffff;
+        --ink: #1f2933;
+        --muted: #667085;
+        --line: #d7dde5;
+        --ok: #176c4f;
+        --warn: #9a5b13;
+        --missing: #9b1c31;
+        --accent: #1769aa;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font: 16px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      header,
+      main {
+        margin: 0 auto;
+        max-width: 1120px;
+        padding: 24px;
+      }
+
+      header {
+        padding-bottom: 8px;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 32px;
+        font-weight: 750;
+        letter-spacing: 0;
+      }
+
+      .subhead {
+        margin: 0;
+        color: var(--muted);
+        max-width: 780px;
+      }
+
+      .toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin: 16px 0;
+      }
+
+      button {
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        background: var(--accent);
+        color: #fff;
+        cursor: pointer;
+        font: inherit;
+        min-height: 40px;
+        padding: 8px 14px;
+      }
+
+      button:focus {
+        outline: 3px solid #a7d3f4;
+        outline-offset: 2px;
+      }
+
+      .meta,
+      .safety {
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .site-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 16px;
+      }
+
+      .site-card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 16px;
+      }
+
+      .site-title {
+        align-items: flex-start;
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 10px;
+      }
+
+      .site-name {
+        font-size: 20px;
+        font-weight: 700;
+        overflow-wrap: anywhere;
+      }
+
+      .site-path {
+        color: var(--muted);
+        font-size: 13px;
+        overflow-wrap: anywhere;
+      }
+
+      .badge {
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+        padding: 4px 8px;
+        white-space: nowrap;
+      }
+
+      .ready {
+        background: #def3ea;
+        color: var(--ok);
+      }
+
+      .not-ready {
+        background: #fff0d7;
+        color: var(--warn);
+      }
+
+      .status-list {
+        display: grid;
+        gap: 8px;
+        margin-top: 14px;
+      }
+
+      .status-row {
+        align-items: center;
+        border-top: 1px solid var(--line);
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        min-height: 36px;
+        padding-top: 8px;
+      }
+
+      .status-label {
+        color: var(--muted);
+      }
+
+      .status-value {
+        font-weight: 700;
+        text-align: right;
+      }
+
+      .ok {
+        color: var(--ok);
+      }
+
+      .warn {
+        color: var(--warn);
+      }
+
+      .missing {
+        color: var(--missing);
+      }
+
+      .empty {
+        background: var(--panel);
+        border: 1px dashed var(--line);
+        border-radius: 8px;
+        padding: 24px;
+      }
+
+      @media (max-width: 640px) {
+        header,
+        main {
+          padding: 18px;
+        }
+
+        h1 {
+          font-size: 26px;
+        }
+
+        .toolbar,
+        .site-title,
+        .status-row {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .status-value {
+          text-align: left;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>OpenFloodAI Home UI</h1>
+      <p class="subhead">
+        Local validation readiness for site folders. This screen helps you see what is ready
+        and what is missing before running local validation.
+      </p>
+    </header>
+    <main>
+      <section class="toolbar" aria-label="Local UI controls">
+        <div>
+          <div class="meta" id="sitesDir">Loading site folder...</div>
+          <div class="safety" id="safetyNote"></div>
+        </div>
+        <button type="button" id="refreshButton">Refresh</button>
+      </section>
+      <section class="site-grid" id="siteGrid" aria-live="polite"></section>
+    </main>
+
+    <script>
+      const siteGrid = document.querySelector("#siteGrid");
+      const sitesDir = document.querySelector("#sitesDir");
+      const safetyNote = document.querySelector("#safetyNote");
+      const refreshButton = document.querySelector("#refreshButton");
+
+      function yesNo(value) {
+        return value ? "found" : "missing";
+      }
+
+      function classForFound(value) {
+        return value ? "ok" : "missing";
+      }
+
+      function countText(count, singular, plural) {
+        return count === 1 ? `1 ${singular}` : `${count} ${plural}`;
+      }
+
+      function row(label, value, className = "") {
+        return `
+          <div class="status-row">
+            <div class="status-label">${label}</div>
+            <div class="status-value ${className}">${value}</div>
+          </div>
+        `;
+      }
+
+      function renderSite(site) {
+        const readyClass = site.ready_for_validation ? "ready" : "not-ready";
+        const readyText = site.ready_for_validation ? "Ready" : "Needs setup";
+        const latestReport = site.latest_report_path || "not found";
+
+        return `
+          <article class="site-card">
+            <div class="site-title">
+              <div>
+                <div class="site-name">${site.site_name}</div>
+                <div class="site-path">${site.site_path}</div>
+              </div>
+              <div class="badge ${readyClass}">${readyText}</div>
+            </div>
+            <div class="status-list">
+              ${row("Config", `${yesNo(site.config_found)} (${site.config_count})`, classForFound(site.config_found))}
+              ${row("Videos", countText(site.video_count, "video", "videos"), site.video_count > 0 ? "ok" : "missing")}
+              ${row("Labels", `${yesNo(site.labels_found)} (${site.label_count})`, classForFound(site.labels_found))}
+              ${row("Manifest", yesNo(site.manifest_found), classForFound(site.manifest_found))}
+              ${row("Output reports", countText(site.report_count, "report", "reports"), site.report_count > 0 ? "ok" : "warn")}
+              ${row("Latest report", latestReport, site.latest_report_path ? "ok" : "warn")}
+            </div>
+          </article>
+        `;
+      }
+
+      async function loadSites() {
+        siteGrid.innerHTML = '<div class="empty">Loading local site status...</div>';
+        try {
+          const response = await fetch("/api/sites");
+          if (!response.ok) {
+            throw new Error(`Request failed: ${response.status}`);
+          }
+          const payload = await response.json();
+          sitesDir.textContent = `Site folder: ${payload.sites_dir}`;
+          safetyNote.textContent = payload.safety_note;
+
+          if (!payload.sites.length) {
+            siteGrid.innerHTML = '<div class="empty">No site folders found under data/sites.</div>';
+            return;
+          }
+          siteGrid.innerHTML = payload.sites.map(renderSite).join("");
+        } catch (error) {
+          siteGrid.innerHTML = `
+            <div class="empty">
+              Could not load local site status. Start this page with
+              <strong>python3 scripts/run_openfloodai_home_ui.py</strong>.
+            </div>
+          `;
+          sitesDir.textContent = "Site folder: unavailable";
+          safetyNote.textContent = String(error);
+        }
+      }
+
+      refreshButton.addEventListener("click", loadSites);
+      loadSites();
+    </script>
+  </body>
+</html>

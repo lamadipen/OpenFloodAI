@@ -542,7 +542,38 @@ If a video has no human label, the system still creates machine records, review 
 
 This still does not prove flood detection accuracy, send alerts, upload files, or create public warnings.
 
-### 16. Try Prototype Thresholds Against Human Labels
+### 16. Open The Local Home UI
+
+Use this when you want to quickly see whether each local validation site is ready.
+
+Run:
+
+```bash
+python3 scripts/run_openfloodai_home_ui.py
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8765/openfloodai-home-ui.html
+```
+
+Simple meaning: this page checks folders under `data/sites/` and shows whether each site has config, videos, labels, manifest, output reports, and a latest report.
+
+Example:
+
+```text
+example-site
+Config: found
+Videos: 0 videos
+Labels: found
+Manifest: found
+Latest report: not found
+```
+
+This is a local helper only. It does not upload files, connect to cameras, send alerts, train ML, publish warnings, or prove flood accuracy.
+
+### 17. Try Prototype Thresholds Against Human Labels
 
 Run this after you have a local records file and a human label file.
 
@@ -562,7 +593,7 @@ Cannot-compare cases stay separate. They are not counted as success.
 
 This does not choose final flood thresholds. It only helps us learn from validation examples.
 
-### 17. Summarize A Local POC Run
+### 18. Summarize A Local POC Run
 
 Run this after the local POC pipeline creates `data/sites/example-site/outputs/poc-records.jsonl`.
 
@@ -586,7 +617,7 @@ Simple meaning: this is the confidence from the current simple rule engine. It i
 
 This report is only for local review and debugging. It does not create a public warning, publish anything, send alerts, or show private camera details.
 
-### 18. Explain A POC Output For A Human Reviewer
+### 19. Explain A POC Output For A Human Reviewer
 
 This turns one output record into a short plain-language note.
 
@@ -607,7 +638,7 @@ Simple meaning: instead of only showing technical fields, the helper explains wh
 
 This note is not an official public warning. It does not send alerts or decide emergency action.
 
-### 19. Test Visual Signals Inside A Reference Region
+### 20. Test Visual Signals Inside A Reference Region
 
 This checks only the selected part of the image, like a virtual ruler.
 
@@ -661,7 +692,7 @@ Layman example: if the lower part of a bridge pillar changes but the upper part 
 
 This still does not detect floods. It only measures simple image change inside the selected area.
 
-### 20. Generate Local Review Images
+### 21. Generate Local Review Images
 
 This saves a few images so a person can review the biggest visual change.
 
