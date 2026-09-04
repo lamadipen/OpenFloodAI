@@ -51,7 +51,7 @@ def test_setup_validation_site_creates_structure() -> None:
         # Check config content
         with open(result.config_path, encoding="utf-8") as f:
             config = json.load(f)
-        
+
         assert config["site_id"] == site_id
         assert config["camera_id"] == camera_id
         assert config["site_name"] == site_name
@@ -64,7 +64,7 @@ def test_setup_validation_site_refuses_empty_required_fields() -> None:
 
     with TemporaryDirectory() as tmp_dir:
         sites_base_dir = Path(tmp_dir)
-        
+
         # Missing folder_name
         result = setup_validation_site(
             sites_base_dir=sites_base_dir,
@@ -84,7 +84,7 @@ def test_setup_validation_site_avoids_overwriting_by_default() -> None:
     with TemporaryDirectory() as tmp_dir:
         sites_base_dir = Path(tmp_dir)
         folder_name = "test-site"
-        
+
         # Create it once
         setup_validation_site(
             sites_base_dir=sites_base_dir,
@@ -104,7 +104,7 @@ def test_setup_validation_site_avoids_overwriting_by_default() -> None:
             site_name="Site 2",
             public_location="Location 2",
         )
-        
+
         assert not result.created
         assert "already exists" in result.message
 
@@ -121,7 +121,7 @@ def test_setup_validation_site_overwrites_when_requested() -> None:
     with TemporaryDirectory() as tmp_dir:
         sites_base_dir = Path(tmp_dir)
         folder_name = "test-site"
-        
+
         # Create it once
         setup_validation_site(
             sites_base_dir=sites_base_dir,
@@ -140,11 +140,11 @@ def test_setup_validation_site_overwrites_when_requested() -> None:
             camera_id="camera-2",
             site_name="Site 2",
             public_location="Location 2",
-            overwrite=True
+            overwrite=True,
         )
-        
+
         assert result.created
-        
+
         # Check that config is updated
         with open(result.config_path, encoding="utf-8") as f:
             config = json.load(f)
