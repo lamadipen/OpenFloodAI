@@ -11,6 +11,7 @@ Use one folder per site:
 ```text
 data/sites/
   example-site/
+    manifest.jsonl
     configs/
     inputs/
       videos/
@@ -42,6 +43,14 @@ data/sites/koshi-river-demo/
 `configs/` keeps site and camera config files.
 
 Simple example: a config can say which camera ID was used and which `reference_region` should be watched.
+
+`manifest.jsonl` lists the videos for that site.
+
+Simple example: a manifest row can say `demo-river-001.mp4` is a practice video, has a human label, and is not approved for GitHub.
+
+Use `practice` for videos we can learn from while changing code.
+
+Use `locked_validation` for videos saved for fair checking after tuning.
 
 `inputs/videos/` keeps local validation videos.
 
