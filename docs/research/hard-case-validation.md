@@ -12,6 +12,14 @@ The matching machine-readable fixture is:
 data/sites/example-site/expected-behavior/hard-cases.jsonl
 ```
 
+Real hard-case sample metadata should use:
+
+```text
+data/sites/<site-name>/expected-behavior/real-hard-case-samples.jsonl
+```
+
+Simple meaning: `hard-cases.jsonl` says what the system should do for confusing case types. `real-hard-case-samples.jsonl` tracks real examples when we find them.
+
 ## Expected Behavior
 
 | Case | Input Quality | Validation Result | Simple Reason |
@@ -48,3 +56,5 @@ Hard cases should stay visible in reports.
 - A person should review the video or fix the camera/input before using the result.
 
 Simple example: if the camera is shaking, many pixels may change. That does not prove the water changed. The report should explain the uncertainty.
+
+For real-world samples, see the Real Hard-Case Sample Workflow.

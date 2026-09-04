@@ -1,0 +1,1 @@
+{"case_id":"camera-shake-real-001","case_type":"camera_shake","video_id":"camera-shake-001","approved_for_repo":false,"human_review_needed":true,"expected_result":"cannot_compare","plain_reason":"The whole image moves, so pixel change may not mean water changed.","reviewer_notes":"Safe example metadata only. No real video is committed."}

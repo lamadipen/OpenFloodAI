@@ -14,6 +14,7 @@ inputs/
   other/                  Other local inputs, such as reference frames
 labels/                   Human labels for frames or time windows
 expected-behavior/        Expected safe behavior for hard validation cases
+  real-hard-case-samples.jsonl
 human-evidence/
   flood-images/           Images a person selected as possible flood evidence
   notes/                  Human review notes
@@ -68,3 +69,11 @@ expected-behavior/hard-cases.jsonl
 ```
 
 Simple meaning: this file lists confusing cases, like missing video or glare, and says they should stay visible as `UNKNOWN`, `DEGRADED`, or `cannot_compare`.
+
+The safe real hard-case sample metadata example is:
+
+```text
+expected-behavior/real-hard-case-samples.jsonl
+```
+
+Simple meaning: this file shows how to document a confusing real sample without committing the actual private video.
