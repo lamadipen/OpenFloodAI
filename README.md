@@ -560,10 +560,14 @@ http://127.0.0.1:8765/openfloodai-home-ui.html
 
 Simple meaning: this page checks folders under `data/sites/` and shows whether each site has config, videos, labels, manifest, output reports, and a latest report.
 
+Machine review only needs config and video. Human comparison also needs labels and a manifest.
+
 Example:
 
 ```text
 example-site
+Machine review: Needs config or video
+Human comparison: Needs labels or manifest
 Config: found
 Videos: 0 videos
 Labels: found

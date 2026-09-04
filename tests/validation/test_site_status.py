@@ -54,7 +54,27 @@ def test_read_validation_site_status_reports_ready_site(tmp_path: Path) -> None:
     assert status.outputs_found is True
     assert status.report_count == 1
     assert status.latest_report_path == str(site_dir / "outputs" / "validation-report.md")
+    assert status.ready_for_machine_review is True
+    assert status.ready_for_human_comparison is True
     assert status.ready_for_validation is True
+
+
+def test_read_validation_site_status_allows_machine_review_without_labels(
+    tmp_path: Path,
+) -> None:
+    site_dir = tmp_path / "machine-only-site"
+    (site_dir / "configs").mkdir(parents=True)
+    (site_dir / "inputs" / "videos").mkdir(parents=True)
+    write_json(site_dir / "configs" / "site-config.json", {"site_id": site_dir.name})
+    (site_dir / "inputs" / "videos" / "river-001.mp4").write_bytes(b"not-real-video")
+
+    status = read_validation_site_status(site_dir)
+
+    assert status.ready_for_machine_review is True
+    assert status.ready_for_human_comparison is False
+    assert status.ready_for_validation is True
+    assert status.labels_found is False
+    assert status.manifest_found is False
 
 
 def test_read_validation_site_status_reports_missing_files(tmp_path: Path) -> None:
@@ -69,6 +89,8 @@ def test_read_validation_site_status_reports_missing_files(tmp_path: Path) -> No
     assert status.manifest_found is False
     assert status.outputs_found is False
     assert status.latest_report_path is None
+    assert status.ready_for_machine_review is False
+    assert status.ready_for_human_comparison is False
     assert status.ready_for_validation is False
 
 
@@ -90,4 +112,6 @@ def test_discover_validation_site_statuses_handles_missing_root(tmp_path: Path) 
 def test_status_to_dict_includes_ready_flag(tmp_path: Path) -> None:
     status = read_validation_site_status(make_site(tmp_path / "example-site"))
 
+    assert status.to_dict()["ready_for_machine_review"] is True
+    assert status.to_dict()["ready_for_human_comparison"] is True
     assert status.to_dict()["ready_for_validation"] is True

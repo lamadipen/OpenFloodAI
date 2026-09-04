@@ -26,17 +26,29 @@ class ValidationSiteStatus:
     latest_report_path: str | None
 
     @property
-    def ready_for_validation(self) -> bool:
-        """Return whether the site has the minimum files for local validation."""
+    def ready_for_machine_review(self) -> bool:
+        """Return whether the site has the minimum files for machine review."""
 
-        return (
-            self.config_found and self.video_count > 0 and self.labels_found and self.manifest_found
-        )
+        return self.config_found and self.video_count > 0
+
+    @property
+    def ready_for_human_comparison(self) -> bool:
+        """Return whether the site has files needed for human comparison."""
+
+        return self.ready_for_machine_review and self.labels_found and self.manifest_found
+
+    @property
+    def ready_for_validation(self) -> bool:
+        """Return whether the site can run machine review."""
+
+        return self.ready_for_machine_review
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-friendly representation of this status."""
 
         payload = asdict(self)
+        payload["ready_for_machine_review"] = self.ready_for_machine_review
+        payload["ready_for_human_comparison"] = self.ready_for_human_comparison
         payload["ready_for_validation"] = self.ready_for_validation
         return payload
 

@@ -342,7 +342,10 @@
       }
 
       function renderOverview(sites) {
-        const readySites = sites.filter((site) => site.ready_for_validation).length;
+        const readySites = sites.filter((site) => site.ready_for_machine_review).length;
+        const comparisonReadySites = sites.filter(
+          (site) => site.ready_for_human_comparison
+        ).length;
         const videoCount = sites.reduce((total, site) => total + site.video_count, 0);
         const reportCount = sites.reduce((total, site) => total + site.report_count, 0);
         return `
@@ -351,8 +354,12 @@
             <div class="metric-value">${sites.length}</div>
           </div>
           <div class="metric">
-            <div class="metric-label">Ready</div>
+            <div class="metric-label">Machine ready</div>
             <div class="metric-value">${readySites}</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Compare ready</div>
+            <div class="metric-value">${comparisonReadySites}</div>
           </div>
           <div class="metric">
             <div class="metric-label">Videos</div>
@@ -366,10 +373,18 @@
       }
 
       function renderSite(site) {
-        const readyClass = site.ready_for_validation ? "ready" : "not-ready";
-        const cardClass = site.ready_for_validation ? "ready-card" : "needs-card";
-        const readyText = site.ready_for_validation ? "Ready" : "Needs setup";
+        const readyClass = site.ready_for_machine_review ? "ready" : "not-ready";
+        const cardClass = site.ready_for_machine_review ? "ready-card" : "needs-card";
+        const readyText = site.ready_for_machine_review
+          ? "Machine ready"
+          : "Needs config or video";
         const latestReport = site.latest_report_path || "not found";
+        const machineReviewText = site.ready_for_machine_review
+          ? "Ready"
+          : "Needs config or video";
+        const humanComparisonText = site.ready_for_human_comparison
+          ? "Ready"
+          : "Needs labels or manifest";
 
         return `
           <article class="site-card ${cardClass}">
@@ -381,6 +396,8 @@
               <div class="badge ${readyClass}">${escapeHtml(readyText)}</div>
             </div>
             <div class="status-list">
+              ${row("Machine review", machineReviewText, site.ready_for_machine_review ? "ok" : "missing")}
+              ${row("Human comparison", humanComparisonText, site.ready_for_human_comparison ? "ok" : "warn")}
               ${row("Config", `${yesNo(site.config_found)} (${site.config_count})`, classForFound(site.config_found))}
               ${row("Videos", countText(site.video_count, "video", "videos"), site.video_count > 0 ? "ok" : "missing")}
               ${row("Labels", `${yesNo(site.labels_found)} (${site.label_count})`, classForFound(site.labels_found))}

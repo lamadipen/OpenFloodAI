@@ -198,6 +198,8 @@ http://127.0.0.1:8765/openfloodai-home-ui.html
 
 Simple meaning: the UI shows whether each site has config, videos, labels, manifest, outputs, and a latest report.
 
+Machine review needs config and video. Human comparison also needs labels and a manifest.
+
 This UI reads local folder status only. It does not upload files, connect to cameras, send alerts, train ML, or publish warnings.
 
 ## Privacy Rules
