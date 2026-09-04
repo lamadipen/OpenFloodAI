@@ -51,7 +51,7 @@ def test_setup_validation_site_creates_structure() -> None:
             assert (result.site_dir / subdir / ".gitkeep").exists()
 
         # Check config content
-        with open(result.config_path, "r", encoding="utf-8") as f:
+        with open(result.config_path, encoding="utf-8") as f:
             config = json.load(f)
         
         assert config["site_id"] == site_id
@@ -112,7 +112,7 @@ def test_setup_validation_site_avoids_overwriting_by_default() -> None:
 
         # Check that original config is preserved
         config_path = sites_base_dir / folder_name / "configs" / f"{folder_name}.json"
-        with open(config_path, "r", encoding="utf-8") as f:
+        with open(config_path, encoding="utf-8") as f:
             config = json.load(f)
         assert config["site_id"] == "site-1"
 
@@ -148,6 +148,6 @@ def test_setup_validation_site_overwrites_when_requested() -> None:
         assert result.created
         
         # Check that config is updated
-        with open(result.config_path, "r", encoding="utf-8") as f:
+        with open(result.config_path, encoding="utf-8") as f:
             config = json.load(f)
         assert config["site_id"] == "site-2"

@@ -79,7 +79,7 @@ def main() -> None:
         print("\nNext steps:")
         print(f"1. Add validation videos to {result.site_dir}/inputs/videos/")
         print(f"2. Add human labels to {result.site_dir}/labels/")
-        print(f"3. Run the Home UI to verify readiness: python3 scripts/run_openfloodai_home_ui.py")
+        print("3. Run the Home UI to verify readiness: python3 scripts/run_openfloodai_home_ui.py")
     else:
         print(f"Error: {result.message}", file=sys.stderr)
         sys.exit(1)
