@@ -35,7 +35,7 @@ class LocalPocSmokeResult:
     records_path: str
     summary_path: str
     operator_notes_path: str
-    review_image_paths: tuple[str, str, str]
+    review_image_paths: tuple[str, ...]
     records_written: int
     reference_region_used: bool
 
@@ -123,6 +123,7 @@ def run_local_video_review(
             review_image_set.baseline_image_path,
             review_image_set.changed_image_path,
             review_image_set.comparison_image_path,
+            *review_image_set.overlay_image_paths,
         ),
         records_written=records_written,
         reference_region_used=bool(pipeline_summary.get("reference_region_used")),

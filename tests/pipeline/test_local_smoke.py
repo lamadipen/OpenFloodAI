@@ -67,7 +67,9 @@ def test_local_poc_smoke_creates_end_to_end_review_outputs(tmp_path: Path) -> No
     assert records_path.exists()
     assert summary_path.exists()
     assert operator_notes_path.exists()
+    assert len(review_image_paths) == 6
     assert all(path.exists() for path in review_image_paths)
+    assert any(path.name.endswith("-overlay.png") for path in review_image_paths)
     assert "visual_signal_output" in summary_path.read_text(encoding="utf-8")
     assert "not an official public warning" in operator_notes_path.read_text(encoding="utf-8")
 
@@ -93,4 +95,5 @@ def test_local_video_review_creates_outputs_from_local_video_and_config(tmp_path
     assert visual_record["reference_region_used"] is True
     assert Path(result.summary_path).exists()
     assert Path(result.operator_notes_path).exists()
+    assert len(result.review_image_paths) == 6
     assert all(Path(path).exists() for path in result.review_image_paths)

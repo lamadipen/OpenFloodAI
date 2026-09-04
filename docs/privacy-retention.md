@@ -55,7 +55,7 @@ Raw video or snapshots may be kept only when they are needed for review, debuggi
 
 Simple example: if a test fails because a video cannot be opened, a developer may keep a short local clip while debugging. After the fix is confirmed, the clip should be deleted.
 
-Review images are similar. A developer may generate `review-baseline.png`, `review-changed.png`, and `review-comparison.png` to understand one local POC run. Those files should stay local and should be deleted when no longer needed.
+Review images are similar. A developer may generate `review-baseline.png`, `review-changed.png`, `review-comparison.png`, and `*-overlay.png` images to understand one local POC run. Those files should stay local and should be deleted when no longer needed.
 
 The reference-region selector is also local only. It lets a developer open an image in their browser and draw the watched area. The image is not uploaded by the tool. Only the percentage box values should be copied into config.
 

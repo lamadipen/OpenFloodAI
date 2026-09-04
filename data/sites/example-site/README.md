@@ -24,7 +24,7 @@ outputs/
   operator-notes.txt      Plain-language notes from a local POC run
   label-comparison.md     Optional human-label comparison report
   threshold-tuning.md     Optional prototype threshold tuning report
-  review-images/          System-generated review images
+  review-images/          System-generated review images and watched-area overlays
 ```
 
 ## Example
@@ -45,6 +45,16 @@ data/sites/colorado-river-windy-gap/
 ```
 
 Real videos and real images should stay local unless they are approved for public sharing.
+
+Review image overlays use names like:
+
+```text
+review-baseline-overlay.png
+review-changed-overlay.png
+review-comparison-overlay.png
+```
+
+Simple meaning: these images show a box around the area OpenFloodAI used for comparison.
 
 The safe demo manifest file is:
 

@@ -727,7 +727,25 @@ print(result)
 PY
 ```
 
-Simple meaning: this creates `review-baseline.png`, `review-changed.png`, and `review-comparison.png`. The green box shows the watched reference region.
+Simple meaning: this creates the normal review images:
+
+```text
+review-baseline.png
+review-changed.png
+review-comparison.png
+```
+
+When a `reference_region` is provided, it also creates overlay images:
+
+```text
+review-baseline-overlay.png
+review-changed-overlay.png
+review-comparison-overlay.png
+```
+
+The overlay images show the watched reference region with a high-contrast box.
+
+Layman example: if the system watched the lower part of a bridge pillar, the overlay image draws a box around that area so a person can quickly check whether the system looked in the right place.
 
 These images are local review files only. Do not commit real review images to GitHub.
 
