@@ -12,6 +12,11 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
 
+from openfloodai.review import (
+    ALLOWED_CONFIDENCE_LEVELS,
+    ALLOWED_HUMAN_LABELS,
+    create_human_label_record,
+)
 from openfloodai.review.dataset_manifest import HARD_CASE_TYPE_OPTIONS, MANIFEST_PURPOSE_OPTIONS
 from openfloodai.validation import (
     discover_validation_site_statuses,
@@ -46,6 +51,9 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             return
         if self.path == "/api/intake-video":
             self._handle_intake_video()
+            return
+        if self.path == "/api/add-label":
+            self._handle_add_label()
             return
         self.send_error(404, "Not found")
 
@@ -135,6 +143,60 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         finally:
             if temp_video is not None and temp_video.exists():
                 temp_video.unlink()
+
+    def _handle_add_label(self) -> None:
+        data = self._read_json_body()
+        if data is None:
+            return
+
+        folder_name = str(data.get("folder_name", "")).strip()
+        if not folder_name:
+            self._send_json(
+                {"success": False, "message": "Missing required field: folder_name."},
+                status_code=400,
+            )
+            return
+
+        site_dir = (self.sites_dir / folder_name).resolve()
+        try:
+            site_dir.relative_to(self.sites_dir.resolve())
+        except ValueError:
+            self._send_json(
+                {
+                    "success": False,
+                    "message": (
+                        "Invalid folder_name: site folder must stay inside the sites directory."
+                    ),
+                },
+                status_code=400,
+            )
+            return
+
+        result = create_human_label_record(
+            site_dir=site_dir,
+            video_id=str(data.get("video_id", "")),
+            start_second=data.get("start_second", 0),
+            end_second=data.get("end_second", 0),
+            human_label=str(data.get("human_label", "")),
+            confidence=str(data.get("confidence", "")).strip() or None,
+            note=str(data.get("note", "")),
+            reviewer_id=str(data.get("reviewer_id", "")),
+            site_id=str(data.get("site_id", "")),
+            camera_id=str(data.get("camera_id", "")),
+            labels_filename=str(data.get("labels_filename", "")).strip() or None,
+            overwrite=_as_bool(data.get("overwrite"), default=False),
+        )
+
+        self._send_json(
+            {
+                "success": result.created,
+                "message": result.message,
+                "site_dir": str(result.site_dir) if result.created else None,
+                "labels_path": str(result.labels_path) if result.created else None,
+                "record": result.record,
+            },
+            status_code=200 if result.created else 400,
+        )
 
     def _read_intake_request(self) -> tuple[dict[str, Any], Path | None] | None:
         content_type = self.headers.get("Content-Type", "")
@@ -234,6 +296,8 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             "sites": [status.to_dict() for status in statuses],
             "purpose_options": list(MANIFEST_PURPOSE_OPTIONS),
             "hard_case_type_options": list(HARD_CASE_TYPE_OPTIONS),
+            "human_label_options": sorted(ALLOWED_HUMAN_LABELS),
+            "confidence_options": sorted(ALLOWED_CONFIDENCE_LEVELS),
             "safety_note": (
                 "This local UI stays on this computer. It does not upload videos, "
                 "connect to cameras, send alerts, train ML, or publish warnings."

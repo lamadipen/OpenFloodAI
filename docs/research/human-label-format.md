@@ -78,6 +78,42 @@ data/sites/example-site/labels/example-labels.jsonl
 
 Real label files may contain sensitive notes. Keep them local unless they are approved for public sharing.
 
+## Creating Labels
+
+Instead of manually editing JSON Lines files, use the labeling helper:
+
+### From the Home UI
+
+Start the local UI:
+
+```bash
+python3 scripts/run_openfloodai_home_ui.py
+```
+
+Open `http://127.0.0.1:8765/openfloodai-home-ui.html` in your browser.
+Click **Add Label** in the top toolbar (or **+ Add Label** on a site card).
+Choose the site, enter the `video_id`, start and end seconds, select the human label, and optionally add confidence and reviewer notes.
+Click **Save Label Record**.
+
+### From the Command Line
+
+Run:
+
+```bash
+python3 scripts/create_human_label.py \
+  --site-dir data/sites/example-site \
+  --video-id rising-001 \
+  --start 30 \
+  --end 60 \
+  --label water_rising \
+  --confidence medium \
+  --note "water appears higher near the bridge pillar"
+```
+
+Simple meaning: this helper validates the time window and label value, prevents accidental overwrites, and appends the record into the site's `labels/` directory.
+
+To replace an existing record for the same video and time window, add `--overwrite`.
+
 ## Validation
 
 OpenFloodAI can validate a label file:
