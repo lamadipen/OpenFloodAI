@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 from http.server import ThreadingHTTPServer
@@ -61,6 +62,24 @@ def write_validation_report(site_dir: Path) -> None:
         ),
         encoding="utf-8",
     )
+
+
+def write_history_report(site_dir: Path, filename: str, counts: tuple[int, int, int]) -> Path:
+    report_path = site_dir / "outputs" / filename
+    report_path.write_text(
+        "\n".join(
+            [
+                "# Site Validation Report",
+                "",
+                "## Counts",
+                f"- Agree: {counts[0]}",
+                f"- Disagree: {counts[1]}",
+                f"- Cannot compare: {counts[2]}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return report_path
 
 
 @contextmanager
@@ -168,6 +187,7 @@ def test_sites_api_reports_ready_site(tmp_path: Path) -> None:
     assert site["manifest_found"] is True
     assert site["latest_report_path"] is None
     assert site["latest_scorecard"] is None
+    assert site["report_history"] == []
 
 
 def test_sites_api_includes_status_fields_the_ui_renders(tmp_path: Path) -> None:
@@ -188,6 +208,7 @@ def test_sites_api_includes_status_fields_the_ui_renders(tmp_path: Path) -> None
         "human_comparison_explanation",
         "latest_scorecard",
         "review_images_path",
+        "report_history",
     ):
         assert field in site, f"Home UI needs {field} to render site status"
 
@@ -214,6 +235,41 @@ def test_sites_api_exposes_scorecard_and_review_state(tmp_path: Path) -> None:
         "human_review_needed": 3,
     }
     assert site["review_images_path"] == str(review_images)
+
+
+def test_sites_api_exposes_one_report_history_entry(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    site_dir = make_site(sites_dir / "example-site")
+    report_path = write_history_report(site_dir, "validation-report-2026-09-05.md", (2, 1, 3))
+
+    with serve_home_ui(sites_dir) as base_url:
+        site = get_json(f"{base_url}/api/sites")["sites"][0]
+
+    assert len(site["report_history"]) == 1
+    assert site["report_history"][0]["path"] == str(report_path)
+    assert site["report_history"][0]["counts"] == {
+        "agree": 2,
+        "disagree": 1,
+        "cannot_compare": 3,
+    }
+
+
+def test_sites_api_returns_report_history_newest_first(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    site_dir = make_site(sites_dir / "example-site")
+    older = write_history_report(site_dir, "validation-report-older.md", (4, 3, 1))
+    newer = write_history_report(site_dir, "validation-report-newer.md", (5, 2, 1))
+    os.utime(older, (100, 100))
+    os.utime(newer, (200, 200))
+
+    with serve_home_ui(sites_dir) as base_url:
+        site = get_json(f"{base_url}/api/sites")["sites"][0]
+
+    assert [entry["path"] for entry in site["report_history"]] == [
+        str(newer),
+        str(older),
+    ]
+    assert site["report_history"][0]["counts"]["cannot_compare"] == 1
 
 
 def test_sites_api_includes_safety_note(tmp_path: Path) -> None:

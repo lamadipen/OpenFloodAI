@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,7 @@ class ValidationSiteStatus:
     latest_report_counts: dict[str, int] | None
     latest_scorecard: dict[str, Any] | None
     review_images_path: str | None
+    report_history: list[dict[str, Any]]
 
     @property
     def ready_for_machine_review(self) -> bool:
@@ -158,6 +160,7 @@ def read_validation_site_status(site_dir: Path) -> ValidationSiteStatus:
         latest_report_counts=_read_report_counts(latest_report_path),
         latest_scorecard=_read_scorecard(latest_report_path),
         review_images_path=str(review_images_path) if review_images_path else None,
+        report_history=_build_report_history(report_paths, review_images_path),
     )
 
 
@@ -208,7 +211,7 @@ def _find_report_paths(site_dir: Path) -> list[Path]:
     outputs_dir = site_dir / "outputs"
     if not outputs_dir.exists():
         return []
-    return sorted(path for path in outputs_dir.rglob("validation-report.md") if path.is_file())
+    return sorted(path for path in outputs_dir.rglob("validation-report*.md") if path.is_file())
 
 
 def _find_review_images_paths(site_dir: Path) -> list[Path]:
@@ -294,6 +297,35 @@ def _read_scorecard(report_path: Path | None) -> dict[str, Any] | None:
         return None
     fields["human_review_needed"] = fields.get("disagree", 0) + fields.get("cannot_compare", 0)
     return fields
+
+
+def _build_report_history(
+    report_paths: list[Path],
+    review_images_path: Path | None,
+) -> list[dict[str, Any]]:
+    history: list[dict[str, Any]] = []
+    for report_path in sorted(report_paths, key=_path_sort_key, reverse=True):
+        try:
+            modified_time = report_path.stat().st_mtime
+        except OSError:
+            continue
+        history.append(
+            {
+                "path": str(report_path),
+                "modified_time": datetime.fromtimestamp(modified_time, tz=UTC).isoformat(),
+                "counts": _read_report_counts(report_path),
+                "evidence_path": str(review_images_path) if review_images_path else None,
+            }
+        )
+    return history
+
+
+def _path_sort_key(path: Path) -> tuple[float, str]:
+    try:
+        modified_time = path.stat().st_mtime
+    except OSError:
+        modified_time = 0.0
+    return modified_time, str(path)
 
 
 def _latest_path(paths: list[Path]) -> Path | None:

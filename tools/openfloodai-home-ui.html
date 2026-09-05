@@ -349,6 +349,26 @@
         white-space: pre-wrap;
       }
 
+      .report-history {
+        display: grid;
+        gap: 8px;
+      }
+
+      .report-history-item {
+        border-top: 1px solid var(--soft-line);
+        padding-top: 8px;
+      }
+
+      .report-history-path {
+        font-weight: 700;
+        overflow-wrap: anywhere;
+      }
+
+      .report-history-meta {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
       @media (max-width: 640px) {
         header,
         main {
@@ -783,6 +803,34 @@
         `;
       }
 
+      function renderReportHistory(site) {
+        const history = site.report_history || [];
+        if (!history.length) {
+          return detailItem("Recent validation runs", "No validation run history exists yet.");
+        }
+        const items = history.map((run, index) => {
+          const counts = run.counts || {};
+          const countText = [
+            `Agree ${scorecardValue(counts.agree)}`,
+            `Disagree ${scorecardValue(counts.disagree)}`,
+            `Cannot compare ${scorecardValue(counts.cannot_compare)}`,
+          ].join(", ");
+          return `
+            <div class="report-history-item">
+              <div class="report-history-path">${index === 0 ? "Latest: " : ""}${escapeHtml(run.path || "Report path unavailable")}</div>
+              <div class="report-history-meta">${escapeHtml(run.modified_time || "Time unavailable")} | ${escapeHtml(countText)}</div>
+              <div class="report-history-meta">Evidence: ${escapeHtml(run.evidence_path || "Not available")}</div>
+            </div>
+          `;
+        }).join("");
+        return `
+          <div class="detail-item">
+            <div class="detail-label">Recent validation runs</div>
+            <div class="report-history">${items}</div>
+          </div>
+        `;
+      }
+
       function renderSiteDetails(site) {
         if (!site) {
           detailPanel.style.display = "none";
@@ -799,6 +847,7 @@
           detailItem("Validation reports", String(site.report_count)),
           detailItem("Latest report", site.latest_report_path || "Not available"),
           renderValidationSummary(site),
+          renderReportHistory(site),
           detailPreview(site.latest_report_preview),
           detailItem("Machine review", site.machine_review_explanation, "detail-explanation"),
           detailItem("Human comparison", site.human_comparison_explanation, "detail-explanation"),
