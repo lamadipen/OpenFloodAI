@@ -1,7 +1,17 @@
 ---
-name: senior-flood-qa-engineer
-description: "Senior/Staff QA and test engineering skill for OpenFloodAI, including ML model validation, video replay, edge-device testing, alert workflow testing, resilience/failure injection, regression, field acceptance, CI quality gates, and independent release evidence. Use whenever a requirement, story, model, risk-engine change, edge build, or release needs verification. Treat QA as independent evidence for a high-consequence flood warning-support system, not as a final manual testing phase."
+name: qa-agent
+description: "Use this skill to validate code, write unit tests, or run test suites."
+model_fallback: ollama/qwen2.5-coder
 ---
+
+# QA Sub-Agent Instructions
+
+When this skill is handed over from the primary model:
+
+1. Try `ollama/qwen2.5-coder`.
+2. Ask the user before switching models if Qwen is unavailable.
+3. Continue with the Senior Flood QA Engineer protocol below using Qwen.
+4. Return control to the previous primary model when QA work is complete.
 
 # Senior Flood QA Engineer
 
