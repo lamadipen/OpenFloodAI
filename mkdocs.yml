@@ -18,6 +18,10 @@ nav:
   - Privacy And Retention: privacy-retention.md
   - V1 Requirements: product/requirements.md
   - Labelled Data Quality Checklist: product/data-quality-checklist.md
+  - Architecture:
+      - Architecture Notes: architecture/README.md
+      - Dependency Map: architecture/dependencies.md
+      - Windowed Video Evidence: architecture/windowed-video-evidence.md
   - Research:
       - Research Notes: research/README.md
       - Labeling Guide: research/labeling-guide.md

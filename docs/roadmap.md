@@ -18,6 +18,11 @@ OpenFloodAI is moving toward an edge-first camera system that watches a configur
 | Phase 8 | Field pilot | Planned |
 | Phase 9 | Production hardening | Planned |
 
+The phases depend on each other. The local validation workflow, scorecard, Home
+UI, windowed sampling, evidence images, threshold rules, synthetic fixtures, and
+label-quality checklist come before a locked dataset, ML work, field pilot, or
+alert design. Passing local tests does not move the project to production readiness.
+
 ## Current Engineering Path
 
 The near-term backend path is:
@@ -67,11 +72,16 @@ Completed or started:
 - plain-language operator notes for POC outputs
 - local review images for biggest visual changes
 - local Home UI for site readiness, guided next steps, and validation runs
+- Home UI scorecards, report previews, evidence paths, and validation run history
+- deterministic synthetic known-answer checks for rising, falling, no-change, and unreadable inputs
+- labelled data quality checklist for safe validation examples
 - safe site and camera config loading
 - privacy and retention policy for local POC data
 - MkDocs documentation site
 - research note for ML models, datasets, Google ML options, and public water-data inspiration
 - human labeling guide for water-change review
+- labelled data quality checklist and privacy rules for future contributors
+- deterministic synthetic validation fixtures for known-answer checks
 
 Simple example: today a developer can choose a watched image area, run a local video through the POC pipeline, save records to `data/sites/example-site/outputs/poc-records.jsonl`, print a short summary, create plain-language notes, generate a few local review images, organize validation data by site, open the local Home UI for readiness guidance, run multi-video site validation, compare labels with system output, try prototype thresholds against labels, update the validation status page, or run one safe smoke test that checks the full local review flow.
 
@@ -132,7 +142,8 @@ Focus on five small pieces:
 
    Simple example: "lower watched area changed, but this is not proof of flooding."
 
-Important choice: do not jump straight into ML yet.
+Important choice: do not jump straight into ML yet. First define a locked data
+split, label-quality rules, evaluation metrics, and failure-case gates.
 
 The safer path is:
 

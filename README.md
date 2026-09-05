@@ -6,6 +6,20 @@ The foundation and first validation-prep phase is now in place. The project has 
 
 OpenFloodAI is moving toward an edge-first camera system that watches a configured river area, measures simple water-level or water-coverage changes over time, saves clear metadata, and supports human review before any public warning action.
 
+## Current MVP Status
+
+The current MVP is a local validation and review workflow, not a production flood
+detection service. It can read local videos, keep frame-quality metadata, sample
+labelled time windows, create simple visual evidence, compare machine output with
+human labels, write scorecards, and show reports and run history in the local Home
+UI. It does not use a trained ML model, live cameras, cloud services, or public
+warning delivery.
+
+The runtime footprint is intentionally small: Python 3.12+, `jsonschema`, `numpy`,
+and `opencv-python-headless`. Development tools add pytest, Ruff, mypy, MkDocs,
+and package-build support. See the [dependency map](docs/architecture/dependencies.md)
+for the current boundary.
+
 ## Goals
 
 - Support affordable river monitoring with edge-first deployment.
@@ -104,6 +118,8 @@ The project can now do a few small real things:
 - Run one local review workflow for your own video.
 - Run one multi-video validation report for a site folder.
 - Create a simple validation scorecard with counts and review reasons.
+- Show selected-site details, latest report previews, and recent validation run history in the Home UI.
+- Generate deterministic synthetic rising, falling, no-change, and unreadable-video checks in CI.
 - Review hard-case expected behavior for missing, unreadable, dark, glare, shaky, and blocked-view inputs.
 - Compare local system output against human labels.
 - Try prototype visual-change thresholds against human labels.
@@ -133,10 +149,10 @@ results and review-image paths remain local to the selected site folder.
 Next goals:
 
 1. Add more approved validation clips for different rivers, lighting, weather, and camera quality.
-2. Compare human label windows with system output from the same time window.
-3. Add real hard-case examples when they are safe and approved to use.
-4. Start a small locked validation set before any ML training.
-5. Keep improving the reference-region signal without claiming confirmed flooding.
+2. Build a small locked validation set and keep practice data separate from final checks.
+3. Add approved real hard-case examples and review the synthetic known-answer checks.
+4. Improve reference-region evidence and threshold evaluation without claiming confirmed flooding.
+5. Define ML-readiness gates before selecting or training a model.
 
 ### 1. Set Up The Environment
 

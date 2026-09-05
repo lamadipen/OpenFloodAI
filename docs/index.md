@@ -8,7 +8,9 @@ OpenFloodAI is not a finished public warning system yet. Early code must not sen
 
 ## Completed Phase Summary
 
-OpenFloodAI has completed the first foundation and validation-prep phase.
+OpenFloodAI has a usable local validation MVP. The project is still a proof of
+concept, but contributors can prepare labelled examples, run validation, inspect
+scorecards and evidence, and compare recent local reports without cloud services.
 
 In simple terms, the project can now:
 
@@ -74,11 +76,17 @@ OpenFloodAI can currently:
 - create a combined validation summary report
 - use the local Home UI to check site readiness and run validation
 - follow guided next-step messages when site files are missing
+- inspect the latest scorecard, report preview, evidence path, and recent run history
+- run deterministic synthetic known-answer validation checks
+- use the labelled data quality checklist before adding examples
 - document hard-case expected behavior for missing, dark, glare, shaky, and blocked-view inputs
 - track validation results and known limits
 - provide privacy, retention, ML research, and labeling guidance
 
 OpenFloodAI still does not detect real floods, train ML models, send alerts, publish warnings, run live camera deployments, or replace local emergency decision-making. The Home UI is a local validation and review tool, not a production monitoring or fleet dashboard.
+
+The current runtime uses Python, `jsonschema`, `numpy`, and OpenCV. Development
+checks use pytest, Ruff, mypy, and MkDocs. See the [dependency map](architecture/dependencies.md).
 
 Near-term work should stay focused on more reviewed clips, more machine outputs inside each label window, hard-case evidence, stronger reference-region baselines, and safer test datasets.
 
