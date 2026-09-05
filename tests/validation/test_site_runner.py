@@ -125,6 +125,12 @@ def test_run_site_validation_reports_multiple_video_results(tmp_path: Path) -> N
     assert report.agree_count == 1
     assert report.disagree_count == 1
     assert report.cannot_compare_count == 4
+    assert report.scorecard.videos_reviewed == 5
+    assert report.scorecard.label_windows == 6
+    assert report.scorecard.agree_count == 1
+    assert report.scorecard.disagree_count == 1
+    assert report.scorecard.cannot_compare_count == 4
+    assert report.scorecard.top_reasons
     assert results_by_video_id["rising-001"].result == "cannot_compare"
     assert results_by_video_id["rising-001"].human_label == "multiple"
     assert len(results_by_video_id["rising-001"].comparisons) == 2
@@ -144,6 +150,10 @@ def test_run_site_validation_reports_multiple_video_results(tmp_path: Path) -> N
     assert table_header in rendered
     assert rising_row in rendered
     assert "- Label windows compared: 6" in rendered
+    assert "## Validation Scorecard" in rendered
+    assert "- Cannot compare: 4" in rendered
+    assert "not proof of flood detection accuracy" in rendered
+    assert "- Top issues:" in rendered
     assert "Time window: 0s to 30s" in rendered
     assert "Time window: 30s to 60s" in rendered
     assert "Cases marked `cannot_compare` are not counted as success." in rendered
@@ -179,6 +189,8 @@ def test_run_site_validation_without_videos_still_reports_label_only_cases(
     assert report.processed_count == 0
     assert report.failed_count == 4
     assert report.label_window_count == 5
+    assert report.scorecard.videos_reviewed == 4
+    assert report.scorecard.summary.startswith("Reviewed 4 video(s)")
     assert {result.system_result for result in report.results} == {"missing_video"}
     rising_result = next(result for result in report.results if result.video_id == "rising-001")
     assert len(rising_result.comparisons) == 2
@@ -210,3 +222,18 @@ def test_combined_report_output_is_stable_and_simple(tmp_path: Path) -> None:
     assert "Time window: 0s to 30s" in rendered
     assert "Time window: 30s to 60s" in rendered
     assert "does not prove flood detection accuracy" in rendered
+
+
+def test_empty_validation_scorecard_stays_clear_and_safe(tmp_path: Path) -> None:
+    site_dir = tmp_path / "empty-site"
+    site_dir.mkdir()
+
+    report = run_site_validation(site_dir)
+    rendered = render_site_validation_report(report)
+
+    assert report.scorecard.videos_reviewed == 0
+    assert report.scorecard.label_windows == 0
+    assert report.scorecard.top_reasons == []
+    assert report.scorecard.summary == "No labelled windows were available for comparison yet."
+    assert "Cannot compare: 0" in rendered
+    assert "not proof of flood detection accuracy" in rendered
