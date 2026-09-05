@@ -28,6 +28,12 @@ Simple example: a developer can run one local video, save POC records, add a hum
 
 Current local validation can also run a whole site folder, create one combined report, and keep missing or unclear cases visible.
 
+The test suite includes small deterministic synthetic videos for rising water,
+falling water, no clear change, and unreadable input. These videos are generated
+during tests and are not stored as media files in the repository. They provide
+known-answer checks for the local pipeline without internet access or private
+footage. Passing a synthetic test does not prove real-world flood accuracy.
+
 Each site validation report now includes a short **Validation Scorecard** with the
 number of videos reviewed, label windows, `agree`, `disagree`, and `cannot_compare`
 counts, plus the most common notes for cases that need review. The scorecard is a
