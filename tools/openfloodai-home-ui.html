@@ -259,6 +259,28 @@
         padding: 28px;
       }
 
+      .next-steps {
+        background: #f7f9fb;
+        border-top: 1px solid var(--soft-line);
+        padding: 14px 18px 16px;
+      }
+
+      .next-steps-title {
+        color: var(--accent-strong);
+        font-size: 13px;
+        font-weight: 800;
+        margin-bottom: 5px;
+      }
+
+      .next-steps ul {
+        margin: 0;
+        padding-left: 20px;
+      }
+
+      .next-steps li + li {
+        margin-top: 4px;
+      }
+
       @media (max-width: 640px) {
         header,
         main {
@@ -613,6 +635,16 @@
         return `agree ${counts.agree ?? 0}, disagree ${counts.disagree ?? 0}, cannot compare ${counts.cannot_compare ?? 0}`;
       }
 
+      function renderNextSteps(site) {
+        const steps = site.next_steps || [];
+        return `
+          <div class="next-steps">
+            <div class="next-steps-title">What to do next</div>
+            <ul>${steps.map((step) => `<li>${escapeHtml(step)}</li>`).join("")}</ul>
+          </div>
+        `;
+      }
+
       function row(label, value, className = "") {
         return `
           <div class="status-row">
@@ -688,6 +720,7 @@
               ${row("Latest result", reportCountsText(site), site.latest_report_counts ? "ok" : "warn")}
               ${row("Review images", site.review_images_path || "not found", site.review_images_path ? "ok" : "warn")}
             </div>
+            ${renderNextSteps(site)}
             <div style="padding: 0 18px 14px; display: flex; gap: 8px;">
               <button type="button" onclick="runValidationForSite('${escapeHtml(site.site_name)}')" ${site.ready_for_validation ? "" : "disabled"}>Run Validation</button>
               <button type="button" onclick="openLabelFormForSite('${escapeHtml(site.site_name)}')" style="font-size: 13px; min-height: 34px; padding: 6px 12px; background: var(--accent-strong); border-color: var(--accent-strong);">+ Add Label</button>

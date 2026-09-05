@@ -49,6 +49,25 @@ class ValidationSiteStatus:
 
         return self.ready_for_machine_review
 
+    @property
+    def next_steps(self) -> list[str]:
+        """Return simple local actions that address missing site readiness items."""
+
+        steps: list[str] = []
+        if not self.config_found:
+            steps.append("Add a site config under configs/.")
+        if self.video_count == 0:
+            steps.append("Add video files under inputs/videos/.")
+        if not self.labels_found:
+            steps.append("Machine review can still run, but human comparison needs labels.")
+        if not self.manifest_found:
+            steps.append("Add manifest.jsonl so videos can be tracked clearly.")
+        if not self.outputs_found:
+            steps.append("Run validation to create the first report.")
+        if not steps:
+            steps.append("Review the latest validation report and review images.")
+        return steps
+
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-friendly representation of this status."""
 
@@ -56,6 +75,7 @@ class ValidationSiteStatus:
         payload["ready_for_machine_review"] = self.ready_for_machine_review
         payload["ready_for_human_comparison"] = self.ready_for_human_comparison
         payload["ready_for_validation"] = self.ready_for_validation
+        payload["next_steps"] = self.next_steps
         return payload
 
 

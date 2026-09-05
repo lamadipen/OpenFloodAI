@@ -124,6 +124,11 @@ Current local validation can now:
 4. summarize the result in plain language
 5. keep unclear cases visible as `cannot_compare`
 
+The local Home UI at `tools/openfloodai-home-ui.html` brings this workflow together.
+It shows site readiness, gives simple next-step messages for missing config, videos,
+labels, manifests, or reports, and can run validation from a ready site. Validation
+results and review-image paths remain local to the selected site folder.
+
 Next goals:
 
 1. Add more approved validation clips for different rivers, lighting, weather, and camera quality.
@@ -579,6 +584,8 @@ Simple meaning: this page checks folders under `data/sites/` and shows whether e
 
 From the same page you can create a site folder, add a local validation video, or create human label records. Adding a video copies a file already on this computer into `inputs/videos/` and writes one `manifest.jsonl` row. Adding a label validates time windows and label text without manual JSON Lines editing. After you choose a site, the label form offers existing video IDs from that site’s local videos and labels already used for that site. Selecting a video fills the Video ID field; manual entry is also available. Switching sites clears the previous video selection; if the value is missing, type a short manual label like `bridge_pillar_covered`. Sharing stays off unless you explicitly mark the video as approved for the repo.
 
+The site card also shows a **What to do next** section. It explains the next useful local action when config, videos, labels, the manifest, or a validation report is missing. When a site is ready, **Run Validation** runs the local multi-video validation flow and refreshes the report counts and review-image path.
+
 Machine review only needs config and video. Human comparison also needs labels and a manifest.
 
 Example:
@@ -774,7 +781,7 @@ OpenFloodAI is in local proof-of-concept validation.
 
 Current local helpers can read test videos, check video health, save records, load site/camera config, choose a watched reference region from a local image, run one safe end-to-end local smoke test, run a local review workflow for your own video, run multi-video site validation, compare system output with human labels, try prototype thresholds against labels, measure simple full-frame and reference-region signals, summarize saved records, generate local review images, document hard-case expectations, and create plain-language operator notes.
 
-OpenFloodAI still does not detect real floods, train ML models, connect to live cameras, send alerts, publish public warnings, provide a dashboard, or replace local emergency decision-making.
+OpenFloodAI still does not detect real floods, train ML models, connect to live cameras, send alerts, publish public warnings, provide a production monitoring or fleet dashboard, or replace local emergency decision-making. The existing Home UI is a local validation and review tool only.
 
 Next direction:
 

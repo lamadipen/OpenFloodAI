@@ -66,13 +66,14 @@ Completed or started:
 - local replay summary report for saved POC records
 - plain-language operator notes for POC outputs
 - local review images for biggest visual changes
+- local Home UI for site readiness, guided next steps, and validation runs
 - safe site and camera config loading
 - privacy and retention policy for local POC data
 - MkDocs documentation site
 - research note for ML models, datasets, Google ML options, and public water-data inspiration
 - human labeling guide for water-change review
 
-Simple example: today a developer can choose a watched image area, run a local video through the POC pipeline, save records to `data/sites/example-site/outputs/poc-records.jsonl`, print a short summary, create plain-language notes, generate a few local review images, organize validation data by site, run multi-video site validation, compare labels with system output, try prototype thresholds against labels, update the validation status page, or run one safe smoke test that checks the full local review flow.
+Simple example: today a developer can choose a watched image area, run a local video through the POC pipeline, save records to `data/sites/example-site/outputs/poc-records.jsonl`, print a short summary, create plain-language notes, generate a few local review images, organize validation data by site, open the local Home UI for readiness guidance, run multi-video site validation, compare labels with system output, try prototype thresholds against labels, update the validation status page, or run one safe smoke test that checks the full local review flow.
 
 ## Completed Phase Summary
 
@@ -149,7 +150,7 @@ OpenFloodAI does not yet:
 - train or package ML models
 - send alerts
 - run a public warning workflow
-- provide a dashboard
+- provide a production monitoring or fleet dashboard
 - connect to live cameras
 - use real cloud ML services
 - replace local emergency decision-making
