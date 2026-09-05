@@ -281,6 +281,63 @@
         margin-top: 4px;
       }
 
+      .detail-panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        box-shadow: var(--shadow);
+        margin-bottom: 22px;
+        padding: 20px;
+      }
+
+      .detail-header {
+        align-items: end;
+        display: flex;
+        gap: 16px;
+        justify-content: space-between;
+        margin-bottom: 18px;
+      }
+
+      .detail-header h2 {
+        margin: 0;
+      }
+
+      .detail-select {
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        font: inherit;
+        min-height: 42px;
+        min-width: 240px;
+        padding: 8px;
+      }
+
+      .detail-grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      }
+
+      .detail-item {
+        border-top: 1px solid var(--soft-line);
+        padding-top: 10px;
+      }
+
+      .detail-label {
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .detail-value {
+        overflow-wrap: anywhere;
+      }
+
+      .detail-explanation {
+        background: var(--surface-blue);
+        border-left: 4px solid var(--accent);
+        padding: 12px;
+      }
+
       @media (max-width: 640px) {
         header,
         main {
@@ -292,6 +349,7 @@
         }
 
         .toolbar,
+        .detail-header,
         .site-title,
         .status-row {
           align-items: flex-start;
@@ -301,6 +359,11 @@
         .status-value {
           max-width: 100%;
           text-align: left;
+        }
+
+        .detail-select {
+          min-width: 100%;
+          width: 100%;
         }
       }
     </style>
@@ -474,6 +537,19 @@
         </form>
       </section>
 
+      <section class="detail-panel" id="detailPanel" aria-labelledby="detailTitle">
+        <div class="detail-header">
+          <div>
+            <h2 id="detailTitle">Site details</h2>
+            <div class="meta">Read-only details for the selected local site.</div>
+          </div>
+          <label>
+            <span class="detail-label">Selected site</span>
+            <select class="detail-select" id="detailSiteSelect" aria-label="Selected site"></select>
+          </label>
+        </div>
+        <div class="detail-grid" id="detailContent"></div>
+      </section>
       <section class="overview" id="overview" aria-label="Site overview"></section>
       <section class="site-grid" id="siteGrid" aria-live="polite"></section>
     </main>
@@ -510,6 +586,9 @@
       const labelManualInput = document.querySelector("#labelManualInput");
       const labelConfidenceSelect = document.querySelector("#labelConfidenceSelect");
       const labelNoteInput = document.querySelector("#labelNoteInput");
+      const detailPanel = document.querySelector("#detailPanel");
+      const detailSiteSelect = document.querySelector("#detailSiteSelect");
+      const detailContent = document.querySelector("#detailContent");
       let latestSites = [];
       let defaultHumanLabelOptions = [
         "water_rising",
@@ -645,6 +724,50 @@
         `;
       }
 
+      function detailItem(label, value, className = "") {
+        return `
+          <div class="detail-item ${className}">
+            <div class="detail-label">${escapeHtml(label)}</div>
+            <div class="detail-value">${escapeHtml(value)}</div>
+          </div>
+        `;
+      }
+
+      function renderSiteDetails(site) {
+        if (!site) {
+          detailPanel.style.display = "none";
+          return;
+        }
+        detailPanel.style.display = "block";
+        detailContent.innerHTML = [
+          detailItem("Site name", site.site_name),
+          detailItem("Site folder", site.site_path),
+          detailItem("Config files", String(site.config_count)),
+          detailItem("Videos", String(site.video_count)),
+          detailItem("Label files", String(site.label_count)),
+          detailItem("Manifest", site.manifest_found ? "Found" : "Missing"),
+          detailItem("Validation reports", String(site.report_count)),
+          detailItem("Latest report", site.latest_report_path || "Not available"),
+          detailItem("Machine review", site.machine_review_explanation, "detail-explanation"),
+          detailItem("Human comparison", site.human_comparison_explanation, "detail-explanation"),
+        ].join("");
+      }
+
+      function fillDetailSiteSelect(sites) {
+        const current = detailSiteSelect.value;
+        detailSiteSelect.innerHTML = "";
+        for (const site of sites) {
+          const option = document.createElement("option");
+          option.value = site.site_name;
+          option.textContent = site.site_name;
+          detailSiteSelect.append(option);
+        }
+        if ([...detailSiteSelect.options].some((option) => option.value === current)) {
+          detailSiteSelect.value = current;
+        }
+        renderSiteDetails(sites.find((site) => site.site_name === detailSiteSelect.value));
+      }
+
       function row(label, value, className = "") {
         return `
           <div class="status-row">
@@ -741,6 +864,7 @@
           sitesDir.textContent = `Site folder: ${payload.sites_dir}`;
           safetyNote.textContent = payload.safety_note;
           latestSites = payload.sites || [];
+          fillDetailSiteSelect(latestSites);
           defaultHumanLabelOptions = payload.human_label_options || defaultHumanLabelOptions;
           fillSiteSelect(payload.sites);
           fillSelect(purposeSelect, payload.purpose_options || [], "Choose purpose");
@@ -754,6 +878,7 @@
           overview.innerHTML = renderOverview(payload.sites);
 
           if (!payload.sites.length) {
+            detailPanel.style.display = "none";
             siteGrid.innerHTML = '<div class="empty">No site folders found under data/sites.</div>';
             return;
           }
@@ -771,6 +896,9 @@
       }
 
       refreshButton.addEventListener("click", loadSites);
+      detailSiteSelect.addEventListener("change", () => {
+        renderSiteDetails(latestSites.find((site) => site.site_name === detailSiteSelect.value));
+      });
       labelSiteSelect.addEventListener("change", updateLabelOptionsForSelectedSite);
       labelVideoSelect.addEventListener("change", () => {
         labelVideoIdInput.value = labelVideoSelect.value;

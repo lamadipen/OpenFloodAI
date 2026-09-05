@@ -50,6 +50,39 @@ class ValidationSiteStatus:
         return self.ready_for_machine_review
 
     @property
+    def machine_review_explanation(self) -> str:
+        """Explain whether the site has the files needed for machine review."""
+
+        if self.ready_for_machine_review:
+            return "Ready because config and videos are found."
+        missing: list[str] = []
+        if not self.config_found:
+            missing.append("config")
+        if self.video_count == 0:
+            missing.append("videos")
+        return f"Not ready because {_join_missing_items(missing)} are missing."
+
+    @property
+    def human_comparison_explanation(self) -> str:
+        """Explain whether the site has the files needed for human comparison."""
+
+        if self.ready_for_human_comparison:
+            return "Ready because config, videos, labels, and manifest are found."
+        missing: list[str] = []
+        if not self.ready_for_machine_review:
+            if not self.config_found and self.video_count == 0:
+                missing.append("config and videos")
+            elif not self.config_found:
+                missing.append("config")
+            else:
+                missing.append("videos")
+        if not self.labels_found:
+            missing.append("labels")
+        if not self.manifest_found:
+            missing.append("manifest")
+        return f"Not ready because {_join_missing_items(missing)} are missing."
+
+    @property
     def next_steps(self) -> list[str]:
         """Return simple local actions that address missing site readiness items."""
 
@@ -75,6 +108,8 @@ class ValidationSiteStatus:
         payload["ready_for_machine_review"] = self.ready_for_machine_review
         payload["ready_for_human_comparison"] = self.ready_for_human_comparison
         payload["ready_for_validation"] = self.ready_for_validation
+        payload["machine_review_explanation"] = self.machine_review_explanation
+        payload["human_comparison_explanation"] = self.human_comparison_explanation
         payload["next_steps"] = self.next_steps
         return payload
 
@@ -204,3 +239,11 @@ def _latest_path(paths: list[Path]) -> Path | None:
     if not paths:
         return None
     return max(paths, key=lambda path: (path.stat().st_mtime, str(path)))
+
+
+def _join_missing_items(items: list[str]) -> str:
+    if len(items) < 2:
+        return items[0]
+    if len(items) == 2:
+        return " and ".join(items)
+    return f"{', '.join(items[:-1])}, and {items[-1]}"
