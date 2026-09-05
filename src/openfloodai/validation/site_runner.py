@@ -370,7 +370,11 @@ def _build_report(
 ) -> SiteValidationReport:
     processed_count = sum(result.processed for result in results)
     failed_count = sum(not result.processed for result in results)
-    label_window_count = sum(len(result.comparisons) for result in results)
+    label_window_count = sum(
+        comparison.time_window_seconds is not None
+        for result in results
+        for comparison in result.comparisons
+    )
     agree_count = sum(
         comparison.result == "agree" for result in results for comparison in result.comparisons
     )
@@ -409,12 +413,30 @@ def _top_comparison_reasons(
     results: list[SiteValidationResult],
 ) -> list[tuple[str, int]]:
     reason_counts = Counter(
-        comparison.note
+        _comparison_reason(comparison.note)
         for result in results
         for comparison in result.comparisons
         if comparison.result != "agree" and comparison.note
     )
     return sorted(reason_counts.items(), key=lambda item: (-item[1], item[0]))[:3]
+
+
+def _comparison_reason(note: str) -> str:
+    """Return a stable scorecard category from a detailed comparison note."""
+
+    reason_prefixes = (
+        ("No human label", "NO_HUMAN_LABEL"),
+        ("A human label exists, but no matching local video", "MISSING_VIDEO"),
+        ("The human label time window is missing or invalid", "INVALID_LABEL_WINDOW"),
+        ("The human label or system output says this case is unclear", "UNCLEAR_CASE"),
+        ("The human label and system visual-change result do not match", "LABEL_AND_SYSTEM_DIFFER"),
+        ("Fewer than two usable frames", "NOT_ENOUGH_USABLE_FRAMES"),
+        ("Video could not be processed", "VIDEO_PROCESSING_FAILED"),
+    )
+    for prefix, reason in reason_prefixes:
+        if note.startswith(prefix):
+            return reason
+    return "OTHER_REVIEW_REASON"
 
 
 def _find_videos(site_dir: Path) -> list[Path]:

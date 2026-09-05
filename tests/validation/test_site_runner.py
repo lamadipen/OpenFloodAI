@@ -123,16 +123,17 @@ def test_run_site_validation_reports_multiple_video_results(tmp_path: Path) -> N
 
     assert report.processed_count == 3
     assert report.failed_count == 2
-    assert report.label_window_count == 6
+    assert report.label_window_count == 5
     assert report.agree_count == 1
     assert report.disagree_count == 1
     assert report.cannot_compare_count == 4
     assert report.scorecard.videos_reviewed == 5
-    assert report.scorecard.label_windows == 6
+    assert report.scorecard.label_windows == 5
     assert report.scorecard.agree_count == 1
     assert report.scorecard.disagree_count == 1
     assert report.scorecard.cannot_compare_count == 4
     assert report.scorecard.top_reasons
+    assert report.scorecard.top_reasons[0] == ("LABEL_AND_SYSTEM_DIFFER", 1)
     assert results_by_video_id["rising-001"].result == "cannot_compare"
     assert results_by_video_id["rising-001"].human_label == "multiple"
     assert len(results_by_video_id["rising-001"].comparisons) == 2
@@ -151,7 +152,7 @@ def test_run_site_validation_reports_multiple_video_results(tmp_path: Path) -> N
     rising_row = "| rising-001.avi | yes | multiple | multiple | cannot_compare | 2 |"
     assert table_header in rendered
     assert rising_row in rendered
-    assert "- Label windows compared: 6" in rendered
+    assert "- Label windows compared: 5" in rendered
     assert "## Validation Scorecard" in rendered
     assert "- Cannot compare: 4" in rendered
     assert "not proof of flood detection accuracy" in rendered
@@ -176,7 +177,7 @@ def test_run_site_validation_handles_missing_human_label(tmp_path: Path) -> None
     assert report.results[0].video_id == "unlabeled-001"
     assert report.results[0].human_label == "missing"
     assert report.results[0].result == "cannot_compare"
-    assert report.label_window_count == 1
+    assert report.label_window_count == 0
 
 
 def test_run_site_validation_without_videos_still_reports_label_only_cases(
