@@ -19,6 +19,7 @@ class ValidationSiteStatus:
     config_found: bool
     config_count: int
     video_count: int
+    video_ids: list[str]
     labels_found: bool
     label_count: int
     human_label_options: list[str]
@@ -85,6 +86,7 @@ def read_validation_site_status(site_dir: Path) -> ValidationSiteStatus:
         config_found=bool(config_paths),
         config_count=len(config_paths),
         video_count=len(video_paths),
+        video_ids=sorted({path.stem for path in video_paths}),
         labels_found=bool(label_paths),
         label_count=len(label_paths),
         human_label_options=human_label_options,

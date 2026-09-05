@@ -53,6 +53,7 @@ def test_read_validation_site_status_reports_ready_site(tmp_path: Path) -> None:
     assert status.config_found is True
     assert status.config_count == 1
     assert status.video_count == 1
+    assert status.to_dict()["video_ids"] == ["river-001"]
     assert status.labels_found is True
     assert status.label_count == 1
     assert status.human_label_options == ["bridge_pillar_covered", "cannot_judge"]
@@ -92,6 +93,7 @@ def test_read_validation_site_status_reports_missing_files(tmp_path: Path) -> No
 
     assert status.config_found is False
     assert status.video_count == 0
+    assert status.video_ids == []
     assert status.labels_found is False
     assert status.manifest_found is False
     assert status.outputs_found is False
@@ -126,3 +128,16 @@ def test_status_to_dict_includes_ready_flag(tmp_path: Path) -> None:
         "bridge_pillar_covered",
         "cannot_judge",
     ]
+
+
+def test_video_ids_are_sorted_unique_and_scoped_to_site(tmp_path: Path) -> None:
+    site = make_site(tmp_path / "first")
+    videos = site / "inputs" / "videos"
+    (videos / "river-001.MOV").write_bytes(b"test")
+    (videos / "another.mp4").write_bytes(b"test")
+    (videos / "ignore.txt").write_text("test")
+    (videos / "directory.mp4").mkdir()
+    other = make_site(tmp_path / "other")
+    (other / "inputs" / "videos" / "other-only.mp4").write_bytes(b"test")
+
+    assert read_validation_site_status(site).video_ids == ["another", "river-001"]

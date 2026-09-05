@@ -412,6 +412,8 @@
           </div>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Video ID *</label>
+            <select id="labelVideoSelect" aria-label="Existing video ID" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px; margin-bottom: 8px;"></select>
+            <div class="meta">Choose an existing video above, or enter its ID below.</div>
             <input type="text" name="video_id" id="labelVideoIdInput" placeholder="e.g. rising-001" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
           </div>
           <div>
@@ -478,6 +480,7 @@
       const labelForm = document.querySelector("#labelForm");
       const cancelLabel = document.querySelector("#cancelLabel");
       const labelSiteSelect = document.querySelector("#labelSiteSelect");
+      const labelVideoSelect = document.querySelector("#labelVideoSelect");
       const labelVideoIdInput = document.querySelector("#labelVideoIdInput");
       const labelStartInput = document.querySelector("#labelStartInput");
       const labelEndInput = document.querySelector("#labelEndInput");
@@ -554,7 +557,17 @@
         return [...new Set([...siteOptions, ...defaultHumanLabelOptions])].sort();
       }
 
+      let labelVideoSite = null;
+
       function updateLabelOptionsForSelectedSite() {
+        if (labelVideoSite !== labelSiteSelect.value) {
+          labelVideoSelect.value = "";
+          labelVideoIdInput.value = "";
+          labelVideoSite = labelSiteSelect.value;
+        }
+        const selectedSite = latestSites.find((site) => site.site_name === labelSiteSelect.value);
+        const videoIds = selectedSite?.video_ids || [];
+        fillSelect(labelVideoSelect, videoIds, videoIds.length ? "Choose video ID" : "No local videos — enter ID below");
         fillSelect(labelValueSelect, labelsForSelectedSite(), "Choose human label");
       }
 
@@ -715,6 +728,12 @@
 
       refreshButton.addEventListener("click", loadSites);
       labelSiteSelect.addEventListener("change", updateLabelOptionsForSelectedSite);
+      labelVideoSelect.addEventListener("change", () => {
+        labelVideoIdInput.value = labelVideoSelect.value;
+      });
+      labelVideoIdInput.addEventListener("input", () => {
+        labelVideoSelect.value = labelVideoIdInput.value;
+      });
 
       createSiteButton.addEventListener("click", () => {
         hideForms();
@@ -730,6 +749,7 @@
 
       addLabelButton.addEventListener("click", () => {
         hideForms();
+        updateLabelOptionsForSelectedSite();
         labelFormPanel.style.display = "block";
         addLabelButton.style.display = "none";
       });
