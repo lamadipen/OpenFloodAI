@@ -203,6 +203,8 @@ http://127.0.0.1:8765/openfloodai-home-ui.html
 
 Simple meaning: the UI shows whether each site has config, videos, labels, manifest, outputs, and a latest report. It includes a **Create Site** button for new folders and an **Add Video** button to choose a local video file and write a manifest row.
 
+The **Add Label** form shows labels already used by the selected site. If the right label is missing, use **Manual label** with a short safe value like `bridge_pillar_covered`.
+
 The **Add Video** form uses dropdowns for `purpose` and `hard_case_type` so the manifest stays consistent.
 
 Machine review needs config and video. Human comparison also needs labels and a manifest.

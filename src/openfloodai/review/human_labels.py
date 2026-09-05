@@ -20,6 +20,8 @@ ALLOWED_HUMAN_LABELS = {
     "cannot_judge",
 }
 ALLOWED_CONFIDENCE_LEVELS = {"low", "medium", "high"}
+_HUMAN_LABEL_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
+_MAX_HUMAN_LABEL_LENGTH = 64
 REQUIRED_FIELDS = {
     "video_id",
     "time_window_seconds",
@@ -59,10 +61,8 @@ def validate_human_label_record(record: Mapping[str, object]) -> list[str]:
     _validate_text_field(record, "note", errors, required=False)
     _validate_text_field(record, "reviewer_id", errors, required=False)
     _validate_time_window(record.get("time_window_seconds"), errors)
-    _validate_allowed_value(
+    _validate_human_label_value(
         record.get("human_label"),
-        "human_label",
-        ALLOWED_HUMAN_LABELS,
         errors,
         required=True,
     )
@@ -151,6 +151,27 @@ def _validate_allowed_value(
     if not isinstance(value, str) or value not in allowed_values:
         joined_values = ", ".join(sorted(allowed_values))
         errors.append(f"{field_name} must be one of: {joined_values}")
+
+
+def _validate_human_label_value(
+    value: object,
+    errors: list[str],
+    *,
+    required: bool,
+) -> None:
+    if value is None:
+        if required:
+            errors.append("human_label is required")
+        return
+    if not isinstance(value, str) or not value.strip():
+        errors.append("human_label must be a non-empty string")
+        return
+    clean_value = value.strip()
+    if len(clean_value) > _MAX_HUMAN_LABEL_LENGTH:
+        errors.append("human_label must be 64 characters or fewer")
+        return
+    if _HUMAN_LABEL_PATTERN.fullmatch(clean_value) is None:
+        errors.append("human_label may use only letters, numbers, dash, and underscore")
 
 
 def _is_number(value: object) -> bool:
@@ -267,14 +288,15 @@ def create_human_label_record(
             message="human_label is required",
         )
 
-    if clean_human_label not in ALLOWED_HUMAN_LABELS:
-        joined = ", ".join(sorted(ALLOWED_HUMAN_LABELS))
+    label_errors: list[str] = []
+    _validate_human_label_value(clean_human_label, label_errors, required=True)
+    if label_errors:
         return CreateHumanLabelResult(
             site_dir=site_dir,
             labels_path=Path(),
             record=None,
             created=False,
-            message=f"human_label must be one of: {joined}",
+            message="; ".join(label_errors),
         )
 
     clean_confidence = str(confidence).strip() if confidence is not None else ""

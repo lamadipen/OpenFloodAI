@@ -29,21 +29,27 @@ def test_valid_human_label_record_passes() -> None:
     assert is_valid_human_label_record(record) is True
 
 
-def test_invalid_human_label_fails_clearly() -> None:
+def test_custom_human_label_record_passes() -> None:
+    record = {
+        "video_id": "demo-river-001",
+        "time_window_seconds": [0, 30],
+        "human_label": "bridge_pillar_covered",
+    }
+
+    assert validate_human_label_record(record) == []
+    assert is_valid_human_label_record(record) is True
+
+
+def test_invalid_human_label_text_fails_clearly() -> None:
     errors = validate_human_label_record(
         {
             "video_id": "demo-river-001",
             "time_window_seconds": [0, 30],
-            "human_label": "danger",
+            "human_label": "bridge pillar covered",
         }
     )
 
-    assert errors == [
-        (
-            "human_label must be one of: camera_video_problem, cannot_judge, "
-            "no_clear_change, water_falling, water_rising"
-        )
-    ]
+    assert errors == ["human_label may use only letters, numbers, dash, and underscore"]
 
 
 def test_invalid_time_window_fails_clearly() -> None:
@@ -83,11 +89,11 @@ def test_load_human_label_records_reads_valid_jsonl(tmp_path: Path) -> None:
 def test_load_human_label_records_reports_record_number(tmp_path: Path) -> None:
     label_path = tmp_path / "labels.jsonl"
     label_path.write_text(
-        '{"video_id":"demo-river-001","time_window_seconds":[0,30],"human_label":"bad"}\n',
+        ('{"video_id":"demo-river-001","time_window_seconds":[0,30],"human_label":"bad label"}\n'),
         encoding="utf-8",
     )
 
-    with pytest.raises(HumanLabelError, match="Record 1: human_label must be one of"):
+    with pytest.raises(HumanLabelError, match="Record 1: human_label may use only"):
         load_human_label_records(label_path)
 
 
@@ -157,7 +163,7 @@ def test_create_human_label_record_rejects_invalid_time_windows(tmp_path: Path) 
     assert "0 or greater" in res3.message
 
 
-def test_create_human_label_record_rejects_unknown_label_values(tmp_path: Path) -> None:
+def test_create_human_label_record_accepts_custom_label_values(tmp_path: Path) -> None:
     site_dir = tmp_path / "test-site"
     site_dir.mkdir()
 
@@ -166,11 +172,28 @@ def test_create_human_label_record_rejects_unknown_label_values(tmp_path: Path) 
         video_id="rising-001",
         start_second=0,
         end_second=30,
-        human_label="flood_danger",
+        human_label="bridge_pillar_covered",
+    )
+
+    assert result.created is True
+    records = load_human_label_records(site_dir / "labels" / "labels.jsonl")
+    assert records[0]["human_label"] == "bridge_pillar_covered"
+
+
+def test_create_human_label_record_rejects_unsafe_custom_label_text(tmp_path: Path) -> None:
+    site_dir = tmp_path / "test-site"
+    site_dir.mkdir()
+
+    result = create_human_label_record(
+        site_dir=site_dir,
+        video_id="rising-001",
+        start_second=0,
+        end_second=30,
+        human_label="flood danger",
     )
 
     assert result.created is False
-    assert "human_label must be one of:" in result.message
+    assert "human_label may use only letters, numbers, dash, and underscore" in result.message
 
 
 def test_create_human_label_record_rejects_unknown_confidence_values(tmp_path: Path) -> None:

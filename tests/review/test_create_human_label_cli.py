@@ -81,6 +81,32 @@ def test_add_human_label_cli_alias_works(tmp_path: Path) -> None:
     assert records[0]["human_label"] == "cannot_judge"
 
 
+def test_create_human_label_cli_accepts_custom_label(tmp_path: Path) -> None:
+    site_dir = tmp_path / "custom-label-site"
+    site_dir.mkdir()
+
+    cmd = [
+        sys.executable,
+        "scripts/create_human_label.py",
+        "--site-dir",
+        str(site_dir),
+        "--video-id",
+        "test-001",
+        "--start",
+        "0",
+        "--end",
+        "20",
+        "--label",
+        "bridge_pillar_covered",
+    ]
+
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    assert result.returncode == 0
+
+    records = load_human_label_records(site_dir / "labels" / "labels.jsonl")
+    assert records[0]["human_label"] == "bridge_pillar_covered"
+
+
 def test_create_human_label_cli_rejects_duplicate_without_overwrite(tmp_path: Path) -> None:
     site_dir = tmp_path / "dup-site"
     site_dir.mkdir()
@@ -175,6 +201,7 @@ def test_home_ui_add_label_api_endpoint(tmp_path: Path) -> None:
             assert "human_label_options" in sites_data
             assert "water_rising" in sites_data["human_label_options"]
             assert "confidence_options" in sites_data
+            assert "water_rising" in sites_data["sites"][0]["human_label_options"]
 
         # Test error rejection on invalid time window
         bad_payload = {

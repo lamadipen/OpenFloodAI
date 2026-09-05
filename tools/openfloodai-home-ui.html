@@ -424,7 +424,12 @@
           </div>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Human label *</label>
-            <select name="human_label" id="labelValueSelect" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
+            <select name="human_label" id="labelValueSelect" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Manual label</label>
+            <input type="text" name="manual_human_label" id="labelManualInput" placeholder="Optional, e.g. bridge_pillar_covered" pattern="[A-Za-z0-9_-]+" maxlength="64" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+            <div class="meta" style="margin-top: 4px;">Use this only when the label is not in the list.</div>
           </div>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Confidence</label>
@@ -477,8 +482,17 @@
       const labelStartInput = document.querySelector("#labelStartInput");
       const labelEndInput = document.querySelector("#labelEndInput");
       const labelValueSelect = document.querySelector("#labelValueSelect");
+      const labelManualInput = document.querySelector("#labelManualInput");
       const labelConfidenceSelect = document.querySelector("#labelConfidenceSelect");
       const labelNoteInput = document.querySelector("#labelNoteInput");
+      let latestSites = [];
+      let defaultHumanLabelOptions = [
+        "water_rising",
+        "water_falling",
+        "no_clear_change",
+        "camera_video_problem",
+        "cannot_judge",
+      ];
 
       function fillSiteSelect(sites) {
         const current = videoSiteSelect.value;
@@ -532,6 +546,16 @@
         if ([...select.options].some((option) => option.value === current)) {
           select.value = current;
         }
+      }
+
+      function labelsForSelectedSite() {
+        const selectedSite = latestSites.find((site) => site.site_name === labelSiteSelect.value);
+        const siteOptions = selectedSite?.human_label_options || [];
+        return [...new Set([...siteOptions, ...defaultHumanLabelOptions])].sort();
+      }
+
+      function updateLabelOptionsForSelectedSite() {
+        fillSelect(labelValueSelect, labelsForSelectedSite(), "Choose human label");
       }
 
       function fileStem(filename) {
@@ -659,20 +683,12 @@
           const payload = await response.json();
           sitesDir.textContent = `Site folder: ${payload.sites_dir}`;
           safetyNote.textContent = payload.safety_note;
+          latestSites = payload.sites || [];
+          defaultHumanLabelOptions = payload.human_label_options || defaultHumanLabelOptions;
           fillSiteSelect(payload.sites);
           fillSelect(purposeSelect, payload.purpose_options || [], "Choose purpose");
           fillSelect(hardCaseTypeSelect, payload.hard_case_type_options || [], "No hard case");
-          fillSelect(
-            labelValueSelect,
-            payload.human_label_options || [
-              "water_rising",
-              "water_falling",
-              "no_clear_change",
-              "camera_video_problem",
-              "cannot_judge",
-            ],
-            "Choose human label"
-          );
+          updateLabelOptionsForSelectedSite();
           fillSelect(
             labelConfidenceSelect,
             payload.confidence_options || ["low", "medium", "high"],
@@ -698,6 +714,7 @@
       }
 
       refreshButton.addEventListener("click", loadSites);
+      labelSiteSelect.addEventListener("change", updateLabelOptionsForSelectedSite);
 
       createSiteButton.addEventListener("click", () => {
         hideForms();
@@ -723,6 +740,7 @@
         addLabelButton.style.display = "none";
         if (labelSiteSelect) {
           labelSiteSelect.value = siteName;
+          updateLabelOptionsForSelectedSite();
         }
       };
 
@@ -804,6 +822,15 @@
         e.preventDefault();
         const formData = new FormData(labelForm);
         const data = Object.fromEntries(formData.entries());
+        const manualHumanLabel = String(data.manual_human_label || "").trim();
+        if (manualHumanLabel) {
+          data.human_label = manualHumanLabel;
+        }
+        delete data.manual_human_label;
+        if (!String(data.human_label || "").trim()) {
+          alert("Choose a human label or type a manual label.");
+          return;
+        }
 
         try {
           const response = await fetch("/api/add-label", {

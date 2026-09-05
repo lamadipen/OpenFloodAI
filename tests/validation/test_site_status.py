@@ -21,7 +21,12 @@ def make_site(site_dir: Path) -> Path:
     write_json(site_dir / "configs" / "site-config.json", {"site_id": site_dir.name})
     (site_dir / "inputs" / "videos" / "river-001.mp4").write_bytes(b"not-real-video")
     (site_dir / "labels" / "labels.jsonl").write_text(
-        '{"video_id":"river-001","time_window_seconds":[0,30],"human_label":"cannot_judge"}\n',
+        (
+            '{"video_id":"river-001","time_window_seconds":[0,30],'
+            '"human_label":"cannot_judge"}\n'
+            '{"video_id":"river-001","time_window_seconds":[30,60],'
+            '"human_label":"bridge_pillar_covered"}\n'
+        ),
         encoding="utf-8",
     )
     (site_dir / "manifest.jsonl").write_text(
@@ -50,6 +55,7 @@ def test_read_validation_site_status_reports_ready_site(tmp_path: Path) -> None:
     assert status.video_count == 1
     assert status.labels_found is True
     assert status.label_count == 1
+    assert status.human_label_options == ["bridge_pillar_covered", "cannot_judge"]
     assert status.manifest_found is True
     assert status.outputs_found is True
     assert status.report_count == 1
@@ -74,6 +80,7 @@ def test_read_validation_site_status_allows_machine_review_without_labels(
     assert status.ready_for_human_comparison is False
     assert status.ready_for_validation is True
     assert status.labels_found is False
+    assert status.human_label_options == []
     assert status.manifest_found is False
 
 
@@ -115,3 +122,7 @@ def test_status_to_dict_includes_ready_flag(tmp_path: Path) -> None:
     assert status.to_dict()["ready_for_machine_review"] is True
     assert status.to_dict()["ready_for_human_comparison"] is True
     assert status.to_dict()["ready_for_validation"] is True
+    assert status.to_dict()["human_label_options"] == [
+        "bridge_pillar_covered",
+        "cannot_judge",
+    ]

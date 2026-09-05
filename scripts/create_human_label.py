@@ -62,8 +62,11 @@ def main() -> None:
         "--human-label",
         dest="human_label",
         required=True,
-        choices=sorted(ALLOWED_HUMAN_LABELS),
-        help="Human label value (e.g. water_rising, no_clear_change, cannot_judge)",
+        help=(
+            "Human label value. Recommended values: "
+            f"{', '.join(sorted(ALLOWED_HUMAN_LABELS))}. "
+            "Custom values may use letters, numbers, dash, and underscore."
+        ),
     )
     parser.add_argument(
         "--confidence",
