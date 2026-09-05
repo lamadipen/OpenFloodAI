@@ -753,6 +753,10 @@
         `;
       }
 
+      function scorecardValue(value) {
+        return value === undefined || value === null ? "Not available" : value;
+      }
+
       function renderValidationSummary(site) {
         const scorecard = site.latest_scorecard;
         if (!scorecard) {
@@ -765,11 +769,11 @@
         return `
           <div class="detail-item detail-explanation">
             <div class="detail-label">Latest validation summary</div>
-            <div class="detail-value">Videos tested: ${escapeHtml(scorecard.videos_tested)}</div>
-            <div class="detail-value">Label windows: ${escapeHtml(scorecard.label_windows)}</div>
-            <div class="detail-value">Agree: ${escapeHtml(scorecard.agree)}</div>
-            <div class="detail-value">Disagree: ${escapeHtml(scorecard.disagree)}</div>
-            <div class="detail-value">Cannot compare: ${escapeHtml(scorecard.cannot_compare)}</div>
+            <div class="detail-value">Videos tested: ${escapeHtml(scorecardValue(scorecard.videos_tested))}</div>
+            <div class="detail-value">Label windows: ${escapeHtml(scorecardValue(scorecard.label_windows))}</div>
+            <div class="detail-value">Agree: ${escapeHtml(scorecardValue(scorecard.agree))}</div>
+            <div class="detail-value">Disagree: ${escapeHtml(scorecardValue(scorecard.disagree))}</div>
+            <div class="detail-value">Cannot compare: ${escapeHtml(scorecardValue(scorecard.cannot_compare))}</div>
             <div class="detail-value">${escapeHtml(reviewText)}</div>
           </div>
           <div class="detail-item">

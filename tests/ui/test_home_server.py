@@ -127,6 +127,27 @@ def test_home_ui_page_has_validation_summary_and_evidence_labels(tmp_path: Path)
     assert "Latest validation summary" in body
     assert "Human review is still needed" in body
     assert "Evidence folder" in body
+    assert "function scorecardValue(value)" in body
+    assert "Not available" in body
+    assert "Videos tested: undefined" not in body
+
+
+def test_sites_api_handles_partial_scorecard_report(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    site_dir = make_site(sites_dir / "example-site")
+    (site_dir / "outputs").mkdir(exist_ok=True)
+    (site_dir / "outputs" / "validation-report.md").write_text(
+        "# Site Validation Report\n\n## Validation Scorecard\n- Agree: 2\n",
+        encoding="utf-8",
+    )
+
+    with serve_home_ui(sites_dir) as base_url:
+        site = get_json(f"{base_url}/api/sites")["sites"][0]
+
+    assert site["latest_scorecard"] == {
+        "agree": 2,
+        "human_review_needed": 0,
+    }
 
 
 def test_sites_api_reports_ready_site(tmp_path: Path) -> None:
