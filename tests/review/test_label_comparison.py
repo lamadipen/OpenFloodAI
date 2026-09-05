@@ -363,3 +363,55 @@ def test_compare_label_files_reads_jsonl_and_renders_report(tmp_path: Path) -> N
     assert "Human label: water_rising" in rendered_report
     assert "Time window: 0s to 30s" in rendered_report
     assert "Result: agree" in rendered_report
+
+
+def test_pair_crossing_label_boundary_cannot_enter_through_source_id() -> None:
+    records: list[dict[str, object]] = [
+        {"record_id": "inside", "record_type": "video_frame_metadata", "video_time_seconds": 12},
+        {
+            "record_id": "pair",
+            "record_type": "visual_signal_output",
+            "video_time_seconds": 12,
+            "comparison_start_seconds": 8,
+            "comparison_end_seconds": 12,
+            "source_record_ids": ["inside"],
+            "region_change_score": 0.9,
+        },
+        {
+            "record_id": "risk",
+            "record_type": "risk_state_output",
+            "video_time_seconds": 12,
+            "comparison_start_seconds": 8,
+            "comparison_end_seconds": 12,
+            "source_record_ids": ["pair"],
+            "risk_state": "NORMAL",
+        },
+    ]
+    report = compare_label_records(
+        system_records=records,
+        human_labels=[
+            {"video_id": "test", "time_window_seconds": [10, 20], "human_label": "water_rising"}
+        ],
+        video_id="test",
+    )
+    assert report.cannot_compare_count == 1
+    assert report.comparisons[0].system_result == "missing_system_output"
+
+
+def test_pair_at_exclusive_end_is_not_counted() -> None:
+    report = compare_label_records(
+        system_records=[
+            {
+                "record_type": "visual_signal_output",
+                "video_time_seconds": 20,
+                "comparison_start_seconds": 15,
+                "comparison_end_seconds": 20,
+                "region_change_score": 0.9,
+            }
+        ],
+        human_labels=[
+            {"video_id": "test", "time_window_seconds": [10, 20], "human_label": "water_rising"}
+        ],
+        video_id="test",
+    )
+    assert report.cannot_compare_count == 1

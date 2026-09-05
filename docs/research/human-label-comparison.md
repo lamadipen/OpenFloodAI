@@ -87,6 +87,19 @@ Result: used
 
 Simple meaning: compare the same part of the video on both sides.
 
+New sampled comparison records contain both frame times. Both must be inside the
+label period. A comparison from 25s to 35s cannot be used for a label covering
+30s to 60s, even though its later frame is inside that period.
+
+Site validation now samples each label period separately. It keeps dark-frame
+metadata, excludes unusable frames from measurements, and reports insufficient
+coverage as cannot_compare. Reports include usable and unusable counts and reasons.
+Review images show an actual measured pair and its video times. Old output files
+should be regenerated to obtain this evidence; old records retain their legacy
+timestamp matching behavior.
+
+See [the sampling decision and coverage rules](../architecture/windowed-video-evidence.md).
+
 So, for now:
 
 - `water_rising` can agree with a strong visual-change signal

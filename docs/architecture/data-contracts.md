@@ -985,3 +985,37 @@ QA concerns to test in future stories:
 QA recommendation:
 
 - These contracts are a good V1 starting point, but they are not complete production schemas. Future work should add stricter schemas, validation tests, reason-code lists, and replay evidence.
+
+
+## Local Sampled Evidence (Issue #104)
+
+These additive fields belong to local POC records. They do not change the public
+event/audit schema.
+
+Every decoded frame metadata record includes frame_index and mean_brightness.
+The sampling pipeline adds input_quality_state, reason_codes, and
+minimum_brightness. Unusable decoded frames retain their metadata.
+
+Each sampled visual_signal_output and its derived risk_state_output includes:
+
+- video_time_seconds: the later frame time.
+- comparison_start_seconds and comparison_end_seconds: both actual frame times.
+- baseline_frame_index and changed_frame_index: exact decoded frame indices.
+- evidence_window_seconds: the requested period, start included and end excluded.
+- coverage_sufficient: whether the requested period passed prototype coverage rules.
+- source_record_ids: the two frame records for a visual signal, or its visual
+  signal record for a risk result.
+
+A local evidence_window_output record carries the common record identity fields
+and time_window_seconds, usable/unusable frame counts, unusable_reasons,
+first_usable_second, last_usable_second, largest_gap_seconds,
+usable_coverage_fraction, coverage_sufficient, and coverage_reason.
+It records sample_interval_seconds, max_samples, minimum_brightness,
+sampled_frame_indices, sampled_video_times, and
+actual_max_sample_gap_seconds for repeatable review.
+
+An empty period still has an evidence-window record. It has no visual comparison
+record. Label comparison reports cannot_compare rather than treating missing
+measurements as zero change.
+
+See [the design decision](windowed-video-evidence.md) for defaults and limitations.

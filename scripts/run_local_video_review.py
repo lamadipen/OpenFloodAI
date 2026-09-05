@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from openfloodai.ingestion.evidence_sampling import SamplingSettings
 from openfloodai.pipeline import run_local_video_review
 
 
@@ -25,12 +26,21 @@ def main() -> None:
         default=Path("data/sites/example-site/outputs"),
         type=Path,
     )
+    parser.add_argument("--sample-interval-seconds", type=float, default=5.0)
+    parser.add_argument("--max-samples", type=int, default=120)
+    parser.add_argument("--minimum-brightness", type=float, default=5.0)
     args = parser.parse_args()
+    sampling = SamplingSettings(
+        interval_seconds=args.sample_interval_seconds,
+        max_samples=args.max_samples,
+        minimum_brightness=args.minimum_brightness,
+    )
 
     result = run_local_video_review(
         video_path=args.video_path,
         config_path=args.config_path,
         output_dir=args.output_dir,
+        sampling=sampling,
     )
 
     print("Local video review workflow completed.")
