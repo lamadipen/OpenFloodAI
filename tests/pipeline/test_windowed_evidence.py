@@ -89,14 +89,17 @@ def test_slow_change_has_full_window_evidence(tmp_path: Path, region: bool) -> N
     report = compare_label_records(
         system_records=records, human_labels=[label((0, 30))], video_id="test"
     )
-    assert report.agree_count == 1
+    if region:
+        assert report.cannot_compare_count == 1
+    else:
+        assert report.agree_count == 1
 
 
 @pytest.mark.parametrize(
     ("values", "expected", "reason"),
     [
-        ([80] * 60, "agree", ""),
-        ([0] * 10 + [80] * 50, "agree", "IMAGE_TOO_DARK"),
+        ([80] * 60, "cannot_compare", ""),
+        ([0] * 10 + [80] * 50, "cannot_compare", "IMAGE_TOO_DARK"),
         ([0] * 60, "cannot_compare", "Fewer than two"),
         ([0] * 59 + [80], "cannot_compare", "Fewer than two"),
         ([80] * 10 + [0] * 40 + [80] * 10, "cannot_compare", "large gap"),
@@ -150,7 +153,7 @@ def test_separate_windows_do_not_compare_across_a_jump(tmp_path: Path) -> None:
         human_labels=[label((0, 10), "no_clear_change"), label((10, 20), "no_clear_change")],
         video_id="test",
     )
-    assert report.agree_count == 2
+    assert report.cannot_compare_count == 2
     assert len(result.review_image_paths) == 12
     assert sorted(path.name for path in (tmp_path / "out" / "review-images").glob("*.png"))[:3] == [
         "review-window-0-10s-baseline-overlay.png",

@@ -124,24 +124,23 @@ def test_run_site_validation_reports_multiple_video_results(tmp_path: Path) -> N
     assert report.processed_count == 3
     assert report.failed_count == 2
     assert report.label_window_count == 5
-    assert report.agree_count == 1
-    assert report.disagree_count == 1
-    assert report.cannot_compare_count == 4
+    assert report.agree_count == 0
+    assert report.disagree_count == 0
+    assert report.cannot_compare_count == 6
     assert report.scorecard.videos_reviewed == 5
     assert report.scorecard.label_windows == 5
-    assert report.scorecard.agree_count == 1
-    assert report.scorecard.disagree_count == 1
-    assert report.scorecard.cannot_compare_count == 4
+    assert report.scorecard.agree_count == 0
+    assert report.scorecard.disagree_count == 0
+    assert report.scorecard.cannot_compare_count == 6
     assert report.scorecard.top_reasons
-    assert report.scorecard.top_reasons[0] == ("LABEL_AND_SYSTEM_DIFFER", 1)
+    assert report.scorecard.top_reasons[0] == ("UNCLEAR_CASE", 3)
     assert results_by_video_id["rising-001"].result == "cannot_compare"
     assert results_by_video_id["rising-001"].human_label == "multiple"
     assert len(results_by_video_id["rising-001"].comparisons) == 2
     assert {comparison.result for comparison in results_by_video_id["rising-001"].comparisons} == {
-        "agree",
         "cannot_compare",
     }
-    assert results_by_video_id["normal-001"].result == "disagree"
+    assert results_by_video_id["normal-001"].result == "cannot_compare"
     assert results_by_video_id["unclear-001"].result == "cannot_compare"
     assert results_by_video_id["bad-001"].system_result == "processing_failed"
     assert results_by_video_id["missing-001"].system_result == "missing_video"
@@ -149,15 +148,15 @@ def test_run_site_validation_reports_multiple_video_results(tmp_path: Path) -> N
     assert (site_dir / "outputs" / "rising-001" / "records.jsonl").exists()
     assert (site_dir / "outputs" / "rising-001" / "label-comparison.md").exists()
     table_header = "| Video | Processed | Human label | System result | Result | Windows | Note |"
-    rising_row = "| rising-001.avi | yes | multiple | multiple | cannot_compare | 2 |"
+    rising_row = "| rising-001.avi | yes | multiple | cannot_judge | cannot_compare | 2 |"
     assert table_header in rendered
     assert rising_row in rendered
     assert "- Label windows compared: 5" in rendered
     assert "## Validation Scorecard" in rendered
-    assert "- Cannot compare: 4" in rendered
+    assert "- Cannot compare: 6" in rendered
     assert "not proof of flood detection accuracy" in rendered
     assert "- Top issues:" in rendered
-    assert "Human label and machine result do not match: 1 case(s)" in rendered
+    assert "The case is unclear: 3 case(s)" in rendered
     assert "LABEL_AND_SYSTEM_DIFFER" not in rendered
     assert "Time window: 0s to 30s" in rendered
     assert "Time window: 30s to 60s" in rendered
@@ -214,7 +213,7 @@ def test_combined_report_output_is_stable_and_simple(tmp_path: Path) -> None:
     assert "# Site Validation Report" in rendered
     assert "Validation Site: example-site" in rendered
     assert "## Summary Table" in rendered
-    rising_row = "| rising-001.avi | yes | multiple | multiple | cannot_compare | 2 |"
+    rising_row = "| rising-001.avi | yes | multiple | cannot_judge | cannot_compare | 2 |"
     assert rising_row in rendered
     assert "## Detailed Results" in rendered
     assert "### rising-001" in rendered

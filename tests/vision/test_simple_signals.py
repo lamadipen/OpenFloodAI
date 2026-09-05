@@ -249,6 +249,23 @@ def test_compare_region_signals_marks_whole_region_change_as_cannot_judge() -> N
     assert "lighting" in str(result["human_summary"]).lower()
 
 
+def test_compare_region_signals_uses_named_thresholds_for_weak_change() -> None:
+    previous_frame = np.zeros((9, 6), dtype=np.uint8)
+    current_frame = np.full((9, 6), 4, dtype=np.uint8)
+    full_region = {"x": 0, "y": 0, "width": 100, "height": 100}
+
+    result = compare_region_signals(
+        previous_frame,
+        current_frame,
+        full_region,
+        "site-demo-01",
+        "camera-demo-01",
+    )
+
+    assert cast(float, result["region_change_score"]) < 0.02
+    assert result["water_level_evidence_state"] == "weak_visual_evidence"
+
+
 def test_compare_region_signals_marks_tiny_region_as_cannot_judge() -> None:
     previous_frame = np.zeros((2, 2), dtype=np.uint8)
     current_frame = np.ones((2, 2), dtype=np.uint8)

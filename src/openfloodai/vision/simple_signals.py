@@ -14,6 +14,11 @@ from numpy.typing import NDArray
 
 FrameArray = NDArray[np.generic]
 
+WEAK_REGION_CHANGE_THRESHOLD = 0.02
+USEFUL_BAND_CHANGE_THRESHOLD = 0.05
+WHOLE_REGION_CHANGE_THRESHOLD = 0.08
+WHOLE_REGION_SPREAD_THRESHOLD = 0.05
+
 
 class VisualSignalError(ValueError):
     """Raised when a frame cannot be used for simple visual signals."""
@@ -361,13 +366,22 @@ def _water_level_evidence_state(
 
     if crop.width < 2 or crop.height < 3:
         return "cannot_judge_region_too_small"
-    if region_change_score <= 0.02:
+    if region_change_score <= WEAK_REGION_CHANGE_THRESHOLD:
         return "weak_visual_evidence"
-    if min_change >= 0.08 and max_change - min_change <= 0.05:
+    if (
+        min_change >= WHOLE_REGION_CHANGE_THRESHOLD
+        and max_change - min_change <= WHOLE_REGION_SPREAD_THRESHOLD
+    ):
         return "cannot_judge_whole_region_changed"
-    if lower_change >= 0.05 and upper_change <= 0.05:
+    if (
+        lower_change >= USEFUL_BAND_CHANGE_THRESHOLD
+        and upper_change <= USEFUL_BAND_CHANGE_THRESHOLD
+    ):
         return "useful_water_level_evidence"
-    if middle_change >= 0.05 and upper_change <= 0.05:
+    if (
+        middle_change >= USEFUL_BAND_CHANGE_THRESHOLD
+        and upper_change <= USEFUL_BAND_CHANGE_THRESHOLD
+    ):
         return "useful_water_level_evidence"
     return "weak_visual_evidence"
 
