@@ -152,6 +152,11 @@ def test_separate_windows_do_not_compare_across_a_jump(tmp_path: Path) -> None:
     )
     assert report.agree_count == 2
     assert len(result.review_image_paths) == 12
+    assert sorted(path.name for path in (tmp_path / "out" / "review-images").glob("*.png"))[:3] == [
+        "review-window-0-10s-baseline-overlay.png",
+        "review-window-0-10s-baseline.png",
+        "review-window-0-10s-changed-overlay.png",
+    ]
     signals = [r for r in records if r["record_type"] == "visual_signal_output"]
     assert all(
         not (
@@ -173,12 +178,18 @@ def test_review_image_uses_exact_saved_pair_and_refreshes_outputs(tmp_path: Path
     chosen = max(signals, key=lambda r: float(str(r["region_change_score"])))
     indices = [int(str(chosen[k])) for k in ("baseline_frame_index", "changed_frame_index")]
     decoded = read_selected_frames(path, indices)
-    for filename, index in zip(("review-baseline.png", "review-changed.png"), indices, strict=True):
+    image_dir = out / "review-images"
+    filenames = [
+        next(image_dir.glob("*-baseline.png")).name,
+        next(image_dir.glob("*-changed.png")).name,
+    ]
+    for filename, index in zip(filenames, indices, strict=True):
         saved = cv2.imread(str(out / "review-images" / filename))
         # The top 24 pixels are a timestamp caption; the evidence pixels are unchanged.
         assert saved is not None
         assert np.array_equal(saved[24:, :32], decoded[index])
     assert str(chosen["record_id"]) in Path(result.summary_path).read_text()
+    assert "Review images:" in Path(result.summary_path).read_text()
     video(path, [0] * 60)
     rerun = run_local_video_review(video_path=path, config_path=cfg, output_dir=out)
     assert rerun.review_image_paths == ()
