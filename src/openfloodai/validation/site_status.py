@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 VIDEO_SUFFIXES = {".avi", ".mkv", ".mov", ".mp4"}
+REPORT_PREVIEW_MAX_LENGTH = 1200
 
 
 @dataclass(frozen=True)
@@ -28,6 +29,7 @@ class ValidationSiteStatus:
     outputs_found: bool
     report_count: int
     latest_report_path: str | None
+    latest_report_preview: str | None
     latest_report_counts: dict[str, int] | None
     review_images_path: str | None
 
@@ -151,6 +153,7 @@ def read_validation_site_status(site_dir: Path) -> ValidationSiteStatus:
         outputs_found=bool(report_paths),
         report_count=len(report_paths),
         latest_report_path=str(latest_report_path) if latest_report_path else None,
+        latest_report_preview=_read_report_preview(latest_report_path),
         latest_report_counts=_read_report_counts(latest_report_path),
         review_images_path=str(review_images_path) if review_images_path else None,
     )
@@ -231,6 +234,34 @@ def _read_report_counts(report_path: Path | None) -> dict[str, int] | None:
         if match:
             counts[key] = int(match.group(1))
     return counts or None
+
+
+def _read_report_preview(report_path: Path | None) -> str | None:
+    if report_path is None:
+        return None
+    try:
+        report_lines = report_path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return None
+
+    preview_lines: list[str] = []
+    in_counts = False
+    for line in report_lines:
+        if line == "## Counts":
+            in_counts = True
+        elif in_counts and line.startswith("## "):
+            break
+        if line.startswith("# Site Validation Report") or in_counts:
+            preview_lines.append(line)
+        elif line == "" and preview_lines:
+            preview_lines.append(line)
+
+    preview = "\n".join(preview_lines).strip()
+    if not preview:
+        return None
+    if len(preview) > REPORT_PREVIEW_MAX_LENGTH:
+        return preview[:REPORT_PREVIEW_MAX_LENGTH].rstrip() + "..."
+    return preview
 
 
 def _latest_path(paths: list[Path]) -> Path | None:
