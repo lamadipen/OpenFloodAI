@@ -4,16 +4,21 @@ from __future__ import annotations
 
 import argparse
 import json
+import tempfile
+from email.parser import BytesParser
+from email.policy import HTTP
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
 
+from openfloodai.review.dataset_manifest import HARD_CASE_TYPE_OPTIONS, MANIFEST_PURPOSE_OPTIONS
 from openfloodai.validation import (
     discover_validation_site_statuses,
     intake_validation_video,
     setup_validation_site,
 )
+from openfloodai.validation.site_status import VIDEO_SUFFIXES
 
 
 class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
@@ -74,56 +79,128 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         )
 
     def _handle_intake_video(self) -> None:
-        data = self._read_json_body()
-        if data is None:
+        parsed = self._read_intake_request()
+        if parsed is None:
             return
+        data, temp_video = parsed
 
-        folder_name = str(data.get("folder_name", "")).strip()
-        if not folder_name:
-            self._send_json(
-                {"success": False, "message": "Missing required fields: folder_name."},
-                status_code=400,
-            )
-            return
-
-        site_dir = (self.sites_dir / folder_name).resolve()
         try:
-            site_dir.relative_to(self.sites_dir.resolve())
-        except ValueError:
+            folder_name = str(data.get("folder_name", "")).strip()
+            if not folder_name:
+                self._send_json(
+                    {"success": False, "message": "Missing required fields: folder_name."},
+                    status_code=400,
+                )
+                return
+
+            site_dir = (self.sites_dir / folder_name).resolve()
+            try:
+                site_dir.relative_to(self.sites_dir.resolve())
+            except ValueError:
+                self._send_json(
+                    {
+                        "success": False,
+                        "message": (
+                            "Invalid folder_name: site folder must stay inside the sites directory."
+                        ),
+                    },
+                    status_code=400,
+                )
+                return
+
+            video_path = temp_video or Path(str(data.get("video_path", "")))
+            result = intake_validation_video(
+                site_dir=site_dir,
+                video_path=video_path,
+                video_id=str(data.get("video_id", "")),
+                purpose=str(data.get("purpose", "")),
+                split=str(data.get("split", "")),
+                notes=str(data.get("notes", "")),
+                approved_for_repo=_as_bool(data.get("approved_for_repo"), default=False),
+                has_human_label=_as_bool(data.get("has_human_label"), default=False),
+                hard_case_type=str(data.get("hard_case_type", "")),
+                overwrite=_as_bool(data.get("overwrite"), default=False),
+            )
+
             self._send_json(
                 {
-                    "success": False,
-                    "message": (
-                        "Invalid folder_name: site folder must stay inside the sites directory."
-                    ),
+                    "success": result.created,
+                    "message": result.message,
+                    "site_dir": str(result.site_dir) if result.created else None,
+                    "video_path": str(result.video_path) if result.created else None,
+                    "manifest_path": str(result.manifest_path) if result.created else None,
                 },
+                status_code=200 if result.created else 400,
+            )
+        finally:
+            if temp_video is not None and temp_video.exists():
+                temp_video.unlink()
+
+    def _read_intake_request(self) -> tuple[dict[str, Any], Path | None] | None:
+        content_type = self.headers.get("Content-Type", "")
+        if "multipart/form-data" in content_type:
+            return self._read_multipart_intake()
+        data = self._read_json_body()
+        if data is None:
+            return None
+        return data, None
+
+    def _read_multipart_intake(self) -> tuple[dict[str, Any], Path | None] | None:
+        content_length = int(self.headers.get("Content-Length", 0))
+        if content_length == 0:
+            self.send_error(400, "Missing request body")
+            return None
+
+        content_type = self.headers.get("Content-Type", "")
+        preamble = f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n".encode()
+        message = BytesParser(policy=HTTP).parsebytes(preamble + self.rfile.read(content_length))
+        fields: dict[str, Any] = {}
+        temp_video: Path | None = None
+
+        for part in message.iter_parts():
+            name = part.get_param("name", header="content-disposition")
+            if not name:
+                continue
+            filename = part.get_filename()
+            payload = part.get_payload(decode=True)
+            if filename:
+                suffix = Path(filename).suffix.lower()
+                if suffix not in VIDEO_SUFFIXES:
+                    self._send_json(
+                        {
+                            "success": False,
+                            "message": (
+                                f"Unsupported video type {suffix or '(none)'}. "
+                                f"Use one of: {', '.join(sorted(VIDEO_SUFFIXES))}."
+                            ),
+                        },
+                        status_code=400,
+                    )
+                    return None
+                if not isinstance(payload, bytes) or not payload:
+                    self._send_json(
+                        {"success": False, "message": "Selected video file is empty."},
+                        status_code=400,
+                    )
+                    return None
+                with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as handle:
+                    handle.write(payload)
+                    temp_video = Path(handle.name)
+                if not str(fields.get("video_id", "")).strip():
+                    fields["video_id"] = Path(filename).stem
+                continue
+            if isinstance(payload, bytes):
+                fields[str(name)] = payload.decode("utf-8")
+            elif payload is not None:
+                fields[str(name)] = str(payload)
+
+        if temp_video is None:
+            self._send_json(
+                {"success": False, "message": "Choose a local video file to copy into the site."},
                 status_code=400,
             )
-            return
-
-        result = intake_validation_video(
-            site_dir=site_dir,
-            video_path=Path(str(data.get("video_path", ""))),
-            video_id=str(data.get("video_id", "")),
-            purpose=str(data.get("purpose", "")),
-            split=str(data.get("split", "")),
-            notes=str(data.get("notes", "")),
-            approved_for_repo=_as_bool(data.get("approved_for_repo"), default=False),
-            has_human_label=_as_bool(data.get("has_human_label"), default=False),
-            hard_case_type=str(data.get("hard_case_type", "")),
-            overwrite=_as_bool(data.get("overwrite"), default=False),
-        )
-
-        self._send_json(
-            {
-                "success": result.created,
-                "message": result.message,
-                "site_dir": str(result.site_dir) if result.created else None,
-                "video_path": str(result.video_path) if result.created else None,
-                "manifest_path": str(result.manifest_path) if result.created else None,
-            },
-            status_code=200 if result.created else 400,
-        )
+            return None
+        return fields, temp_video
 
     def _read_json_body(self) -> dict[str, Any] | None:
         content_length = int(self.headers.get("Content-Length", 0))
@@ -155,6 +232,8 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         payload = {
             "sites_dir": str(self.sites_dir),
             "sites": [status.to_dict() for status in statuses],
+            "purpose_options": list(MANIFEST_PURPOSE_OPTIONS),
+            "hard_case_type_options": list(HARD_CASE_TYPE_OPTIONS),
             "safety_note": (
                 "This local UI stays on this computer. It does not upload videos, "
                 "connect to cameras, send alerts, train ML, or publish warnings."

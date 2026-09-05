@@ -353,16 +353,16 @@
             <select name="folder_name" id="videoSiteSelect" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
           </div>
           <div>
-            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Local video path *</label>
-            <input type="text" name="video_path" placeholder="e.g. /local/path/rising-001.mp4" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Local video file *</label>
+            <input type="file" name="video_file" id="videoFileInput" accept=".avi,.mkv,.mov,.mp4,video/*" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px; background: #fff;">
           </div>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Video ID *</label>
-            <input type="text" name="video_id" placeholder="e.g. rising-001" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+            <input type="text" name="video_id" id="videoIdInput" placeholder="e.g. rising-001" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
           </div>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Purpose *</label>
-            <input type="text" name="purpose" placeholder="e.g. possible_rising_water" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+            <select name="purpose" id="purposeSelect" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
           </div>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Split *</label>
@@ -373,7 +373,7 @@
           </div>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Hard case type</label>
-            <input type="text" name="hard_case_type" placeholder="optional, e.g. heavy_glare" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+            <select name="hard_case_type" id="hardCaseTypeSelect" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
           </div>
           <div style="grid-column: span 2;">
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Notes *</label>
@@ -417,6 +417,10 @@
       const videoForm = document.querySelector("#videoForm");
       const cancelVideo = document.querySelector("#cancelVideo");
       const videoSiteSelect = document.querySelector("#videoSiteSelect");
+      const videoFileInput = document.querySelector("#videoFileInput");
+      const videoIdInput = document.querySelector("#videoIdInput");
+      const purposeSelect = document.querySelector("#purposeSelect");
+      const hardCaseTypeSelect = document.querySelector("#hardCaseTypeSelect");
 
       function fillSiteSelect(sites) {
         const current = videoSiteSelect.value;
@@ -437,6 +441,30 @@
         if ([...videoSiteSelect.options].some((option) => option.value === current)) {
           videoSiteSelect.value = current;
         }
+      }
+
+      function fillSelect(select, options, emptyLabel = "") {
+        const current = select.value;
+        select.innerHTML = "";
+        if (emptyLabel) {
+          const emptyOption = document.createElement("option");
+          emptyOption.value = "";
+          emptyOption.textContent = emptyLabel;
+          select.append(emptyOption);
+        }
+        for (const value of options) {
+          const option = document.createElement("option");
+          option.value = value;
+          option.textContent = value;
+          select.append(option);
+        }
+        if ([...select.options].some((option) => option.value === current)) {
+          select.value = current;
+        }
+      }
+
+      function fileStem(filename) {
+        return filename.replace(/\.[^/.]+$/, "");
       }
 
       function hideForms() {
@@ -556,6 +584,8 @@
           sitesDir.textContent = `Site folder: ${payload.sites_dir}`;
           safetyNote.textContent = payload.safety_note;
           fillSiteSelect(payload.sites);
+          fillSelect(purposeSelect, payload.purpose_options || [], "Choose purpose");
+          fillSelect(hardCaseTypeSelect, payload.hard_case_type_options || [], "No hard case");
           overview.innerHTML = renderOverview(payload.sites);
 
           if (!payload.sites.length) {
@@ -601,6 +631,13 @@
         hideForms();
       });
 
+      videoFileInput.addEventListener("change", () => {
+        const file = videoFileInput.files[0];
+        if (file && !videoIdInput.value.trim()) {
+          videoIdInput.value = fileStem(file.name);
+        }
+      });
+
       siteForm.addEventListener("submit", async (e) => {
         e.preventDefault();
         const formData = new FormData(siteForm);
@@ -632,26 +669,11 @@
       videoForm.addEventListener("submit", async (e) => {
         e.preventDefault();
         const formData = new FormData(videoForm);
-        const data = {
-          folder_name: formData.get("folder_name"),
-          video_path: formData.get("video_path"),
-          video_id: formData.get("video_id"),
-          purpose: formData.get("purpose"),
-          split: formData.get("split"),
-          notes: formData.get("notes"),
-          hard_case_type: formData.get("hard_case_type") || "",
-          approved_for_repo: formData.get("approved_for_repo") === "true",
-          has_human_label: formData.get("has_human_label") === "true",
-          overwrite: formData.get("overwrite") === "true",
-        };
 
         try {
           const response = await fetch("/api/intake-video", {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(data),
+            body: formData,
           });
 
           const result = await response.json();

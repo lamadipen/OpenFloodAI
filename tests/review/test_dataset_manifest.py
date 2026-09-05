@@ -5,6 +5,8 @@ from pathlib import Path
 import pytest
 
 from openfloodai.review import (
+    HARD_CASE_TYPE_OPTIONS,
+    MANIFEST_PURPOSE_OPTIONS,
     DatasetManifestError,
     is_valid_manifest_record,
     load_manifest_records,
@@ -114,3 +116,11 @@ def test_example_site_manifest_loads_successfully() -> None:
 
     assert records[0]["video_id"] == "demo-river-001"
     assert records[0]["approved_for_repo"] is False
+
+
+def test_manifest_purpose_and_hard_case_options_are_documented_values() -> None:
+    assert "practice_normal_water" in MANIFEST_PURPOSE_OPTIONS
+    assert "possible_rising_water" in MANIFEST_PURPOSE_OPTIONS
+    assert "heavy_glare" in HARD_CASE_TYPE_OPTIONS
+    assert "camera_shake" in HARD_CASE_TYPE_OPTIONS
+    assert "none" not in HARD_CASE_TYPE_OPTIONS

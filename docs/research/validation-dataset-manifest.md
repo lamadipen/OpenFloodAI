@@ -92,7 +92,11 @@ This only checks the manifest text. It does not open videos, train a model, dete
 
 You do not have to edit `manifest.jsonl` by hand.
 
-From the local Home UI, open **Add Video**, choose a site, and enter a local video path plus metadata.
+From the local Home UI, open **Add Video**, choose a site, select a local video file, and fill in the metadata.
+
+The UI shows predefined choices for `purpose` and `hard_case_type`.
+
+Simple meaning: users pick from known values instead of inventing a new word every time.
 
 Or use the command-line helper:
 

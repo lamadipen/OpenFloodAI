@@ -9,6 +9,26 @@ from openfloodai.contracts import read_jsonl_records
 from openfloodai.contracts.local_store import JsonObject
 
 ALLOWED_MANIFEST_SPLITS = {"practice", "locked_validation"}
+MANIFEST_PURPOSE_OPTIONS = (
+    "practice_normal_water",
+    "possible_rising_water",
+    "possible_falling_water",
+    "no_clear_change",
+    "hard_case_review",
+    "camera_video_problem",
+)
+HARD_CASE_TYPE_OPTIONS = (
+    "heavy_glare",
+    "rain_or_noisy_image",
+    "night_or_dark_frame",
+    "camera_shake",
+    "blocked_view",
+    "compression_or_noise_artifacts",
+    "unreadable_video",
+    "empty_video",
+    "missing_video",
+    "camera_offline",
+)
 REQUIRED_MANIFEST_FIELDS = {
     "video_id",
     "filename",
