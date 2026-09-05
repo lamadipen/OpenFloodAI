@@ -14,7 +14,7 @@ from urllib.request import Request, urlopen
 import pytest
 
 from openfloodai.review import load_human_label_records
-from scripts.run_openfloodai_home_ui import OpenFloodAIHomeHandler
+from openfloodai.ui.home_server import OpenFloodAIHomeHandler
 
 
 def test_create_human_label_cli_creates_record(tmp_path: Path) -> None:

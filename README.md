@@ -573,6 +573,8 @@ Then open:
 http://127.0.0.1:8765/openfloodai-home-ui.html
 ```
 
+The launcher is a thin command wrapper; reusable Home UI server code lives in `src/openfloodai/ui/home_server.py`. Tests and other Python modules import the handler from `openfloodai.ui.home_server`.
+
 Simple meaning: this page checks folders under `data/sites/` and shows whether each site has config, videos, labels, manifest, output reports, and a latest report.
 
 From the same page you can create a site folder, add a local validation video, or create human label records. Adding a video copies a file already on this computer into `inputs/videos/` and writes one `manifest.jsonl` row. Adding a label validates time windows and label text without manual JSON Lines editing. After you choose a site, the label form offers existing video IDs from that site’s local videos and labels already used for that site. Selecting a video fills the Video ID field; manual entry is also available. Switching sites clears the previous video selection; if the value is missing, type a short manual label like `bridge_pillar_covered`. Sharing stays off unless you explicitly mark the video as approved for the repo.
