@@ -38,9 +38,9 @@ Simple example: `[0, 30]` means the reviewer watched from second 0 to second 30.
 
 Do not put personal phone numbers, emails, passwords, or private camera URLs in label files.
 
-## Allowed Human Labels
+## Human Labels
 
-Use one of these values:
+Prefer one of these values:
 
 | Label | Simple Meaning |
 | --- | --- |
@@ -51,6 +51,12 @@ Use one of these values:
 | `cannot_judge` | The reviewer cannot safely decide from the image or video. |
 
 Simple example: use `cannot_judge` when the image is too dark, blurry, blocked, or confusing.
+
+If your site needs a label that is not in the list, you may use a short custom value with letters, numbers, dashes, or underscores.
+
+Simple example: `bridge_pillar_covered` can mean the water covers a known bridge-pillar mark at that site.
+
+Keep custom labels simple. Do not put names, phone numbers, exact private locations, or long notes in `human_label`. Use the `note` field for the explanation.
 
 ## Allowed Confidence Values
 
@@ -78,6 +84,43 @@ data/sites/example-site/labels/example-labels.jsonl
 
 Real label files may contain sensitive notes. Keep them local unless they are approved for public sharing.
 
+## Creating Labels
+
+Instead of manually editing JSON Lines files, use the labeling helper:
+
+### From the Home UI
+
+Start the local UI:
+
+```bash
+python3 scripts/run_openfloodai_home_ui.py
+```
+
+Open `http://127.0.0.1:8765/openfloodai-home-ui.html` in your browser.
+Click **Add Label** in the top toolbar (or **+ Add Label** on a site card).
+Choose the site, enter the `video_id`, start and end seconds, select an existing label, and optionally add confidence and reviewer notes.
+If the label you need is missing, type a short value in **Manual label**.
+Click **Save Label Record**.
+
+### From the Command Line
+
+Run:
+
+```bash
+python3 scripts/create_human_label.py \
+  --site-dir data/sites/example-site \
+  --video-id rising-001 \
+  --start 30 \
+  --end 60 \
+  --label water_rising \
+  --confidence medium \
+  --note "water appears higher near the bridge pillar"
+```
+
+Simple meaning: this helper validates the time window and label text, prevents accidental overwrites, and appends the record into the site's `labels/` directory.
+
+To replace an existing record for the same video and time window, add `--overwrite`.
+
 ## Validation
 
 OpenFloodAI can validate a label file:
@@ -97,7 +140,7 @@ print(records[0])
 PY
 ```
 
-Simple meaning: this checks that each label has the required fields, uses an allowed label value, and has a valid time window.
+Simple meaning: this checks that each label has the required fields, uses safe label text, and has a valid time window.
 
 After labels are valid, compare them with system output using the [Human Label Comparison](human-label-comparison.md) guide.
 

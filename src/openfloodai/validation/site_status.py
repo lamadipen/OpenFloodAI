@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -18,8 +19,10 @@ class ValidationSiteStatus:
     config_found: bool
     config_count: int
     video_count: int
+    video_ids: list[str]
     labels_found: bool
     label_count: int
+    human_label_options: list[str]
     manifest_found: bool
     outputs_found: bool
     report_count: int
@@ -73,6 +76,7 @@ def read_validation_site_status(site_dir: Path) -> ValidationSiteStatus:
     config_paths = _find_config_paths(site_dir)
     video_paths = _find_video_paths(site_dir)
     label_paths = _find_label_paths(site_dir)
+    human_label_options = _find_human_label_options(label_paths)
     report_paths = _find_report_paths(site_dir)
     latest_report_path = _latest_path(report_paths)
 
@@ -82,8 +86,10 @@ def read_validation_site_status(site_dir: Path) -> ValidationSiteStatus:
         config_found=bool(config_paths),
         config_count=len(config_paths),
         video_count=len(video_paths),
+        video_ids=sorted({path.stem for path in video_paths}),
         labels_found=bool(label_paths),
         label_count=len(label_paths),
+        human_label_options=human_label_options,
         manifest_found=(site_dir / "manifest.jsonl").is_file(),
         outputs_found=bool(report_paths),
         report_count=len(report_paths),
@@ -114,6 +120,24 @@ def _find_label_paths(site_dir: Path) -> list[Path]:
     if not labels_dir.exists():
         return []
     return sorted(path for path in labels_dir.glob("*.jsonl") if path.is_file())
+
+
+def _find_human_label_options(label_paths: list[Path]) -> list[str]:
+    options: set[str] = set()
+    for label_path in label_paths:
+        try:
+            for line in label_path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                record = json.loads(line)
+                if not isinstance(record, dict):
+                    continue
+                label = record.get("human_label")
+                if isinstance(label, str) and label.strip():
+                    options.add(label.strip())
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            continue
+    return sorted(options)
 
 
 def _find_report_paths(site_dir: Path) -> list[Path]:

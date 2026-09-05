@@ -302,6 +302,7 @@
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
           <button type="button" id="createSiteButton" style="background: var(--ok); border-color: var(--ok);">Create Site</button>
           <button type="button" id="addVideoButton">Add Video</button>
+          <button type="button" id="addLabelButton" style="background: var(--accent-strong); border-color: var(--accent-strong);">Add Label</button>
           <button type="button" id="refreshButton">Refresh</button>
         </div>
       </section>
@@ -398,6 +399,59 @@
         </form>
       </section>
 
+      <section id="labelFormPanel" style="display: none; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 24px; margin-bottom: 22px; box-shadow: var(--shadow);">
+        <h2 style="margin-top: 0;">Add Human Label Record</h2>
+        <p class="meta" style="margin-top: 0;">
+          Create a human review label for a video time window without manually writing JSON Lines.
+          Labels stay on this computer for local comparison only and do not create alerts or public warnings.
+        </p>
+        <form id="labelForm" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Site *</label>
+            <select name="folder_name" id="labelSiteSelect" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Video ID *</label>
+            <select id="labelVideoSelect" aria-label="Existing video ID" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px; margin-bottom: 8px;"></select>
+            <div class="meta">Choose an existing video above, or enter its ID below.</div>
+            <input type="text" name="video_id" id="labelVideoIdInput" placeholder="e.g. rising-001" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Start second *</label>
+            <input type="number" name="start_second" id="labelStartInput" min="0" step="any" placeholder="e.g. 30" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">End second *</label>
+            <input type="number" name="end_second" id="labelEndInput" min="0" step="any" placeholder="e.g. 60" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Human label *</label>
+            <select name="human_label" id="labelValueSelect" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Manual label</label>
+            <input type="text" name="manual_human_label" id="labelManualInput" placeholder="Optional, e.g. bridge_pillar_covered" pattern="[A-Za-z0-9_-]+" maxlength="64" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+            <div class="meta" style="margin-top: 4px;">Use this only when the label is not in the list.</div>
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Confidence</label>
+            <select name="confidence" id="labelConfidenceSelect" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
+          </div>
+          <div style="grid-column: span 2;">
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Reviewer notes</label>
+            <textarea name="note" id="labelNoteInput" placeholder="Optional notes (e.g. water appears higher near the bridge pillar)..." style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px; min-height: 60px;"></textarea>
+          </div>
+          <label style="display: flex; align-items: center; gap: 8px; grid-column: span 2;">
+            <input type="checkbox" name="overwrite" value="true">
+            Overwrite existing label if matching video ID and time window already exists
+          </label>
+          <div style="grid-column: span 2; display: flex; gap: 12px; margin-top: 8px;">
+            <button type="submit" style="background: var(--accent-strong); border-color: var(--accent-strong);">Save Label Record</button>
+            <button type="button" id="cancelLabel" style="background: transparent; color: var(--muted); border-color: var(--line);">Cancel</button>
+          </div>
+        </form>
+      </section>
+
       <section class="overview" id="overview" aria-label="Site overview"></section>
       <section class="site-grid" id="siteGrid" aria-live="polite"></section>
     </main>
@@ -410,6 +464,7 @@
       const refreshButton = document.querySelector("#refreshButton");
       const createSiteButton = document.querySelector("#createSiteButton");
       const addVideoButton = document.querySelector("#addVideoButton");
+      const addLabelButton = document.querySelector("#addLabelButton");
       const setupForm = document.querySelector("#setupForm");
       const siteForm = document.querySelector("#siteForm");
       const cancelSetup = document.querySelector("#cancelSetup");
@@ -421,15 +476,41 @@
       const videoIdInput = document.querySelector("#videoIdInput");
       const purposeSelect = document.querySelector("#purposeSelect");
       const hardCaseTypeSelect = document.querySelector("#hardCaseTypeSelect");
+      const labelFormPanel = document.querySelector("#labelFormPanel");
+      const labelForm = document.querySelector("#labelForm");
+      const cancelLabel = document.querySelector("#cancelLabel");
+      const labelSiteSelect = document.querySelector("#labelSiteSelect");
+      const labelVideoSelect = document.querySelector("#labelVideoSelect");
+      const labelVideoIdInput = document.querySelector("#labelVideoIdInput");
+      const labelStartInput = document.querySelector("#labelStartInput");
+      const labelEndInput = document.querySelector("#labelEndInput");
+      const labelValueSelect = document.querySelector("#labelValueSelect");
+      const labelManualInput = document.querySelector("#labelManualInput");
+      const labelConfidenceSelect = document.querySelector("#labelConfidenceSelect");
+      const labelNoteInput = document.querySelector("#labelNoteInput");
+      let latestSites = [];
+      let defaultHumanLabelOptions = [
+        "water_rising",
+        "water_falling",
+        "no_clear_change",
+        "camera_video_problem",
+        "cannot_judge",
+      ];
 
       function fillSiteSelect(sites) {
         const current = videoSiteSelect.value;
+        const currentLabelSite = labelSiteSelect.value;
         videoSiteSelect.innerHTML = "";
+        labelSiteSelect.innerHTML = "";
         if (!sites.length) {
           const option = document.createElement("option");
           option.value = "";
           option.textContent = "Create a site first";
           videoSiteSelect.append(option);
+          const labelOption = document.createElement("option");
+          labelOption.value = "";
+          labelOption.textContent = "Create a site first";
+          labelSiteSelect.append(labelOption);
           return;
         }
         for (const site of sites) {
@@ -437,9 +518,16 @@
           option.value = site.site_name;
           option.textContent = site.site_name;
           videoSiteSelect.append(option);
+          const labelOption = document.createElement("option");
+          labelOption.value = site.site_name;
+          labelOption.textContent = site.site_name;
+          labelSiteSelect.append(labelOption);
         }
         if ([...videoSiteSelect.options].some((option) => option.value === current)) {
           videoSiteSelect.value = current;
+        }
+        if ([...labelSiteSelect.options].some((option) => option.value === currentLabelSite)) {
+          labelSiteSelect.value = currentLabelSite;
         }
       }
 
@@ -463,6 +551,26 @@
         }
       }
 
+      function labelsForSelectedSite() {
+        const selectedSite = latestSites.find((site) => site.site_name === labelSiteSelect.value);
+        const siteOptions = selectedSite?.human_label_options || [];
+        return [...new Set([...siteOptions, ...defaultHumanLabelOptions])].sort();
+      }
+
+      let labelVideoSite = null;
+
+      function updateLabelOptionsForSelectedSite() {
+        if (labelVideoSite !== labelSiteSelect.value) {
+          labelVideoSelect.value = "";
+          labelVideoIdInput.value = "";
+          labelVideoSite = labelSiteSelect.value;
+        }
+        const selectedSite = latestSites.find((site) => site.site_name === labelSiteSelect.value);
+        const videoIds = selectedSite?.video_ids || [];
+        fillSelect(labelVideoSelect, videoIds, videoIds.length ? "Choose video ID" : "No local videos — enter ID below");
+        fillSelect(labelValueSelect, labelsForSelectedSite(), "Choose human label");
+      }
+
       function fileStem(filename) {
         return filename.replace(/\.[^/.]+$/, "");
       }
@@ -470,8 +578,10 @@
       function hideForms() {
         setupForm.style.display = "none";
         videoFormPanel.style.display = "none";
+        labelFormPanel.style.display = "none";
         createSiteButton.style.display = "inline-block";
         addVideoButton.style.display = "inline-block";
+        addLabelButton.style.display = "inline-block";
       }
 
       function escapeHtml(value) {
@@ -568,6 +678,9 @@
               ${row("Output reports", countText(site.report_count, "report", "reports"), site.report_count > 0 ? "ok" : "warn")}
               ${row("Latest report", latestReport, site.latest_report_path ? "ok" : "warn")}
             </div>
+            <div style="padding: 0 18px 14px; display: flex; gap: 8px;">
+              <button type="button" onclick="openLabelFormForSite('${escapeHtml(site.site_name)}')" style="font-size: 13px; min-height: 34px; padding: 6px 12px; background: var(--accent-strong); border-color: var(--accent-strong);">+ Add Label</button>
+            </div>
           </article>
         `;
       }
@@ -583,9 +696,17 @@
           const payload = await response.json();
           sitesDir.textContent = `Site folder: ${payload.sites_dir}`;
           safetyNote.textContent = payload.safety_note;
+          latestSites = payload.sites || [];
+          defaultHumanLabelOptions = payload.human_label_options || defaultHumanLabelOptions;
           fillSiteSelect(payload.sites);
           fillSelect(purposeSelect, payload.purpose_options || [], "Choose purpose");
           fillSelect(hardCaseTypeSelect, payload.hard_case_type_options || [], "No hard case");
+          updateLabelOptionsForSelectedSite();
+          fillSelect(
+            labelConfidenceSelect,
+            payload.confidence_options || ["low", "medium", "high"],
+            "None / unspecified"
+          );
           overview.innerHTML = renderOverview(payload.sites);
 
           if (!payload.sites.length) {
@@ -606,20 +727,42 @@
       }
 
       refreshButton.addEventListener("click", loadSites);
+      labelSiteSelect.addEventListener("change", updateLabelOptionsForSelectedSite);
+      labelVideoSelect.addEventListener("change", () => {
+        labelVideoIdInput.value = labelVideoSelect.value;
+      });
+      labelVideoIdInput.addEventListener("input", () => {
+        labelVideoSelect.value = labelVideoIdInput.value;
+      });
 
       createSiteButton.addEventListener("click", () => {
-        videoFormPanel.style.display = "none";
-        addVideoButton.style.display = "inline-block";
+        hideForms();
         setupForm.style.display = "block";
         createSiteButton.style.display = "none";
       });
 
       addVideoButton.addEventListener("click", () => {
-        setupForm.style.display = "none";
-        createSiteButton.style.display = "inline-block";
+        hideForms();
         videoFormPanel.style.display = "block";
         addVideoButton.style.display = "none";
       });
+
+      addLabelButton.addEventListener("click", () => {
+        hideForms();
+        updateLabelOptionsForSelectedSite();
+        labelFormPanel.style.display = "block";
+        addLabelButton.style.display = "none";
+      });
+
+      window.openLabelFormForSite = function (siteName) {
+        hideForms();
+        labelFormPanel.style.display = "block";
+        addLabelButton.style.display = "none";
+        if (labelSiteSelect) {
+          labelSiteSelect.value = siteName;
+          updateLabelOptionsForSelectedSite();
+        }
+      };
 
       cancelSetup.addEventListener("click", () => {
         siteForm.reset();
@@ -628,6 +771,11 @@
 
       cancelVideo.addEventListener("click", () => {
         videoForm.reset();
+        hideForms();
+      });
+
+      cancelLabel.addEventListener("click", () => {
+        labelForm.reset();
         hideForms();
       });
 
@@ -687,6 +835,43 @@
           }
         } catch (error) {
           alert(`Failed to add video: ${error.message}`);
+        }
+      });
+
+      labelForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const formData = new FormData(labelForm);
+        const data = Object.fromEntries(formData.entries());
+        const manualHumanLabel = String(data.manual_human_label || "").trim();
+        if (manualHumanLabel) {
+          data.human_label = manualHumanLabel;
+        }
+        delete data.manual_human_label;
+        if (!String(data.human_label || "").trim()) {
+          alert("Choose a human label or type a manual label.");
+          return;
+        }
+
+        try {
+          const response = await fetch("/api/add-label", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(data),
+          });
+
+          const result = await response.json();
+          if (response.ok && result.success) {
+            alert(result.message);
+            labelForm.reset();
+            hideForms();
+            loadSites();
+          } else {
+            alert(`Error: ${result.message}`);
+          }
+        } catch (error) {
+          alert(`Failed to save label: ${error.message}`);
         }
       });
 

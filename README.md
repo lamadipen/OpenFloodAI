@@ -477,6 +477,21 @@ This still does not detect floods, send alerts, upload files, connect to live ca
 
 Run this after you have a local records file and a human label file.
 
+To create or add a human label without writing JSON Lines manually, use the helper:
+
+```bash
+python3 scripts/create_human_label.py \
+  --site-dir data/sites/example-site \
+  --video-id demo-river-001 \
+  --start 0 \
+  --end 30 \
+  --label water_rising \
+  --confidence medium \
+  --note "Water appears higher near the bridge pillar."
+```
+
+Then compare:
+
 ```bash
 python3 scripts/compare_human_labels.py \
   --records-path data/sites/example-site/outputs/records.jsonl \
@@ -558,9 +573,11 @@ Then open:
 http://127.0.0.1:8765/openfloodai-home-ui.html
 ```
 
+The launcher is a thin command wrapper; reusable Home UI server code lives in `src/openfloodai/ui/home_server.py`. Tests and other Python modules import the handler from `openfloodai.ui.home_server`.
+
 Simple meaning: this page checks folders under `data/sites/` and shows whether each site has config, videos, labels, manifest, output reports, and a latest report.
 
-From the same page you can create a site folder or add a local validation video. Adding a video copies a file already on this computer into `inputs/videos/` and writes one `manifest.jsonl` row. Sharing stays off unless you explicitly mark the video as approved for the repo.
+From the same page you can create a site folder, add a local validation video, or create human label records. Adding a video copies a file already on this computer into `inputs/videos/` and writes one `manifest.jsonl` row. Adding a label validates time windows and label text without manual JSON Lines editing. After you choose a site, the label form offers existing video IDs from that site’s local videos and labels already used for that site. Selecting a video fills the Video ID field; manual entry is also available. Switching sites clears the previous video selection; if the value is missing, type a short manual label like `bridge_pillar_covered`. Sharing stays off unless you explicitly mark the video as approved for the repo.
 
 Machine review only needs config and video. Human comparison also needs labels and a manifest.
 
