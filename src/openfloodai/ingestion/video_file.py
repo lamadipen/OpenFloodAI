@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -110,6 +111,8 @@ def _build_frame_metadata(
         "camera_id": camera_id,
         "timestamp": timestamp.isoformat(),
         "video_time_seconds": _frame_time_seconds(frame_index, frame_rate),
+        "frame_index": frame_index,
+        "mean_brightness": float(frame.mean()),
         "frame_id": f"frame-{frame_index:06d}",
         "frame_hash": _frame_hash(frame),
         "dropped_frame_count": 0,
@@ -141,7 +144,7 @@ def _frame_hash(frame: FrameArray) -> str:
 
 def _read_frame_rate(capture: cv2.VideoCapture) -> float | None:
     frame_rate = float(capture.get(cv2.CAP_PROP_FPS))
-    if frame_rate <= 0:
+    if not math.isfinite(frame_rate) or frame_rate <= 0:
         return None
     return frame_rate
 

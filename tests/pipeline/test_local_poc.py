@@ -18,7 +18,7 @@ def create_tiny_video(path: Path, *, frame_count: int = 2) -> None:
 
     try:
         for index in range(frame_count):
-            frame = np.full((8, 8, 3), index * 120, dtype=np.uint8)
+            frame = np.full((8, 8, 3), 20 + index * 100, dtype=np.uint8)
             writer.write(frame)
     finally:
         writer.release()
@@ -93,6 +93,7 @@ def test_local_poc_pipeline_preserves_record_order(tmp_path: Path) -> None:
         "video_frame_metadata",
         "video_frame_metadata",
         "video_frame_metadata",
+        "evidence_window_output",
         "visual_signal_output",
         "risk_state_output",
     ]

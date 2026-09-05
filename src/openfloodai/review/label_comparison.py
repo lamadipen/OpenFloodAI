@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 
 from openfloodai.contracts import read_jsonl_records
+from openfloodai.ingestion.evidence_sampling import SamplingSettings, window_evidence
 from openfloodai.review.human_labels import load_human_label_records
 
 CHANGE_SIGNAL_THRESHOLD = 0.05
@@ -176,6 +177,34 @@ def _compare_one_label_window(
             time_window_seconds=None,
         )
 
+    evidence_records = [
+        r for r in system_records if r.get("record_type") == "evidence_window_output"
+    ]
+    coverage_note = ""
+    if evidence_records:
+        interval = evidence_records[0].get("sample_interval_seconds", 5.0)
+        settings = SamplingSettings(
+            interval_seconds=float(interval) if isinstance(interval, int | float) else 5.0
+        )
+        metadata = [r for r in system_records if r.get("record_type") == "video_frame_metadata"]
+        coverage = window_evidence(metadata, time_window, settings)
+        coverage_note = (
+            f" Usable frames: {coverage['usable_frame_count']}; "
+            f"unusable frames: {coverage['unusable_frame_count']}; "
+            f"reasons: {coverage['unusable_reasons']}; "
+            f"usable range: {coverage['first_usable_second']}s to "
+            f"{coverage['last_usable_second']}s."
+        )
+        if coverage["coverage_sufficient"] is not True:
+            return LabelComparison(
+                video_id=video_id,
+                human_label=human_label,
+                system_result="cannot_judge",
+                result="cannot_compare",
+                note=str(coverage["coverage_reason"]) + coverage_note,
+                time_window_seconds=time_window,
+            )
+
     matching_records = _system_records_in_time_window(system_records, time_window)
     system_result = _system_result(matching_records, change_signal_threshold)
     if system_result == "missing_system_output":
@@ -191,12 +220,13 @@ def _compare_one_label_window(
             time_window_seconds=time_window,
         )
 
-    return _compare_one_label(
+    comparison = _compare_one_label(
         label,
         video_id=video_id,
         system_result=system_result,
         time_window_seconds=time_window,
     )
+    return replace(comparison, note=comparison.note + coverage_note)
 
 
 def _compare_one_label(
@@ -260,9 +290,10 @@ def _system_result(
 
     for record in system_records:
         record_type = _text(record.get("record_type"))
+        if record.get("coverage_sufficient") is False:
+            continue
         if record_type in {"visual_signal_output", "risk_state_output"}:
             has_system_output = True
-
         risk_state = _text(record.get("risk_state")).upper()
         if risk_state in {"UNKNOWN", "UNKNOWN_DEGRADED"}:
             return "cannot_judge"
@@ -308,12 +339,20 @@ def _system_records_in_time_window(
         and _text(record.get("record_id"))
     }
 
-    return [
-        record
-        for record in records
-        if _record_time_is_in_window(record, time_window_seconds, base_timestamp)
-        or _source_records_overlap_window(record, record_ids_in_window)
-    ]
+    matching = []
+    start, end = time_window_seconds
+    for record in records:
+        if "comparison_start_seconds" in record or "comparison_end_seconds" in record:
+            before = _score_value(record.get("comparison_start_seconds"))
+            after = _score_value(record.get("comparison_end_seconds"))
+            # Explicit pair bounds take priority over timestamps and source-ID fallback.
+            if before is not None and after is not None and start <= before < after < end:
+                matching.append(record)
+        elif _record_time_is_in_window(
+            record, time_window_seconds, base_timestamp
+        ) or _source_records_overlap_window(record, record_ids_in_window):
+            matching.append(record)
+    return matching
 
 
 def _record_time_is_in_window(
