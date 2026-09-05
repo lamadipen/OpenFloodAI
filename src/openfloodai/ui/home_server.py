@@ -20,6 +20,7 @@ from openfloodai.review.dataset_manifest import HARD_CASE_TYPE_OPTIONS, MANIFEST
 from openfloodai.validation import (
     discover_validation_site_statuses,
     intake_validation_video,
+    run_site_validation,
     setup_validation_site,
 )
 from openfloodai.validation.site_status import VIDEO_SUFFIXES
@@ -53,6 +54,9 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             return
         if self.path == "/api/add-label":
             self._handle_add_label()
+            return
+        if self.path == "/api/run-validation":
+            self._handle_run_validation()
             return
         self.send_error(404, "Not found")
 
@@ -195,6 +199,55 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
                 "record": result.record,
             },
             status_code=200 if result.created else 400,
+        )
+
+    def _handle_run_validation(self) -> None:
+        data = self._read_json_body()
+        if data is None:
+            return
+
+        folder_name = str(data.get("folder_name", "")).strip()
+        if not folder_name:
+            self._send_json(
+                {"success": False, "message": "Missing required field: folder_name."},
+                status_code=400,
+            )
+            return
+
+        site_dir = (self.sites_dir / folder_name).resolve()
+        try:
+            site_dir.relative_to(self.sites_dir.resolve())
+        except ValueError:
+            self._send_json(
+                {
+                    "success": False,
+                    "message": (
+                        "Invalid folder_name: site folder must stay inside the sites directory."
+                    ),
+                },
+                status_code=400,
+            )
+            return
+
+        try:
+            report = run_site_validation(site_dir)
+        except (OSError, ValueError) as error:
+            self._send_json({"success": False, "message": str(error)}, status_code=400)
+            return
+
+        self._send_json(
+            {
+                "success": True,
+                "message": "Local validation completed.",
+                "site_name": report.site_name,
+                "report_path": report.output_path,
+                "counts": {
+                    "agree": report.agree_count,
+                    "disagree": report.disagree_count,
+                    "cannot_compare": report.cannot_compare_count,
+                },
+            },
+            status_code=200,
         )
 
     def _read_intake_request(self) -> tuple[dict[str, Any], Path | None] | None:

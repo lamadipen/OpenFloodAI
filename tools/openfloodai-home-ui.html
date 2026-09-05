@@ -605,6 +605,14 @@
         return count === 1 ? `1 ${singular}` : `${count} ${plural}`;
       }
 
+      function reportCountsText(site) {
+        const counts = site.latest_report_counts;
+        if (!counts) {
+          return "not available";
+        }
+        return `agree ${counts.agree ?? 0}, disagree ${counts.disagree ?? 0}, cannot compare ${counts.cannot_compare ?? 0}`;
+      }
+
       function row(label, value, className = "") {
         return `
           <div class="status-row">
@@ -677,8 +685,11 @@
               ${row("Manifest", yesNo(site.manifest_found), classForFound(site.manifest_found))}
               ${row("Output reports", countText(site.report_count, "report", "reports"), site.report_count > 0 ? "ok" : "warn")}
               ${row("Latest report", latestReport, site.latest_report_path ? "ok" : "warn")}
+              ${row("Latest result", reportCountsText(site), site.latest_report_counts ? "ok" : "warn")}
+              ${row("Review images", site.review_images_path || "not found", site.review_images_path ? "ok" : "warn")}
             </div>
             <div style="padding: 0 18px 14px; display: flex; gap: 8px;">
+              <button type="button" onclick="runValidationForSite('${escapeHtml(site.site_name)}')" ${site.ready_for_validation ? "" : "disabled"}>Run Validation</button>
               <button type="button" onclick="openLabelFormForSite('${escapeHtml(site.site_name)}')" style="font-size: 13px; min-height: 34px; padding: 6px 12px; background: var(--accent-strong); border-color: var(--accent-strong);">+ Add Label</button>
             </div>
           </article>
@@ -761,6 +772,28 @@
         if (labelSiteSelect) {
           labelSiteSelect.value = siteName;
           updateLabelOptionsForSelectedSite();
+        }
+      };
+
+      window.runValidationForSite = async function (siteName) {
+        try {
+          const response = await fetch("/api/run-validation", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ folder_name: siteName }),
+          });
+          const result = await response.json();
+          if (!response.ok || !result.success) {
+            throw new Error(result.message || `Request failed: ${response.status}`);
+          }
+          alert(
+            `Validation complete. Agree: ${result.counts.agree}; Disagree: ${result.counts.disagree}; Cannot compare: ${result.counts.cannot_compare}`
+          );
+          await loadSites();
+        } catch (error) {
+          alert(`Validation failed: ${error.message}`);
         }
       };
 
