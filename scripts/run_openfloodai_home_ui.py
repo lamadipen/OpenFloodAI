@@ -9,7 +9,11 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
 
-from openfloodai.validation import discover_validation_site_statuses, setup_validation_site
+from openfloodai.validation import (
+    discover_validation_site_statuses,
+    intake_validation_video,
+    setup_validation_site,
+)
 
 
 class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
@@ -30,10 +34,13 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         self.send_error(404, "Not found")
 
     def do_POST(self) -> None:
-        """Handle site setup requests."""
+        """Handle site setup and video intake requests."""
 
         if self.path == "/api/setup-site":
             self._handle_setup_site()
+            return
+        if self.path == "/api/intake-video":
+            self._handle_intake_video()
             return
         self.send_error(404, "Not found")
 
@@ -41,39 +48,102 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         """Keep local UI output quiet."""
 
     def _handle_setup_site(self) -> None:
+        data = self._read_json_body()
+        if data is None:
+            return
+
+        result = setup_validation_site(
+            sites_base_dir=self.sites_dir,
+            folder_name=str(data.get("folder_name", "")),
+            site_id=str(data.get("site_id", "")),
+            camera_id=str(data.get("camera_id", "")),
+            site_name=str(data.get("site_name", "")),
+            public_location=str(data.get("public_location", "")),
+            privacy_notes=str(data.get("privacy_notes", "")),
+            overwrite=_as_bool(data.get("overwrite"), default=False),
+        )
+
+        self._send_json(
+            {
+                "success": result.created,
+                "message": result.message,
+                "site_dir": str(result.site_dir) if result.created else None,
+                "config_path": str(result.config_path) if result.created else None,
+            },
+            status_code=200 if result.created else 400,
+        )
+
+    def _handle_intake_video(self) -> None:
+        data = self._read_json_body()
+        if data is None:
+            return
+
+        folder_name = str(data.get("folder_name", "")).strip()
+        if not folder_name:
+            self._send_json(
+                {"success": False, "message": "Missing required fields: folder_name."},
+                status_code=400,
+            )
+            return
+
+        site_dir = (self.sites_dir / folder_name).resolve()
+        try:
+            site_dir.relative_to(self.sites_dir.resolve())
+        except ValueError:
+            self._send_json(
+                {
+                    "success": False,
+                    "message": (
+                        "Invalid folder_name: site folder must stay inside the sites directory."
+                    ),
+                },
+                status_code=400,
+            )
+            return
+
+        result = intake_validation_video(
+            site_dir=site_dir,
+            video_path=Path(str(data.get("video_path", ""))),
+            video_id=str(data.get("video_id", "")),
+            purpose=str(data.get("purpose", "")),
+            split=str(data.get("split", "")),
+            notes=str(data.get("notes", "")),
+            approved_for_repo=_as_bool(data.get("approved_for_repo"), default=False),
+            has_human_label=_as_bool(data.get("has_human_label"), default=False),
+            hard_case_type=str(data.get("hard_case_type", "")),
+            overwrite=_as_bool(data.get("overwrite"), default=False),
+        )
+
+        self._send_json(
+            {
+                "success": result.created,
+                "message": result.message,
+                "site_dir": str(result.site_dir) if result.created else None,
+                "video_path": str(result.video_path) if result.created else None,
+                "manifest_path": str(result.manifest_path) if result.created else None,
+            },
+            status_code=200 if result.created else 400,
+        )
+
+    def _read_json_body(self) -> dict[str, Any] | None:
         content_length = int(self.headers.get("Content-Length", 0))
         if content_length == 0:
             self.send_error(400, "Missing request body")
-            return
+            return None
 
         body = self.rfile.read(content_length)
         try:
             data = json.loads(body)
         except json.JSONDecodeError:
             self.send_error(400, "Invalid JSON")
-            return
+            return None
+        if not isinstance(data, dict):
+            self.send_error(400, "Invalid JSON")
+            return None
+        return data
 
-        result = setup_validation_site(
-            sites_base_dir=self.sites_dir,
-            folder_name=data.get("folder_name", ""),
-            site_id=data.get("site_id", ""),
-            camera_id=data.get("camera_id", ""),
-            site_name=data.get("site_name", ""),
-            public_location=data.get("public_location", ""),
-            privacy_notes=data.get("privacy_notes", ""),
-            overwrite=data.get("overwrite", False),
-        )
-
-        response_payload = {
-            "success": result.created,
-            "message": result.message,
-            "site_dir": str(result.site_dir) if result.created else None,
-            "config_path": str(result.config_path) if result.created else None,
-        }
-
-        status_code = 200 if result.created else 400
-        response_body = json.dumps(response_payload).encode("utf-8")
-
+    def _send_json(self, payload: dict[str, Any], *, status_code: int) -> None:
+        response_body = json.dumps(payload).encode("utf-8")
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(response_body)))
@@ -86,7 +156,7 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             "sites_dir": str(self.sites_dir),
             "sites": [status.to_dict() for status in statuses],
             "safety_note": (
-                "This local UI reads folder status only. It does not upload files, "
+                "This local UI stays on this computer. It does not upload videos, "
                 "connect to cameras, send alerts, train ML, or publish warnings."
             ),
         }
@@ -108,6 +178,22 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+
+def _as_bool(value: object, *, default: bool = False) -> bool:
+    """Parse a cautious boolean, defaulting to false for missing or unknown values."""
+
+    if isinstance(value, bool):
+        return value
+    if value is None or value == "":
+        return default
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "1", "yes", "on"}:
+            return True
+        if lowered in {"false", "0", "no", "off"}:
+            return False
+    return default
 
 
 def main() -> None:

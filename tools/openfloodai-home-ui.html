@@ -289,7 +289,8 @@
       <h1>OpenFloodAI Home UI</h1>
       <p class="subhead">
         Local validation readiness for site folders. This screen helps you see what is ready
-        and what is missing before running local validation.
+        and what is missing before running local validation. You can also create a site or
+        add a local video from this page.
       </p>
     </header>
     <main>
@@ -298,8 +299,9 @@
           <div class="meta" id="sitesDir">Loading site folder...</div>
           <div class="safety" id="safetyNote"></div>
         </div>
-        <div style="display: flex; gap: 8px;">
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
           <button type="button" id="createSiteButton" style="background: var(--ok); border-color: var(--ok);">Create Site</button>
+          <button type="button" id="addVideoButton">Add Video</button>
           <button type="button" id="refreshButton">Refresh</button>
         </div>
       </section>
@@ -338,6 +340,64 @@
         </form>
       </section>
 
+      <section id="videoFormPanel" style="display: none; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 24px; margin-bottom: 22px; box-shadow: var(--shadow);">
+        <h2 style="margin-top: 0;">Add Local Validation Video</h2>
+        <p class="meta" style="margin-top: 0;">
+          Copies a video already on this computer into the site folder and writes one
+          manifest row. It does not upload video, commit files, or mark sharing as approved
+          unless you check that box.
+        </p>
+        <form id="videoForm" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Site *</label>
+            <select name="folder_name" id="videoSiteSelect" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Local video path *</label>
+            <input type="text" name="video_path" placeholder="e.g. /local/path/rising-001.mp4" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Video ID *</label>
+            <input type="text" name="video_id" placeholder="e.g. rising-001" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Purpose *</label>
+            <input type="text" name="purpose" placeholder="e.g. possible_rising_water" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Split *</label>
+            <select name="split" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+              <option value="practice">practice</option>
+              <option value="locked_validation">locked_validation</option>
+            </select>
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Hard case type</label>
+            <input type="text" name="hard_case_type" placeholder="optional, e.g. heavy_glare" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+          </div>
+          <div style="grid-column: span 2;">
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Notes *</label>
+            <textarea name="notes" required placeholder="Short notes. Keep sharing off unless the video is clearly safe to commit." style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px; min-height: 60px;"></textarea>
+          </div>
+          <label style="display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" name="has_human_label" value="true">
+            Has human label
+          </label>
+          <label style="display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" name="approved_for_repo" value="true">
+            Approved for repo (keep unchecked by default)
+          </label>
+          <label style="display: flex; align-items: center; gap: 8px; grid-column: span 2;">
+            <input type="checkbox" name="overwrite" value="true">
+            Overwrite existing video or manifest row
+          </label>
+          <div style="grid-column: span 2; display: flex; gap: 12px; margin-top: 8px;">
+            <button type="submit">Copy Video And Update Manifest</button>
+            <button type="button" id="cancelVideo" style="background: transparent; color: var(--muted); border-color: var(--line);">Cancel</button>
+          </div>
+        </form>
+      </section>
+
       <section class="overview" id="overview" aria-label="Site overview"></section>
       <section class="site-grid" id="siteGrid" aria-live="polite"></section>
     </main>
@@ -349,9 +409,42 @@
       const safetyNote = document.querySelector("#safetyNote");
       const refreshButton = document.querySelector("#refreshButton");
       const createSiteButton = document.querySelector("#createSiteButton");
+      const addVideoButton = document.querySelector("#addVideoButton");
       const setupForm = document.querySelector("#setupForm");
       const siteForm = document.querySelector("#siteForm");
       const cancelSetup = document.querySelector("#cancelSetup");
+      const videoFormPanel = document.querySelector("#videoFormPanel");
+      const videoForm = document.querySelector("#videoForm");
+      const cancelVideo = document.querySelector("#cancelVideo");
+      const videoSiteSelect = document.querySelector("#videoSiteSelect");
+
+      function fillSiteSelect(sites) {
+        const current = videoSiteSelect.value;
+        videoSiteSelect.innerHTML = "";
+        if (!sites.length) {
+          const option = document.createElement("option");
+          option.value = "";
+          option.textContent = "Create a site first";
+          videoSiteSelect.append(option);
+          return;
+        }
+        for (const site of sites) {
+          const option = document.createElement("option");
+          option.value = site.site_name;
+          option.textContent = site.site_name;
+          videoSiteSelect.append(option);
+        }
+        if ([...videoSiteSelect.options].some((option) => option.value === current)) {
+          videoSiteSelect.value = current;
+        }
+      }
+
+      function hideForms() {
+        setupForm.style.display = "none";
+        videoFormPanel.style.display = "none";
+        createSiteButton.style.display = "inline-block";
+        addVideoButton.style.display = "inline-block";
+      }
 
       function escapeHtml(value) {
         return String(value)
@@ -462,6 +555,7 @@
           const payload = await response.json();
           sitesDir.textContent = `Site folder: ${payload.sites_dir}`;
           safetyNote.textContent = payload.safety_note;
+          fillSiteSelect(payload.sites);
           overview.innerHTML = renderOverview(payload.sites);
 
           if (!payload.sites.length) {
@@ -484,14 +578,27 @@
       refreshButton.addEventListener("click", loadSites);
 
       createSiteButton.addEventListener("click", () => {
+        videoFormPanel.style.display = "none";
+        addVideoButton.style.display = "inline-block";
         setupForm.style.display = "block";
         createSiteButton.style.display = "none";
       });
 
-      cancelSetup.addEventListener("click", () => {
+      addVideoButton.addEventListener("click", () => {
         setupForm.style.display = "none";
         createSiteButton.style.display = "inline-block";
+        videoFormPanel.style.display = "block";
+        addVideoButton.style.display = "none";
+      });
+
+      cancelSetup.addEventListener("click", () => {
         siteForm.reset();
+        hideForms();
+      });
+
+      cancelVideo.addEventListener("click", () => {
+        videoForm.reset();
+        hideForms();
       });
 
       siteForm.addEventListener("submit", async (e) => {
@@ -511,15 +618,53 @@
           const result = await response.json();
           if (response.ok) {
             alert(result.message);
-            setupForm.style.display = "none";
-            createSiteButton.style.display = "inline-block";
             siteForm.reset();
+            hideForms();
             loadSites();
           } else {
             alert(`Error: ${result.message}`);
           }
         } catch (error) {
           alert(`Failed to create site: ${error.message}`);
+        }
+      });
+
+      videoForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const formData = new FormData(videoForm);
+        const data = {
+          folder_name: formData.get("folder_name"),
+          video_path: formData.get("video_path"),
+          video_id: formData.get("video_id"),
+          purpose: formData.get("purpose"),
+          split: formData.get("split"),
+          notes: formData.get("notes"),
+          hard_case_type: formData.get("hard_case_type") || "",
+          approved_for_repo: formData.get("approved_for_repo") === "true",
+          has_human_label: formData.get("has_human_label") === "true",
+          overwrite: formData.get("overwrite") === "true",
+        };
+
+        try {
+          const response = await fetch("/api/intake-video", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(data),
+          });
+
+          const result = await response.json();
+          if (response.ok) {
+            alert(result.message);
+            videoForm.reset();
+            hideForms();
+            loadSites();
+          } else {
+            alert(`Error: ${result.message}`);
+          }
+        } catch (error) {
+          alert(`Failed to add video: ${error.message}`);
         }
       });
 

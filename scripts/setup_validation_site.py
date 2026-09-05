@@ -77,7 +77,7 @@ def main() -> None:
         print(f"Site directory: {result.site_dir}")
         print(f"Config file:    {result.config_path}")
         print("\nNext steps:")
-        print(f"1. Add validation videos to {result.site_dir}/inputs/videos/")
+        print("1. Add a local video with scripts/intake_validation_video.py or Home UI.")
         print(f"2. Add human labels to {result.site_dir}/labels/")
         print("3. Run the Home UI to verify readiness: python3 scripts/run_openfloodai_home_ui.py")
     else:

@@ -87,3 +87,25 @@ PY
 ```
 
 This only checks the manifest text. It does not open videos, train a model, detect floods, or send alerts.
+
+## Add A Video With The Helper
+
+You do not have to edit `manifest.jsonl` by hand.
+
+From the local Home UI, open **Add Video**, choose a site, and enter a local video path plus metadata.
+
+Or use the command-line helper:
+
+```bash
+python3 scripts/intake_validation_video.py \
+  --folder-name "example-site" \
+  --video-path "/local/path/rising-001.mp4" \
+  --video-id "rising-001" \
+  --purpose "possible_rising_water" \
+  --split "practice" \
+  --notes "Local practice clip. Not approved for the public repo."
+```
+
+Simple meaning: the helper copies the video into `data/sites/<site-name>/inputs/videos/` and adds one manifest row.
+
+`approved_for_repo` stays `false` unless you explicitly set it. The helper does not upload video, commit files, or overwrite an existing video or row unless you ask it to.
