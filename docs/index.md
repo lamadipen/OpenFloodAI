@@ -72,11 +72,13 @@ OpenFloodAI can currently:
 - try prototype thresholds against human labels
 - run multi-video local validation for one site folder
 - create a combined validation summary report
+- use the local Home UI to check site readiness and run validation
+- follow guided next-step messages when site files are missing
 - document hard-case expected behavior for missing, dark, glare, shaky, and blocked-view inputs
 - track validation results and known limits
 - provide privacy, retention, ML research, and labeling guidance
 
-OpenFloodAI still does not detect real floods, train ML models, send alerts, publish warnings, run live camera deployments, or replace local emergency decision-making.
+OpenFloodAI still does not detect real floods, train ML models, send alerts, publish warnings, run live camera deployments, or replace local emergency decision-making. The Home UI is a local validation and review tool, not a production monitoring or fleet dashboard.
 
 Near-term work should stay focused on more reviewed clips, more machine outputs inside each label window, hard-case evidence, stronger reference-region baselines, and safer test datasets.
 

@@ -95,6 +95,7 @@ It can:
 - compare label windows with machine records from the same time range
 - try prototype visual-change thresholds
 - run multi-video local validation and create a combined summary report
+- use the local Home UI to inspect site readiness, follow next-step guidance, and run validation
 - document hard-case expected behavior for confusing inputs
 - track validation results and known limits
 - provide privacy, retention, ML research, and labeling guidance
@@ -108,7 +109,7 @@ OpenFloodAI still cannot:
 - connect to live cameras
 - send alerts
 - publish public warnings
-- provide a dashboard
+- provide a production monitoring or fleet dashboard
 - replace local emergency decision-making
 
 ## Current Validation Direction

@@ -30,3 +30,16 @@ def test_status_reads_latest_report_counts_and_review_images(tmp_path: Path) -> 
         "cannot_compare": 3,
     }
     assert status.review_images_path == str(review_images)
+
+
+def test_status_explains_missing_site_items(tmp_path: Path) -> None:
+    status = read_validation_site_status(tmp_path / "empty-site")
+
+    assert status.next_steps == [
+        "Add a site config under configs/.",
+        "Add video files under inputs/videos/.",
+        "Machine review can still run, but human comparison needs labels.",
+        "Add manifest.jsonl so videos can be tracked clearly.",
+        "Run validation to create the first report.",
+    ]
+    assert status.to_dict()["next_steps"] == status.next_steps
