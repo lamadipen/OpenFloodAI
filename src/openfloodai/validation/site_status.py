@@ -31,6 +31,7 @@ class ValidationSiteStatus:
     latest_report_path: str | None
     latest_report_preview: str | None
     latest_report_counts: dict[str, int] | None
+    latest_scorecard: dict[str, Any] | None
     review_images_path: str | None
 
     @property
@@ -155,6 +156,7 @@ def read_validation_site_status(site_dir: Path) -> ValidationSiteStatus:
         latest_report_path=str(latest_report_path) if latest_report_path else None,
         latest_report_preview=_read_report_preview(latest_report_path),
         latest_report_counts=_read_report_counts(latest_report_path),
+        latest_scorecard=_read_scorecard(latest_report_path),
         review_images_path=str(review_images_path) if review_images_path else None,
     )
 
@@ -262,6 +264,36 @@ def _read_report_preview(report_path: Path | None) -> str | None:
     if len(preview) > REPORT_PREVIEW_MAX_LENGTH:
         return preview[:REPORT_PREVIEW_MAX_LENGTH].rstrip() + "..."
     return preview
+
+
+def _read_scorecard(report_path: Path | None) -> dict[str, Any] | None:
+    if report_path is None:
+        return None
+    try:
+        report_text = report_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+
+    fields: dict[str, Any] = {}
+    patterns = (
+        ("videos_tested", "Videos tested", int),
+        ("label_windows", "Label windows", int),
+        ("agree", "Agree", int),
+        ("disagree", "Disagree", int),
+        ("cannot_compare", "Cannot compare", int),
+    )
+    for key, label, converter in patterns:
+        match = re.search(rf"^- {re.escape(label)}:\s*(\d+)\s*$", report_text, re.MULTILINE)
+        if match:
+            fields[key] = converter(match.group(1))
+
+    summary_match = re.search(r"^- Summary:\s*(.+)$", report_text, re.MULTILINE)
+    if summary_match:
+        fields["summary"] = summary_match.group(1).strip()
+    if not fields:
+        return None
+    fields["human_review_needed"] = fields.get("disagree", 0) + fields.get("cannot_compare", 0)
+    return fields
 
 
 def _latest_path(paths: list[Path]) -> Path | None:

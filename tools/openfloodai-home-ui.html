@@ -753,6 +753,36 @@
         `;
       }
 
+      function scorecardValue(value) {
+        return value === undefined || value === null ? "Not available" : value;
+      }
+
+      function renderValidationSummary(site) {
+        const scorecard = site.latest_scorecard;
+        if (!scorecard) {
+          return detailItem("Latest validation", "No validation has been run yet.");
+        }
+        const reviewCount = Number(scorecard.human_review_needed || 0);
+        const reviewText = reviewCount
+          ? `Human review is still needed for ${reviewCount} item${reviewCount === 1 ? "" : "s"}.`
+          : "Human review is not currently flagged.";
+        return `
+          <div class="detail-item detail-explanation">
+            <div class="detail-label">Latest validation summary</div>
+            <div class="detail-value">Videos tested: ${escapeHtml(scorecardValue(scorecard.videos_tested))}</div>
+            <div class="detail-value">Label windows: ${escapeHtml(scorecardValue(scorecard.label_windows))}</div>
+            <div class="detail-value">Agree: ${escapeHtml(scorecardValue(scorecard.agree))}</div>
+            <div class="detail-value">Disagree: ${escapeHtml(scorecardValue(scorecard.disagree))}</div>
+            <div class="detail-value">Cannot compare: ${escapeHtml(scorecardValue(scorecard.cannot_compare))}</div>
+            <div class="detail-value">${escapeHtml(reviewText)}</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">Evidence folder</div>
+            <div class="detail-value">${escapeHtml(site.review_images_path || "No review evidence folder available.")}</div>
+          </div>
+        `;
+      }
+
       function renderSiteDetails(site) {
         if (!site) {
           detailPanel.style.display = "none";
@@ -768,6 +798,7 @@
           detailItem("Manifest", site.manifest_found ? "Found" : "Missing"),
           detailItem("Validation reports", String(site.report_count)),
           detailItem("Latest report", site.latest_report_path || "Not available"),
+          renderValidationSummary(site),
           detailPreview(site.latest_report_preview),
           detailItem("Machine review", site.machine_review_explanation, "detail-explanation"),
           detailItem("Human comparison", site.human_comparison_explanation, "detail-explanation"),
