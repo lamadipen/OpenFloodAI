@@ -12,6 +12,7 @@ from openfloodai.ingestion.evidence_sampling import SamplingSettings, window_evi
 from openfloodai.review.human_labels import load_human_label_records
 
 CHANGE_SIGNAL_THRESHOLD = 0.05
+SAFE_WATER_LEVEL_EVIDENCE_STATE = "useful_water_level_evidence"
 VISUAL_CHANGE_FIELDS = (
     "region_change_score",
     "frame_change_score",
@@ -286,6 +287,8 @@ def _system_result(
     change_signal_threshold: float,
 ) -> str:
     has_system_output = False
+    has_unsafe_region_evidence = False
+    has_safe_region_evidence = False
     highest_change_score = 0.0
 
     for record in system_records:
@@ -299,10 +302,18 @@ def _system_result(
             return "cannot_judge"
 
         if record_type == "visual_signal_output":
+            evidence_state = record.get("water_level_evidence_state")
+            if evidence_state is not None:
+                if evidence_state == SAFE_WATER_LEVEL_EVIDENCE_STATE:
+                    has_safe_region_evidence = True
+                else:
+                    has_unsafe_region_evidence = True
             highest_change_score = max(highest_change_score, _highest_change_score(record))
 
     if not has_system_output:
         return "missing_system_output"
+    if has_unsafe_region_evidence and not has_safe_region_evidence:
+        return "cannot_judge"
     if highest_change_score >= change_signal_threshold:
         return "water_change_seen"
     return "no_clear_change"

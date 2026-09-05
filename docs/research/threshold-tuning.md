@@ -6,6 +6,22 @@ Simple meaning: test a few numbers and see which one agrees better with human re
 
 This is only a learning tool. It does not prove flood detection accuracy and does not create public warnings.
 
+## Current Evidence Rules
+
+The current prototype uses these visible rules for a configured reference region:
+
+| Rule | Meaning |
+| --- | --- |
+| Change at or below `0.02` | Weak visual evidence; do not make a water-level judgment. |
+| Useful middle or lower band change at or above `0.05` while the upper band stays at or below `0.05` | Potentially useful water-level evidence. |
+| All bands at or above `0.08` with similar scores | Unclear whole-region change; return `cannot_judge`. |
+
+The system detects visual change. It does not currently determine whether the
+water is rising or falling. Human labels `water_rising` and `water_falling` can
+therefore both agree with a `water_change_seen` result when the evidence is useful.
+Dark, weak, small, or whole-region-changing evidence stays unclear instead of
+being forced into a confident result.
+
 ## What It Uses
 
 The tuning helper reads:

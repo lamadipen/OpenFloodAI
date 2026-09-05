@@ -33,6 +33,29 @@ def test_compare_label_records_reports_agree_for_change_label_and_change_signal(
     assert report.comparisons[0].system_result == "water_change_seen"
 
 
+def test_compare_label_records_reports_agree_for_falling_label_and_change_signal() -> None:
+    report = compare_label_records(
+        video_id="demo-river-001",
+        human_labels=[
+            {
+                "video_id": "demo-river-001",
+                "time_window_seconds": [0, 30],
+                "human_label": "water_falling",
+            }
+        ],
+        system_records=[
+            {
+                "record_type": "visual_signal_output",
+                "video_time_seconds": 10,
+                "region_change_score": 0.42,
+            }
+        ],
+    )
+
+    assert report.agree_count == 1
+    assert report.comparisons[0].system_result == "water_change_seen"
+
+
 def test_compare_label_records_reports_disagree_for_change_label_and_low_signal() -> None:
     report = compare_label_records(
         video_id="demo-river-001",
@@ -55,6 +78,30 @@ def test_compare_label_records_reports_disagree_for_change_label_and_low_signal(
     assert report.disagree_count == 1
     assert report.comparisons[0].result == "disagree"
     assert report.comparisons[0].system_result == "no_clear_change"
+
+
+def test_compare_label_records_keeps_unsafe_region_evidence_unknown() -> None:
+    report = compare_label_records(
+        video_id="demo-river-001",
+        human_labels=[
+            {
+                "video_id": "demo-river-001",
+                "time_window_seconds": [0, 30],
+                "human_label": "water_rising",
+            }
+        ],
+        system_records=[
+            {
+                "record_type": "visual_signal_output",
+                "video_time_seconds": 10,
+                "region_change_score": 0.42,
+                "water_level_evidence_state": "cannot_judge_whole_region_changed",
+            }
+        ],
+    )
+
+    assert report.comparisons[0].system_result == "cannot_judge"
+    assert report.comparisons[0].result == "cannot_compare"
 
 
 def test_compare_label_records_filters_system_records_by_video_id() -> None:
