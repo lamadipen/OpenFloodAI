@@ -189,7 +189,7 @@ Current limit: each label window is compared with the broad system result for th
 
 ## Local Home UI
 
-Use the local home UI to see site readiness in one screen and to set up new validation sites.
+Use the local home UI to see site readiness in one screen, set up new validation sites, and add local videos.
 
 ```bash
 python3 scripts/run_openfloodai_home_ui.py
@@ -201,11 +201,13 @@ Then open:
 http://127.0.0.1:8765/openfloodai-home-ui.html
 ```
 
-Simple meaning: the UI shows whether each site has config, videos, labels, manifest, outputs, and a latest report. It also includes a **Create Site** button to initialize new site folders and starter configs without manual work.
+Simple meaning: the UI shows whether each site has config, videos, labels, manifest, outputs, and a latest report. It includes a **Create Site** button for new folders and an **Add Video** button to choose a local video file and write a manifest row.
+
+The **Add Video** form uses dropdowns for `purpose` and `hard_case_type` so the manifest stays consistent.
 
 Machine review needs config and video. Human comparison also needs labels and a manifest.
 
-This UI reads local folder status only. It does not upload files, connect to cameras, send alerts, train ML, or publish warnings.
+This UI stays on this computer. It does not upload videos, connect to cameras, send alerts, train ML, or publish warnings.
 
 ## Command-Line Site Setup
 
@@ -221,6 +223,24 @@ python3 scripts/setup_validation_site.py \
 ```
 
 Simple meaning: this script creates the folder structure and a starter JSON config in one step, ensuring the site is ready for videos and validation.
+
+## Command-Line Video Intake
+
+To copy a local video into a site folder and add a manifest row:
+
+```bash
+python3 scripts/intake_validation_video.py \
+  --folder-name "example-site" \
+  --video-path "/local/path/rising-001.mp4" \
+  --video-id "rising-001" \
+  --purpose "possible_rising_water" \
+  --split "practice" \
+  --notes "Local practice clip. Not approved for the public repo."
+```
+
+Simple meaning: the helper copies the file into `inputs/videos/` and writes one `manifest.jsonl` row. Sharing stays off unless you pass `--approved-for-repo`.
+
+The helper will not overwrite an existing video or manifest row unless you also pass `--overwrite`.
 
 ## Privacy Rules
 

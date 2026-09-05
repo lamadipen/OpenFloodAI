@@ -560,6 +560,8 @@ http://127.0.0.1:8765/openfloodai-home-ui.html
 
 Simple meaning: this page checks folders under `data/sites/` and shows whether each site has config, videos, labels, manifest, output reports, and a latest report.
 
+From the same page you can create a site folder or add a local validation video. Adding a video copies a file already on this computer into `inputs/videos/` and writes one `manifest.jsonl` row. Sharing stays off unless you explicitly mark the video as approved for the repo.
+
 Machine review only needs config and video. Human comparison also needs labels and a manifest.
 
 Example:

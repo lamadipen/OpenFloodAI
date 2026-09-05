@@ -2,6 +2,8 @@
 
 from openfloodai.review.dataset_manifest import (
     ALLOWED_MANIFEST_SPLITS,
+    HARD_CASE_TYPE_OPTIONS,
+    MANIFEST_PURPOSE_OPTIONS,
     DatasetManifestError,
     is_valid_manifest_record,
     load_manifest_records,
@@ -43,6 +45,8 @@ __all__ = [
     "ALLOWED_CONFIDENCE_LEVELS",
     "ALLOWED_HUMAN_LABELS",
     "ALLOWED_MANIFEST_SPLITS",
+    "HARD_CASE_TYPE_OPTIONS",
+    "MANIFEST_PURPOSE_OPTIONS",
     "DEFAULT_CANDIDATE_THRESHOLDS",
     "DatasetManifestError",
     "HumanLabelError",

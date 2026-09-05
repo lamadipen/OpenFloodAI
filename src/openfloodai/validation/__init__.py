@@ -16,6 +16,10 @@ from openfloodai.validation.site_status import (
     discover_validation_site_statuses,
     read_validation_site_status,
 )
+from openfloodai.validation.video_intake import (
+    ValidationVideoIntakeResult,
+    intake_validation_video,
+)
 
 __all__ = [
     "SiteValidationReport",
@@ -23,7 +27,9 @@ __all__ = [
     "ValidationRunnerError",
     "ValidationSiteSetupResult",
     "ValidationSiteStatus",
+    "ValidationVideoIntakeResult",
     "discover_validation_site_statuses",
+    "intake_validation_video",
     "read_validation_site_status",
     "render_site_validation_report",
     "run_site_validation",
