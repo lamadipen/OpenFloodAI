@@ -42,6 +42,27 @@ def make_site(site_dir: Path) -> Path:
     return site_dir
 
 
+def write_validation_report(site_dir: Path) -> None:
+    (site_dir / "outputs").mkdir(exist_ok=True)
+    (site_dir / "outputs" / "validation-report.md").write_text(
+        "\n".join(
+            [
+                "# Site Validation Report",
+                "",
+                "## Validation Scorecard",
+                "- Videos tested: 8",
+                "- Label windows: 14",
+                "- Agree: 5",
+                "- Disagree: 2",
+                "- Cannot compare: 1",
+                "- Summary: Reviewed 8 video(s) and 14 label window(s): 5 agree, 2 "
+                "disagree, and 1 cannot compare.",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
 @contextmanager
 def serve_home_ui(sites_dir: Path, ui_path: Path = UI_PATH) -> Iterator[str]:
     """Run the real Home UI handler on a loopback port and yield its base URL."""
@@ -99,6 +120,15 @@ def test_home_ui_page_has_safety_note_container(tmp_path: Path) -> None:
     assert 'id="safetyNote"' in body
 
 
+def test_home_ui_page_has_validation_summary_and_evidence_labels(tmp_path: Path) -> None:
+    with serve_home_ui(tmp_path) as base_url:
+        _, _, body = get_text(f"{base_url}/openfloodai-home-ui.html")
+
+    assert "Latest validation summary" in body
+    assert "Human review is still needed" in body
+    assert "Evidence folder" in body
+
+
 def test_sites_api_reports_ready_site(tmp_path: Path) -> None:
     sites_dir = tmp_path / "sites"
     make_site(sites_dir / "example-site")
@@ -116,6 +146,7 @@ def test_sites_api_reports_ready_site(tmp_path: Path) -> None:
     assert site["labels_found"] is True
     assert site["manifest_found"] is True
     assert site["latest_report_path"] is None
+    assert site["latest_scorecard"] is None
 
 
 def test_sites_api_includes_status_fields_the_ui_renders(tmp_path: Path) -> None:
@@ -134,8 +165,34 @@ def test_sites_api_includes_status_fields_the_ui_renders(tmp_path: Path) -> None
         "latest_report_path",
         "machine_review_explanation",
         "human_comparison_explanation",
+        "latest_scorecard",
+        "review_images_path",
     ):
         assert field in site, f"Home UI needs {field} to render site status"
+
+
+def test_sites_api_exposes_scorecard_and_review_state(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    site_dir = make_site(sites_dir / "example-site")
+    write_validation_report(site_dir)
+    review_images = site_dir / "outputs" / "river-001" / "review-images"
+    review_images.mkdir(parents=True)
+
+    with serve_home_ui(sites_dir) as base_url:
+        site = get_json(f"{base_url}/api/sites")["sites"][0]
+
+    assert site["latest_scorecard"] == {
+        "videos_tested": 8,
+        "label_windows": 14,
+        "agree": 5,
+        "disagree": 2,
+        "cannot_compare": 1,
+        "summary": (
+            "Reviewed 8 video(s) and 14 label window(s): 5 agree, 2 disagree, and 1 cannot compare."
+        ),
+        "human_review_needed": 3,
+    }
+    assert site["review_images_path"] == str(review_images)
 
 
 def test_sites_api_includes_safety_note(tmp_path: Path) -> None:
