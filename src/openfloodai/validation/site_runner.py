@@ -9,6 +9,7 @@ from pathlib import Path
 
 from openfloodai.contracts import read_jsonl_records
 from openfloodai.contracts.local_store import JsonObject
+from openfloodai.ingestion.evidence_sampling import SamplingSettings
 from openfloodai.pipeline import LocalPocSmokeError, run_local_video_review
 from openfloodai.review import (
     LabelComparison,
@@ -124,6 +125,7 @@ def run_site_validation(
     site_dir: Path,
     *,
     config_path: Path | None = None,
+    sampling: SamplingSettings | None = None,
 ) -> SiteValidationReport:
     """Run local validation for all videos in one site folder."""
 
@@ -150,6 +152,7 @@ def run_site_validation(
                 site_dir=site_dir,
                 config_path=selected_config_path,
                 labels=labels,
+                sampling=sampling,
             )
         )
 
@@ -301,6 +304,7 @@ def _run_one_video(
     site_dir: Path,
     config_path: Path,
     labels: list[JsonObject],
+    sampling: SamplingSettings | None,
 ) -> SiteValidationResult:
     output_dir = site_dir / "outputs" / video_id
 
@@ -310,6 +314,14 @@ def _run_one_video(
             config_path=config_path,
             output_dir=output_dir,
             image_prefix=video_id,
+            time_windows=[
+                window
+                for label in labels
+                if label.get("video_id") == video_id
+                and (window := _label_time_window_seconds(label)) is not None
+            ]
+            or None,
+            sampling=sampling,
         )
     except (LocalPocSmokeError, OSError, ValueError) as error:
         return SiteValidationResult(

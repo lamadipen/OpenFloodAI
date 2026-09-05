@@ -17,7 +17,9 @@ def create_tiny_video(path: Path, *, frame_values: tuple[int, ...]) -> None:
     try:
         for value in frame_values:
             frame = np.full((8, 8, 3), value, dtype=np.uint8)
-            writer.write(frame)
+            # Match the 30-second labels with 30 seconds of actual footage.
+            for _ in range(60 // len(frame_values)):
+                writer.write(frame)
     finally:
         writer.release()
 
@@ -100,7 +102,7 @@ def test_run_site_validation_reports_multiple_video_results(tmp_path: Path) -> N
     site_dir = make_site_dir(tmp_path)
     create_tiny_video(
         site_dir / "inputs" / "videos" / "rising-001.avi",
-        frame_values=(0, 255, 255),
+        frame_values=(20, 255, 255),
     )
     create_tiny_video(
         site_dir / "inputs" / "videos" / "normal-001.avi",
@@ -108,7 +110,7 @@ def test_run_site_validation_reports_multiple_video_results(tmp_path: Path) -> N
     )
     create_tiny_video(
         site_dir / "inputs" / "videos" / "unclear-001.avi",
-        frame_values=(0, 255, 255),
+        frame_values=(20, 255, 255),
     )
     (site_dir / "inputs" / "videos" / "bad-001.mp4").write_text(
         "not a video",
@@ -166,7 +168,7 @@ def test_run_site_validation_handles_missing_human_label(tmp_path: Path) -> None
     write_site_config(site_dir / "configs" / "site-config.json")
     create_tiny_video(
         site_dir / "inputs" / "videos" / "unlabeled-001.avi",
-        frame_values=(0, 255),
+        frame_values=(20, 255),
     )
 
     report = run_site_validation(site_dir)
@@ -200,7 +202,7 @@ def test_combined_report_output_is_stable_and_simple(tmp_path: Path) -> None:
     site_dir = make_site_dir(tmp_path)
     create_tiny_video(
         site_dir / "inputs" / "videos" / "rising-001.avi",
-        frame_values=(0, 255),
+        frame_values=(20, 255),
     )
 
     report = run_site_validation(site_dir)

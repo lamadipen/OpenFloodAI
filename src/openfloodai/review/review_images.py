@@ -58,6 +58,7 @@ def generate_biggest_change_review_images(
     *,
     reference_region: ReferenceRegionInput | None = None,
     prefix: str = "review",
+    frame_times: tuple[float, float] | None = None,
 ) -> ReviewImageSet:
     """Save before/after/comparison images for the frame with the biggest change."""
 
@@ -75,6 +76,9 @@ def generate_biggest_change_review_images(
         reference_region=reference_region,
     )
     changed_frame = prepared_frames[changed_frame_index]
+    if frame_times is not None:
+        baseline_frame = _with_time_caption(baseline_frame, frame_times[0])
+        changed_frame = _with_time_caption(changed_frame, frame_times[1])
     comparison_frame = np.hstack([baseline_frame, changed_frame])
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -88,8 +92,13 @@ def generate_biggest_change_review_images(
     _write_image(comparison_path, comparison_frame)
 
     if reference_region is not None:
-        baseline_overlay_frame = _draw_reference_region_box(baseline_frame, reference_region)
-        changed_overlay_frame = _draw_reference_region_box(changed_frame, reference_region)
+        baseline_overlay_frame = _draw_reference_region_box(prepared_frames[0], reference_region)
+        changed_overlay_frame = _draw_reference_region_box(
+            prepared_frames[changed_frame_index], reference_region
+        )
+        if frame_times is not None:
+            baseline_overlay_frame = _with_time_caption(baseline_overlay_frame, frame_times[0])
+            changed_overlay_frame = _with_time_caption(changed_overlay_frame, frame_times[1])
         comparison_overlay_frame = np.hstack([baseline_overlay_frame, changed_overlay_frame])
         baseline_overlay_path = output_dir / f"{prefix}-baseline-overlay.png"
         changed_overlay_path = output_dir / f"{prefix}-changed-overlay.png"
@@ -249,3 +258,21 @@ def _region_value(reference_region: ReferenceRegionInput, field_name: str) -> fl
 def _write_image(path: Path, frame: NDArray[np.uint8]) -> None:
     if not cv2.imwrite(str(path), frame):
         raise ReviewImageError(f"Could not write review image: {path}")
+
+
+def _with_time_caption(frame: NDArray[np.uint8], second: float) -> NDArray[np.uint8]:
+    # A separate caption band preserves every pixel of the evidence image.
+    output = cv2.copyMakeBorder(
+        frame, 24, 0, 0, max(0, 180 - frame.shape[1]), cv2.BORDER_CONSTANT, value=(0, 0, 0)
+    )
+    cv2.putText(
+        output,
+        f"Video: {second:g}s",
+        (4, 17),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.45,
+        (255, 255, 255),
+        1,
+        cv2.LINE_AA,
+    )
+    return cast(NDArray[np.uint8], output)
