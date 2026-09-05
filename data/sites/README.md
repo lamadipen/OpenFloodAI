@@ -189,7 +189,7 @@ Current limit: each label window is compared with the broad system result for th
 
 ## Local Home UI
 
-Use the local home UI to see site readiness in one screen and to setup new validation sites.
+Use the local home UI to see site readiness in one screen and to set up new validation sites.
 
 ```bash
 python3 scripts/run_openfloodai_home_ui.py

@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
+
+_FOLDER_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 @dataclass(frozen=True)
@@ -41,7 +44,27 @@ def setup_validation_site(
             ),
         )
 
-    site_dir = sites_base_dir / folder_name
+    if _FOLDER_NAME_PATTERN.fullmatch(folder_name) is None:
+        return ValidationSiteSetupResult(
+            site_dir=Path(),
+            config_path=Path(),
+            created=False,
+            message=(
+                "Invalid folder_name: use only letters, numbers, dash, and underscore. "
+                "The helper only creates a folder inside the sites base directory."
+            ),
+        )
+
+    site_dir = (sites_base_dir / folder_name).resolve()
+    try:
+        site_dir.relative_to(sites_base_dir.resolve())
+    except ValueError:
+        return ValidationSiteSetupResult(
+            site_dir=Path(),
+            config_path=Path(),
+            created=False,
+            message="Invalid folder_name: site folder must stay inside the sites base directory.",
+        )
 
     if site_dir.exists() and not overwrite:
         return ValidationSiteSetupResult(
