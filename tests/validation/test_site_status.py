@@ -113,7 +113,7 @@ def test_read_validation_site_status_reports_missing_files(tmp_path: Path) -> No
     assert status.machine_review_explanation == "Not ready because config and videos are missing."
     assert (
         status.human_comparison_explanation
-        == "Not ready because config and videos, labels, and manifest are missing."
+        == "Not ready because config, videos, labels, and manifest are missing."
     )
 
 

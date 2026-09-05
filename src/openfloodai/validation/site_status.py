@@ -70,11 +70,9 @@ class ValidationSiteStatus:
             return "Ready because config, videos, labels, and manifest are found."
         missing: list[str] = []
         if not self.ready_for_machine_review:
-            if not self.config_found and self.video_count == 0:
-                missing.append("config and videos")
-            elif not self.config_found:
+            if not self.config_found:
                 missing.append("config")
-            else:
+            if self.video_count == 0:
                 missing.append("videos")
         if not self.labels_found:
             missing.append("labels")
