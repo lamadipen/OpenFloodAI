@@ -147,7 +147,7 @@ def run_local_video_review(
             [frames[before], frames[after]],
             review_images_dir,
             reference_region=site_config.reference_region,
-            prefix=image_prefix if len(windows) == 1 else f"{image_prefix}-window-{index}",
+            prefix=_window_image_prefix(image_prefix, bounds, index, len(windows)),
             frame_times=(
                 float(str(signal["comparison_start_seconds"])),
                 float(str(signal["comparison_end_seconds"])),
@@ -160,6 +160,7 @@ def run_local_video_review(
             *image_set.overlay_image_paths,
         ]
         review_image_paths.extend(paths)
+        evidence_lines.append(f"- Review images: {review_images_dir}")
         evidence_lines.append(
             f"- Images use signal {signal['record_id']}: "
             f"frame {before} at {signal['comparison_start_seconds']}s and "
@@ -185,6 +186,27 @@ def run_local_video_review(
         records_written=records_written,
         reference_region_used=bool(pipeline_summary.get("reference_region_used")),
     )
+
+
+def _window_image_prefix(
+    image_prefix: str,
+    bounds: object,
+    index: int,
+    window_count: int,
+) -> str:
+    if not isinstance(bounds, list) or len(bounds) != 2:
+        return image_prefix if window_count == 1 else f"{image_prefix}-window-{index}"
+    start, end = bounds
+    if not isinstance(start, int | float) or not isinstance(end, int | float):
+        return image_prefix if window_count == 1 else f"{image_prefix}-window-{index}"
+    start_text = _time_for_filename(float(start))
+    end_text = _time_for_filename(float(end))
+    return f"{image_prefix}-window-{start_text}-{end_text}s"
+
+
+def _time_for_filename(second: float) -> str:
+    text = f"{second:g}"
+    return text.replace(".", "p").replace("-", "m")
 
 
 def _demo_frames() -> list[DemoFrame]:
