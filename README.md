@@ -603,6 +603,41 @@ Latest report: not found
 
 This is a local helper only. It does not upload files, connect to cameras, send alerts, train ML, publish warnings, or prove flood accuracy.
 
+### Video Evidence Sampling
+
+Local review now samples usable frames throughout the video. Site validation
+samples each human-labelled period separately. The first two frames are no longer
+the only evidence.
+
+The defaults are a five-second interval and a maximum of 120 samples per period.
+The first and last usable frames are included. Longer periods use wider spacing.
+You can change the settings:
+
+~~~bash
+python3 scripts/run_site_validation.py \
+  --site-dir data/sites/example-site \
+  --sample-interval-seconds 5 \
+  --max-samples 120 \
+  --minimum-brightness 5
+~~~
+
+The same options work with scripts/run_local_video_review.py. Python callers
+can pass SamplingSettings and a list of time_windows to either pipeline.
+
+Every decoded frame keeps its metadata. Dark frames are marked unusable and are
+not compared. Reports show unusable counts, reasons, sample times, and coverage.
+Too little usable footage gives cannot_compare. Review images show the actual
+saved comparison frames with their video times. Reruns replace derived run records
+and refresh generated images.
+
+Example: if seconds 0–4 are black, the baseline can start at 5 seconds. Compare
+5→10 and 10→15, and also 5→15 to show a slow overall change. The dark opening
+remains unjudged.
+
+These are prototype settings. Visual change does not prove water direction or
+flood safety. Threshold changes remain separate in issue #109. See the
+[design and coverage rules](docs/architecture/windowed-video-evidence.md).
+
 ### 17. Try Prototype Thresholds Against Human Labels
 
 Run this after you have a local records file and a human label file.

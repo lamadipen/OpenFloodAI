@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
 
 import cv2
 import numpy as np
@@ -14,7 +13,8 @@ from numpy.typing import NDArray
 from openfloodai.config import load_site_config
 from openfloodai.contracts import read_jsonl_records
 from openfloodai.contracts.local_store import JsonObject
-from openfloodai.pipeline.local_poc import run_local_region_poc_pipeline
+from openfloodai.ingestion.evidence_sampling import SamplingSettings
+from openfloodai.pipeline.local_poc import read_selected_frames, run_local_region_poc_pipeline
 from openfloodai.replay import render_summary_markdown, summarize_jsonl_records
 from openfloodai.review import build_operator_note, generate_biggest_change_review_images
 
@@ -56,7 +56,6 @@ def run_local_poc_smoke(output_dir: Path) -> LocalPocSmokeResult:
         video_path=video_path,
         config_path=config_path,
         output_dir=output_dir,
-        review_frames=frames,
         image_prefix="smoke",
     )
 
@@ -67,11 +66,13 @@ def run_local_video_review(
     config_path: Path,
     output_dir: Path,
     image_prefix: str = "review",
-    review_frame_count: int = 3,
-    review_frames: list[DemoFrame] | None = None,
+    time_windows: list[tuple[float, float]] | None = None,
+    sampling: SamplingSettings | None = None,
 ) -> LocalPocSmokeResult:
     """Run the local POC review workflow for a real local video file."""
 
+    if not image_prefix.strip() or Path(image_prefix).name != image_prefix:
+        raise ValueError("Image prefix must be a non-empty filename without directories")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     records_path = output_dir / "records.jsonl"
@@ -83,6 +84,8 @@ def run_local_video_review(
         video_path=video_path,
         config_path=config_path,
         output_path=records_path,
+        time_windows=time_windows,
+        sampling=sampling,
     )
     if pipeline_summary.get("completed") is not True:
         raise LocalPocSmokeError("Local POC smoke workflow did not complete")
@@ -101,16 +104,75 @@ def run_local_video_review(
     operator_notes = _operator_notes(records)
     operator_notes_path.write_text("\n\n".join(operator_notes) + "\n", encoding="utf-8")
 
-    frames = review_frames
-    if frames is None:
-        frames = _read_review_frames(video_path, count=review_frame_count)
-
-    review_image_set = generate_biggest_change_review_images(
-        frames,
-        review_images_dir,
-        reference_region=site_config.reference_region,
-        prefix=image_prefix,
+    review_image_paths: list[str] = []
+    evidence_lines = ["", "## Sampled video evidence", ""]
+    windows = [r for r in records if r.get("record_type") == "evidence_window_output"]
+    # Remove only this workflow's previous images, so a failed window has no stale evidence.
+    if review_images_dir.exists():
+        for old in review_images_dir.iterdir():
+            if old.is_file() and old.name.startswith(f"{image_prefix}-") and old.suffix == ".png":
+                old.unlink()
+    for index, window in enumerate(windows, start=1):
+        bounds = window["time_window_seconds"]
+        evidence_lines.extend(
+            [
+                f"### Period {bounds}",
+                f"- Usable frames: {window['usable_frame_count']}",
+                f"- Unusable frames: {window['unusable_frame_count']}",
+                f"- Unusable reasons: {window['unusable_reasons']}",
+                f"- Requested interval: {window['sample_interval_seconds']} seconds",
+                f"- Actual largest sample gap: {window['actual_max_sample_gap_seconds']} seconds",
+                f"- Sample times: {window['sampled_video_times']}",
+                f"- Usable fraction of period: {window['usable_coverage_fraction']}",
+                f"- Coverage sufficient: {window['coverage_sufficient']}",
+                f"- Coverage note: {window['coverage_reason']}",
+            ]
+        )
+        signals = [
+            r
+            for r in records
+            if r.get("record_type") == "visual_signal_output"
+            and r.get("evidence_window_seconds") == bounds
+        ]
+        if not signals:
+            evidence_lines.append("- No usable comparison images. Result: cannot_compare.")
+            continue
+        signal = max(signals, key=lambda r: float(str(r.get("region_change_score", 0))))
+        before, after = (
+            int(str(signal["baseline_frame_index"])),
+            int(str(signal["changed_frame_index"])),
+        )
+        frames = read_selected_frames(video_path, [before, after])
+        image_set = generate_biggest_change_review_images(
+            [frames[before], frames[after]],
+            review_images_dir,
+            reference_region=site_config.reference_region,
+            prefix=image_prefix if len(windows) == 1 else f"{image_prefix}-window-{index}",
+            frame_times=(
+                float(str(signal["comparison_start_seconds"])),
+                float(str(signal["comparison_end_seconds"])),
+            ),
+        )
+        paths = [
+            image_set.baseline_image_path,
+            image_set.changed_image_path,
+            image_set.comparison_image_path,
+            *image_set.overlay_image_paths,
+        ]
+        review_image_paths.extend(paths)
+        evidence_lines.append(
+            f"- Images use signal {signal['record_id']}: "
+            f"frame {before} at {signal['comparison_start_seconds']}s and "
+            f"frame {after} at {signal['comparison_end_seconds']}s."
+        )
+        if window["coverage_sufficient"] is not True:
+            evidence_lines.append("- These images cover only part of the period: cannot_compare.")
+    evidence_lines.append(
+        "\nVisual change does not establish water direction or flood safety. "
+        "Dark periods remain unjudged. Image-quality settings are prototype settings."
     )
+    with summary_path.open("a", encoding="utf-8") as handle:
+        handle.write("\n".join(evidence_lines) + "\n")
 
     return LocalPocSmokeResult(
         output_dir=str(output_dir),
@@ -119,12 +181,7 @@ def run_local_video_review(
         records_path=str(records_path),
         summary_path=str(summary_path),
         operator_notes_path=str(operator_notes_path),
-        review_image_paths=(
-            review_image_set.baseline_image_path,
-            review_image_set.changed_image_path,
-            review_image_set.comparison_image_path,
-            *review_image_set.overlay_image_paths,
-        ),
+        review_image_paths=tuple(review_image_paths),
         records_written=records_written,
         reference_region_used=bool(pipeline_summary.get("reference_region_used")),
     )
@@ -183,28 +240,3 @@ def _operator_notes(records: list[JsonObject]) -> list[str]:
         if record.get("record_type") in {"camera_health_output", "risk_state_output"}:
             notes.append(build_operator_note(record))
     return notes
-
-
-def _read_review_frames(video_path: Path, *, count: int) -> list[DemoFrame]:
-    if count < 2:
-        raise LocalPocSmokeError("At least two review frames are required")
-
-    capture = cv2.VideoCapture(str(video_path))
-    if not capture.isOpened():
-        capture.release()
-        raise LocalPocSmokeError(f"Video file could not be opened for review images: {video_path}")
-
-    frames: list[DemoFrame] = []
-    try:
-        while len(frames) < count:
-            is_readable, frame = capture.read()
-            if not is_readable:
-                break
-            frames.append(cast(DemoFrame, frame))
-    finally:
-        capture.release()
-
-    if len(frames) < 2:
-        raise LocalPocSmokeError("At least two readable frames are required for review images")
-
-    return frames
