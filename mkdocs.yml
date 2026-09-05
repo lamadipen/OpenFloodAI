@@ -17,6 +17,7 @@ nav:
       - OpenFloodAI Pipeline Basics: learning/openfloodai-pipeline-learning.html
   - Privacy And Retention: privacy-retention.md
   - V1 Requirements: product/requirements.md
+  - Labelled Data Quality Checklist: product/data-quality-checklist.md
   - Research:
       - Research Notes: research/README.md
       - Labeling Guide: research/labeling-guide.md
