@@ -338,6 +338,17 @@
         padding: 12px;
       }
 
+      .report-preview {
+        background: #f7f9fb;
+        border: 1px solid var(--soft-line);
+        font: 14px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        margin: 0;
+        max-height: 220px;
+        overflow: auto;
+        padding: 12px;
+        white-space: pre-wrap;
+      }
+
       @media (max-width: 640px) {
         header,
         main {
@@ -733,6 +744,15 @@
         `;
       }
 
+      function detailPreview(value) {
+        return `
+          <div class="detail-item">
+            <div class="detail-label">Latest report preview</div>
+            <pre class="report-preview">${escapeHtml(value || "No validation report exists yet.")}</pre>
+          </div>
+        `;
+      }
+
       function renderSiteDetails(site) {
         if (!site) {
           detailPanel.style.display = "none";
@@ -748,6 +768,7 @@
           detailItem("Manifest", site.manifest_found ? "Found" : "Missing"),
           detailItem("Validation reports", String(site.report_count)),
           detailItem("Latest report", site.latest_report_path || "Not available"),
+          detailPreview(site.latest_report_preview),
           detailItem("Machine review", site.machine_review_explanation, "detail-explanation"),
           detailItem("Human comparison", site.human_comparison_explanation, "detail-explanation"),
         ].join("");

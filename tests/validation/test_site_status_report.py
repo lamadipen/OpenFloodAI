@@ -12,6 +12,7 @@ def test_status_reads_latest_report_counts_and_review_images(tmp_path: Path) -> 
             [
                 "# Site Validation Report",
                 "",
+                "## Counts",
                 "- Agree: 2",
                 "- Disagree: 1",
                 "- Cannot compare: 3",
@@ -29,7 +30,23 @@ def test_status_reads_latest_report_counts_and_review_images(tmp_path: Path) -> 
         "disagree": 1,
         "cannot_compare": 3,
     }
+    assert status.latest_report_preview == "\n".join(
+        [
+            "# Site Validation Report",
+            "",
+            "## Counts",
+            "- Agree: 2",
+            "- Disagree: 1",
+            "- Cannot compare: 3",
+        ]
+    )
     assert status.review_images_path == str(review_images)
+
+
+def test_status_has_no_report_preview_when_report_is_missing(tmp_path: Path) -> None:
+    status = read_validation_site_status(tmp_path / "empty-site")
+
+    assert status.latest_report_preview is None
 
 
 def test_status_explains_missing_site_items(tmp_path: Path) -> None:
