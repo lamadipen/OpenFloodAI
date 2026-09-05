@@ -2,8 +2,10 @@
 
 ## Canonical Instructions And Skills
 
-This file is the main repository instruction file. Every agent working in this
-repository must read and follow it before starting work.
+The root `AGENTS.md` file is the main repository instruction file. This
+`.github/AGENTS.md` file keeps the same project guidance for tools that discover
+`.github/` first. Every agent must read and follow the root file before starting
+work.
 
 The canonical project skills live under `.github/skills/`. Use them when their
 topic applies to the task. The `.codex/` files are compatibility copies for
@@ -40,9 +42,13 @@ Use the appropriate project skill under `.github/skills/`:
   Use for datasets, computer vision, training, evaluation,
   MLOps, model optimization, and edge inference.
 
-- `qa-agent` (folder: `senior-flood-qa-engineer`)
+- `ROUTE TO Senior Flood QA Engineer` (folder: `senior-flood-qa-engineer`)
   Use for test strategy, ML validation, video replay,
   resilience testing, regression testing, and release validation.
+
+The QA skill intentionally uses the public name `ROUTE TO Senior Flood QA Engineer` while remaining in
+the descriptive `senior-flood-qa-engineer/` folder so existing references and
+compatibility copies continue to work.
 
 For tasks spanning multiple areas, use the skills in this order:
 

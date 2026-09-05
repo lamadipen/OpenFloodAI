@@ -1,5 +1,5 @@
 ---
-name: qa-agent
+name: "ROUTE TO Senior Flood QA Engineer"
 description: "Use this skill to validate code, write unit tests, or run test suites."
 model_fallback: ollama/qwen2.5-coder
 ---

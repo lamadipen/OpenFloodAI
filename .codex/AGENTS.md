@@ -2,7 +2,7 @@
 
 ## Canonical Instructions
 
-The main repository instruction file is `.github/AGENTS.md`. Read and follow it
+The main repository instruction file is the root `AGENTS.md`. Read and follow it
 before starting work. This `.codex/AGENTS.md` file exists only as a compatibility
 entry point for tools that discover `.codex/` first.
 
@@ -36,7 +36,7 @@ If a tool requires a local Codex copy, use the matching file under `.codex/skill
   Use for datasets, computer vision, training, evaluation,
   MLOps, model optimization, and edge inference.
 
-- `qa-agent` (folder: `senior-flood-qa-engineer`)
+- `ROUTE TO Senior Flood QA Engineer` (folder: `senior-flood-qa-engineer`)
   Use for test strategy, ML validation, video replay,
   resilience testing, regression testing, and release validation.
 
