@@ -60,7 +60,7 @@ Simple example:
 
 OpenFloodAI can now run small local proof-of-concept steps.
 
-The completed foundation phase means the project can now connect the basic local review flow:
+The current local validation MVP connects the basic review flow:
 
 ```text
 local video
@@ -96,6 +96,9 @@ It can:
 - try prototype visual-change thresholds
 - run multi-video local validation and create a combined summary report
 - use the local Home UI to inspect site readiness, follow next-step guidance, and run validation
+- inspect scorecards, report previews, evidence paths, and recent validation history in the Home UI
+- use deterministic synthetic fixtures for rising, falling, no-change, and unreadable inputs
+- use a labelled data quality checklist before preparing new examples
 - document hard-case expected behavior for confusing inputs
 - track validation results and known limits
 - provide privacy, retention, ML research, and labeling guidance
@@ -111,6 +114,11 @@ OpenFloodAI still cannot:
 - publish public warnings
 - provide a production monitoring or fleet dashboard
 - replace local emergency decision-making
+
+The current implementation is local proof-of-concept validation. The runtime is
+small and does not include a trained ML framework, cloud service, live-camera
+adapter, database, or alert provider. These are future engineering stages, not
+missing setup steps for the current MVP.
 
 ## Current Validation Direction
 

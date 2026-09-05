@@ -28,6 +28,11 @@ Simple example: a developer can run one local video, save POC records, add a hum
 
 Current local validation can also run a whole site folder, create one combined report, and keep missing or unclear cases visible.
 
+The current MVP also includes generated synthetic known-answer checks for rising,
+falling, no-change, and unreadable videos. These checks run without stored media,
+internet access, or private footage. They are regression checks, not real-world
+validation evidence.
+
 The test suite includes small deterministic synthetic videos for rising water,
 falling water, no clear change, and unreadable input. These videos are generated
 during tests and are not stored as media files in the repository. They provide
@@ -73,6 +78,7 @@ Current gaps:
 - Time-window comparison depends on machine records having usable timing or source-frame links.
 - There is no locked test set yet.
 - There is no field pilot evidence yet.
+- Synthetic fixtures are not a substitute for real rivers, cameras, weather, or field evidence.
 
 Simple example: if sunlight changes on the river surface, the system may see a visual change. That does not always mean water is rising.
 
@@ -125,6 +131,8 @@ What is now in place:
 6. Improved reference-region signal with upper, middle, and lower change scores.
 7. Hard-case expected behavior for confusing inputs.
 8. A plain-language validation scorecard for each site report.
+9. A local Home UI report-history view.
+10. A labelled data quality checklist.
 
 Simple meaning: OpenFloodAI can now run local validation practice and explain what happened, but it still has not proven real flood detection.
 
