@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,8 @@ class ValidationSiteStatus:
     outputs_found: bool
     report_count: int
     latest_report_path: str | None
+    latest_report_counts: dict[str, int] | None
+    review_images_path: str | None
 
     @property
     def ready_for_machine_review(self) -> bool:
@@ -79,6 +82,7 @@ def read_validation_site_status(site_dir: Path) -> ValidationSiteStatus:
     human_label_options = _find_human_label_options(label_paths)
     report_paths = _find_report_paths(site_dir)
     latest_report_path = _latest_path(report_paths)
+    review_images_path = _latest_path(_find_review_images_paths(site_dir))
 
     return ValidationSiteStatus(
         site_name=site_dir.name,
@@ -94,6 +98,8 @@ def read_validation_site_status(site_dir: Path) -> ValidationSiteStatus:
         outputs_found=bool(report_paths),
         report_count=len(report_paths),
         latest_report_path=str(latest_report_path) if latest_report_path else None,
+        latest_report_counts=_read_report_counts(latest_report_path),
+        review_images_path=str(review_images_path) if review_images_path else None,
     )
 
 
@@ -144,7 +150,34 @@ def _find_report_paths(site_dir: Path) -> list[Path]:
     outputs_dir = site_dir / "outputs"
     if not outputs_dir.exists():
         return []
-    return sorted(path for path in outputs_dir.rglob("*.md") if path.is_file())
+    return sorted(path for path in outputs_dir.rglob("validation-report.md") if path.is_file())
+
+
+def _find_review_images_paths(site_dir: Path) -> list[Path]:
+    outputs_dir = site_dir / "outputs"
+    if not outputs_dir.exists():
+        return []
+    return sorted(path for path in outputs_dir.rglob("review-images") if path.is_dir())
+
+
+def _read_report_counts(report_path: Path | None) -> dict[str, int] | None:
+    if report_path is None:
+        return None
+    try:
+        report_text = report_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+
+    counts: dict[str, int] = {}
+    for label, key in (
+        ("Agree", "agree"),
+        ("Disagree", "disagree"),
+        ("Cannot compare", "cannot_compare"),
+    ):
+        match = re.search(rf"^- {re.escape(label)}:\s*(\d+)\s*$", report_text, re.MULTILINE)
+        if match:
+            counts[key] = int(match.group(1))
+    return counts or None
 
 
 def _latest_path(paths: list[Path]) -> Path | None:
