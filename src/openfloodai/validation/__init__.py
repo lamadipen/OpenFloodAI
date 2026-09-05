@@ -4,6 +4,7 @@ from openfloodai.validation.site_runner import (
     SiteValidationReport,
     SiteValidationResult,
     ValidationRunnerError,
+    ValidationScorecard,
     render_site_validation_report,
     run_site_validation,
 )
@@ -28,6 +29,7 @@ __all__ = [
     "ValidationSiteSetupResult",
     "ValidationSiteStatus",
     "ValidationVideoIntakeResult",
+    "ValidationScorecard",
     "discover_validation_site_statuses",
     "intake_validation_video",
     "read_validation_site_status",
