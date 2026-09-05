@@ -28,6 +28,12 @@ Simple example: a developer can run one local video, save POC records, add a hum
 
 Current local validation can also run a whole site folder, create one combined report, and keep missing or unclear cases visible.
 
+Each site validation report now includes a short **Validation Scorecard** with the
+number of videos reviewed, label windows, `agree`, `disagree`, and `cannot_compare`
+counts, plus the most common notes for cases that need review. The scorecard is a
+quick progress view for local testing. It is not an accuracy score and does not
+prove flood detection.
+
 ## What Worked
 
 - Local video files can be checked before processing.
@@ -40,6 +46,7 @@ Current local validation can also run a whole site folder, create one combined r
 - Human labels can be compared with system output in a simple report.
 - Human label windows can be compared with machine records from the same time range.
 - `cannot_compare` stays separate and is not counted as success.
+- The validation scorecard keeps `cannot_compare` visible and lists common review reasons.
 - Hard-case expectations are documented for confusing inputs like glare, darkness, camera shake, and blocked views.
 
 Simple example: if a person says a clip shows `water_rising`, and the system shows stronger change in the lower part of a watched bridge pillar while the upper part stays steady, the comparison may say `agree`.
@@ -91,6 +98,7 @@ The current validation record is early and should be updated as more reviewed ex
 | Comparison report | Available for one video at a time. |
 | Threshold tuning report | Available for one video at a time. |
 | Multi-video validation report | Available for one local site folder. |
+| Validation scorecard | Available in the multi-video report with counts, review reasons, and safety wording. |
 | Time-window comparison | Available when machine records have matching timing evidence. |
 | Reference-region band signal | Available as prototype evidence for human review. |
 | Hard-case expected behavior | Documented with a safe example fixture. |
@@ -110,6 +118,7 @@ What is now in place:
 5. Human label windows matched to machine records from the same time range.
 6. Improved reference-region signal with upper, middle, and lower change scores.
 7. Hard-case expected behavior for confusing inputs.
+8. A plain-language validation scorecard for each site report.
 
 Simple meaning: OpenFloodAI can now run local validation practice and explain what happened, but it still has not proven real flood detection.
 

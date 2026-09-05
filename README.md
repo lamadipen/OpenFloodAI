@@ -103,6 +103,7 @@ The project can now do a few small real things:
 - Run one safe end-to-end local POC smoke test.
 - Run one local review workflow for your own video.
 - Run one multi-video validation report for a site folder.
+- Create a simple validation scorecard with counts and review reasons.
 - Review hard-case expected behavior for missing, unreadable, dark, glare, shaky, and blocked-view inputs.
 - Compare local system output against human labels.
 - Try prototype visual-change thresholds against human labels.
@@ -553,8 +554,11 @@ The combined report includes:
 - totals for processed videos, failed or missing videos, `agree`, `disagree`, and `cannot_compare`
 - a summary table with one row per video
 - detailed per-window comparison notes
+- a plain-language scorecard with video count, label-window count, result counts, and top review reasons
 
 Missing labels, bad videos, and unclear cases stay visible as `cannot_compare`. They are not counted as success.
+
+The scorecard is early local validation evidence, not an accuracy score and not proof of flood detection.
 
 If one video has multiple human label time windows, the combined report lists each label window under that video. Each label window is compared with matching machine records from the same time range when possible.
 

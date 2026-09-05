@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -79,6 +80,30 @@ class SiteValidationResult:
 
 
 @dataclass(frozen=True)
+class ValidationScorecard:
+    """Plain-language scorecard for one local validation report."""
+
+    videos_reviewed: int
+    label_windows: int
+    agree_count: int
+    disagree_count: int
+    cannot_compare_count: int
+    top_reasons: list[tuple[str, int]]
+
+    @property
+    def summary(self) -> str:
+        """Return a cautious summary for a non-technical reviewer."""
+
+        if self.label_windows == 0:
+            return "No labelled windows were available for comparison yet."
+        return (
+            f"Reviewed {self.videos_reviewed} video(s) and {self.label_windows} label window(s): "
+            f"{self.agree_count} agree, {self.disagree_count} disagree, and "
+            f"{self.cannot_compare_count} cannot compare."
+        )
+
+
+@dataclass(frozen=True)
 class SiteValidationReport:
     """Combined local validation report for one site."""
 
@@ -92,6 +117,7 @@ class SiteValidationReport:
     agree_count: int
     disagree_count: int
     cannot_compare_count: int
+    scorecard: ValidationScorecard
 
 
 def run_site_validation(
@@ -174,8 +200,32 @@ def render_site_validation_report(report: SiteValidationReport) -> str:
         f"- Disagree: {report.disagree_count}",
         f"- Cannot compare: {report.cannot_compare_count}",
         "",
-        "## Summary Table",
+        "## Validation Scorecard",
+        f"- Videos tested: {report.scorecard.videos_reviewed}",
+        f"- Label windows: {report.scorecard.label_windows}",
+        f"- Agree: {report.scorecard.agree_count}",
+        f"- Disagree: {report.scorecard.disagree_count}",
+        f"- Cannot compare: {report.scorecard.cannot_compare_count}",
+        f"- Summary: {report.scorecard.summary}",
+        "- Meaning: This is early local validation evidence, not proof of "
+        "flood detection accuracy.",
+        "- Cannot compare cases are unclear or incomplete and are not counted as success.",
+        "- Top issues:",
     ]
+
+    if report.scorecard.top_reasons:
+        lines.extend(
+            f"  - {reason}: {count} case(s)" for reason, count in report.scorecard.top_reasons
+        )
+    else:
+        lines.append("  - None recorded.")
+
+    lines.extend(
+        [
+            "",
+            "## Summary Table",
+        ]
+    )
 
     if not report.results:
         lines.append("- No videos or labels were found.")
@@ -306,28 +356,53 @@ def _build_report(
     output_path: Path,
     results: list[SiteValidationResult],
 ) -> SiteValidationReport:
+    processed_count = sum(result.processed for result in results)
+    failed_count = sum(not result.processed for result in results)
+    label_window_count = sum(len(result.comparisons) for result in results)
+    agree_count = sum(
+        comparison.result == "agree" for result in results for comparison in result.comparisons
+    )
+    disagree_count = sum(
+        comparison.result == "disagree" for result in results for comparison in result.comparisons
+    )
+    cannot_compare_count = sum(
+        comparison.result == "cannot_compare"
+        for result in results
+        for comparison in result.comparisons
+    )
+    scorecard = ValidationScorecard(
+        videos_reviewed=len(results),
+        label_windows=label_window_count,
+        agree_count=agree_count,
+        disagree_count=disagree_count,
+        cannot_compare_count=cannot_compare_count,
+        top_reasons=_top_comparison_reasons(results),
+    )
     return SiteValidationReport(
         site_name=site_dir.name,
         site_dir=str(site_dir),
         output_path=str(output_path),
         results=results,
-        processed_count=sum(result.processed for result in results),
-        failed_count=sum(not result.processed for result in results),
-        label_window_count=sum(len(result.comparisons) for result in results),
-        agree_count=sum(
-            comparison.result == "agree" for result in results for comparison in result.comparisons
-        ),
-        disagree_count=sum(
-            comparison.result == "disagree"
-            for result in results
-            for comparison in result.comparisons
-        ),
-        cannot_compare_count=sum(
-            comparison.result == "cannot_compare"
-            for result in results
-            for comparison in result.comparisons
-        ),
+        processed_count=processed_count,
+        failed_count=failed_count,
+        label_window_count=label_window_count,
+        agree_count=agree_count,
+        disagree_count=disagree_count,
+        cannot_compare_count=cannot_compare_count,
+        scorecard=scorecard,
     )
+
+
+def _top_comparison_reasons(
+    results: list[SiteValidationResult],
+) -> list[tuple[str, int]]:
+    reason_counts = Counter(
+        comparison.note
+        for result in results
+        for comparison in result.comparisons
+        if comparison.result != "agree" and comparison.note
+    )
+    return sorted(reason_counts.items(), key=lambda item: (-item[1], item[0]))[:3]
 
 
 def _find_videos(site_dir: Path) -> list[Path]:
