@@ -64,6 +64,11 @@ def test_read_validation_site_status_reports_ready_site(tmp_path: Path) -> None:
     assert status.ready_for_machine_review is True
     assert status.ready_for_human_comparison is True
     assert status.ready_for_validation is True
+    assert status.machine_review_explanation == "Ready because config and videos are found."
+    assert (
+        status.human_comparison_explanation
+        == "Ready because config, videos, labels, and manifest are found."
+    )
 
 
 def test_read_validation_site_status_allows_machine_review_without_labels(
@@ -83,6 +88,10 @@ def test_read_validation_site_status_allows_machine_review_without_labels(
     assert status.labels_found is False
     assert status.human_label_options == []
     assert status.manifest_found is False
+    assert status.machine_review_explanation == "Ready because config and videos are found."
+    assert (
+        status.human_comparison_explanation == "Not ready because labels and manifest are missing."
+    )
 
 
 def test_read_validation_site_status_reports_missing_files(tmp_path: Path) -> None:
@@ -101,6 +110,11 @@ def test_read_validation_site_status_reports_missing_files(tmp_path: Path) -> No
     assert status.ready_for_machine_review is False
     assert status.ready_for_human_comparison is False
     assert status.ready_for_validation is False
+    assert status.machine_review_explanation == "Not ready because config and videos are missing."
+    assert (
+        status.human_comparison_explanation
+        == "Not ready because config, videos, labels, and manifest are missing."
+    )
 
 
 def test_discover_validation_site_statuses_lists_site_folders(tmp_path: Path) -> None:
