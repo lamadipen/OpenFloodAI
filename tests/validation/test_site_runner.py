@@ -157,6 +157,8 @@ def test_run_site_validation_reports_multiple_video_results(tmp_path: Path) -> N
     assert "- Cannot compare: 4" in rendered
     assert "not proof of flood detection accuracy" in rendered
     assert "- Top issues:" in rendered
+    assert "Human label and machine result do not match: 1 case(s)" in rendered
+    assert "LABEL_AND_SYSTEM_DIFFER" not in rendered
     assert "Time window: 0s to 30s" in rendered
     assert "Time window: 30s to 60s" in rendered
     assert "Cases marked `cannot_compare` are not counted as success." in rendered

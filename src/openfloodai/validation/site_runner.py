@@ -218,7 +218,8 @@ def render_site_validation_report(report: SiteValidationReport) -> str:
 
     if report.scorecard.top_reasons:
         lines.extend(
-            f"  - {reason}: {count} case(s)" for reason, count in report.scorecard.top_reasons
+            f"  - {_friendly_reason(reason)}: {count} case(s)"
+            for reason, count in report.scorecard.top_reasons
         )
     else:
         lines.append("  - None recorded.")
@@ -437,6 +438,22 @@ def _comparison_reason(note: str) -> str:
         if note.startswith(prefix):
             return reason
     return "OTHER_REVIEW_REASON"
+
+
+def _friendly_reason(reason: str) -> str:
+    """Return plain-language text for a scorecard reason code."""
+
+    friendly_reasons = {
+        "LABEL_AND_SYSTEM_DIFFER": "Human label and machine result do not match",
+        "NO_HUMAN_LABEL": "No human label was found",
+        "MISSING_VIDEO": "A human label exists, but the video is missing",
+        "INVALID_LABEL_WINDOW": "The label time window is missing or invalid",
+        "UNCLEAR_CASE": "The case is unclear",
+        "NOT_ENOUGH_USABLE_FRAMES": "Not enough usable frames",
+        "VIDEO_PROCESSING_FAILED": "Video could not be processed",
+        "OTHER_REVIEW_REASON": "Other review reason",
+    }
+    return friendly_reasons.get(reason, "Other review reason")
 
 
 def _find_videos(site_dir: Path) -> list[Path]:
