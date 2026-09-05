@@ -2,6 +2,10 @@
 
 Project-local skills tailored for a production-grade, low-cost, open-source camera-based river flood detection and warning-support platform.
 
+The canonical repository instructions are in the root `AGENTS.md`. Read that file
+before using these skills. The `.codex/skills/` tree is a compatibility copy for
+tools that discover Codex skills; `.github/skills/` is the source of truth.
+
 - `senior-flood-ai-architect/` — system architecture, ADRs, edge/cloud boundaries, reliability and production gates.
 - `senior-flood-ml-engineer/` — datasets, CV/ML experiments, evaluation, MLOps, edge optimization and monitoring.
 - `senior-flood-qa-engineer/` — independent QA, ML validation, replay, resilience, edge and field acceptance.

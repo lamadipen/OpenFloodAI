@@ -1,5 +1,15 @@
 # OpenFloodAI Agent Instructions
 
+## Canonical Instructions
+
+The main repository instruction file is the root `AGENTS.md`. Read and follow it
+before starting work. This `.codex/AGENTS.md` file exists only as a compatibility
+entry point for tools that discover `.codex/` first.
+
+The canonical skills are under `.github/skills/`. The `.codex/skills/` files are
+copies for tool compatibility. If a skill is missing here, copy it from the
+matching `.github/skills/` path; do not create a divergent version.
+
 OpenFloodAI is an open-source, low-cost, edge-first camera-based
 river flood detection and warning-support system.
 
@@ -15,7 +25,8 @@ river flood detection and warning-support system.
 
 ## Available project skills
 
-Use the appropriate project skill under `.codex/skills/`:
+Use the appropriate project skill from the canonical `.github/skills/` tree.
+If a tool requires a local Codex copy, use the matching file under `.codex/skills/`:
 
 - `senior-flood-ai-architect`
   Use for architecture, ADRs, system boundaries, reliability,
@@ -25,7 +36,7 @@ Use the appropriate project skill under `.codex/skills/`:
   Use for datasets, computer vision, training, evaluation,
   MLOps, model optimization, and edge inference.
 
-- `senior-flood-qa-engineer`
+- `ROUTE TO Senior Flood QA Engineer` (folder: `senior-flood-qa-engineer`)
   Use for test strategy, ML validation, video replay,
   resilience testing, regression testing, and release validation.
 
