@@ -26,21 +26,21 @@ def setup_validation_site(
     site_id: str,
     camera_id: str,
     site_name: str,
-    public_location: str,
+    public_location: str = "",
     privacy_notes: str = "",
     overwrite: bool = False,
 ) -> ValidationSiteSetupResult:
     """Create a new local validation site folder and starter config."""
 
     # Safety checks for required fields
-    if not folder_name or not site_id or not camera_id or not site_name or not public_location:
+    if not folder_name or not site_id or not camera_id or not site_name:
         return ValidationSiteSetupResult(
             site_dir=Path(),
             config_path=Path(),
             created=False,
             message=(
                 "Missing required fields: folder_name, site_id, camera_id, "
-                "site_name, and public_location are all required."
+                "site_name are all required."
             ),
         )
 
@@ -100,11 +100,12 @@ def setup_validation_site(
         "site_id": site_id,
         "camera_id": camera_id,
         "site_name": site_name,
-        "public_location": public_location,
         "input_type": "local_video",
         "reference_region": {"x": 0, "y": 50, "width": 100, "height": 50},
         "privacy_notes": privacy_notes or "This site uses a broad public location only.",
     }
+    if public_location.strip():
+        config["public_location"] = public_location.strip()
 
     config_path = site_dir / "configs" / f"{folder_name}.json"
 
@@ -117,7 +118,7 @@ def setup_validation_site(
     if not readme_path.exists() or overwrite:
         readme_content = f"""# {site_name} Validation Site
 
-Local validation site for {public_location}.
+Local validation site for {public_location or "a local site"}.
 
 ## Folder Structure
 - `configs/`: Site configuration JSON files.

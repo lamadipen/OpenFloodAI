@@ -41,6 +41,15 @@ def test_example_site_config_loads_successfully() -> None:
     assert config.reference_region == ReferenceRegion(x=0, y=50, width=100, height=50)
 
 
+def test_public_location_is_optional(tmp_path: Path) -> None:
+    payload = valid_config_payload()
+    del payload["public_location"]
+
+    config = load_site_config(write_config(tmp_path / "no-location.json", payload))
+
+    assert config.public_location is None
+
+
 def test_required_fields_are_enforced(tmp_path: Path) -> None:
     payload = valid_config_payload()
     del payload["site_name"]

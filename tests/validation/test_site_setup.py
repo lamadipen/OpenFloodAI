@@ -85,6 +85,21 @@ def test_setup_validation_site_refuses_empty_required_fields() -> None:
         assert "Missing required fields" in result.message
 
 
+def test_setup_validation_site_allows_missing_public_location() -> None:
+    with TemporaryDirectory() as tmp_dir:
+        result = setup_validation_site(
+            sites_base_dir=Path(tmp_dir),
+            folder_name="optional-location",
+            site_id="site-test",
+            camera_id="camera-test",
+            site_name="Test Site",
+        )
+
+        assert result.created
+        config = json.loads(result.config_path.read_text(encoding="utf-8"))
+        assert "public_location" not in config
+
+
 @pytest.mark.parametrize(
     "folder_name",
     [

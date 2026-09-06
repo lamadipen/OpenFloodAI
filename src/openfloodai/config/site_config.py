@@ -13,10 +13,10 @@ REQUIRED_FIELDS = {
     "site_id",
     "camera_id",
     "site_name",
-    "public_location",
     "input_type",
 }
 OPTIONAL_FIELDS = {
+    "public_location",
     "reference_region",
     "privacy_notes",
 }
@@ -44,7 +44,7 @@ class SiteCameraConfig:
     site_id: str
     camera_id: str
     site_name: str
-    public_location: str
+    public_location: str | None
     input_type: InputType
     reference_region: ReferenceRegion | None = None
     privacy_notes: str | None = None
@@ -72,7 +72,7 @@ def load_site_config(config_path: Path) -> SiteCameraConfig:
         site_id=_load_required_text(config, "site_id"),
         camera_id=_load_required_text(config, "camera_id"),
         site_name=_load_required_text(config, "site_name"),
-        public_location=_load_required_text(config, "public_location"),
+        public_location=_load_optional_text(config.get("public_location"), "public_location"),
         input_type=input_type,
         reference_region=_load_reference_region(config.get("reference_region")),
         privacy_notes=_load_optional_text(config.get("privacy_notes"), "privacy_notes"),
