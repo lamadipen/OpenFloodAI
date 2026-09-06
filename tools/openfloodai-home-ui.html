@@ -281,6 +281,200 @@
         margin-top: 4px;
       }
 
+      .workflow-panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        box-shadow: var(--shadow);
+        margin-bottom: 22px;
+        padding: 20px;
+      }
+
+      .workflow-header {
+        align-items: end;
+        display: flex;
+        gap: 16px;
+        justify-content: space-between;
+        margin-bottom: 6px;
+      }
+
+      .workflow-header h2 {
+        margin: 0;
+      }
+
+      .workflow-intro {
+        color: var(--muted);
+        font-size: 14px;
+        margin: 0 0 18px;
+        max-width: 780px;
+      }
+
+      .workflow-steps {
+        display: grid;
+        gap: 10px;
+      }
+
+      .workflow-step {
+        align-items: start;
+        border: 1px solid var(--soft-line);
+        border-left: 4px solid var(--line);
+        border-radius: 6px;
+        display: grid;
+        gap: 14px;
+        grid-template-columns: 42px 1fr auto;
+        padding: 14px;
+      }
+
+      .workflow-step.is-complete {
+        background: var(--surface-green);
+        border-left-color: var(--ok);
+      }
+
+      .workflow-step.is-missing {
+        background: var(--surface-red);
+        border-left-color: var(--missing);
+      }
+
+      .workflow-step.is-needs-review {
+        background: var(--surface-yellow);
+        border-left-color: var(--warn);
+      }
+
+      .workflow-number {
+        background: rgba(255, 255, 255, 0.75);
+        border: 1px solid var(--line);
+        border-radius: 50%;
+        font-weight: 800;
+        height: 34px;
+        line-height: 32px;
+        text-align: center;
+        width: 34px;
+      }
+
+      .workflow-title {
+        font-weight: 800;
+      }
+
+      .workflow-meaning {
+        color: var(--muted);
+        font-size: 14px;
+        margin-top: 2px;
+      }
+
+      .workflow-status {
+        font-size: 13px;
+        font-weight: 700;
+        margin-top: 6px;
+      }
+
+      .workflow-status.ok {
+        color: var(--ok);
+      }
+
+      .workflow-status.missing {
+        color: var(--missing);
+      }
+
+      .workflow-status.warn {
+        color: var(--warn);
+      }
+
+      .workflow-required {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+      }
+
+      .workflow-action {
+        font-size: 14px;
+        min-height: 38px;
+        padding: 8px 14px;
+        white-space: nowrap;
+      }
+
+      .form-panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        box-shadow: var(--shadow);
+        margin-bottom: 22px;
+        padding: 24px;
+      }
+
+      .workflow-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .workflow-action-secondary {
+        background: transparent;
+        border-color: var(--accent-strong);
+        color: var(--accent-strong);
+      }
+
+      .workflow-action-secondary:hover {
+        background: var(--surface-blue);
+        color: var(--accent-strong);
+      }
+
+      .workflow-list {
+        display: grid;
+        gap: 6px;
+      }
+
+      .workflow-list-button {
+        background: transparent;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        color: var(--ink);
+        font-weight: 600;
+        min-height: 40px;
+        padding: 8px 12px;
+        text-align: left;
+        width: 100%;
+      }
+
+      .workflow-list-button:hover {
+        background: var(--surface-blue);
+        border-color: var(--accent);
+        color: var(--accent-strong);
+      }
+
+      .workflow-list-button.is-current {
+        background: var(--surface-green);
+        border-color: var(--ok);
+        color: var(--ok);
+      }
+
+      .workflow-list-item {
+        border-bottom: 1px solid var(--soft-line);
+        padding: 6px 0;
+      }
+
+      .workflow-step-slot:empty {
+        display: none;
+      }
+
+      .workflow-step-slot {
+        grid-column: 1 / -1;
+      }
+
+      .workflow-step-slot > .form-panel {
+        background: rgba(255, 255, 255, 0.92);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        box-shadow: none;
+        margin-bottom: 0;
+        margin-top: 14px;
+        padding: 18px;
+      }
+
+      .workflow-step-slot > .form-panel h2 {
+        font-size: 20px;
+      }
+
       .detail-panel {
         background: var(--panel);
         border: 1px solid var(--line);
@@ -449,7 +643,38 @@
         </div>
       </section>
 
-      <section id="setupForm" style="display: none; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 24px; margin-bottom: 22px; box-shadow: var(--shadow);">
+      <section class="workflow-panel" id="workflowPanel" aria-labelledby="workflowTitle">
+        <div class="workflow-header">
+          <h2 id="workflowTitle">Guided validation workflow</h2>
+        </div>
+        <p class="workflow-intro">
+          These steps run in order for a new site, but you can start from any step that still
+          needs work. Nothing here uploads video, publishes warnings, or proves flood accuracy.
+        </p>
+        <div class="workflow-steps" id="workflowSteps" aria-live="polite"></div>
+      </section>
+
+      <div id="formHome"></div>
+
+      <section id="siteListPanel" class="form-panel" style="display: none;">
+        <h2 style="margin-top: 0;">Choose a site</h2>
+        <p class="meta">The workflow and site details switch to the site you pick.</p>
+        <div class="workflow-list" id="siteListContent"></div>
+      </section>
+
+      <section id="videoListPanel" class="form-panel" style="display: none;">
+        <h2 style="margin-top: 0;">Videos in this site</h2>
+        <p class="meta">Validation runs every video listed here. These files stay on this computer.</p>
+        <div class="workflow-list" id="videoListContent"></div>
+      </section>
+
+      <section id="labelListPanel" class="form-panel" style="display: none;">
+        <h2 style="margin-top: 0;">Human labels for this site</h2>
+        <p class="meta">Labels say what a person saw. They are compared with machine evidence in the same time window.</p>
+        <div class="workflow-list" id="labelListContent"></div>
+      </section>
+
+      <section id="setupForm" class="form-panel" style="display: none;">
         <h2 style="margin-top: 0;">Setup New Validation Site</h2>
         <form id="siteForm" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
           <div>
@@ -483,7 +708,7 @@
         </form>
       </section>
 
-      <section id="videoFormPanel" style="display: none; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 24px; margin-bottom: 22px; box-shadow: var(--shadow);">
+      <section id="videoFormPanel" class="form-panel" style="display: none;">
         <h2 style="margin-top: 0;">Add Video To Site</h2>
         <p class="meta" style="margin-top: 0;">
           This copies the video into the selected site folder and updates <code>manifest.jsonl</code>,
@@ -544,7 +769,7 @@
         </form>
       </section>
 
-      <section id="labelFormPanel" style="display: none; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 24px; margin-bottom: 22px; box-shadow: var(--shadow);">
+      <section id="labelFormPanel" class="form-panel" style="display: none;">
         <h2 style="margin-top: 0;">Add Human Label Record</h2>
         <p class="meta" style="margin-top: 0;">
           Create a human review label for a video time window without manually writing JSON Lines.
@@ -660,7 +885,17 @@
       const detailPanel = document.querySelector("#detailPanel");
       const detailSiteSelect = document.querySelector("#detailSiteSelect");
       const detailContent = document.querySelector("#detailContent");
+      const workflowPanel = document.querySelector("#workflowPanel");
+      const workflowSteps = document.querySelector("#workflowSteps");
+      const formHome = document.querySelector("#formHome");
+      const siteListPanel = document.querySelector("#siteListPanel");
+      const siteListContent = document.querySelector("#siteListContent");
+      const videoListPanel = document.querySelector("#videoListPanel");
+      const videoListContent = document.querySelector("#videoListContent");
+      const labelListPanel = document.querySelector("#labelListPanel");
+      const labelListContent = document.querySelector("#labelListContent");
       let latestSites = [];
+      let openWorkflowForm = null;
       let videoObjectUrl = null;
       let videoRegionSelection = null;
       let videoRegionDragStart = null;
@@ -840,6 +1075,10 @@
       }
 
       function hideForms() {
+        closeWorkflowForm();
+        siteListPanel.style.display = "none";
+        videoListPanel.style.display = "none";
+        labelListPanel.style.display = "none";
         setupForm.style.display = "none";
         videoFormPanel.style.display = "none";
         labelFormPanel.style.display = "none";
@@ -963,6 +1202,74 @@
         `;
       }
 
+      function workflowStatusClass(status) {
+        if (status === "complete") {
+          return "ok";
+        }
+        if (status === "missing") {
+          return "missing";
+        }
+        return "warn";
+      }
+
+      function workflowStepModifier(status) {
+        if (status === "complete") {
+          return "is-complete";
+        }
+        if (status === "missing") {
+          return "is-missing";
+        }
+        return "is-needs-review";
+      }
+
+      function renderWorkflow(site) {
+        detachWorkflowForm();
+        if (!site) {
+          workflowPanel.style.display = "none";
+          return;
+        }
+        workflowPanel.style.display = "block";
+        const steps = site.workflow_steps || [];
+        if (!steps.length) {
+          workflowSteps.innerHTML =
+            '<div class="empty">No workflow steps are available for this site.</div>';
+          return;
+        }
+        workflowSteps.innerHTML = steps
+          .map((step) => {
+            const requiredText = step.required_for_validation
+              ? "Required to run validation"
+              : "Optional for machine review";
+            return `
+              <div class="workflow-step ${workflowStepModifier(step.status)}">
+                <div class="workflow-number">${escapeHtml(String(step.number))}</div>
+                <div>
+                  <div class="workflow-title">${escapeHtml(step.title)}</div>
+                  <div class="workflow-meaning">${escapeHtml(step.meaning)}</div>
+                  <div class="workflow-status ${workflowStatusClass(step.status)}">${escapeHtml(step.status_text)}</div>
+                  <div class="workflow-required">${escapeHtml(requiredText)}</div>
+                </div>
+                <div class="workflow-actions">
+                  ${(step.actions || [])
+                    .map(
+                      (action) => `
+                        <button
+                          type="button"
+                          class="workflow-action${action.action_id.startsWith("select_") ? " workflow-action-secondary" : ""}"
+                          onclick="startWorkflowStep('${escapeHtml(action.action_id)}', '${escapeHtml(site.site_name)}', '${escapeHtml(step.key)}')"
+                        >${escapeHtml(action.label)}</button>
+                      `
+                    )
+                    .join("")}
+                </div>
+                <div class="workflow-step-slot" data-step-slot="${escapeHtml(step.key)}"></div>
+              </div>
+            `;
+          })
+          .join("");
+        mountWorkflowForm();
+      }
+
       function renderSiteDetails(site) {
         if (!site) {
           detailPanel.style.display = "none";
@@ -998,7 +1305,9 @@
         if ([...detailSiteSelect.options].some((option) => option.value === current)) {
           detailSiteSelect.value = current;
         }
-        renderSiteDetails(sites.find((site) => site.site_name === detailSiteSelect.value));
+        const selectedSite = sites.find((site) => site.site_name === detailSiteSelect.value);
+        renderSiteDetails(selectedSite);
+        renderWorkflow(selectedSite);
       }
 
       function row(label, value, className = "") {
@@ -1130,7 +1439,11 @@
 
       refreshButton.addEventListener("click", loadSites);
       detailSiteSelect.addEventListener("change", () => {
-        renderSiteDetails(latestSites.find((site) => site.site_name === detailSiteSelect.value));
+        const selectedSite = latestSites.find(
+          (site) => site.site_name === detailSiteSelect.value
+        );
+        renderSiteDetails(selectedSite);
+        renderWorkflow(selectedSite);
       });
       labelSiteSelect.addEventListener("change", updateLabelOptionsForSelectedSite);
       labelVideoSelect.addEventListener("change", () => {
@@ -1167,6 +1480,169 @@
           labelSiteSelect.value = siteName;
           updateLabelOptionsForSelectedSite();
         }
+      };
+
+      function revealPanel(panel) {
+        if (!panel) {
+          return;
+        }
+        panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+
+      function panelForAction(actionId) {
+        if (actionId === "create_site") {
+          return setupForm;
+        }
+        if (actionId === "add_video") {
+          return videoFormPanel;
+        }
+        if (actionId === "add_label") {
+          return labelFormPanel;
+        }
+        if (actionId === "select_site") {
+          return siteListPanel;
+        }
+        if (actionId === "select_video") {
+          return videoListPanel;
+        }
+        if (actionId === "select_label") {
+          return labelListPanel;
+        }
+        return null;
+      }
+
+      function listItems(values, emptyText) {
+        if (!values.length) {
+          return `<div class="workflow-list-item">${escapeHtml(emptyText)}</div>`;
+        }
+        return values
+          .map((value) => `<div class="workflow-list-item">${escapeHtml(value)}</div>`)
+          .join("");
+      }
+
+      function fillWorkflowList(actionId, siteName) {
+        if (actionId === "select_site") {
+          siteListContent.innerHTML = latestSites.length
+            ? latestSites
+                .map((entry) => {
+                  const current = entry.site_name === siteName;
+                  return `
+                    <button
+                      type="button"
+                      class="workflow-list-button${current ? " is-current" : ""}"
+                      onclick="selectSiteFromWorkflow('${escapeHtml(entry.site_name)}')"
+                    >${escapeHtml(entry.site_name)}${current ? " (current)" : ""}</button>
+                  `;
+                })
+                .join("")
+            : '<div class="workflow-list-item">No sites exist yet.</div>';
+          return;
+        }
+        const site = latestSites.find((entry) => entry.site_name === siteName);
+        if (!site) {
+          return;
+        }
+        if (actionId === "select_video") {
+          videoListContent.innerHTML = listItems(
+            site.video_ids || [],
+            "No videos are in this site yet."
+          );
+        }
+        if (actionId === "select_label") {
+          const options = site.human_label_options || [];
+          const summary = [
+            `${site.label_count} label file(s) found`,
+            ...options.map((option) => `Label used: ${option}`),
+          ];
+          labelListContent.innerHTML = listItems(
+            options.length ? summary : [],
+            "No human labels are recorded for this site yet."
+          );
+        }
+      }
+
+      function detachWorkflowForm() {
+        if (!openWorkflowForm || !formHome) {
+          return;
+        }
+        const panel = panelForAction(openWorkflowForm.actionId);
+        if (panel && panel.parentElement !== formHome) {
+          formHome.append(panel);
+        }
+      }
+
+      function mountWorkflowForm() {
+        if (!openWorkflowForm) {
+          return;
+        }
+        const slot = workflowSteps.querySelector(
+          `[data-step-slot="${openWorkflowForm.stepKey}"]`
+        );
+        const panel = panelForAction(openWorkflowForm.actionId);
+        if (!slot || !panel) {
+          return;
+        }
+        slot.append(panel);
+        panel.style.display = "block";
+      }
+
+      function closeWorkflowForm() {
+        detachWorkflowForm();
+        openWorkflowForm = null;
+      }
+
+      window.selectSiteFromWorkflow = function (siteName) {
+        hideForms();
+        if (detailSiteSelect) {
+          detailSiteSelect.value = siteName;
+        }
+        const selectedSite = latestSites.find((site) => site.site_name === siteName);
+        renderSiteDetails(selectedSite);
+        renderWorkflow(selectedSite);
+        if (workflowPanel) {
+          workflowPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      };
+
+      window.startWorkflowStep = function (actionId, siteName, stepKey) {
+        if (detailSiteSelect && siteName) {
+          detailSiteSelect.value = siteName;
+        }
+        const alreadyOpen =
+          openWorkflowForm &&
+          openWorkflowForm.stepKey === stepKey &&
+          openWorkflowForm.actionId === actionId;
+        if (alreadyOpen) {
+          hideForms();
+          return;
+        }
+        if (actionId === "run_validation") {
+          window.runValidationForSite(siteName);
+          return;
+        }
+        if (actionId === "review_results") {
+          hideForms();
+          const selectedSite = latestSites.find((site) => site.site_name === siteName);
+          renderSiteDetails(selectedSite);
+          revealPanel(detailPanel);
+          return;
+        }
+        const panel = panelForAction(actionId);
+        if (!panel) {
+          return;
+        }
+        hideForms();
+        fillWorkflowList(actionId, siteName);
+        if (actionId === "add_video" && videoSiteSelect && siteName) {
+          videoSiteSelect.value = siteName;
+        }
+        if (actionId === "add_label" && labelSiteSelect && siteName) {
+          labelSiteSelect.value = siteName;
+          updateLabelOptionsForSelectedSite();
+        }
+        openWorkflowForm = { actionId, stepKey, siteName };
+        mountWorkflowForm();
+        revealPanel(panel);
       };
 
       window.runValidationForSite = async function (siteName) {

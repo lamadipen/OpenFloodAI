@@ -13,6 +13,55 @@ VIDEO_SUFFIXES = {".avi", ".mkv", ".mov", ".mp4"}
 REPORT_PREVIEW_MAX_LENGTH = 1200
 
 
+WORKFLOW_STEP_COMPLETE = "complete"
+WORKFLOW_STEP_MISSING = "missing"
+WORKFLOW_STEP_NEEDS_REVIEW = "needs_review"
+
+
+@dataclass(frozen=True)
+class WorkflowAction:
+    """One button offered by a guided workflow step."""
+
+    label: str
+    action_id: str
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-friendly representation of this action."""
+
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class WorkflowStep:
+    """One step in the guided local validation workflow."""
+
+    number: int
+    key: str
+    title: str
+    status: str
+    meaning: str
+    actions: list[WorkflowAction]
+    required_for_validation: bool
+
+    @property
+    def status_text(self) -> str:
+        """Return simple wording for this step status."""
+
+        if self.status == WORKFLOW_STEP_COMPLETE:
+            return "Complete"
+        if self.status == WORKFLOW_STEP_MISSING:
+            return "Missing"
+        return "Needs review"
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-friendly representation of this workflow step."""
+
+        payload = asdict(self)
+        payload["status_text"] = self.status_text
+        payload["actions"] = [action.to_dict() for action in self.actions]
+        return payload
+
+
 @dataclass(frozen=True)
 class ValidationSiteStatus:
     """Simple readiness status for one local validation site."""
@@ -27,6 +76,7 @@ class ValidationSiteStatus:
     label_count: int
     human_label_options: list[str]
     manifest_found: bool
+    reference_region_found: bool
     outputs_found: bool
     report_count: int
     latest_report_path: str | None
@@ -104,6 +154,141 @@ class ValidationSiteStatus:
             steps.append("Review the latest validation report and review images.")
         return steps
 
+    @property
+    def workflow_steps(self) -> list[WorkflowStep]:
+        """Return the guided validation workflow steps for this site.
+
+        Each step reports its own status so a user can start from any step that
+        still needs work instead of restarting the whole workflow.
+        """
+
+        has_videos = self.video_count > 0
+        has_reports = self.report_count > 0
+
+        site_actions = [WorkflowAction(label="Create site", action_id="create_site")]
+        if self.config_found:
+            site_actions = [
+                WorkflowAction(label="Select site", action_id="select_site"),
+                WorkflowAction(label="Create another site", action_id="create_site"),
+            ]
+
+        video_actions = [WorkflowAction(label="Add video", action_id="add_video")]
+        if has_videos:
+            video_actions = [
+                WorkflowAction(label="Select video", action_id="select_video"),
+                WorkflowAction(label="Add video", action_id="add_video"),
+            ]
+
+        label_actions = [WorkflowAction(label="Add label", action_id="add_label")]
+        if self.labels_found:
+            label_actions = [
+                WorkflowAction(label="Select label", action_id="select_label"),
+                WorkflowAction(label="Add label", action_id="add_label"),
+            ]
+
+        return [
+            WorkflowStep(
+                number=1,
+                key="site_setup",
+                title="Site setup",
+                status=(WORKFLOW_STEP_COMPLETE if self.config_found else WORKFLOW_STEP_MISSING),
+                meaning=(
+                    "The site config holds the camera and location details used by every run."
+                ),
+                actions=site_actions,
+                required_for_validation=True,
+            ),
+            WorkflowStep(
+                number=2,
+                key="video_intake",
+                title="Video intake",
+                status=WORKFLOW_STEP_COMPLETE if has_videos else WORKFLOW_STEP_MISSING,
+                meaning=(
+                    "Local videos are the input the machine reviews. They stay on this computer."
+                ),
+                actions=video_actions,
+                required_for_validation=True,
+            ),
+            WorkflowStep(
+                number=3,
+                key="watched_area",
+                title="Watched area",
+                status=(
+                    WORKFLOW_STEP_COMPLETE if self.reference_region_found else WORKFLOW_STEP_MISSING
+                ),
+                meaning=(
+                    "Pick the part of the video where the machine should look for water "
+                    "change. Validation cannot run without it. The selector currently "
+                    "opens inside video intake, so set the area while adding a video."
+                ),
+                actions=[WorkflowAction(label="Set area in video intake", action_id="add_video")],
+                required_for_validation=True,
+            ),
+            WorkflowStep(
+                number=4,
+                key="human_labels",
+                title="Human labels",
+                status=(
+                    WORKFLOW_STEP_COMPLETE if self.labels_found else WORKFLOW_STEP_NEEDS_REVIEW
+                ),
+                meaning=(
+                    "Human labels say what a person saw. Without them the run is machine-only "
+                    "and results stay cannot_compare."
+                ),
+                actions=label_actions,
+                required_for_validation=False,
+            ),
+            WorkflowStep(
+                number=5,
+                key="manifest",
+                title="Manifest",
+                status=(
+                    WORKFLOW_STEP_COMPLETE if self.manifest_found else WORKFLOW_STEP_NEEDS_REVIEW
+                ),
+                meaning=(
+                    "The manifest tracks which video is which and whether it may be shared. "
+                    "Human comparison needs it."
+                ),
+                actions=[
+                    WorkflowAction(label="Add video to update manifest", action_id="add_video")
+                ],
+                required_for_validation=False,
+            ),
+            WorkflowStep(
+                number=6,
+                key="run_validation",
+                title="Run validation",
+                status=(
+                    WORKFLOW_STEP_COMPLETE
+                    if has_reports
+                    else (
+                        WORKFLOW_STEP_NEEDS_REVIEW
+                        if self.ready_for_validation
+                        else WORKFLOW_STEP_MISSING
+                    )
+                ),
+                meaning=(
+                    "Run the local videos, create machine evidence, and compare with any labels."
+                ),
+                actions=[WorkflowAction(label="Run validation", action_id="run_validation")],
+                required_for_validation=True,
+            ),
+            WorkflowStep(
+                number=7,
+                key="review_results",
+                title="Review results",
+                status=(
+                    WORKFLOW_STEP_COMPLETE if self.latest_report_path else WORKFLOW_STEP_MISSING
+                ),
+                meaning=(
+                    "Read the report, scorecard, and review images. Unclear cases stay visible "
+                    "as cannot_compare."
+                ),
+                actions=[WorkflowAction(label="Review results", action_id="review_results")],
+                required_for_validation=False,
+            ),
+        ]
+
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-friendly representation of this status."""
 
@@ -114,6 +299,7 @@ class ValidationSiteStatus:
         payload["machine_review_explanation"] = self.machine_review_explanation
         payload["human_comparison_explanation"] = self.human_comparison_explanation
         payload["next_steps"] = self.next_steps
+        payload["workflow_steps"] = [step.to_dict() for step in self.workflow_steps]
         return payload
 
 
@@ -153,6 +339,7 @@ def read_validation_site_status(site_dir: Path) -> ValidationSiteStatus:
         label_count=len(label_paths),
         human_label_options=human_label_options,
         manifest_found=(site_dir / "manifest.jsonl").is_file(),
+        reference_region_found=_has_reference_region(config_paths),
         outputs_found=bool(report_paths),
         report_count=len(report_paths),
         latest_report_path=str(latest_report_path) if latest_report_path else None,
@@ -169,6 +356,19 @@ def _find_config_paths(site_dir: Path) -> list[Path]:
     if not configs_dir.exists():
         return []
     return sorted(path for path in configs_dir.glob("*.json") if path.is_file())
+
+
+def _has_reference_region(config_paths: list[Path]) -> bool:
+    """Return whether any site config declares a watched reference region."""
+
+    for config_path in config_paths:
+        try:
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(config, dict) and isinstance(config.get("reference_region"), dict):
+            return True
+    return False
 
 
 def _find_video_paths(site_dir: Path) -> list[Path]:

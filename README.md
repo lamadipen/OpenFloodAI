@@ -610,6 +610,41 @@ In Setup New Validation Site, the folder name fills from the site name: Colorado
 
 From the same page you can create a site folder, add a local validation video, or create human label records. The Human label dropdown shows plain-language options such as “Water is rising” while saving water_rising. Its helper text explains that the label describes what a person sees during the selected time window for comparison with machine results. Video purpose and difficult-case dropdowns show plain-language labels while saving the existing manifest values. For example, “Dark video” saves night_or_dark_frame; “No difficult case” leaves the value empty. Video intake sets has_human_label to false; add human labels separately through the label form. The Add Video To Site form calls the manifest split field “Dataset group” and uses plain-language labels for video details. Adding a video copies a file already on this computer into `inputs/videos/` and writes one `manifest.jsonl` row. Adding a label validates time windows and label text without manual JSON Lines editing. After you choose a site, the label form offers existing video IDs from that site’s local videos and labels already used for that site. Selecting a video fills the Video ID field; manual entry is also available. Switching sites clears the previous video selection; if the value is missing, type a short manual label like `bridge_pillar_covered`. Sharing stays off unless you explicitly mark the video as approved for the repo.
 
+The page opens with a **Guided validation workflow** panel for the selected site. It
+turns the local process into seven visible steps:
+
+```text
+1. Site setup
+2. Video intake
+3. Watched area
+4. Human labels
+5. Manifest
+6. Run validation
+7. Review results
+```
+
+Each step shows a simple status (`Complete`, `Missing`, or `Needs review`), a
+plain-language meaning, whether the step is required before validation, and its
+action buttons. Steps that already have something to choose from offer two actions:
+`Select site` and `Create another site`, `Select video` and `Add video`, or
+`Select label` and `Add label`. A step with nothing to select yet offers only the
+create action. Steps 1, 2, 3, and 6 are required. Steps 4 and 5 are marked
+`Needs review` when missing because machine review can still run without them, but
+the result stays `cannot_compare` until a human label exists.
+
+The watched area is required because the local review pipeline reads visual evidence
+inside the configured `reference_region`. A site with no `reference_region` in its
+config cannot complete a validation run.
+
+Known limit: the watched-area selector currently opens inside the Add Video form, so
+step 3 sends you to video intake. A site that already has videos but no
+`reference_region` has to set the area while adding a video, or have the region added
+to its config file directly.
+
+You can start from any step that still needs work. The workflow does not force a
+restart from step 1, and the separate **Create Site**, **Add Video**, **Add Label**,
+and **Run Validation** actions still work on their own.
+
 The site card also shows a **What to do next** section. It explains the next useful local action when config, videos, labels, the manifest, or a validation report is missing. When a site is ready, **Run Validation** runs the local multi-video validation flow and refreshes the report counts and review-image path.
 
 The Home UI explains both review routes above the forms: machine-only review produces machine evidence, and human comparison review compares it with a human label. Labels are optional for running validation.
