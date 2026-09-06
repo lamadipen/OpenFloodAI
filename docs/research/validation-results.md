@@ -45,7 +45,7 @@ counts, plus the most common notes for cases that need review. The scorecard is 
 quick progress view for local testing. It is not an accuracy score and does not
 prove flood detection.
 
-Each run also saves a unique folder under `outputs/runs/<run-id>/` containing the
+Each run writes directly into a unique folder under `outputs/runs/<run-id>/` containing the
 report, scorecard, metadata, records, and review images for that run. Older report
 files outside `runs/` remain available as legacy reports, but are not mixed with
 saved-run evidence.
@@ -169,3 +169,5 @@ When a new validation run is reviewed, add:
 - any weak spot noticed by the reviewer
 
 Do not add private camera details, exact sensitive locations, faces, license plates, or large raw videos to the repository.
+
+Per-video summaries and label comparisons are saved under each run’s videos/<video-id>/ folder. Site validation no longer creates shared per-video folders outside runs/. Existing legacy outputs are not deleted.

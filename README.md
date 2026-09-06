@@ -559,12 +559,12 @@ python3 scripts/run_site_validation.py \
 After it runs, check:
 
 ```text
-data/sites/example-site/outputs/validation-report.md
-data/sites/example-site/outputs/<video-id>/records.jsonl
-data/sites/example-site/outputs/<video-id>/summary.md
-data/sites/example-site/outputs/<video-id>/operator-notes.txt
-data/sites/example-site/outputs/<video-id>/review-images/
-data/sites/example-site/outputs/<video-id>/label-comparison.md
+data/sites/example-site/outputs/runs/<run-id>/validation-report.md
+data/sites/example-site/outputs/runs/<run-id>/records/<video-id>.jsonl
+data/sites/example-site/outputs/runs/<run-id>/videos/<video-id>/summary.md
+data/sites/example-site/outputs/runs/<run-id>/videos/<video-id>/operator-notes.txt
+data/sites/example-site/outputs/runs/<run-id>/review-images/<video-id>/
+data/sites/example-site/outputs/runs/<run-id>/videos/<video-id>/label-comparison.md
 ```
 
 Simple meaning: this runs each local video, compares it with any matching human label, and creates one combined report for the site.
@@ -856,3 +856,5 @@ See the documentation site, `CONTRIBUTING.md`, and `SECURITY.md` before proposin
 
 ## JOIN DISCORD FOR DISCUSSION
 [OPENFLOODAI DISCORD](https://discord.gg/2VzpADTZ3)
+
+Site validation writes directly into each run folder. It no longer creates a shared outputs/<video-id>/ folder or a new report directly under outputs/. Existing legacy folders are left untouched.

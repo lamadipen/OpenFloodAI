@@ -68,6 +68,8 @@ def run_local_video_review(
     image_prefix: str = "review",
     time_windows: list[tuple[float, float]] | None = None,
     sampling: SamplingSettings | None = None,
+    records_output_path: Path | None = None,
+    review_images_output_dir: Path | None = None,
 ) -> LocalPocSmokeResult:
     """Run the local POC review workflow for a real local video file."""
 
@@ -75,10 +77,10 @@ def run_local_video_review(
         raise ValueError("Image prefix must be a non-empty filename without directories")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    records_path = output_dir / "records.jsonl"
+    records_path = records_output_path or output_dir / "records.jsonl"
     summary_path = output_dir / "summary.md"
     operator_notes_path = output_dir / "operator-notes.txt"
-    review_images_dir = output_dir / "review-images"
+    review_images_dir = review_images_output_dir or output_dir / "review-images"
 
     pipeline_summary = run_local_region_poc_pipeline(
         video_path=video_path,
