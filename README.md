@@ -687,7 +687,7 @@ Example:
 
 ```text
 example-site
-Machine review: Needs config or video
+Machine review: Needs setup, video, or watched area
 Human comparison: Needs labels or manifest
 Config: found
 Videos: 0 videos
