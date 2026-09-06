@@ -55,6 +55,7 @@ def test_status_explains_missing_site_items(tmp_path: Path) -> None:
     assert status.next_steps == [
         "Add a site config under configs/.",
         "Add video files under inputs/videos/.",
+        "Choose a watched area so validation knows where to look.",
         "Machine review can still run, but human comparison needs labels.",
         "Add manifest.jsonl so videos can be tracked clearly.",
         "Run validation to create the first report.",

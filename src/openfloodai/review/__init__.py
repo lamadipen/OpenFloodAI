@@ -5,8 +5,10 @@ from openfloodai.review.dataset_manifest import (
     HARD_CASE_TYPE_OPTIONS,
     MANIFEST_PURPOSE_OPTIONS,
     DatasetManifestError,
+    ManifestRepairResult,
     is_valid_manifest_record,
     load_manifest_records,
+    repair_manifest_from_local_videos,
     validate_manifest_record,
 )
 from openfloodai.review.human_labels import (
@@ -53,6 +55,7 @@ __all__ = [
     "DEFAULT_CANDIDATE_THRESHOLDS",
     "CreateHumanLabelResult",
     "DatasetManifestError",
+    "ManifestRepairResult",
     "HumanLabelError",
     "LabelComparison",
     "LabelComparisonError",
@@ -72,6 +75,7 @@ __all__ = [
     "is_valid_manifest_record",
     "load_human_label_records",
     "load_manifest_records",
+    "repair_manifest_from_local_videos",
     "render_label_comparison_report",
     "render_threshold_tuning_report",
     "tune_threshold_files",

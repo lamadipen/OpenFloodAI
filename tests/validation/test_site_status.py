@@ -139,6 +139,28 @@ def test_read_validation_site_status_reports_missing_files(tmp_path: Path) -> No
     assert "Choose a watched area so validation knows where to look." in status.next_steps
 
 
+def test_read_validation_site_status_reports_conflicting_manifest_video_ids(tmp_path: Path) -> None:
+    site_dir = tmp_path / "conflicting-manifest"
+    (site_dir / "inputs" / "videos").mkdir(parents=True)
+    (site_dir / "inputs" / "videos" / "river-001.mp4").write_bytes(b"video")
+    (site_dir / "manifest.jsonl").write_text(
+        (
+            '{"video_id":"river-001","filename":"river-001.mp4",'
+            '"purpose":"practice_normal_water","split":"practice",'
+            '"approved_for_repo":false,"has_human_label":false,"notes":"First."}\n'
+            '{"video_id":"river-001","filename":"river-002.mp4",'
+            '"purpose":"practice_normal_water","split":"practice",'
+            '"approved_for_repo":false,"has_human_label":false,"notes":"Conflict."}\n'
+        ),
+        encoding="utf-8",
+    )
+
+    status = read_validation_site_status(site_dir)
+
+    assert status.manifest_status == "Incomplete"
+    assert status.manifest_issues == ["Conflicting manifest video ID: river-001"]
+
+
 def test_next_steps_explain_when_a_watched_area_is_missing(tmp_path: Path) -> None:
     site_dir = tmp_path / "missing-watched-area"
     (site_dir / "configs").mkdir(parents=True)
