@@ -933,3 +933,7 @@ See the documentation site, `CONTRIBUTING.md`, and `SECURITY.md` before proposin
 [OPENFLOODAI DISCORD](https://discord.gg/2VzpADTZ3)
 
 Site validation writes directly into each run folder. It no longer creates a shared outputs/<video-id>/ folder or a new report directly under outputs/. Existing legacy folders are left untouched.
+
+For a complete practice run without chat history, follow the [MVP workflow rehearsal checklist](docs/research/mvp-workflow-rehearsal.md). It covers five to ten videos, both review routes, result review, and recording confusing steps.
+
+A step-by-step [HTML how-to guide](docs/learning/end-to-end-workflow.html) explains the full local workflow with examples and checkboxes. Open it directly in a browser or from the documentation site.
