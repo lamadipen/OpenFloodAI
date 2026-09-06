@@ -283,6 +283,8 @@ class ValidationSiteStatus:
             steps.append("Add a site config under configs/.")
         if self.video_count == 0:
             steps.append("Add video files under inputs/videos/.")
+        if not self.reference_region_found:
+            steps.append("Choose a watched area so validation knows where to look.")
         if not self.labels_found:
             steps.append("Machine review can still run, but human comparison needs labels.")
         if not self.manifest_found:

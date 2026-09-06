@@ -136,6 +136,24 @@ def test_read_validation_site_status_reports_missing_files(tmp_path: Path) -> No
         status.human_comparison_explanation
         == "Not ready because config, videos, watched area, labels, and manifest are missing."
     )
+    assert "Choose a watched area so validation knows where to look." in status.next_steps
+
+
+def test_next_steps_explain_when_a_watched_area_is_missing(tmp_path: Path) -> None:
+    site_dir = tmp_path / "missing-watched-area"
+    (site_dir / "configs").mkdir(parents=True)
+    write_json(site_dir / "configs" / "site-config.json", {"site_id": site_dir.name})
+
+    status = read_validation_site_status(site_dir)
+
+    assert status.reference_region_found is False
+    assert status.next_steps == [
+        "Add video files under inputs/videos/.",
+        "Choose a watched area so validation knows where to look.",
+        "Machine review can still run, but human comparison needs labels.",
+        "Add manifest.jsonl so videos can be tracked clearly.",
+        "Run validation to create the first report.",
+    ]
 
 
 def test_discover_validation_site_statuses_lists_site_folders(tmp_path: Path) -> None:
