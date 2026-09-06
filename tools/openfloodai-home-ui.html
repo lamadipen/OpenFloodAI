@@ -817,8 +817,8 @@
           ].join(", ");
           return `
             <div class="report-history-item">
-              <div class="report-history-path">${index === 0 ? "Latest: " : ""}${escapeHtml(run.path || "Report path unavailable")}</div>
-              <div class="report-history-meta">${escapeHtml(run.modified_time || "Time unavailable")} | ${escapeHtml(countText)}</div>
+              <div class="report-history-path">${index === 0 ? "Latest: " : ""}${run.legacy ? "Legacy: " : ""}${escapeHtml(run.path || "Report path unavailable")}</div>
+              <div class="report-history-meta">${escapeHtml(run.modified_time || "Time unavailable")} | ${escapeHtml(run.status || "Status unavailable")} | ${escapeHtml(countText)}</div>
               <div class="report-history-meta">Evidence: ${escapeHtml(run.evidence_path || "Not available")}</div>
             </div>
           `;

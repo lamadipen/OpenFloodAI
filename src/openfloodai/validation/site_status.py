@@ -160,7 +160,7 @@ def read_validation_site_status(site_dir: Path) -> ValidationSiteStatus:
         latest_report_counts=_read_report_counts(latest_report_path),
         latest_scorecard=_read_scorecard(latest_report_path),
         review_images_path=str(review_images_path) if review_images_path else None,
-        report_history=_build_report_history(report_paths, review_images_path),
+        report_history=_build_report_history(site_dir, report_paths, review_images_path),
     )
 
 
@@ -300,9 +300,15 @@ def _read_scorecard(report_path: Path | None) -> dict[str, Any] | None:
 
 
 def _build_report_history(
+    site_dir: Path,
     report_paths: list[Path],
     review_images_path: Path | None,
 ) -> list[dict[str, Any]]:
+    runs_dir = site_dir / "outputs" / "runs"
+    run_history = _read_saved_run_history(runs_dir)
+    if run_history:
+        return run_history
+
     history: list[dict[str, Any]] = []
     for report_path in sorted(report_paths, key=_path_sort_key, reverse=True):
         try:
@@ -315,9 +321,43 @@ def _build_report_history(
                 "modified_time": datetime.fromtimestamp(modified_time, tz=UTC).isoformat(),
                 "counts": _read_report_counts(report_path),
                 "evidence_path": str(review_images_path) if review_images_path else None,
+                "status": "legacy",
+                "legacy": True,
             }
         )
-    return history
+    return sorted(history, key=lambda entry: str(entry.get("modified_time") or ""), reverse=True)
+
+
+def _read_saved_run_history(runs_dir: Path) -> list[dict[str, Any]]:
+    if not runs_dir.is_dir():
+        return []
+    history: list[dict[str, Any]] = []
+    run_dirs = sorted(
+        (path for path in runs_dir.iterdir() if path.is_dir()),
+        key=str,
+        reverse=True,
+    )
+    for run_dir in run_dirs:
+        metadata_path = run_dir / "run-metadata.json"
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        if not isinstance(metadata, dict):
+            continue
+        report_path = Path(str(metadata.get("report_path", run_dir / "validation-report.md")))
+        history.append(
+            {
+                "run_id": metadata.get("run_id", run_dir.name),
+                "path": str(report_path),
+                "modified_time": metadata.get("created_at"),
+                "status": metadata.get("status", "unknown"),
+                "counts": _read_report_counts(report_path),
+                "evidence_path": metadata.get("review_images_path"),
+                "legacy": False,
+            }
+        )
+    return sorted(history, key=lambda entry: str(entry.get("modified_time") or ""), reverse=True)
 
 
 def _path_sort_key(path: Path) -> tuple[float, str]:
