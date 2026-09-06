@@ -615,7 +615,32 @@
       </p>
     </header>
     <main>
-      <section class="toolbar" aria-label="Local UI controls">
+       <section id="validationWorkflowNote" aria-labelledby="validationWorkflowHeading" style="background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 24px; margin-bottom: 22px;">
+        <h2 id="validationWorkflowHeading" style="margin-top: 0;">Two ways to review a video</h2>
+        <p>Human labels are optional for running validation, but required if you want to compare the machine result with human review.</p>
+        <h3>Route 1: Machine-only review</h3>
+        <ul>
+          <li>Needs: site config + video + watched area.</li>
+          <li>Result: machine evidence only.</li>
+          <li>No human comparison is possible without a human label.</li>
+        </ul>
+        <h3>Route 2: Human comparison review</h3>
+        <ul>
+          <li>Needs: site config + video + watched area + human label + manifest.</li>
+          <li>Result: compares what the machine saw with what the human saw.</li>
+        </ul>
+      </section>
+      <section class="workflow-panel" id="workflowPanel" aria-labelledby="workflowTitle">
+        <div class="workflow-header">
+          <h2 id="workflowTitle">Guided validation workflow</h2>
+        </div>
+        <p class="workflow-intro">
+          These steps run in order for a new site, but you can start from any step that still
+          needs work. Nothing here uploads video, publishes warnings, or proves flood accuracy.
+        </p>
+        <div class="workflow-steps" id="workflowSteps" aria-live="polite"></div>
+      </section>
+          <section class="toolbar" aria-label="Local UI controls">
         <div>
           <div class="meta" id="sitesDir">Loading site folder...</div>
           <div class="safety" id="safetyNote"></div>
@@ -626,17 +651,6 @@
           <button type="button" id="addLabelButton" style="background: var(--accent-strong); border-color: var(--accent-strong);">Add Label</button>
           <button type="button" id="refreshButton">Refresh</button>
         </div>
-      </section>
-
-      <section class="workflow-panel" id="workflowPanel" aria-labelledby="workflowTitle">
-        <div class="workflow-header">
-          <h2 id="workflowTitle">Guided validation workflow</h2>
-        </div>
-        <p class="workflow-intro">
-          These steps run in order for a new site, but you can start from any step that still
-          needs work. Nothing here uploads video, publishes warnings, or proves flood accuracy.
-        </p>
-        <div class="workflow-steps" id="workflowSteps" aria-live="polite"></div>
       </section>
 
       <div id="formHome"></div>
@@ -663,8 +677,12 @@
         <h2 style="margin-top: 0;">Setup New Validation Site</h2>
         <form id="siteForm" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
           <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Site Name *</label>
+            <input type="text" name="site_name" id="setupSiteNameInput" placeholder="e.g. Demo Bridge" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+          </div>
+          <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Folder Name *</label>
-            <input type="text" name="folder_name" placeholder="e.g. demo-bridge" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+            <input type="text" name="folder_name" id="setupFolderNameInput" placeholder="e.g. demo-bridge" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
           </div>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Site ID *</label>
@@ -673,10 +691,6 @@
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Camera ID *</label>
             <input type="text" name="camera_id" placeholder="e.g. camera-demo-bridge-01" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
-          </div>
-          <div>
-            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Site Name *</label>
-            <input type="text" name="site_name" placeholder="e.g. Demo Bridge" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
           </div>
           <div style="grid-column: span 2;">
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Public Location (optional)</label>
@@ -694,11 +708,10 @@
       </section>
 
       <section id="videoFormPanel" class="form-panel" style="display: none;">
-        <h2 style="margin-top: 0;">Add Local Validation Video</h2>
+        <h2 style="margin-top: 0;">Add Video To Site</h2>
         <p class="meta" style="margin-top: 0;">
-          Copies a video already on this computer into the site folder and writes one
-          manifest row. It does not upload video, commit files, or mark sharing as approved
-          unless you check that box.
+          This copies the video into the selected site folder and updates <code>manifest.jsonl</code>,
+          which tracks video details. It does not upload the video or make it public.
         </p>
         <form id="videoForm" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
           <div>
@@ -722,35 +735,31 @@
             <input type="text" name="video_id" id="videoIdInput" placeholder="e.g. rising-001" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
           </div>
           <div>
-            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Purpose *</label>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Video purpose *</label>
             <select name="purpose" id="purposeSelect" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
           </div>
           <div>
-            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Split *</label>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Dataset group *</label>
             <select name="split" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
               <option value="practice">practice</option>
               <option value="locked_validation">locked_validation</option>
             </select>
           </div>
           <div>
-            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Hard case type</label>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Difficult case type</label>
             <select name="hard_case_type" id="hardCaseTypeSelect" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
           </div>
           <div style="grid-column: span 2;">
-            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Notes *</label>
-            <textarea name="notes" required placeholder="Short notes. Keep sharing off unless the video is clearly safe to commit." style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px; min-height: 60px;"></textarea>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Video notes *</label>
+            <textarea name="notes" required placeholder="Short note about this video, such as what is visible, camera quality, or why it is useful." style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px; min-height: 60px;"></textarea>
           </div>
           <label style="display: flex; align-items: center; gap: 8px;">
-            <input type="checkbox" name="has_human_label" value="true">
-            Has human label
-          </label>
-          <label style="display: flex; align-items: center; gap: 8px;">
             <input type="checkbox" name="approved_for_repo" value="true">
-            Approved for repo (keep unchecked by default)
+            Safe to share in repository (keep unchecked by default)
           </label>
           <label style="display: flex; align-items: center; gap: 8px; grid-column: span 2;">
             <input type="checkbox" name="overwrite" value="true">
-            Overwrite existing video or manifest row
+            Replace existing video or manifest row
           </label>
           <div style="grid-column: span 2; display: flex; gap: 12px; margin-top: 8px;">
             <button type="submit">Copy Video And Update Manifest</button>
@@ -786,7 +795,8 @@
           </div>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Human label *</label>
-            <select name="human_label" id="labelValueSelect" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
+            <select name="human_label" id="labelValueSelect" aria-describedby="humanLabelHelp" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
+            <div class="meta" id="humanLabelHelp" style="margin-top: 4px;">Choose what a person sees in this video time window. This is used only when comparing human review with machine result.</div>
           </div>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Manual label</label>
@@ -840,6 +850,11 @@
       const addLabelButton = document.querySelector("#addLabelButton");
       const setupForm = document.querySelector("#setupForm");
       const siteForm = document.querySelector("#siteForm");
+      const setupSiteNameInput = document.querySelector("#setupSiteNameInput");
+      const setupFolderNameInput = document.querySelector("#setupFolderNameInput");
+      setupSiteNameInput.addEventListener("input", () => {
+        setupFolderNameInput.value = setupSiteNameInput.value.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9_-]/g, "");
+      });
       const cancelSetup = document.querySelector("#cancelSetup");
       const videoFormPanel = document.querySelector("#videoFormPanel");
       const videoForm = document.querySelector("#videoForm");
@@ -925,7 +940,35 @@
         }
       }
 
-      function fillSelect(select, options, emptyLabel = "") {
+      const humanLabelDisplayLabels = {
+        water_rising: "Water is rising",
+        water_falling: "Water is falling",
+        no_clear_change: "No clear water change",
+        cannot_judge: "I cannot judge from this video",
+        camera_video_problem: "Camera or video problem",
+      };
+      const videoPurposeLabels = {
+        practice_normal_water: "Practice: normal water",
+        possible_rising_water: "Possible rising water",
+        possible_falling_water: "Possible falling water",
+        no_clear_change: "No clear change",
+        hard_case_review: "Hard case review",
+        camera_video_problem: "Camera/video problem",
+      };
+      const difficultCaseLabels = {
+        night_or_dark_frame: "Dark video",
+        heavy_glare: "Glare on water",
+        camera_shake: "Shaky camera",
+        blocked_view: "Blocked view",
+        camera_offline: "Camera offline",
+        unreadable_video: "Unreadable video",
+        missing_video: "Missing video",
+        rain_or_noisy_image: "Rain or noisy image",
+        compression_or_noise_artifacts: "Compression or image noise",
+        empty_video: "Empty video",
+      };
+
+      function fillSelect(select, options, emptyLabel = "", displayLabels = {}) {
         const current = select.value;
         select.innerHTML = "";
         if (emptyLabel) {
@@ -937,7 +980,7 @@
         for (const value of options) {
           const option = document.createElement("option");
           option.value = value;
-          option.textContent = value;
+          option.textContent = displayLabels[value] || value;
           select.append(option);
         }
         if ([...select.options].some((option) => option.value === current)) {
@@ -962,7 +1005,7 @@
         const selectedSite = latestSites.find((site) => site.site_name === labelSiteSelect.value);
         const videoIds = selectedSite?.video_ids || [];
         fillSelect(labelVideoSelect, videoIds, videoIds.length ? "Choose video ID" : "No local videos — enter ID below");
-        fillSelect(labelValueSelect, labelsForSelectedSite(), "Choose human label");
+        fillSelect(labelValueSelect, labelsForSelectedSite(), "Choose human label", humanLabelDisplayLabels);
       }
 
       function fileStem(filename) {
@@ -1365,8 +1408,8 @@
           fillDetailSiteSelect(latestSites);
           defaultHumanLabelOptions = payload.human_label_options || defaultHumanLabelOptions;
           fillSiteSelect(payload.sites);
-          fillSelect(purposeSelect, payload.purpose_options || [], "Choose purpose");
-          fillSelect(hardCaseTypeSelect, payload.hard_case_type_options || [], "No hard case");
+          fillSelect(purposeSelect, payload.purpose_options || [], "Choose purpose", videoPurposeLabels);
+          fillSelect(hardCaseTypeSelect, payload.hard_case_type_options || [], "No difficult case", difficultCaseLabels);
           updateLabelOptionsForSelectedSite();
           fillSelect(
             labelConfidenceSelect,

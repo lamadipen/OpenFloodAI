@@ -559,12 +559,12 @@ python3 scripts/run_site_validation.py \
 After it runs, check:
 
 ```text
-data/sites/example-site/outputs/validation-report.md
-data/sites/example-site/outputs/<video-id>/records.jsonl
-data/sites/example-site/outputs/<video-id>/summary.md
-data/sites/example-site/outputs/<video-id>/operator-notes.txt
-data/sites/example-site/outputs/<video-id>/review-images/
-data/sites/example-site/outputs/<video-id>/label-comparison.md
+data/sites/example-site/outputs/runs/<run-id>/validation-report.md
+data/sites/example-site/outputs/runs/<run-id>/records/<video-id>.jsonl
+data/sites/example-site/outputs/runs/<run-id>/videos/<video-id>/summary.md
+data/sites/example-site/outputs/runs/<run-id>/videos/<video-id>/operator-notes.txt
+data/sites/example-site/outputs/runs/<run-id>/review-images/<video-id>/
+data/sites/example-site/outputs/runs/<run-id>/videos/<video-id>/label-comparison.md
 ```
 
 Simple meaning: this runs each local video, compares it with any matching human label, and creates one combined report for the site.
@@ -606,7 +606,9 @@ The launcher is a thin command wrapper; reusable Home UI server code lives in `s
 
 Simple meaning: this page checks folders under `data/sites/` and shows whether each site has config, videos, labels, manifest, output reports, and a latest report.
 
-From the same page you can create a site folder, add a local validation video, or create human label records. Adding a video copies a file already on this computer into `inputs/videos/` and writes one `manifest.jsonl` row. Adding a label validates time windows and label text without manual JSON Lines editing. After you choose a site, the label form offers existing video IDs from that site’s local videos and labels already used for that site. Selecting a video fills the Video ID field; manual entry is also available. Switching sites clears the previous video selection; if the value is missing, type a short manual label like `bridge_pillar_covered`. Sharing stays off unless you explicitly mark the video as approved for the repo.
+In Setup New Validation Site, the folder name fills from the site name: Colorado River Site becomes colorado-river-site. Names are lowercased, extra spaces are removed or joined with one hyphen, and characters other than letters a–z, numbers, dash, and underscore are removed. You can edit the folder name before creating the site.
+
+From the same page you can create a site folder, add a local validation video, or create human label records. The Human label dropdown shows plain-language options such as “Water is rising” while saving water_rising. Its helper text explains that the label describes what a person sees during the selected time window for comparison with machine results. Video purpose and difficult-case dropdowns show plain-language labels while saving the existing manifest values. For example, “Dark video” saves night_or_dark_frame; “No difficult case” leaves the value empty. Video intake sets has_human_label to false; add human labels separately through the label form. The Add Video To Site form calls the manifest split field “Dataset group” and uses plain-language labels for video details. Adding a video copies a file already on this computer into `inputs/videos/` and writes one `manifest.jsonl` row. Adding a label validates time windows and label text without manual JSON Lines editing. After you choose a site, the label form offers existing video IDs from that site’s local videos and labels already used for that site. Selecting a video fills the Video ID field; manual entry is also available. Switching sites clears the previous video selection; if the value is missing, type a short manual label like `bridge_pillar_covered`. Sharing stays off unless you explicitly mark the video as approved for the repo.
 
 The page opens with a **Guided validation workflow** panel for the selected site. It
 turns the local process into seven visible steps:
@@ -644,6 +646,8 @@ restart from step 1, and the separate **Create Site**, **Add Video**, **Add Labe
 and **Run Validation** actions still work on their own.
 
 The site card also shows a **What to do next** section. It explains the next useful local action when config, videos, labels, the manifest, or a validation report is missing. When a site is ready, **Run Validation** runs the local multi-video validation flow and refreshes the report counts and review-image path.
+
+The Home UI explains both review routes above the forms: machine-only review produces machine evidence, and human comparison review compares it with a human label. Labels are optional for running validation.
 
 Machine review only needs config and video. Human comparison also needs labels and a manifest.
 
@@ -887,3 +891,5 @@ See the documentation site, `CONTRIBUTING.md`, and `SECURITY.md` before proposin
 
 ## JOIN DISCORD FOR DISCUSSION
 [OPENFLOODAI DISCORD](https://discord.gg/2VzpADTZ3)
+
+Site validation writes directly into each run folder. It no longer creates a shared outputs/<video-id>/ folder or a new report directly under outputs/. Existing legacy folders are left untouched.

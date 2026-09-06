@@ -144,9 +144,10 @@ def test_run_site_validation_reports_multiple_video_results(tmp_path: Path) -> N
     assert results_by_video_id["unclear-001"].result == "cannot_compare"
     assert results_by_video_id["bad-001"].system_result == "processing_failed"
     assert results_by_video_id["missing-001"].system_result == "missing_video"
-    assert (site_dir / "outputs" / "validation-report.md").exists()
-    assert (site_dir / "outputs" / "rising-001" / "records.jsonl").exists()
-    assert (site_dir / "outputs" / "rising-001" / "label-comparison.md").exists()
+    assert Path(report.output_path) == Path(report.run_dir) / "validation-report.md"
+    assert Path(report.output_path).exists()
+    assert (Path(report.run_dir) / "records" / "rising-001.jsonl").exists()
+    assert (Path(report.run_dir) / "videos" / "rising-001" / "label-comparison.md").exists()
     table_header = "| Video | Processed | Human label | System result | Result | Windows | Note |"
     rising_row = "| rising-001.avi | yes | multiple | cannot_judge | cannot_compare | 2 |"
     assert table_header in rendered
@@ -251,7 +252,15 @@ def test_each_validation_run_gets_its_own_snapshot(tmp_path: Path) -> None:
     )
 
     first = run_site_validation(site_dir)
+    first_records = Path(first.run_dir, "records", "rising-001.jsonl").read_bytes()
     second = run_site_validation(site_dir)
+    assert Path(first.run_dir, "records", "rising-001.jsonl").read_bytes() == first_records
+    assert {p.name for p in (site_dir / "outputs").iterdir()} == {"runs"}
+    for report in (first, second):
+        assert Path(report.output_path).is_relative_to(Path(report.run_dir))
+        for result in report.results:
+            if result.output_dir:
+                assert Path(result.output_dir).is_relative_to(Path(report.run_dir))
 
     runs_dir = site_dir / "outputs" / "runs"
     run_dirs = sorted(path for path in runs_dir.iterdir() if path.is_dir())

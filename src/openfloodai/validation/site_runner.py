@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, replace
@@ -143,7 +142,10 @@ def run_site_validation(
     labels_by_video_id = _labels_by_video_id(labels)
     selected_config_path = config_path or _find_config_path(site_dir, required=bool(videos))
     outputs_dir = site_dir / "outputs"
-    outputs_dir.mkdir(parents=True, exist_ok=True)
+    run_id = f"{datetime.now(tz=UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex[:8]}"
+    run_dir = outputs_dir / "runs" / run_id
+    (run_dir / "records").mkdir(parents=True, exist_ok=False)
+    (run_dir / "review-images").mkdir(exist_ok=False)
 
     results: list[SiteValidationResult] = []
     seen_video_ids: set[str] = set()
@@ -155,7 +157,7 @@ def run_site_validation(
             _run_one_video(
                 video_path=video_path,
                 video_id=video_id,
-                site_dir=site_dir,
+                run_dir=run_dir,
                 config_path=selected_config_path,
                 labels=labels,
                 sampling=sampling,
@@ -183,19 +185,16 @@ def run_site_validation(
             )
         )
 
-    report_path = outputs_dir / "validation-report.md"
+    report_path = run_dir / "validation-report.md"
     report = _build_report(
         site_dir=site_dir,
         output_path=report_path,
         results=sorted(results, key=lambda result: result.video_id),
     )
+    report = replace(report, run_id=run_id, run_dir=str(run_dir))
     report_path.write_text(render_site_validation_report(report), encoding="utf-8")
-    run_id, run_dir = _create_run_snapshot(
-        site_dir=site_dir,
-        report=report,
-        report_path=report_path,
-    )
-    return replace(report, run_id=run_id, run_dir=str(run_dir))
+    _write_run_metadata(report=report)
+    return report
 
 
 def render_site_validation_report(report: SiteValidationReport) -> str:
@@ -313,18 +312,20 @@ def _run_one_video(
     *,
     video_path: Path,
     video_id: str,
-    site_dir: Path,
+    run_dir: Path,
     config_path: Path,
     labels: list[JsonObject],
     sampling: SamplingSettings | None,
 ) -> SiteValidationResult:
-    output_dir = site_dir / "outputs" / video_id
+    output_dir = run_dir / "videos" / video_id
 
     try:
         review_result = run_local_video_review(
             video_path=video_path,
             config_path=config_path,
             output_dir=output_dir,
+            records_output_path=run_dir / "records" / f"{video_id}.jsonl",
+            review_images_output_dir=run_dir / "review-images" / video_id,
             image_prefix=video_id,
             time_windows=[
                 window
@@ -421,35 +422,17 @@ def _build_report(
     )
 
 
-def _create_run_snapshot(
-    *,
-    site_dir: Path,
-    report: SiteValidationReport,
-    report_path: Path,
-) -> tuple[str, Path]:
-    run_id = f"{datetime.now(tz=UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex[:8]}"
-    run_dir = site_dir / "outputs" / "runs" / run_id
+def _write_run_metadata(*, report: SiteValidationReport) -> None:
+    """Finish the run index without copying evidence from shared output folders."""
+
+    run_id = report.run_id
+    run_dir = Path(report.run_dir)
     records_dir = run_dir / "records"
     evidence_dir = run_dir / "review-images"
-    records_dir.mkdir(parents=True, exist_ok=False)
-    evidence_dir.mkdir(parents=True, exist_ok=False)
-
-    shutil.copy2(report_path, run_dir / "validation-report.md")
     (run_dir / "scorecard.json").write_text(
         json.dumps(asdict(report.scorecard), indent=2) + "\n",
         encoding="utf-8",
     )
-
-    for result in report.results:
-        if result.output_dir is None:
-            continue
-        output_dir = Path(result.output_dir)
-        records_path = output_dir / "records.jsonl"
-        if records_path.is_file():
-            shutil.copy2(records_path, records_dir / f"{result.video_id}.jsonl")
-        review_images = output_dir / "review-images"
-        if review_images.is_dir():
-            shutil.copytree(review_images, evidence_dir / result.video_id)
 
     metadata = {
         "run_id": run_id,
@@ -473,7 +456,6 @@ def _create_run_snapshot(
         json.dumps(metadata, indent=2) + "\n",
         encoding="utf-8",
     )
-    return run_id, run_dir
 
 
 def _top_comparison_reasons(

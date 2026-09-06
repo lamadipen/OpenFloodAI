@@ -193,3 +193,35 @@ def test_intake_validation_video_refuses_unsafe_video_ids(tmp_path: Path, video_
         if path.suffix.lower() in {".avi", ".mkv", ".mov", ".mp4"}
     ]
     assert video_files == []
+
+
+def test_intake_replacement_defaults_label_flag_without_changing_other_rows(tmp_path: Path) -> None:
+    site_dir = _make_site(tmp_path)
+    source = _make_video(tmp_path / "source.mp4")
+    for video_id in ("replace-me", "keep-me"):
+        result = intake_validation_video(
+            site_dir=site_dir,
+            video_path=source,
+            video_id=video_id,
+            purpose="practice_normal_water",
+            split="practice",
+            notes="Existing reviewed video.",
+            has_human_label=True,
+        )
+        assert result.created
+    existing = load_manifest_records(site_dir / "manifest.jsonl")
+    assert all(row["has_human_label"] is True for row in existing)
+
+    result = intake_validation_video(
+        site_dir=site_dir,
+        video_path=source,
+        video_id="replace-me",
+        purpose="practice_normal_water",
+        split="practice",
+        notes="Replacement video awaiting separate human review.",
+        overwrite=True,
+    )
+    assert result.created
+    records = {row["video_id"]: row for row in load_manifest_records(result.manifest_path)}
+    assert records["replace-me"]["has_human_label"] is False
+    assert records["keep-me"]["has_human_label"] is True
