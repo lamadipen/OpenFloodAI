@@ -620,13 +620,13 @@
         <p>Human labels are optional for running validation, but required if you want to compare the machine result with human review.</p>
         <h3>Route 1: Machine-only review</h3>
         <ul>
-          <li>Needs: site config + video.</li>
+          <li>Needs: site config + video + watched area.</li>
           <li>Result: machine evidence only.</li>
           <li>No human comparison is possible without a human label.</li>
         </ul>
         <h3>Route 2: Human comparison review</h3>
         <ul>
-          <li>Needs: site config + video + human label.</li>
+          <li>Needs: site config + video + watched area + human label + manifest.</li>
           <li>Result: compares what the machine saw with what the human saw.</li>
         </ul>
       </section>
@@ -682,7 +682,7 @@
           </div>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Folder Name *</label>
-            <input type="text" name="folder_name" id="setupFolderNameInput" placeholder="e.g. Demo-Bridge" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+            <input type="text" name="folder_name" id="setupFolderNameInput" placeholder="e.g. demo-bridge" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
           </div>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Site ID *</label>
@@ -853,7 +853,7 @@
       const setupSiteNameInput = document.querySelector("#setupSiteNameInput");
       const setupFolderNameInput = document.querySelector("#setupFolderNameInput");
       setupSiteNameInput.addEventListener("input", () => {
-        setupFolderNameInput.value = setupSiteNameInput.value.trim().replace(/\s+/g, "-");
+        setupFolderNameInput.value = setupSiteNameInput.value.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9_-]/g, "");
       });
       const cancelSetup = document.querySelector("#cancelSetup");
       const videoFormPanel = document.querySelector("#videoFormPanel");

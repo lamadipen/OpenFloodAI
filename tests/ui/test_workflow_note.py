@@ -24,11 +24,11 @@ def test_home_ui_explains_both_validation_routes_before_forms() -> None:
         "Human labels are optional for running validation, but required if you want to "
         "compare the machine result with human review.",
         "Route 1: Machine-only review",
-        "Needs: site config + video.",
+        "Needs: site config + video + watched area.",
         "Result: machine evidence only.",
         "No human comparison is possible without a human label.",
         "Route 2: Human comparison review",
-        "Needs: site config + video + human label.",
+        "Needs: site config + video + watched area + human label + manifest.",
         "Result: compares what the machine saw with what the human saw.",
     ):
         assert expected in text

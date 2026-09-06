@@ -27,10 +27,14 @@ test("site name input fills the submitted folder field", () => {
     document: { querySelector: (selector) => fields[selector] },
   });
   for (const [input, expected] of [
-    ["Colorado River Site", "Colorado-River-Site"],
-    ["  Demo   Bridge  ", "Demo-Bridge"],
-    ["River\tNorth", "River-North"],
-    ["Demo-Bridge", "Demo-Bridge"],
+    ["Colorado River Site", "colorado-river-site"],
+    ["  Demo   Bridge  ", "demo-bridge"],
+    ["River\tNorth", "river-north"],
+    ["Demo-Bridge", "demo-bridge"],
+    ["River@Bridge!_01", "riverbridge_01"],
+    ["UPPER_case-123", "upper_case-123"],
+    ["../River/Bridge", "riverbridge"],
+    ["!@#$%", ""],
     ["", ""],
     ["   ", ""],
   ]) {
@@ -41,7 +45,7 @@ test("site name input fills the submitted folder field", () => {
   name.value = folder.value = "";
   name.value = "Next Site";
   listeners.input();
-  assert.equal(folder.value, "Next-Site");
+  assert.equal(folder.value, "next-site");
   assert.match(html, /name="folder_name" id="setupFolderNameInput"/);
   assert.ok(html.indexOf('id="setupSiteNameInput"') < html.indexOf('id="setupFolderNameInput"'));
 });
