@@ -469,11 +469,10 @@
       </section>
 
       <section id="videoFormPanel" style="display: none; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 24px; margin-bottom: 22px; box-shadow: var(--shadow);">
-        <h2 style="margin-top: 0;">Add Local Validation Video</h2>
+        <h2 style="margin-top: 0;">Add Video To Site</h2>
         <p class="meta" style="margin-top: 0;">
-          Copies a video already on this computer into the site folder and writes one
-          manifest row. It does not upload video, commit files, or mark sharing as approved
-          unless you check that box.
+          This copies the video into the selected site folder and updates <code>manifest.jsonl</code>,
+          which tracks video details. It does not upload the video or make it public.
         </p>
         <form id="videoForm" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
           <div>
@@ -497,35 +496,35 @@
             <input type="text" name="video_id" id="videoIdInput" placeholder="e.g. rising-001" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
           </div>
           <div>
-            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Purpose *</label>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Video purpose *</label>
             <select name="purpose" id="purposeSelect" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
           </div>
           <div>
-            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Split *</label>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Dataset group *</label>
             <select name="split" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
               <option value="practice">practice</option>
               <option value="locked_validation">locked_validation</option>
             </select>
           </div>
           <div>
-            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Hard case type</label>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Difficult case type</label>
             <select name="hard_case_type" id="hardCaseTypeSelect" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
           </div>
           <div style="grid-column: span 2;">
-            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Notes *</label>
-            <textarea name="notes" required placeholder="Short notes. Keep sharing off unless the video is clearly safe to commit." style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px; min-height: 60px;"></textarea>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Video notes *</label>
+            <textarea name="notes" required placeholder="Short note about this video, such as what is visible, camera quality, or why it is useful." style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px; min-height: 60px;"></textarea>
           </div>
           <label style="display: flex; align-items: center; gap: 8px;">
             <input type="checkbox" name="has_human_label" value="true">
-            Has human label
+            Human label already added
           </label>
           <label style="display: flex; align-items: center; gap: 8px;">
             <input type="checkbox" name="approved_for_repo" value="true">
-            Approved for repo (keep unchecked by default)
+            Safe to share in repository (keep unchecked by default)
           </label>
           <label style="display: flex; align-items: center; gap: 8px; grid-column: span 2;">
             <input type="checkbox" name="overwrite" value="true">
-            Overwrite existing video or manifest row
+            Replace existing video or manifest row
           </label>
           <div style="grid-column: span 2; display: flex; gap: 12px; margin-top: 8px;">
             <button type="submit">Copy Video And Update Manifest</button>
