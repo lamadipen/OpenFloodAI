@@ -40,3 +40,10 @@ Pull requests should include:
 - The issue being addressed.
 - Tests or checks run locally.
 - Any known limitations or follow-up work.
+
+## Contributors
+
+Thank you to all the contributors who have helped build OpenFloodAI:
+
+- [@lamadipen](https://github.com/lamadipen) - Dipen Lama
+- [@sande5h](https://github.com/sande5h) - Sandesh Bhusal
