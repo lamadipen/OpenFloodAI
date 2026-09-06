@@ -630,7 +630,17 @@
           <li>Result: compares what the machine saw with what the human saw.</li>
         </ul>
       </section>
-      <section class="toolbar" aria-label="Local UI controls">
+      <section class="workflow-panel" id="workflowPanel" aria-labelledby="workflowTitle">
+        <div class="workflow-header">
+          <h2 id="workflowTitle">Guided validation workflow</h2>
+        </div>
+        <p class="workflow-intro">
+          These steps run in order for a new site, but you can start from any step that still
+          needs work. Nothing here uploads video, publishes warnings, or proves flood accuracy.
+        </p>
+        <div class="workflow-steps" id="workflowSteps" aria-live="polite"></div>
+      </section>
+          <section class="toolbar" aria-label="Local UI controls">
         <div>
           <div class="meta" id="sitesDir">Loading site folder...</div>
           <div class="safety" id="safetyNote"></div>
@@ -641,17 +651,6 @@
           <button type="button" id="addLabelButton" style="background: var(--accent-strong); border-color: var(--accent-strong);">Add Label</button>
           <button type="button" id="refreshButton">Refresh</button>
         </div>
-      </section>
-
-      <section class="workflow-panel" id="workflowPanel" aria-labelledby="workflowTitle">
-        <div class="workflow-header">
-          <h2 id="workflowTitle">Guided validation workflow</h2>
-        </div>
-        <p class="workflow-intro">
-          These steps run in order for a new site, but you can start from any step that still
-          needs work. Nothing here uploads video, publishes warnings, or proves flood accuracy.
-        </p>
-        <div class="workflow-steps" id="workflowSteps" aria-live="polite"></div>
       </section>
 
       <div id="formHome"></div>
