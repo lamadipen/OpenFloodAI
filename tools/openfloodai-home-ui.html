@@ -424,6 +424,80 @@
         gap: 6px;
       }
 
+      .readiness {
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        grid-column: 1 / -1;
+        margin-top: 12px;
+        padding: 14px;
+      }
+
+      .readiness.is-full {
+        background: var(--surface-green);
+        border-color: var(--ok);
+      }
+
+      .readiness.is-machine-only {
+        background: var(--surface-yellow);
+        border-color: var(--warn);
+      }
+
+      .readiness.is-blocked {
+        background: var(--surface-red);
+        border-color: var(--missing);
+      }
+
+      .readiness-headline {
+        font-weight: 800;
+        margin-bottom: 10px;
+      }
+
+      .readiness-checks {
+        column-gap: 24px;
+        display: grid;
+        grid-template-columns: max-content 1fr;
+        margin-bottom: 12px;
+        max-width: 520px;
+      }
+
+      .readiness-check {
+        display: contents;
+      }
+
+      .readiness-check > span {
+        border-bottom: 1px solid var(--soft-line);
+        padding: 7px 0;
+      }
+
+      .readiness-check-label {
+        color: var(--muted);
+      }
+
+      .readiness-check-value {
+        font-weight: 700;
+      }
+
+      .readiness-check-value.ok {
+        color: var(--ok);
+      }
+
+      .readiness-check-value.missing {
+        color: var(--missing);
+      }
+
+      .readiness-missing {
+        color: var(--missing);
+        font-weight: 700;
+        margin-bottom: 8px;
+      }
+
+      .readiness-notes {
+        color: var(--muted);
+        font-size: 14px;
+        margin: 0;
+        padding-left: 18px;
+      }
+
       .workflow-list-button {
         background: transparent;
         border: 1px solid var(--line);
@@ -1221,6 +1295,47 @@
         return "is-needs-review";
       }
 
+      function readinessModifier(mode) {
+        if (mode === "full") {
+          return "is-full";
+        }
+        if (mode === "machine_only") {
+          return "is-machine-only";
+        }
+        return "is-blocked";
+      }
+
+      function renderReadiness(site) {
+        const readiness = site.validation_readiness;
+        if (!readiness) {
+          return "";
+        }
+        const checks = (readiness.checks || [])
+          .map(
+            (check) => `
+              <div class="readiness-check">
+                <span class="readiness-check-label">${escapeHtml(check.label)}</span>
+                <span class="readiness-check-value ${check.ok ? "ok" : "missing"}">${escapeHtml(check.value)}</span>
+              </div>
+            `
+          )
+          .join("");
+        const missing = (readiness.missing || []).length
+          ? `<div class="readiness-missing">Missing: ${escapeHtml(readiness.missing.join(", "))}</div>`
+          : "";
+        const notes = (readiness.notes || [])
+          .map((note) => `<li>${escapeHtml(note)}</li>`)
+          .join("");
+        return `
+          <div class="readiness ${readinessModifier(readiness.mode)}">
+            <div class="readiness-headline">${escapeHtml(readiness.headline)}</div>
+            <div class="readiness-checks">${checks}</div>
+            ${missing}
+            <ul class="readiness-notes">${notes}</ul>
+          </div>
+        `;
+      }
+
       function renderWorkflow(site) {
         detachWorkflowForm();
         if (!site) {
@@ -1256,11 +1371,13 @@
                           type="button"
                           class="workflow-action${action.action_id.startsWith("select_") ? " workflow-action-secondary" : ""}"
                           onclick="startWorkflowStep('${escapeHtml(action.action_id)}', '${escapeHtml(site.site_name)}', '${escapeHtml(step.key)}')"
+                          ${action.action_id === "run_validation" && !site.ready_for_validation ? "disabled" : ""}
                         >${escapeHtml(action.label)}</button>
                       `
                     )
                     .join("")}
                 </div>
+                ${step.key === "run_validation" ? renderReadiness(site) : ""}
                 <div class="workflow-step-slot" data-step-slot="${escapeHtml(step.key)}"></div>
               </div>
             `;

@@ -623,23 +623,47 @@ turns the local process into seven visible steps:
 7. Review results
 ```
 
-Each step shows a simple status (`Complete`, `Missing`, or `Needs review`), a
-plain-language meaning, whether the step is required before validation, and its
-action buttons. Steps that already have something to choose from offer two actions:
-`Select site` and `Create another site`, `Select video` and `Add video`, or
-`Select label` and `Add label`. A step with nothing to select yet offers only the
-create action. Steps 1, 2, 3, and 6 are required. Steps 4 and 5 are marked
+Each step shows a simple status (`Complete`, `Missing`, or `Needs review`), a short
+plain meaning, whether you need the step before a run, and its buttons. A step with
+something to choose from has two buttons: `Select site` and `Create another site`,
+`Select video` and `Add video`, or `Select label` and `Add label`. A step with nothing
+to choose yet has only the create button. Steps 1, 2, 3, and 6 are required. Steps 4 and 5 are marked
 `Needs review` when missing because machine review can still run without them, but
 the result stays `cannot_compare` until a human label exists.
 
-The watched area is required because the local review pipeline reads visual evidence
-inside the configured `reference_region`. A site with no `reference_region` in its
-config cannot complete a validation run.
+You need the watched area because the system only looks inside the `reference_region`
+from the config. A site with no `reference_region` cannot finish a run.
 
-Known limit: the watched-area selector currently opens inside the Add Video form, so
-step 3 sends you to video intake. A site that already has videos but no
-`reference_region` has to set the area while adding a video, or have the region added
-to its config file directly.
+Step 6 shows what will happen before a run starts. It lists everything the run
+needs, and says what the system will do:
+
+```text
+Ready to run. The system will compare with human labels.
+Site config     Found
+Videos          3 found
+Watched area    Found
+Human labels    1 label file(s) found
+Manifest        Found
+Output          Saved on this computer
+```
+
+There are three states:
+
+- **Ready to compare** — the system checks every video and compares what it saw with
+  the human labels. It saves a report, a scorecard, and review images.
+- **Ready, but nothing to compare with** — there are no labels or no manifest. The
+  system still checks the videos and saves what it saw, but every result stays
+  `cannot_compare`.
+- **Cannot run yet** — something the run needs is missing. No video is checked and no
+  report is saved. The `Run Validation` button is off.
+
+A site needs a config, videos, and a watched area before the system can check it. The
+page always shows what is missing. A run with no labels is marked clearly, so nobody
+reads it as a successful comparison.
+
+Known limit: you can only pick the watched area while adding a video, so step 3 opens
+the Add Video form. If a site already has videos but no `reference_region`, add the
+area while adding a video, or write the region into the config file by hand.
 
 You can start from any step that still needs work. The workflow does not force a
 restart from step 1, and the separate **Create Site**, **Add Video**, **Add Label**,

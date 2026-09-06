@@ -220,4 +220,4 @@ def test_watched_area_step_says_where_the_selector_actually_lives(tmp_path: Path
 
     assert _action_labels(step) == ["Set area in video intake"]
     assert _action_ids(step) == ["add_video"]
-    assert "video intake" in step.meaning
+    assert "when you add a video" in step.meaning

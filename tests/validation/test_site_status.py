@@ -18,7 +18,13 @@ def make_site(site_dir: Path) -> Path:
     (site_dir / "inputs" / "videos").mkdir(parents=True)
     (site_dir / "labels").mkdir(parents=True)
     (site_dir / "outputs").mkdir(parents=True)
-    write_json(site_dir / "configs" / "site-config.json", {"site_id": site_dir.name})
+    write_json(
+        site_dir / "configs" / "site-config.json",
+        {
+            "site_id": site_dir.name,
+            "reference_region": {"x": 0, "y": 50, "width": 100, "height": 50},
+        },
+    )
     (site_dir / "inputs" / "videos" / "river-001.mp4").write_bytes(b"not-real-video")
     (site_dir / "labels" / "labels.jsonl").write_text(
         (
@@ -64,7 +70,10 @@ def test_read_validation_site_status_reports_ready_site(tmp_path: Path) -> None:
     assert status.ready_for_machine_review is True
     assert status.ready_for_human_comparison is True
     assert status.ready_for_validation is True
-    assert status.machine_review_explanation == "Ready because config and videos are found."
+    assert (
+        status.machine_review_explanation
+        == "Ready because config, videos, and a watched area are found."
+    )
     assert (
         status.human_comparison_explanation
         == "Ready because config, videos, labels, and manifest are found."
@@ -77,7 +86,13 @@ def test_read_validation_site_status_allows_machine_review_without_labels(
     site_dir = tmp_path / "machine-only-site"
     (site_dir / "configs").mkdir(parents=True)
     (site_dir / "inputs" / "videos").mkdir(parents=True)
-    write_json(site_dir / "configs" / "site-config.json", {"site_id": site_dir.name})
+    write_json(
+        site_dir / "configs" / "site-config.json",
+        {
+            "site_id": site_dir.name,
+            "reference_region": {"x": 0, "y": 50, "width": 100, "height": 50},
+        },
+    )
     (site_dir / "inputs" / "videos" / "river-001.mp4").write_bytes(b"not-real-video")
 
     status = read_validation_site_status(site_dir)
@@ -88,7 +103,10 @@ def test_read_validation_site_status_allows_machine_review_without_labels(
     assert status.labels_found is False
     assert status.human_label_options == []
     assert status.manifest_found is False
-    assert status.machine_review_explanation == "Ready because config and videos are found."
+    assert (
+        status.machine_review_explanation
+        == "Ready because config, videos, and a watched area are found."
+    )
     assert (
         status.human_comparison_explanation == "Not ready because labels and manifest are missing."
     )
@@ -110,10 +128,13 @@ def test_read_validation_site_status_reports_missing_files(tmp_path: Path) -> No
     assert status.ready_for_machine_review is False
     assert status.ready_for_human_comparison is False
     assert status.ready_for_validation is False
-    assert status.machine_review_explanation == "Not ready because config and videos are missing."
+    assert (
+        status.machine_review_explanation
+        == "Not ready because config, videos, and watched area are missing."
+    )
     assert (
         status.human_comparison_explanation
-        == "Not ready because config, videos, labels, and manifest are missing."
+        == "Not ready because config, videos, watched area, labels, and manifest are missing."
     )
 
 
