@@ -421,6 +421,21 @@
       </p>
     </header>
     <main>
+       <section id="validationWorkflowNote" aria-labelledby="validationWorkflowHeading" style="background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 24px; margin-bottom: 22px;">
+        <h2 id="validationWorkflowHeading" style="margin-top: 0;">Two ways to review a video</h2>
+        <p>Human labels are optional for running validation, but required if you want to compare the machine result with human review.</p>
+        <h3>Route 1: Machine-only review</h3>
+        <ul>
+          <li>Needs: site config + video.</li>
+          <li>Result: machine evidence only.</li>
+          <li>No human comparison is possible without a human label.</li>
+        </ul>
+        <h3>Route 2: Human comparison review</h3>
+        <ul>
+          <li>Needs: site config + video + human label.</li>
+          <li>Result: compares what the machine saw with what the human saw.</li>
+        </ul>
+      </section>
       <section class="toolbar" aria-label="Local UI controls">
         <div>
           <div class="meta" id="sitesDir">Loading site folder...</div>

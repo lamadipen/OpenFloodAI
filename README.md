@@ -612,6 +612,8 @@ From the same page you can create a site folder, add a local validation video, o
 
 The site card also shows a **What to do next** section. It explains the next useful local action when config, videos, labels, the manifest, or a validation report is missing. When a site is ready, **Run Validation** runs the local multi-video validation flow and refreshes the report counts and review-image path.
 
+The Home UI explains both review routes above the forms: machine-only review produces machine evidence, and human comparison review compares it with a human label. Labels are optional for running validation.
+
 Machine review only needs config and video. Human comparison also needs labels and a manifest.
 
 Example:
