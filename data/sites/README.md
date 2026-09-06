@@ -201,7 +201,9 @@ Then open:
 http://127.0.0.1:8765/openfloodai-home-ui.html
 ```
 
-Simple meaning: the UI shows whether each site has config, videos, labels, manifest, outputs, and a latest report. It includes a **Create Site** button for new folders and an **Add Video** button to choose a local video file and write a manifest row.
+Simple meaning: the UI shows whether each site has config, videos, labels, manifest, outputs, and a latest report. It includes a **Create Site** button for new folders and an **Add Video** button to choose a local video file, select a frame and watched area, write a manifest row, and save that area as `reference_region` in the site's config.
+
+The watched-area selection is percentage-based and stays on this computer. Choose a frame with the video controls, then drag around the river area the local pipeline should measure.
 
 The **Add Label** form shows labels already used by the selected site. If the right label is missing, use **Manual label** with a short safe value like `bridge_pillar_covered`.
 

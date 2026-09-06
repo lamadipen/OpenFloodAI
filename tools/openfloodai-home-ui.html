@@ -369,6 +369,17 @@
         font-size: 13px;
       }
 
+      .video-region-canvas {
+        background: #182b35;
+        border: 1px solid var(--line);
+        cursor: crosshair;
+        display: block;
+        margin-top: 8px;
+        max-width: 100%;
+        touch-action: none;
+        width: 100%;
+      }
+
       @media (max-width: 640px) {
         header,
         main {
@@ -443,8 +454,8 @@
             <input type="text" name="site_name" placeholder="e.g. Demo Bridge" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
           </div>
           <div style="grid-column: span 2;">
-            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Public Location *</label>
-            <input type="text" name="public_location" placeholder="e.g. Demo River near Bridge St" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Public Location (optional)</label>
+            <input type="text" name="public_location" placeholder="e.g. Demo River near Bridge St" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
           </div>
           <div style="grid-column: span 2;">
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Privacy Notes</label>
@@ -472,6 +483,14 @@
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Local video file *</label>
             <input type="file" name="video_file" id="videoFileInput" accept=".avi,.mkv,.mov,.mp4,video/*" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px; background: #fff;">
+          </div>
+          <div style="grid-column: span 2;">
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Watched area *</label>
+            <div class="meta">Choose a frame with the video controls, then drag around the river area to watch.</div>
+            <video id="videoPreview" controls preload="metadata" style="display: none; margin-top: 8px; max-width: 100%; width: 100%; background: #182b35;"></video>
+            <canvas id="videoRegionCanvas" class="video-region-canvas" width="800" height="450" aria-label="Select watched area from video frame" style="display: none;"></canvas>
+            <input type="hidden" name="reference_region" id="referenceRegionInput">
+            <div class="meta" id="videoRegionStatus" role="status" style="margin-top: 6px;">Choose a video to begin.</div>
           </div>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Video ID *</label>
@@ -603,6 +622,11 @@
       const videoSiteSelect = document.querySelector("#videoSiteSelect");
       const videoFileInput = document.querySelector("#videoFileInput");
       const videoIdInput = document.querySelector("#videoIdInput");
+      const videoPreview = document.querySelector("#videoPreview");
+      const videoRegionCanvas = document.querySelector("#videoRegionCanvas");
+      const videoRegionContext = videoRegionCanvas.getContext("2d");
+      const referenceRegionInput = document.querySelector("#referenceRegionInput");
+      const videoRegionStatus = document.querySelector("#videoRegionStatus");
       const purposeSelect = document.querySelector("#purposeSelect");
       const hardCaseTypeSelect = document.querySelector("#hardCaseTypeSelect");
       const labelFormPanel = document.querySelector("#labelFormPanel");
@@ -621,6 +645,9 @@
       const detailSiteSelect = document.querySelector("#detailSiteSelect");
       const detailContent = document.querySelector("#detailContent");
       let latestSites = [];
+      let videoObjectUrl = null;
+      let videoRegionSelection = null;
+      let videoRegionDragStart = null;
       let defaultHumanLabelOptions = [
         "water_rising",
         "water_falling",
@@ -705,6 +732,67 @@
 
       function fileStem(filename) {
         return filename.replace(/\.[^/.]+$/, "");
+      }
+
+      function videoCanvasPoint(event) {
+        const rect = videoRegionCanvas.getBoundingClientRect();
+        return {
+          x: Math.max(0, Math.min(videoRegionCanvas.width, (event.clientX - rect.left) * videoRegionCanvas.width / rect.width)),
+          y: Math.max(0, Math.min(videoRegionCanvas.height, (event.clientY - rect.top) * videoRegionCanvas.height / rect.height)),
+        };
+      }
+
+      function normalizedVideoRect(start, end) {
+        return {
+          x: Math.min(start.x, end.x),
+          y: Math.min(start.y, end.y),
+          width: Math.abs(end.x - start.x),
+          height: Math.abs(end.y - start.y),
+        };
+      }
+
+      function videoRegionToPercent(rect) {
+        return {
+          x: Number(((rect.x / videoRegionCanvas.width) * 100).toFixed(6)),
+          y: Number(((rect.y / videoRegionCanvas.height) * 100).toFixed(6)),
+          width: Number(((rect.width / videoRegionCanvas.width) * 100).toFixed(6)),
+          height: Number(((rect.height / videoRegionCanvas.height) * 100).toFixed(6)),
+        };
+      }
+
+      function drawVideoFrame() {
+        if (!videoPreview.videoWidth || videoPreview.readyState < 2) {
+          return;
+        }
+        const maxWidth = 800;
+        const scale = Math.min(1, maxWidth / videoPreview.videoWidth);
+        videoRegionCanvas.width = Math.max(1, Math.round(videoPreview.videoWidth * scale));
+        videoRegionCanvas.height = Math.max(1, Math.round(videoPreview.videoHeight * scale));
+        videoRegionContext.drawImage(videoPreview, 0, 0, videoRegionCanvas.width, videoRegionCanvas.height);
+        if (videoRegionSelection) {
+          videoRegionContext.fillStyle = "rgba(8, 127, 91, 0.2)";
+          videoRegionContext.strokeStyle = "#087f5b";
+          videoRegionContext.lineWidth = 3;
+          videoRegionContext.fillRect(videoRegionSelection.x, videoRegionSelection.y, videoRegionSelection.width, videoRegionSelection.height);
+          videoRegionContext.strokeRect(videoRegionSelection.x, videoRegionSelection.y, videoRegionSelection.width, videoRegionSelection.height);
+          referenceRegionInput.value = JSON.stringify(videoRegionToPercent(videoRegionSelection));
+          videoRegionStatus.textContent = `Selected at ${videoPreview.currentTime.toFixed(1)} seconds.`;
+        }
+      }
+
+      function resetVideoPreview() {
+        videoRegionSelection = null;
+        videoRegionDragStart = null;
+        referenceRegionInput.value = "";
+        videoRegionCanvas.style.display = "none";
+        videoPreview.style.display = "none";
+        videoRegionStatus.textContent = "Choose a video to begin.";
+        if (videoObjectUrl) {
+          URL.revokeObjectURL(videoObjectUrl);
+          videoObjectUrl = null;
+        }
+        videoPreview.removeAttribute("src");
+        videoPreview.load();
       }
 
       function hideForms() {
@@ -1066,6 +1154,7 @@
 
       cancelVideo.addEventListener("click", () => {
         videoForm.reset();
+        resetVideoPreview();
         hideForms();
       });
 
@@ -1076,9 +1165,61 @@
 
       videoFileInput.addEventListener("change", () => {
         const file = videoFileInput.files[0];
-        if (file && !videoIdInput.value.trim()) {
+        if (!file) {
+          resetVideoPreview();
+          return;
+        }
+        if (!videoIdInput.value.trim()) {
           videoIdInput.value = fileStem(file.name);
         }
+        if (videoObjectUrl) {
+          URL.revokeObjectURL(videoObjectUrl);
+        }
+        videoObjectUrl = URL.createObjectURL(file);
+        videoPreview.src = videoObjectUrl;
+        videoPreview.style.display = "block";
+        videoRegionCanvas.style.display = "block";
+        videoRegionSelection = null;
+        referenceRegionInput.value = "";
+        videoRegionStatus.textContent = "Move to a frame, pause it, then drag to select the watched area.";
+      });
+
+      videoPreview.addEventListener("loadedmetadata", () => {
+        videoPreview.currentTime = 0;
+        drawVideoFrame();
+      });
+      videoPreview.addEventListener("seeked", drawVideoFrame);
+      videoRegionCanvas.addEventListener("pointerdown", (event) => {
+        if (!videoPreview.videoWidth) {
+          videoRegionStatus.textContent = "Choose a video first.";
+          return;
+        }
+        videoPreview.pause();
+        videoRegionCanvas.setPointerCapture(event.pointerId);
+        videoRegionDragStart = videoCanvasPoint(event);
+        videoRegionSelection = null;
+        referenceRegionInput.value = "";
+        drawVideoFrame();
+      });
+      videoRegionCanvas.addEventListener("pointermove", (event) => {
+        if (!videoRegionDragStart) {
+          return;
+        }
+        videoRegionSelection = normalizedVideoRect(videoRegionDragStart, videoCanvasPoint(event));
+        drawVideoFrame();
+      });
+      videoRegionCanvas.addEventListener("pointerup", (event) => {
+        if (!videoRegionDragStart) {
+          return;
+        }
+        videoRegionSelection = normalizedVideoRect(videoRegionDragStart, videoCanvasPoint(event));
+        videoRegionDragStart = null;
+        if (videoRegionSelection.width < 4 || videoRegionSelection.height < 4) {
+          videoRegionSelection = null;
+          referenceRegionInput.value = "";
+          videoRegionStatus.textContent = "Drag a larger rectangle around the watched area.";
+        }
+        drawVideoFrame();
       });
 
       siteForm.addEventListener("submit", async (e) => {
@@ -1111,6 +1252,10 @@
 
       videoForm.addEventListener("submit", async (e) => {
         e.preventDefault();
+        if (!videoRegionSelection) {
+          alert("Select the watched area from a video frame before adding the video.");
+          return;
+        }
         const formData = new FormData(videoForm);
 
         try {
@@ -1123,6 +1268,7 @@
           if (response.ok) {
             alert(result.message);
             videoForm.reset();
+            resetVideoPreview();
             hideForms();
             loadSites();
           } else {

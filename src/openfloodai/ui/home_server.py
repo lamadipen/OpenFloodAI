@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
 
+from openfloodai.config import SiteConfigError, write_reference_region
 from openfloodai.review import (
     ALLOWED_CONFIDENCE_LEVELS,
     ALLOWED_HUMAN_LABELS,
@@ -120,6 +121,8 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
                 return
 
             video_path = temp_video or Path(str(data.get("video_path", "")))
+            reference_region = _parse_reference_region(data.get("reference_region"))
+            config_path = _find_site_config(site_dir) if reference_region is not None else None
             result = intake_validation_video(
                 site_dir=site_dir,
                 video_path=video_path,
@@ -133,6 +136,10 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
                 overwrite=_as_bool(data.get("overwrite"), default=False),
             )
 
+            if result.created and reference_region is not None:
+                assert config_path is not None
+                write_reference_region(config_path, reference_region)
+
             self._send_json(
                 {
                     "success": result.created,
@@ -140,9 +147,12 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
                     "site_dir": str(result.site_dir) if result.created else None,
                     "video_path": str(result.video_path) if result.created else None,
                     "manifest_path": str(result.manifest_path) if result.created else None,
+                    "config_path": str(config_path) if config_path is not None else None,
                 },
                 status_code=200 if result.created else 400,
             )
+        except SiteConfigError as error:
+            self._send_json({"success": False, "message": str(error)}, status_code=400)
         finally:
             if temp_video is not None and temp_video.exists():
                 temp_video.unlink()
@@ -389,3 +399,25 @@ def _as_bool(value: object, *, default: bool = False) -> bool:
         if lowered in {"false", "0", "no", "off"}:
             return False
     return default
+
+
+def _find_site_config(site_dir: Path) -> Path:
+    config_paths = sorted((site_dir / "configs").glob("*.json"))
+    if not config_paths:
+        raise SiteConfigError(f"Site config was not found under {site_dir / 'configs'}")
+    return config_paths[0]
+
+
+def _parse_reference_region(value: object) -> dict[str, object] | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError as error:
+            raise SiteConfigError("reference_region must be valid JSON") from error
+    else:
+        parsed = value
+    if not isinstance(parsed, dict):
+        raise SiteConfigError("reference_region must be a JSON object")
+    return {str(key): item for key, item in parsed.items()}

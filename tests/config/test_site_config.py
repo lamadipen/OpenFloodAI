@@ -5,7 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from openfloodai.config import ReferenceRegion, SiteConfigError, load_site_config
+from openfloodai.config import (
+    ReferenceRegion,
+    SiteConfigError,
+    load_site_config,
+    write_reference_region,
+)
 
 
 def write_config(path: Path, payload: dict[str, object]) -> Path:
@@ -39,6 +44,15 @@ def test_example_site_config_loads_successfully() -> None:
     assert config.public_location == "Demo River near Example Town"
     assert config.input_type == "local_video"
     assert config.reference_region == ReferenceRegion(x=0, y=50, width=100, height=50)
+
+
+def test_public_location_is_optional(tmp_path: Path) -> None:
+    payload = valid_config_payload()
+    del payload["public_location"]
+
+    config = load_site_config(write_config(tmp_path / "no-location.json", payload))
+
+    assert config.public_location is None
 
 
 def test_required_fields_are_enforced(tmp_path: Path) -> None:
@@ -84,6 +98,29 @@ def test_reference_region_is_optional(tmp_path: Path) -> None:
     config_path = write_config(tmp_path / "no-region.json", payload)
 
     assert load_site_config(config_path).reference_region is None
+
+
+def test_write_reference_region_updates_only_watched_area(tmp_path: Path) -> None:
+    config_path = write_config(tmp_path / "site.json", valid_config_payload())
+
+    write_reference_region(
+        config_path,
+        {"x": 12.5, "y": 35, "width": 60, "height": 40},
+    )
+
+    config = load_site_config(config_path)
+    assert config.site_id == "site-demo-01"
+    assert config.reference_region == ReferenceRegion(x=12.5, y=35, width=60, height=40)
+
+
+def test_write_reference_region_rejects_area_outside_frame(tmp_path: Path) -> None:
+    config_path = write_config(tmp_path / "site.json", valid_config_payload())
+
+    with pytest.raises(SiteConfigError, match="0-100 image area"):
+        write_reference_region(
+            config_path,
+            {"x": 80, "y": 50, "width": 30, "height": 50},
+        )
 
 
 def test_example_config_does_not_commit_private_fields() -> None:
