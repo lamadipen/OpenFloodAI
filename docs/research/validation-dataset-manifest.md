@@ -92,7 +92,7 @@ This only checks the manifest text. It does not open videos, train a model, dete
 
 You do not have to edit `manifest.jsonl` by hand.
 
-From the local Home UI, open **Add Video**, choose a site, select a local video file, and fill in the metadata.
+From the local Home UI, open **Add Video**, choose a site, select a local video file, choose a frame, drag around the watched river area, and fill in the metadata. The selected percentage-based `reference_region` is saved to the site's config while the video and manifest row are added.
 
 The UI shows predefined choices for `purpose` and `hard_case_type`.
 

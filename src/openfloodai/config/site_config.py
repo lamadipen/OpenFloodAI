@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -77,6 +78,32 @@ def load_site_config(config_path: Path) -> SiteCameraConfig:
         reference_region=_load_reference_region(config.get("reference_region")),
         privacy_notes=_load_optional_text(config.get("privacy_notes"), "privacy_notes"),
     )
+
+
+def write_reference_region(config_path: Path, value: Mapping[str, object]) -> None:
+    """Update a site's watched region while preserving its other config fields."""
+
+    reference_region = _load_reference_region(dict(value))
+    if reference_region is None:
+        raise SiteConfigError("Reference region cannot be empty")
+
+    try:
+        raw_config = json.loads(config_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as error:
+        raise SiteConfigError(f"Site config file was not found: {config_path}") from error
+    except json.JSONDecodeError as error:
+        raise SiteConfigError(f"Site config file is not valid JSON: {config_path}") from error
+
+    if not isinstance(raw_config, dict):
+        raise SiteConfigError("Site config must be a JSON object")
+
+    raw_config["reference_region"] = {
+        "x": reference_region.x,
+        "y": reference_region.y,
+        "width": reference_region.width,
+        "height": reference_region.height,
+    }
+    config_path.write_text(json.dumps(raw_config, indent=2) + "\n", encoding="utf-8")
 
 
 def _validate_fields(config: dict[str, Any]) -> None:

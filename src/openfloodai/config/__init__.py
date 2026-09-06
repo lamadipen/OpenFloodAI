@@ -10,6 +10,7 @@ from openfloodai.config.site_config import (
     SiteCameraConfig,
     SiteConfigError,
     load_site_config,
+    write_reference_region,
 )
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "load_site_config",
     "pixel_selection_to_reference_region",
     "reference_region_to_dict",
+    "write_reference_region",
 ]
