@@ -342,3 +342,152 @@ def test_unknown_path_returns_404(tmp_path: Path) -> None:
             assert error.code == 404
         else:  # pragma: no cover - only reached if the handler regresses
             raise AssertionError("Expected 404 for an unknown path")
+
+
+def test_home_ui_page_has_guided_workflow_section(tmp_path: Path) -> None:
+    with serve_home_ui(tmp_path) as base_url:
+        _, _, body = get_text(f"{base_url}/openfloodai-home-ui.html")
+
+    assert 'id="workflowPanel"' in body
+    assert 'id="workflowSteps"' in body
+    assert "Guided validation workflow" in body
+    assert "function renderWorkflow(site)" in body
+    assert "window.startWorkflowStep" in body
+
+
+def test_home_ui_page_keeps_standalone_actions_next_to_the_workflow(tmp_path: Path) -> None:
+    """Users must still be able to run one action without walking the whole workflow."""
+
+    with serve_home_ui(tmp_path) as base_url:
+        _, _, body = get_text(f"{base_url}/openfloodai-home-ui.html")
+
+    assert 'id="createSiteButton"' in body
+    assert 'id="addVideoButton"' in body
+    assert 'id="addLabelButton"' in body
+    assert "window.runValidationForSite" in body
+
+
+def test_sites_api_exposes_workflow_steps_for_the_home_ui(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    make_site(sites_dir / "example-site")
+
+    with serve_home_ui(sites_dir) as base_url:
+        payload = get_json(f"{base_url}/api/sites")
+
+    steps = payload["sites"][0]["workflow_steps"]
+
+    assert [step["key"] for step in steps] == [
+        "site_setup",
+        "video_intake",
+        "watched_area",
+        "human_labels",
+        "manifest",
+        "run_validation",
+        "review_results",
+    ]
+    for step in steps:
+        assert step["status"] in {"complete", "missing", "needs_review"}
+        assert step["meaning"]
+        assert step["actions"]
+        assert all(action["label"] and action["action_id"] for action in step["actions"])
+
+
+def test_sites_api_reports_missing_watched_area_as_a_required_step(tmp_path: Path) -> None:
+    """make_site writes a config with no reference_region, so validation cannot run yet."""
+
+    sites_dir = tmp_path / "sites"
+    make_site(sites_dir / "example-site")
+
+    with serve_home_ui(sites_dir) as base_url:
+        payload = get_json(f"{base_url}/api/sites")
+
+    site = payload["sites"][0]
+    watched_area = next(step for step in site["workflow_steps"] if step["key"] == "watched_area")
+
+    assert site["reference_region_found"] is False
+    assert watched_area["status"] == "missing"
+    assert watched_area["status_text"] == "Missing"
+    assert watched_area["required_for_validation"] is True
+
+
+def test_workflow_step_actions_open_their_form_inside_the_step(tmp_path: Path) -> None:
+    """A step action expands its form in the step card, not as a separate panel."""
+
+    with serve_home_ui(tmp_path) as base_url:
+        _, _, body = get_text(f"{base_url}/openfloodai-home-ui.html")
+
+    assert 'data-step-slot="${escapeHtml(step.key)}"' in body
+    assert "function mountWorkflowForm()" in body
+    assert "slot.append(panel)" in body
+    assert "function detachWorkflowForm()" in body
+
+
+def test_open_workflow_form_survives_a_workflow_rerender(tmp_path: Path) -> None:
+    """Re-rendering replaces step markup, so the open form must be re-mounted."""
+
+    with serve_home_ui(tmp_path) as base_url:
+        _, _, body = get_text(f"{base_url}/openfloodai-home-ui.html")
+
+    render_start = body.index("function renderWorkflow(site)")
+    render_body = body[render_start : body.index("function renderSiteDetails(site)")]
+
+    assert "detachWorkflowForm();" in render_body
+    assert "mountWorkflowForm();" in render_body
+    assert 'id="formHome"' in body
+
+
+def test_workflow_panel_appears_before_the_forms_it_opens(tmp_path: Path) -> None:
+    """Step actions must reveal their form below the workflow, not above it."""
+
+    with serve_home_ui(tmp_path) as base_url:
+        _, _, body = get_text(f"{base_url}/openfloodai-home-ui.html")
+
+    workflow_index = body.index('id="workflowPanel"')
+
+    assert workflow_index < body.index('id="setupForm"')
+    assert workflow_index < body.index('id="videoFormPanel"')
+    assert workflow_index < body.index('id="labelFormPanel"')
+
+
+def test_sites_api_offers_select_and_create_actions_on_filled_steps(tmp_path: Path) -> None:
+    """A site with a config, videos, and labels can be switched to, not only added to."""
+
+    sites_dir = tmp_path / "sites"
+    make_site(sites_dir / "example-site")
+
+    with serve_home_ui(sites_dir) as base_url:
+        payload = get_json(f"{base_url}/api/sites")
+
+    steps = {step["key"]: step for step in payload["sites"][0]["workflow_steps"]}
+
+    def action_ids(key: str) -> list[str]:
+        return [action["action_id"] for action in steps[key]["actions"]]
+
+    assert action_ids("site_setup") == ["select_site", "create_site"]
+    assert action_ids("video_intake") == ["select_video", "add_video"]
+    assert action_ids("human_labels") == ["select_label", "add_label"]
+
+
+def test_home_ui_renders_every_action_for_a_step(tmp_path: Path) -> None:
+    with serve_home_ui(tmp_path) as base_url:
+        _, _, body = get_text(f"{base_url}/openfloodai-home-ui.html")
+
+    assert "(step.actions || [])" in body
+    assert 'class="workflow-actions"' in body
+    assert 'id="videoListPanel"' in body
+    assert 'id="labelListPanel"' in body
+    assert "function fillWorkflowList(actionId, siteName)" in body
+
+
+def test_select_site_picks_a_site_inline_instead_of_jumping_to_details(
+    tmp_path: Path,
+) -> None:
+    """Selecting a site should switch the workflow in place, not scroll to a dropdown."""
+
+    with serve_home_ui(tmp_path) as base_url:
+        _, _, body = get_text(f"{base_url}/openfloodai-home-ui.html")
+
+    assert 'id="siteListPanel"' in body
+    assert "window.selectSiteFromWorkflow" in body
+    assert "selectSiteFromWorkflow('${escapeHtml(entry.site_name)}')" in body
+    assert "renderWorkflow(selectedSite);" in body

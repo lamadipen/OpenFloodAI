@@ -14,6 +14,8 @@ from openfloodai.validation.site_setup import (
 )
 from openfloodai.validation.site_status import (
     ValidationSiteStatus,
+    WorkflowAction,
+    WorkflowStep,
     discover_validation_site_statuses,
     read_validation_site_status,
 )
@@ -30,6 +32,8 @@ __all__ = [
     "ValidationSiteStatus",
     "ValidationVideoIntakeResult",
     "ValidationScorecard",
+    "WorkflowAction",
+    "WorkflowStep",
     "discover_validation_site_statuses",
     "intake_validation_video",
     "read_validation_site_status",
