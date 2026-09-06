@@ -158,7 +158,11 @@ def test_read_validation_site_status_reports_conflicting_manifest_video_ids(tmp_
     status = read_validation_site_status(site_dir)
 
     assert status.manifest_status == "Incomplete"
+    assert status.manifest_found is False
+    assert status.ready_for_human_comparison is False
     assert status.manifest_issues == ["Conflicting manifest video ID: river-001"]
+    assert status.validation_readiness.checks[4].value == "Incomplete"
+    assert "Repair the manifest so every local video is tracked clearly." in status.next_steps
 
 
 def test_next_steps_explain_when_a_watched_area_is_missing(tmp_path: Path) -> None:

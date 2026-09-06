@@ -646,7 +646,8 @@ The Manifest step shows whether the manifest is `Found`, `Missing`, or `Incomple
 along with the number of local videos it tracks. For a missing or incomplete manifest,
 choose **Create manifest from local videos** or **Repair manifest from local videos**.
 The action scans only `inputs/videos/`, adds rows only for untracked videos, preserves
-existing metadata, and keeps `approved_for_repo` false for every new row. It reports
+existing metadata, keeps `approved_for_repo` false for every new row, and marks a new
+row as labelled when a local `labels/*.jsonl` record already names that video. It reports
 incomplete or conflicting existing rows instead of replacing them.
 
 Step 6 shows what will happen before a run starts. It lists everything the run

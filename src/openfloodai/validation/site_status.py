@@ -187,7 +187,7 @@ class ValidationSiteStatus:
         if not self.labels_found:
             missing.append("labels")
         if not self.manifest_found:
-            missing.append("manifest")
+            missing.append("manifest" if self.manifest_status == "Missing" else "complete manifest")
         return f"Not ready because {_join_missing_items(missing)} are missing."
 
     def _missing_machine_items(self) -> list[str]:
@@ -225,7 +225,7 @@ class ValidationSiteStatus:
             ReadinessCheck(label="Human labels", value=label_value, ok=self.labels_found),
             ReadinessCheck(
                 label="Manifest",
-                value="Found" if self.manifest_found else "Missing",
+                value=self.manifest_status,
                 ok=self.manifest_found,
             ),
             ReadinessCheck(label="Output", value="Saved on this computer", ok=True),
@@ -293,9 +293,9 @@ class ValidationSiteStatus:
             steps.append("Choose a watched area so validation knows where to look.")
         if not self.labels_found:
             steps.append("Machine review can still run, but human comparison needs labels.")
-        if not self.manifest_found:
+        if self.manifest_status == "Missing":
             steps.append("Add manifest.jsonl so videos can be tracked clearly.")
-        elif self.manifest_issues:
+        elif self.manifest_status == "Incomplete":
             steps.append("Repair the manifest so every local video is tracked clearly.")
         if not self.outputs_found:
             steps.append("Run validation to create the first report.")
@@ -485,7 +485,7 @@ def read_validation_site_status(site_dir: Path) -> ValidationSiteStatus:
         labels_found=bool(label_paths),
         label_count=len(label_paths),
         human_label_options=human_label_options,
-        manifest_found=manifest_status != "Missing",
+        manifest_found=manifest_status == "Found",
         manifest_status=manifest_status,
         manifest_tracked_video_count=manifest_tracked_video_count,
         manifest_issues=manifest_issues,

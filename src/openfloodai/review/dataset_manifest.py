@@ -160,6 +160,7 @@ def repair_manifest_from_local_videos(site_dir: Path) -> ManifestRepairResult:
     tracked_video_ids = {
         record["video_id"] for record in existing_records if isinstance(record.get("video_id"), str)
     }
+    labelled_video_ids = _find_labelled_video_ids(site_dir)
     new_records: list[JsonObject] = []
     for video_path in video_paths:
         if video_path.name in tracked_filenames:
@@ -174,7 +175,7 @@ def repair_manifest_from_local_videos(site_dir: Path) -> ManifestRepairResult:
                 "purpose": "practice_normal_water",
                 "split": "practice",
                 "approved_for_repo": False,
-                "has_human_label": False,
+                "has_human_label": video_path.stem in labelled_video_ids,
                 "notes": "Created from an existing local video; review metadata before validation.",
             }
         )
@@ -204,6 +205,25 @@ def _manifest_repair_issues(records: list[JsonObject]) -> list[str]:
         seen_video_ids.add(video_id)
         seen_filenames.add(filename)
     return issues
+
+
+def _find_labelled_video_ids(site_dir: Path) -> set[str]:
+    """Return video IDs with readable local human-label records."""
+
+    labelled_video_ids: set[str] = set()
+    labels_dir = site_dir / "labels"
+    if not labels_dir.is_dir():
+        return labelled_video_ids
+    for label_path in labels_dir.glob("*.jsonl"):
+        try:
+            label_records = read_jsonl_records(label_path)
+        except ValueError:
+            continue
+        for record in label_records:
+            video_id = record.get("video_id")
+            if isinstance(video_id, str) and video_id.strip():
+                labelled_video_ids.add(video_id)
+    return labelled_video_ids
 
 
 def _validate_text_field(
