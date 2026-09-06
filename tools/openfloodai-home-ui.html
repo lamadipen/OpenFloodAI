@@ -515,10 +515,6 @@
             <textarea name="notes" required placeholder="Short note about this video, such as what is visible, camera quality, or why it is useful." style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px; min-height: 60px;"></textarea>
           </div>
           <label style="display: flex; align-items: center; gap: 8px;">
-            <input type="checkbox" name="has_human_label" value="true">
-            Human label already added
-          </label>
-          <label style="display: flex; align-items: center; gap: 8px;">
             <input type="checkbox" name="approved_for_repo" value="true">
             Safe to share in repository (keep unchecked by default)
           </label>
@@ -694,7 +690,28 @@
         }
       }
 
-      function fillSelect(select, options, emptyLabel = "") {
+      const videoPurposeLabels = {
+        practice_normal_water: "Practice: normal water",
+        possible_rising_water: "Possible rising water",
+        possible_falling_water: "Possible falling water",
+        no_clear_change: "No clear change",
+        hard_case_review: "Hard case review",
+        camera_video_problem: "Camera/video problem",
+      };
+      const difficultCaseLabels = {
+        night_or_dark_frame: "Dark video",
+        heavy_glare: "Glare on water",
+        camera_shake: "Shaky camera",
+        blocked_view: "Blocked view",
+        camera_offline: "Camera offline",
+        unreadable_video: "Unreadable video",
+        missing_video: "Missing video",
+        rain_or_noisy_image: "Rain or noisy image",
+        compression_or_noise_artifacts: "Compression or image noise",
+        empty_video: "Empty video",
+      };
+
+      function fillSelect(select, options, emptyLabel = "", displayLabels = {}) {
         const current = select.value;
         select.innerHTML = "";
         if (emptyLabel) {
@@ -706,7 +723,7 @@
         for (const value of options) {
           const option = document.createElement("option");
           option.value = value;
-          option.textContent = value;
+          option.textContent = displayLabels[value] || value;
           select.append(option);
         }
         if ([...select.options].some((option) => option.value === current)) {
@@ -1060,8 +1077,8 @@
           fillDetailSiteSelect(latestSites);
           defaultHumanLabelOptions = payload.human_label_options || defaultHumanLabelOptions;
           fillSiteSelect(payload.sites);
-          fillSelect(purposeSelect, payload.purpose_options || [], "Choose purpose");
-          fillSelect(hardCaseTypeSelect, payload.hard_case_type_options || [], "No hard case");
+          fillSelect(purposeSelect, payload.purpose_options || [], "Choose purpose", videoPurposeLabels);
+          fillSelect(hardCaseTypeSelect, payload.hard_case_type_options || [], "No difficult case", difficultCaseLabels);
           updateLabelOptionsForSelectedSite();
           fillSelect(
             labelConfidenceSelect,

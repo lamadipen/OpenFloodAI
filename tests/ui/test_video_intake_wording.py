@@ -39,7 +39,6 @@ def test_video_intake_uses_plain_language_and_explains_manifest() -> None:
         "Dataset group *",
         "Difficult case type",
         "Video notes *",
-        "Human label already added",
         "Safe to share in repository (keep unchecked by default)",
         "Replace existing video or manifest row",
     ):
@@ -50,7 +49,12 @@ def test_video_intake_uses_plain_language_and_explains_manifest() -> None:
 
 
 def test_video_intake_preserves_field_names_and_safe_defaults() -> None:
-    controls = intake_panel().controls
+    panel = intake_panel()
+    controls = panel.controls
+    assert "has_human_label" not in controls
+    text = "".join(panel.text)
+    assert "Has human label" not in text
+    assert "Human label already added" not in text
     assert set(controls) == {
         "folder_name",
         "video_file",
@@ -60,11 +64,10 @@ def test_video_intake_preserves_field_names_and_safe_defaults() -> None:
         "split",
         "hard_case_type",
         "notes",
-        "has_human_label",
         "approved_for_repo",
         "overwrite",
     }
-    for name in ("has_human_label", "approved_for_repo", "overwrite"):
+    for name in ("approved_for_repo", "overwrite"):
         assert controls[name]["type"] == "checkbox"
         assert controls[name]["value"] == "true"
         assert "checked" not in controls[name]

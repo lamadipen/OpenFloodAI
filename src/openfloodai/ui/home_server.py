@@ -131,7 +131,6 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
                 split=str(data.get("split", "")),
                 notes=str(data.get("notes", "")),
                 approved_for_repo=_as_bool(data.get("approved_for_repo"), default=False),
-                has_human_label=_as_bool(data.get("has_human_label"), default=False),
                 hard_case_type=str(data.get("hard_case_type", "")),
                 overwrite=_as_bool(data.get("overwrite"), default=False),
             )
