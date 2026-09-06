@@ -71,6 +71,14 @@ pytest
 mkdocs build --strict
 ```
 
+The Home UI also has a few JavaScript tests. They need Node 20 or newer, and they use only built-in Node modules, so there is nothing to install:
+
+```bash
+node --test "tests/ui/*.cjs"
+```
+
+Quote the pattern. `node --test tests/ui/` does not work, because Node only looks for file names such as `name.test.cjs`, and these files are named `test_name.cjs` to match the Python tests beside them.
+
 ## Documentation Site
 
 OpenFloodAI has a small MkDocs documentation site in `docs/`.
