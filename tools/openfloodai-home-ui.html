@@ -571,7 +571,8 @@
           </div>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Human label *</label>
-            <select name="human_label" id="labelValueSelect" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
+            <select name="human_label" id="labelValueSelect" aria-describedby="humanLabelHelp" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
+            <div class="meta" id="humanLabelHelp" style="margin-top: 4px;">Choose what a person sees in this video time window. This is used only when comparing human review with machine result.</div>
           </div>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Manual label</label>
@@ -705,6 +706,13 @@
         }
       }
 
+      const humanLabelDisplayLabels = {
+        water_rising: "Water is rising",
+        water_falling: "Water is falling",
+        no_clear_change: "No clear water change",
+        cannot_judge: "I cannot judge from this video",
+        camera_video_problem: "Camera or video problem",
+      };
       const videoPurposeLabels = {
         practice_normal_water: "Practice: normal water",
         possible_rising_water: "Possible rising water",
@@ -763,7 +771,7 @@
         const selectedSite = latestSites.find((site) => site.site_name === labelSiteSelect.value);
         const videoIds = selectedSite?.video_ids || [];
         fillSelect(labelVideoSelect, videoIds, videoIds.length ? "Choose video ID" : "No local videos — enter ID below");
-        fillSelect(labelValueSelect, labelsForSelectedSite(), "Choose human label");
+        fillSelect(labelValueSelect, labelsForSelectedSite(), "Choose human label", humanLabelDisplayLabels);
       }
 
       function fileStem(filename) {
