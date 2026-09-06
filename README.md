@@ -642,6 +642,14 @@ the result stays `cannot_compare` until a human label exists.
 You need the watched area because the system only looks inside the `reference_region`
 from the config. A site with no `reference_region` cannot finish a run.
 
+The Manifest step shows whether the manifest is `Found`, `Missing`, or `Incomplete`,
+along with the number of local videos it tracks. For a missing or incomplete manifest,
+choose **Create manifest from local videos** or **Repair manifest from local videos**.
+The action scans only `inputs/videos/`, adds rows only for untracked videos, preserves
+existing metadata, keeps `approved_for_repo` false for every new row, and marks a new
+row as labelled when a local `labels/*.jsonl` record already names that video. It reports
+incomplete or conflicting existing rows instead of replacing them.
+
 Step 6 shows what will happen before a run starts. It lists everything the run
 needs, and says what the system will do:
 
@@ -681,7 +689,7 @@ The site card also shows a **What to do next** section. It explains the next use
 
 The Home UI explains both review routes above the forms: machine-only review produces machine evidence, and human comparison review compares it with a human label. Labels are optional for running validation.
 
-Machine review only needs config and video. Human comparison also needs labels and a manifest.
+Machine review needs config, video, and a watched area. Human comparison also needs labels and a manifest.
 
 Example:
 

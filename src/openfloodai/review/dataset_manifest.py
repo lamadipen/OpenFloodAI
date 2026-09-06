@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
-from openfloodai.contracts import read_jsonl_records
+from openfloodai.contracts import read_jsonl_records, write_jsonl_records
 from openfloodai.contracts.local_store import JsonObject
 
 ALLOWED_MANIFEST_SPLITS = {"practice", "locked_validation"}
@@ -46,6 +47,36 @@ ALLOWED_MANIFEST_FIELDS = REQUIRED_MANIFEST_FIELDS | OPTIONAL_MANIFEST_FIELDS
 
 class DatasetManifestError(ValueError):
     """Raised when a validation dataset manifest is invalid."""
+
+
+@dataclass(frozen=True)
+class ManifestRepairResult:
+    """Result of conservatively creating missing local-video manifest rows."""
+
+    manifest_path: Path
+    created_count: int
+    preserved_count: int
+    issues: list[str]
+
+    @property
+    def created(self) -> bool:
+        """Return whether the manifest was created or extended."""
+
+        return self.created_count > 0
+
+    @property
+    def message(self) -> str:
+        """Return a plain-language repair result without hiding outstanding issues."""
+
+        if self.issues:
+            return "Manifest was not changed: " + "; ".join(self.issues)
+        if self.created_count:
+            return (
+                f"Added {self.created_count} missing manifest row(s). "
+                f"Preserved {self.preserved_count} existing row(s). "
+                "New videos are not approved for repository use."
+            )
+        return "Manifest already tracks every local video. Existing metadata was preserved."
 
 
 def validate_manifest_record(record: Mapping[str, object]) -> list[str]:
@@ -97,6 +128,102 @@ def load_manifest_records(path: Path) -> list[JsonObject]:
         raise DatasetManifestError("; ".join(all_errors))
 
     return records
+
+
+def repair_manifest_from_local_videos(site_dir: Path) -> ManifestRepairResult:
+    """Create only missing manifest rows for local videos, preserving existing metadata."""
+
+    manifest_path = site_dir / "manifest.jsonl"
+    videos_dir = site_dir / "inputs" / "videos"
+    video_paths = (
+        sorted(
+            path
+            for path in videos_dir.iterdir()
+            if path.is_file() and path.suffix.lower() in {".avi", ".mkv", ".mov", ".mp4"}
+        )
+        if videos_dir.is_dir()
+        else []
+    )
+
+    try:
+        existing_records = read_jsonl_records(manifest_path) if manifest_path.exists() else []
+    except ValueError as error:
+        return ManifestRepairResult(manifest_path, 0, 0, [f"Could not read manifest: {error}"])
+
+    issues = _manifest_repair_issues(existing_records)
+    if issues:
+        return ManifestRepairResult(manifest_path, 0, len(existing_records), issues)
+
+    tracked_filenames = {
+        record["filename"] for record in existing_records if isinstance(record.get("filename"), str)
+    }
+    tracked_video_ids = {
+        record["video_id"] for record in existing_records if isinstance(record.get("video_id"), str)
+    }
+    labelled_video_ids = _find_labelled_video_ids(site_dir)
+    new_records: list[JsonObject] = []
+    for video_path in video_paths:
+        if video_path.name in tracked_filenames:
+            continue
+        if video_path.stem in tracked_video_ids:
+            issues.append(f"Local video conflicts with manifest video_id: {video_path.stem}")
+            continue
+        new_records.append(
+            {
+                "video_id": video_path.stem,
+                "filename": video_path.name,
+                "purpose": "practice_normal_water",
+                "split": "practice",
+                "approved_for_repo": False,
+                "has_human_label": video_path.stem in labelled_video_ids,
+                "notes": "Created from an existing local video; review metadata before validation.",
+            }
+        )
+
+    if issues:
+        return ManifestRepairResult(manifest_path, 0, len(existing_records), issues)
+    if new_records:
+        write_jsonl_records(manifest_path, [*existing_records, *new_records])
+    return ManifestRepairResult(manifest_path, len(new_records), len(existing_records), [])
+
+
+def _manifest_repair_issues(records: list[JsonObject]) -> list[str]:
+    issues: list[str] = []
+    seen_video_ids: set[str] = set()
+    seen_filenames: set[str] = set()
+    for index, record in enumerate(records, start=1):
+        errors = validate_manifest_record(record)
+        if errors:
+            issues.append(f"Manifest row {index} is incomplete: {'; '.join(errors)}")
+            continue
+        video_id = str(record["video_id"])
+        filename = str(record["filename"])
+        if video_id in seen_video_ids:
+            issues.append(f"Manifest has conflicting video_id: {video_id}")
+        if filename in seen_filenames:
+            issues.append(f"Manifest has conflicting filename: {filename}")
+        seen_video_ids.add(video_id)
+        seen_filenames.add(filename)
+    return issues
+
+
+def _find_labelled_video_ids(site_dir: Path) -> set[str]:
+    """Return video IDs with readable local human-label records."""
+
+    labelled_video_ids: set[str] = set()
+    labels_dir = site_dir / "labels"
+    if not labels_dir.is_dir():
+        return labelled_video_ids
+    for label_path in labels_dir.glob("*.jsonl"):
+        try:
+            label_records = read_jsonl_records(label_path)
+        except ValueError:
+            continue
+        for record in label_records:
+            video_id = record.get("video_id")
+            if isinstance(video_id, str) and video_id.strip():
+                labelled_video_ids.add(video_id)
+    return labelled_video_ids
 
 
 def _validate_text_field(

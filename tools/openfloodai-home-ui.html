@@ -1398,7 +1398,9 @@
           detailItem("Config files", String(site.config_count)),
           detailItem("Videos", String(site.video_count)),
           detailItem("Label files", String(site.label_count)),
-          detailItem("Manifest", site.manifest_found ? "Found" : "Missing"),
+          detailItem("Manifest", site.manifest_status || (site.manifest_found ? "Found" : "Missing")),
+          detailItem("Videos tracked", String(site.manifest_tracked_video_count || 0)),
+          detailItem("Manifest details", (site.manifest_issues || []).join(" ") || "All local videos are tracked."),
           detailItem("Validation reports", String(site.report_count)),
           detailItem("Latest report", site.latest_report_path || "Not available"),
           renderValidationSummary(site),
@@ -1495,7 +1497,9 @@
               ${row("Config", `${yesNo(site.config_found)} (${site.config_count})`, classForFound(site.config_found))}
               ${row("Videos", countText(site.video_count, "video", "videos"), site.video_count > 0 ? "ok" : "missing")}
               ${row("Labels", `${yesNo(site.labels_found)} (${site.label_count})`, classForFound(site.labels_found))}
-              ${row("Manifest", yesNo(site.manifest_found), classForFound(site.manifest_found))}
+              ${row("Manifest", site.manifest_status || yesNo(site.manifest_found), classForFound(site.manifest_status === "Found"))}
+              ${row("Videos tracked", countText(site.manifest_tracked_video_count || 0, "video", "videos"), site.manifest_status === "Found" ? "ok" : "warn")}
+              ${site.manifest_issues?.length ? row("Manifest details", site.manifest_issues.join(" "), "warn") : ""}
               ${row("Output reports", countText(site.report_count, "report", "reports"), site.report_count > 0 ? "ok" : "warn")}
               ${row("Latest report", latestReport, site.latest_report_path ? "ok" : "warn")}
               ${row("Latest result", reportCountsText(site), site.latest_report_counts ? "ok" : "warn")}
@@ -1736,6 +1740,10 @@
           window.runValidationForSite(siteName);
           return;
         }
+        if (actionId === "repair_manifest") {
+          window.repairManifestForSite(siteName);
+          return;
+        }
         if (actionId === "review_results") {
           hideForms();
           const selectedSite = latestSites.find((site) => site.site_name === siteName);
@@ -1780,6 +1788,24 @@
           await loadSites();
         } catch (error) {
           alert(`Validation failed: ${error.message}`);
+        }
+      };
+
+      window.repairManifestForSite = async function (siteName) {
+        try {
+          const response = await fetch("/api/repair-manifest", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ folder_name: siteName }),
+          });
+          const result = await response.json();
+          if (!response.ok || !result.success) {
+            throw new Error(result.message || `Request failed: ${response.status}`);
+          }
+          alert(result.message);
+          await loadSites();
+        } catch (error) {
+          alert(`Manifest repair failed: ${error.message}`);
         }
       };
 

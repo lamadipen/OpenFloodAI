@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,7 @@ from openfloodai.review import (
     DatasetManifestError,
     is_valid_manifest_record,
     load_manifest_records,
+    repair_manifest_from_local_videos,
     validate_manifest_record,
 )
 
@@ -124,3 +126,82 @@ def test_manifest_purpose_and_hard_case_options_are_documented_values() -> None:
     assert "heavy_glare" in HARD_CASE_TYPE_OPTIONS
     assert "camera_shake" in HARD_CASE_TYPE_OPTIONS
     assert "none" not in HARD_CASE_TYPE_OPTIONS
+
+
+def test_repair_manifest_creates_conservative_rows_for_existing_local_videos(
+    tmp_path: Path,
+) -> None:
+    site_dir = tmp_path / "example-site"
+    videos_dir = site_dir / "inputs" / "videos"
+    videos_dir.mkdir(parents=True)
+    (videos_dir / "river-001.mp4").write_bytes(b"local-only-video")
+
+    result = repair_manifest_from_local_videos(site_dir)
+
+    assert result.created is True
+    assert result.created_count == 1
+    assert "not approved for repository use" in result.message
+    record = load_manifest_records(site_dir / "manifest.jsonl")[0]
+    assert record["video_id"] == "river-001"
+    assert record["approved_for_repo"] is False
+    assert record["has_human_label"] is False
+
+
+def test_repair_manifest_marks_existing_human_labels(tmp_path: Path) -> None:
+    site_dir = tmp_path / "example-site"
+    videos_dir = site_dir / "inputs" / "videos"
+    videos_dir.mkdir(parents=True)
+    (videos_dir / "river-001.mp4").write_bytes(b"local-only-video")
+    labels_dir = site_dir / "labels"
+    labels_dir.mkdir()
+    (labels_dir / "labels.jsonl").write_text(
+        '{"video_id":"river-001","time_window_seconds":[0,30],"human_label":"water_rising"}\n',
+        encoding="utf-8",
+    )
+
+    repair_manifest_from_local_videos(site_dir)
+
+    record = load_manifest_records(site_dir / "manifest.jsonl")[0]
+    assert record["has_human_label"] is True
+
+
+def test_repair_manifest_preserves_existing_rows_and_adds_only_missing_videos(
+    tmp_path: Path,
+) -> None:
+    site_dir = tmp_path / "example-site"
+    videos_dir = site_dir / "inputs" / "videos"
+    videos_dir.mkdir(parents=True)
+    (videos_dir / "existing.mp4").write_bytes(b"existing")
+    (videos_dir / "missing.mp4").write_bytes(b"missing")
+    existing = valid_manifest_record()
+    existing["video_id"] = "existing"
+    existing["filename"] = "existing.mp4"
+    existing["approved_for_repo"] = True
+    existing["notes"] = "Explicitly approved metadata must be preserved."
+    write_records = site_dir / "manifest.jsonl"
+    write_records.write_text(json.dumps(existing) + "\n", encoding="utf-8")
+
+    result = repair_manifest_from_local_videos(site_dir)
+
+    assert result.created_count == 1
+    records = {record["video_id"]: record for record in load_manifest_records(write_records)}
+    assert records["existing"] == existing
+    assert records["missing"]["approved_for_repo"] is False
+
+
+def test_repair_manifest_reports_incomplete_or_conflicting_data_without_writing(
+    tmp_path: Path,
+) -> None:
+    site_dir = tmp_path / "example-site"
+    videos_dir = site_dir / "inputs" / "videos"
+    videos_dir.mkdir(parents=True)
+    (videos_dir / "river-001.mp4").write_bytes(b"local-only-video")
+    manifest_path = site_dir / "manifest.jsonl"
+    original = '{"video_id":"river-001","filename":"other.mp4"}\n'
+    manifest_path.write_text(original, encoding="utf-8")
+
+    result = repair_manifest_from_local_videos(site_dir)
+
+    assert result.created is False
+    assert "incomplete" in result.message
+    assert manifest_path.read_text(encoding="utf-8") == original

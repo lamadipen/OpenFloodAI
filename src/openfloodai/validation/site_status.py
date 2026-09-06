@@ -9,6 +9,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from openfloodai.contracts import read_jsonl_records
+from openfloodai.review import validate_manifest_record
+
 VIDEO_SUFFIXES = {".avi", ".mkv", ".mov", ".mp4"}
 REPORT_PREVIEW_MAX_LENGTH = 1200
 
@@ -127,6 +130,9 @@ class ValidationSiteStatus:
     label_count: int
     human_label_options: list[str]
     manifest_found: bool
+    manifest_status: str
+    manifest_tracked_video_count: int
+    manifest_issues: list[str]
     reference_region_found: bool
     outputs_found: bool
     report_count: int
@@ -181,7 +187,7 @@ class ValidationSiteStatus:
         if not self.labels_found:
             missing.append("labels")
         if not self.manifest_found:
-            missing.append("manifest")
+            missing.append("manifest" if self.manifest_status == "Missing" else "complete manifest")
         return f"Not ready because {_join_missing_items(missing)} are missing."
 
     def _missing_machine_items(self) -> list[str]:
@@ -219,7 +225,7 @@ class ValidationSiteStatus:
             ReadinessCheck(label="Human labels", value=label_value, ok=self.labels_found),
             ReadinessCheck(
                 label="Manifest",
-                value="Found" if self.manifest_found else "Missing",
+                value=self.manifest_status,
                 ok=self.manifest_found,
             ),
             ReadinessCheck(label="Output", value="Saved on this computer", ok=True),
@@ -287,8 +293,10 @@ class ValidationSiteStatus:
             steps.append("Choose a watched area so validation knows where to look.")
         if not self.labels_found:
             steps.append("Machine review can still run, but human comparison needs labels.")
-        if not self.manifest_found:
+        if self.manifest_status == "Missing":
             steps.append("Add manifest.jsonl so videos can be tracked clearly.")
+        elif self.manifest_status == "Incomplete":
+            steps.append("Repair the manifest so every local video is tracked clearly.")
         if not self.outputs_found:
             steps.append("Run validation to create the first report.")
         if not steps:
@@ -380,15 +388,15 @@ class ValidationSiteStatus:
                 key="manifest",
                 title="Manifest",
                 status=(
-                    WORKFLOW_STEP_COMPLETE if self.manifest_found else WORKFLOW_STEP_NEEDS_REVIEW
+                    WORKFLOW_STEP_COMPLETE
+                    if self.manifest_status == "Found"
+                    else WORKFLOW_STEP_NEEDS_REVIEW
                 ),
                 meaning=(
                     "The manifest says which video is which, and if it can be shared. "
                     "You need it to compare with human labels."
                 ),
-                actions=[
-                    WorkflowAction(label="Add video to update manifest", action_id="add_video")
-                ],
+                actions=_manifest_actions(self.manifest_status),
                 required_for_validation=False,
             ),
             WorkflowStep(
@@ -460,6 +468,9 @@ def read_validation_site_status(site_dir: Path) -> ValidationSiteStatus:
     video_paths = _find_video_paths(site_dir)
     label_paths = _find_label_paths(site_dir)
     human_label_options = _find_human_label_options(label_paths)
+    manifest_status, manifest_tracked_video_count, manifest_issues = _read_manifest_status(
+        site_dir / "manifest.jsonl", video_paths
+    )
     report_paths = _find_report_paths(site_dir)
     latest_report_path = _latest_path(report_paths)
     review_images_path = _latest_path(_find_review_images_paths(site_dir))
@@ -474,7 +485,10 @@ def read_validation_site_status(site_dir: Path) -> ValidationSiteStatus:
         labels_found=bool(label_paths),
         label_count=len(label_paths),
         human_label_options=human_label_options,
-        manifest_found=(site_dir / "manifest.jsonl").is_file(),
+        manifest_found=manifest_status == "Found",
+        manifest_status=manifest_status,
+        manifest_tracked_video_count=manifest_tracked_video_count,
+        manifest_issues=manifest_issues,
         reference_region_found=_has_reference_region(config_paths),
         outputs_found=bool(report_paths),
         report_count=len(report_paths),
@@ -523,6 +537,54 @@ def _find_label_paths(site_dir: Path) -> list[Path]:
     if not labels_dir.exists():
         return []
     return sorted(path for path in labels_dir.glob("*.jsonl") if path.is_file())
+
+
+def _read_manifest_status(
+    manifest_path: Path, video_paths: list[Path]
+) -> tuple[str, int, list[str]]:
+    """Return manifest tracking status without concealing invalid or missing rows."""
+
+    if not manifest_path.is_file():
+        return "Missing", 0, ["Manifest file is missing."]
+    try:
+        records = read_jsonl_records(manifest_path)
+    except ValueError as error:
+        return "Incomplete", 0, [f"Manifest cannot be read: {error}"]
+
+    issues: list[str] = []
+    filenames: set[str] = set()
+    video_ids: set[str] = set()
+    for index, record in enumerate(records, start=1):
+        errors = validate_manifest_record(record)
+        if errors:
+            issues.append(f"Row {index} is incomplete: {'; '.join(errors)}")
+            continue
+        filename = str(record["filename"])
+        video_id = str(record["video_id"])
+        if filename in filenames:
+            issues.append(f"Conflicting manifest filename: {filename}")
+        if video_id in video_ids:
+            issues.append(f"Conflicting manifest video ID: {video_id}")
+        filenames.add(filename)
+        video_ids.add(video_id)
+
+    local_filenames = {path.name for path in video_paths}
+    missing_filenames = sorted(local_filenames - filenames)
+    if missing_filenames:
+        issues.append(f"Videos without manifest rows: {', '.join(missing_filenames)}")
+    return ("Incomplete" if issues else "Found"), len(filenames & local_filenames), issues
+
+
+def _manifest_actions(manifest_status: str) -> list[WorkflowAction]:
+    if manifest_status == "Missing":
+        return [
+            WorkflowAction(label="Create manifest from local videos", action_id="repair_manifest")
+        ]
+    if manifest_status == "Incomplete":
+        return [
+            WorkflowAction(label="Repair manifest from local videos", action_id="repair_manifest")
+        ]
+    return [WorkflowAction(label="Add video to update manifest", action_id="add_video")]
 
 
 def _find_human_label_options(label_paths: list[Path]) -> list[str]:

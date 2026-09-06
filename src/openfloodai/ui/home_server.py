@@ -16,6 +16,7 @@ from openfloodai.review import (
     ALLOWED_CONFIDENCE_LEVELS,
     ALLOWED_HUMAN_LABELS,
     create_human_label_record,
+    repair_manifest_from_local_videos,
 )
 from openfloodai.review.dataset_manifest import HARD_CASE_TYPE_OPTIONS, MANIFEST_PURPOSE_OPTIONS
 from openfloodai.validation import (
@@ -58,6 +59,9 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             return
         if self.path == "/api/run-validation":
             self._handle_run_validation()
+            return
+        if self.path == "/api/repair-manifest":
+            self._handle_repair_manifest()
             return
         self.send_error(404, "Not found")
 
@@ -257,6 +261,44 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
                 },
             },
             status_code=200,
+        )
+
+    def _handle_repair_manifest(self) -> None:
+        data = self._read_json_body()
+        if data is None:
+            return
+        folder_name = str(data.get("folder_name", "")).strip()
+        if not folder_name:
+            self._send_json(
+                {"success": False, "message": "Missing required field: folder_name."},
+                status_code=400,
+            )
+            return
+        site_dir = (self.sites_dir / folder_name).resolve()
+        try:
+            site_dir.relative_to(self.sites_dir.resolve())
+        except ValueError:
+            self._send_json(
+                {
+                    "success": False,
+                    "message": (
+                        "Invalid folder_name: site folder must stay inside the sites directory."
+                    ),
+                },
+                status_code=400,
+            )
+            return
+        result = repair_manifest_from_local_videos(site_dir)
+        self._send_json(
+            {
+                "success": not result.issues,
+                "message": result.message,
+                "manifest_path": str(result.manifest_path),
+                "created_count": result.created_count,
+                "preserved_count": result.preserved_count,
+                "issues": result.issues,
+            },
+            status_code=200 if not result.issues else 400,
         )
 
     def _read_intake_request(self) -> tuple[dict[str, Any], Path | None] | None:

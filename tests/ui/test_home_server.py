@@ -410,6 +410,43 @@ def test_sites_api_reports_missing_watched_area_as_a_required_step(tmp_path: Pat
     assert watched_area["required_for_validation"] is True
 
 
+def test_sites_api_shows_missing_manifest_and_create_action(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    site_dir = make_site(sites_dir / "example-site")
+    (site_dir / "manifest.jsonl").unlink()
+
+    with serve_home_ui(sites_dir) as base_url:
+        site = get_json(f"{base_url}/api/sites")["sites"][0]
+
+    manifest_step = next(step for step in site["workflow_steps"] if step["key"] == "manifest")
+    assert site["manifest_status"] == "Missing"
+    assert site["manifest_tracked_video_count"] == 0
+    assert manifest_step["actions"] == [
+        {"label": "Create manifest from local videos", "action_id": "repair_manifest"}
+    ]
+
+
+def test_repair_manifest_api_creates_manifest_for_existing_local_videos(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    site_dir = make_site(sites_dir / "example-site")
+    (site_dir / "manifest.jsonl").unlink()
+
+    with serve_home_ui(sites_dir) as base_url:
+        request = Request(
+            f"{base_url}/api/repair-manifest",
+            data=json.dumps({"folder_name": "example-site"}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+
+    assert payload["success"] is True
+    assert payload["created_count"] == 1
+    records = json.loads((site_dir / "manifest.jsonl").read_text(encoding="utf-8"))
+    assert records["approved_for_repo"] is False
+
+
 def test_workflow_step_actions_open_their_form_inside_the_step(tmp_path: Path) -> None:
     """A step action expands its form in the step card, not as a separate panel."""
 
@@ -477,6 +514,8 @@ def test_home_ui_renders_every_action_for_a_step(tmp_path: Path) -> None:
     assert 'id="videoListPanel"' in body
     assert 'id="labelListPanel"' in body
     assert "function fillWorkflowList(actionId, siteName)" in body
+    assert "Manifest details" in body
+    assert "site.manifest_issues" in body
 
 
 def test_select_site_picks_a_site_inline_instead_of_jumping_to_details(
