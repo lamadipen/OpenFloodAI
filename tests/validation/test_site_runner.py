@@ -262,3 +262,17 @@ def test_each_validation_run_gets_its_own_snapshot(tmp_path: Path) -> None:
         assert (run_dir / "scorecard.json").exists()
         assert (run_dir / "run-metadata.json").exists()
         assert (run_dir / "records" / "rising-001.jsonl").exists()
+
+
+def test_failed_video_is_reflected_in_run_metadata(tmp_path: Path) -> None:
+    site_dir = make_site_dir(tmp_path)
+    (site_dir / "inputs" / "videos" / "broken.mp4").write_text(
+        "not a video",
+        encoding="utf-8",
+    )
+
+    report = run_site_validation(site_dir)
+    metadata = json.loads(Path(report.run_dir, "run-metadata.json").read_text())
+
+    assert report.failed_count == len(report.results)
+    assert metadata["status"] == "failed"

@@ -455,7 +455,13 @@ def _create_run_snapshot(
         "run_id": run_id,
         "site_name": report.site_name,
         "created_at": datetime.now(tz=UTC).isoformat(),
-        "status": "completed_with_warnings" if report.cannot_compare_count else "completed",
+        "status": (
+            "failed"
+            if report.failed_count == len(report.results) and report.results
+            else "completed_with_warnings"
+            if report.failed_count or report.cannot_compare_count
+            else "completed"
+        ),
         "report_path": str(run_dir / "validation-report.md"),
         "scorecard_path": str(run_dir / "scorecard.json"),
         "records_path": str(records_dir),
