@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import json
+import shutil
 from collections import Counter
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
+from datetime import UTC, datetime
 from pathlib import Path
+from uuid import uuid4
 
 from openfloodai.contracts import read_jsonl_records
 from openfloodai.contracts.local_store import JsonObject
@@ -119,6 +123,8 @@ class SiteValidationReport:
     disagree_count: int
     cannot_compare_count: int
     scorecard: ValidationScorecard
+    run_id: str = ""
+    run_dir: str = ""
 
 
 def run_site_validation(
@@ -184,7 +190,12 @@ def run_site_validation(
         results=sorted(results, key=lambda result: result.video_id),
     )
     report_path.write_text(render_site_validation_report(report), encoding="utf-8")
-    return report
+    run_id, run_dir = _create_run_snapshot(
+        site_dir=site_dir,
+        report=report,
+        report_path=report_path,
+    )
+    return replace(report, run_id=run_id, run_dir=str(run_dir))
 
 
 def render_site_validation_report(report: SiteValidationReport) -> str:
@@ -408,6 +419,55 @@ def _build_report(
         cannot_compare_count=cannot_compare_count,
         scorecard=scorecard,
     )
+
+
+def _create_run_snapshot(
+    *,
+    site_dir: Path,
+    report: SiteValidationReport,
+    report_path: Path,
+) -> tuple[str, Path]:
+    run_id = f"{datetime.now(tz=UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex[:8]}"
+    run_dir = site_dir / "outputs" / "runs" / run_id
+    records_dir = run_dir / "records"
+    evidence_dir = run_dir / "review-images"
+    records_dir.mkdir(parents=True, exist_ok=False)
+    evidence_dir.mkdir(parents=True, exist_ok=False)
+
+    shutil.copy2(report_path, run_dir / "validation-report.md")
+    (run_dir / "scorecard.json").write_text(
+        json.dumps(asdict(report.scorecard), indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    for result in report.results:
+        if result.output_dir is None:
+            continue
+        output_dir = Path(result.output_dir)
+        records_path = output_dir / "records.jsonl"
+        if records_path.is_file():
+            shutil.copy2(records_path, records_dir / f"{result.video_id}.jsonl")
+        review_images = output_dir / "review-images"
+        if review_images.is_dir():
+            shutil.copytree(review_images, evidence_dir / result.video_id)
+
+    metadata = {
+        "run_id": run_id,
+        "site_name": report.site_name,
+        "created_at": datetime.now(tz=UTC).isoformat(),
+        "status": "completed_with_warnings" if report.cannot_compare_count else "completed",
+        "report_path": str(run_dir / "validation-report.md"),
+        "scorecard_path": str(run_dir / "scorecard.json"),
+        "records_path": str(records_dir),
+        "review_images_path": str(evidence_dir),
+        "failed_count": report.failed_count,
+        "cannot_compare_count": report.cannot_compare_count,
+    }
+    (run_dir / "run-metadata.json").write_text(
+        json.dumps(metadata, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return run_id, run_dir
 
 
 def _top_comparison_reasons(

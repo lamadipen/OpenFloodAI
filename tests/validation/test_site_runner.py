@@ -241,3 +241,24 @@ def test_empty_validation_scorecard_stays_clear_and_safe(tmp_path: Path) -> None
     assert report.scorecard.summary == "No labelled windows were available for comparison yet."
     assert "Cannot compare: 0" in rendered
     assert "not proof of flood detection accuracy" in rendered
+
+
+def test_each_validation_run_gets_its_own_snapshot(tmp_path: Path) -> None:
+    site_dir = make_site_dir(tmp_path)
+    create_tiny_video(
+        site_dir / "inputs" / "videos" / "rising-001.avi",
+        frame_values=(20, 255),
+    )
+
+    first = run_site_validation(site_dir)
+    second = run_site_validation(site_dir)
+
+    runs_dir = site_dir / "outputs" / "runs"
+    run_dirs = sorted(path for path in runs_dir.iterdir() if path.is_dir())
+    assert len(run_dirs) == 2
+    assert first.run_id != second.run_id
+    for run_dir in run_dirs:
+        assert (run_dir / "validation-report.md").exists()
+        assert (run_dir / "scorecard.json").exists()
+        assert (run_dir / "run-metadata.json").exists()
+        assert (run_dir / "records" / "rising-001.jsonl").exists()

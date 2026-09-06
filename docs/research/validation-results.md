@@ -45,6 +45,11 @@ counts, plus the most common notes for cases that need review. The scorecard is 
 quick progress view for local testing. It is not an accuracy score and does not
 prove flood detection.
 
+Each run also saves a unique folder under `outputs/runs/<run-id>/` containing the
+report, scorecard, metadata, records, and review images for that run. Older report
+files outside `runs/` remain available as legacy reports, but are not mixed with
+saved-run evidence.
+
 ## What Worked
 
 - Local video files can be checked before processing.

@@ -272,6 +272,52 @@ def test_sites_api_returns_report_history_newest_first(tmp_path: Path) -> None:
     assert site["report_history"][0]["counts"]["cannot_compare"] == 1
 
 
+def test_sites_api_prefers_saved_run_history_and_keeps_run_evidence_together(
+    tmp_path: Path,
+) -> None:
+    sites_dir = tmp_path / "sites"
+    site_dir = make_site(sites_dir / "example-site")
+    runs_dir = site_dir / "outputs" / "runs"
+    newer = runs_dir / "run-new"
+    older = runs_dir / "run-old"
+    for run_dir, created_at, counts in (
+        (older, "2026-09-05T10:00:00+00:00", (1, 2, 3)),
+        (newer, "2026-09-05T11:00:00+00:00", (4, 1, 2)),
+    ):
+        (run_dir / "review-images").mkdir(parents=True)
+        (run_dir / "validation-report.md").write_text(
+            "\n".join(
+                [
+                    "# Site Validation Report",
+                    "",
+                    f"- Agree: {counts[0]}",
+                    f"- Disagree: {counts[1]}",
+                    f"- Cannot compare: {counts[2]}",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        (run_dir / "run-metadata.json").write_text(
+            json.dumps(
+                {
+                    "run_id": run_dir.name,
+                    "created_at": created_at,
+                    "status": "completed_with_warnings",
+                    "report_path": str(run_dir / "validation-report.md"),
+                    "review_images_path": str(run_dir / "review-images"),
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    with serve_home_ui(sites_dir) as base_url:
+        site = get_json(f"{base_url}/api/sites")["sites"][0]
+
+    assert [entry["run_id"] for entry in site["report_history"]] == ["run-new", "run-old"]
+    assert site["report_history"][0]["evidence_path"] == str(newer / "review-images")
+    assert site["report_history"][0]["status"] == "completed_with_warnings"
+
+
 def test_sites_api_includes_safety_note(tmp_path: Path) -> None:
     with serve_home_ui(tmp_path) as base_url:
         payload = get_json(f"{base_url}/api/sites")

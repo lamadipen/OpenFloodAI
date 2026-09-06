@@ -146,6 +146,10 @@ It shows site readiness, gives simple next-step messages for missing config, vid
 labels, manifests, or reports, and can run validation from a ready site. Validation
 results and review-image paths remain local to the selected site folder.
 
+Each validation run is preserved under `data/sites/<site-name>/outputs/runs/<run-id>/`
+with its own report, scorecard, metadata, records, and review images. Older output
+files remain legacy evidence and are labeled separately in history.
+
 Next goals:
 
 1. Add more approved validation clips for different rivers, lighting, weather, and camera quality.
