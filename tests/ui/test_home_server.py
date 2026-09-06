@@ -9,7 +9,7 @@ from pathlib import Path
 from threading import Thread
 from typing import Any
 from urllib.error import HTTPError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 from openfloodai.ui.home_server import OpenFloodAIHomeHandler
 
@@ -491,3 +491,104 @@ def test_select_site_picks_a_site_inline_instead_of_jumping_to_details(
     assert "window.selectSiteFromWorkflow" in body
     assert "selectSiteFromWorkflow('${escapeHtml(entry.site_name)}')" in body
     assert "renderWorkflow(selectedSite);" in body
+
+
+def test_sites_api_exposes_validation_readiness(tmp_path: Path) -> None:
+    """make_site has no reference_region, so the run is blocked until one is set."""
+
+    sites_dir = tmp_path / "sites"
+    make_site(sites_dir / "example-site")
+
+    with serve_home_ui(sites_dir) as base_url:
+        payload = get_json(f"{base_url}/api/sites")
+
+    readiness = payload["sites"][0]["validation_readiness"]
+
+    assert readiness["mode"] == "blocked"
+    assert readiness["can_run"] is False
+    assert readiness["missing"] == ["watched area"]
+    assert [check["label"] for check in readiness["checks"]] == [
+        "Site config",
+        "Videos",
+        "Watched area",
+        "Human labels",
+        "Manifest",
+        "Output",
+    ]
+
+
+def test_sites_api_blocks_run_validation_without_a_watched_area(tmp_path: Path) -> None:
+    """The Run Validation button must not promise a run the pipeline will refuse."""
+
+    sites_dir = tmp_path / "sites"
+    make_site(sites_dir / "example-site")
+
+    with serve_home_ui(sites_dir) as base_url:
+        payload = get_json(f"{base_url}/api/sites")
+
+    site = payload["sites"][0]
+
+    assert site["video_count"] == 1
+    assert site["reference_region_found"] is False
+    assert site["ready_for_machine_review"] is False
+    assert site["ready_for_validation"] is False
+
+
+def test_home_ui_renders_the_readiness_summary_in_the_run_step(tmp_path: Path) -> None:
+    with serve_home_ui(tmp_path) as base_url:
+        _, _, body = get_text(f"{base_url}/openfloodai-home-ui.html")
+
+    assert "function renderReadiness(site)" in body
+    assert 'step.key === "run_validation" ? renderReadiness(site) : ""' in body
+    assert "readiness-headline" in body
+    assert '!site.ready_for_validation ? "disabled" : ""' in body
+
+
+def test_run_validation_uses_the_main_site_validation_path(tmp_path: Path) -> None:
+    """The run must produce the full main-path evidence, not a shortcut result."""
+
+    sites_dir = tmp_path / "sites"
+    site_dir = make_site(sites_dir / "example-site")
+    write_json(
+        site_dir / "configs" / "site-config.json",
+        {
+            "site_id": "example-site",
+            "camera_id": "camera-demo-01",
+            "site_name": "Example Site",
+            "public_location": "Demo River near Example Town",
+            "input_type": "local_video",
+            "reference_region": {"x": 0, "y": 50, "width": 100, "height": 50},
+        },
+    )
+
+    with serve_home_ui(sites_dir) as base_url:
+        request = Request(
+            f"{base_url}/api/run-validation",
+            data=json.dumps({"folder_name": "example-site"}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+
+    assert payload["success"] is True
+    assert set(payload["counts"]) == {"agree", "disagree", "cannot_compare"}
+
+    # The main path preserves each run with its own report and scorecard.
+    runs = sorted((site_dir / "outputs" / "runs").iterdir())
+    assert len(runs) == 1
+    assert (runs[0] / "validation-report.md").is_file()
+    assert (runs[0] / "scorecard.json").is_file()
+    assert (runs[0] / "run-metadata.json").is_file()
+    assert Path(payload["report_path"]).is_file()
+
+
+def test_readiness_panel_spans_the_whole_step_card(tmp_path: Path) -> None:
+    """The step card is a grid, so a child without a span lands in the 42px number column."""
+
+    with serve_home_ui(tmp_path) as base_url:
+        _, _, body = get_text(f"{base_url}/openfloodai-home-ui.html")
+
+    readiness_rule = body[body.index(".readiness {") : body.index(".readiness.is-full")]
+
+    assert "grid-column: 1 / -1;" in readiness_rule

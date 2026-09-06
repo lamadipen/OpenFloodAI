@@ -13,6 +13,57 @@ VIDEO_SUFFIXES = {".avi", ".mkv", ".mov", ".mp4"}
 REPORT_PREVIEW_MAX_LENGTH = 1200
 
 
+READINESS_FULL = "full"
+READINESS_MACHINE_ONLY = "machine_only"
+READINESS_BLOCKED = "blocked"
+
+
+@dataclass(frozen=True)
+class ReadinessCheck:
+    """One input the local validation run depends on."""
+
+    label: str
+    value: str
+    ok: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-friendly representation of this check."""
+
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class ValidationReadiness:
+    """What a local validation run will do for one site before it starts."""
+
+    mode: str
+    headline: str
+    checks: list[ReadinessCheck]
+    missing: list[str]
+    notes: list[str]
+
+    @property
+    def can_run(self) -> bool:
+        """Return whether validation can start at all."""
+
+        return self.mode != READINESS_BLOCKED
+
+    @property
+    def compares_with_human_labels(self) -> bool:
+        """Return whether the run will compare machine evidence with human labels."""
+
+        return self.mode == READINESS_FULL
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-friendly representation of this readiness summary."""
+
+        payload = asdict(self)
+        payload["checks"] = [check.to_dict() for check in self.checks]
+        payload["can_run"] = self.can_run
+        payload["compares_with_human_labels"] = self.compares_with_human_labels
+        return payload
+
+
 WORKFLOW_STEP_COMPLETE = "complete"
 WORKFLOW_STEP_MISSING = "missing"
 WORKFLOW_STEP_NEEDS_REVIEW = "needs_review"
@@ -88,9 +139,13 @@ class ValidationSiteStatus:
 
     @property
     def ready_for_machine_review(self) -> bool:
-        """Return whether the site has the minimum files for machine review."""
+        """Return whether the site has the minimum files for machine review.
 
-        return self.config_found and self.video_count > 0
+        The watched area counts because run_local_video_review reads evidence
+        inside the configured reference_region and fails without one.
+        """
+
+        return self.config_found and self.video_count > 0 and self.reference_region_found
 
     @property
     def ready_for_human_comparison(self) -> bool:
@@ -109,13 +164,10 @@ class ValidationSiteStatus:
         """Explain whether the site has the files needed for machine review."""
 
         if self.ready_for_machine_review:
-            return "Ready because config and videos are found."
-        missing: list[str] = []
-        if not self.config_found:
-            missing.append("config")
-        if self.video_count == 0:
-            missing.append("videos")
-        return f"Not ready because {_join_missing_items(missing)} are missing."
+            return "Ready because config, videos, and a watched area are found."
+        return (
+            f"Not ready because {_join_missing_items(self._missing_machine_items())} are missing."
+        )
 
     @property
     def human_comparison_explanation(self) -> str:
@@ -125,15 +177,102 @@ class ValidationSiteStatus:
             return "Ready because config, videos, labels, and manifest are found."
         missing: list[str] = []
         if not self.ready_for_machine_review:
-            if not self.config_found:
-                missing.append("config")
-            if self.video_count == 0:
-                missing.append("videos")
+            missing.extend(self._missing_machine_items())
         if not self.labels_found:
             missing.append("labels")
         if not self.manifest_found:
             missing.append("manifest")
         return f"Not ready because {_join_missing_items(missing)} are missing."
+
+    def _missing_machine_items(self) -> list[str]:
+        """Return the required machine-review inputs this site does not have."""
+
+        missing: list[str] = []
+        if not self.config_found:
+            missing.append("config")
+        if self.video_count == 0:
+            missing.append("videos")
+        if not self.reference_region_found:
+            missing.append("watched area")
+        return missing
+
+    @property
+    def validation_readiness(self) -> ValidationReadiness:
+        """Describe what a validation run will do for this site before it starts."""
+
+        video_value = f"{self.video_count} found" if self.video_count else "None found"
+        label_value = (
+            f"{self.label_count} label file(s) found" if self.labels_found else "None found"
+        )
+        checks = [
+            ReadinessCheck(
+                label="Site config",
+                value="Found" if self.config_found else "Missing",
+                ok=self.config_found,
+            ),
+            ReadinessCheck(label="Videos", value=video_value, ok=self.video_count > 0),
+            ReadinessCheck(
+                label="Watched area",
+                value="Found" if self.reference_region_found else "Missing",
+                ok=self.reference_region_found,
+            ),
+            ReadinessCheck(label="Human labels", value=label_value, ok=self.labels_found),
+            ReadinessCheck(
+                label="Manifest",
+                value="Found" if self.manifest_found else "Missing",
+                ok=self.manifest_found,
+            ),
+            ReadinessCheck(label="Output", value="Saved on this computer", ok=True),
+        ]
+
+        if not self.ready_for_machine_review:
+            missing = self._missing_machine_items()
+            notes = [
+                "Add the missing items above to start a run.",
+                "No video is checked yet. No report is saved yet.",
+            ]
+            return ValidationReadiness(
+                mode=READINESS_BLOCKED,
+                headline="Cannot run yet. Something is missing.",
+                checks=checks,
+                missing=missing,
+                notes=notes,
+            )
+
+        if self.ready_for_human_comparison:
+            notes = [
+                "The system checks every video in this site.",
+                "It looks at frames inside each time window a person labelled.",
+                "It compares what it saw with what the person wrote.",
+                "It saves a report, a scorecard, and review images.",
+                "Unclear cases stay as cannot_compare. They do not count as success.",
+            ]
+            return ValidationReadiness(
+                mode=READINESS_FULL,
+                headline="Ready to run. The system will compare with human labels.",
+                checks=checks,
+                missing=[],
+                notes=notes,
+            )
+
+        missing = []
+        if not self.labels_found:
+            missing.append("human labels")
+        if not self.manifest_found:
+            missing.append("manifest")
+        notes = [
+            "The system checks every video and saves records and review images.",
+            "There are no human labels, so it cannot check its own work.",
+            "Every result stays cannot_compare.",
+            "This run does not show that the system is right.",
+        ]
+        return ValidationReadiness(
+            mode=READINESS_MACHINE_ONLY,
+            headline="Ready to run, but there is nothing to compare with.",
+            checks=checks,
+            missing=missing,
+            notes=notes,
+        )
 
     @property
     def next_steps(self) -> list[str]:
@@ -192,9 +331,7 @@ class ValidationSiteStatus:
                 key="site_setup",
                 title="Site setup",
                 status=(WORKFLOW_STEP_COMPLETE if self.config_found else WORKFLOW_STEP_MISSING),
-                meaning=(
-                    "The site config holds the camera and location details used by every run."
-                ),
+                meaning=("The site config holds the camera and place details. Every run uses it."),
                 actions=site_actions,
                 required_for_validation=True,
             ),
@@ -203,9 +340,7 @@ class ValidationSiteStatus:
                 key="video_intake",
                 title="Video intake",
                 status=WORKFLOW_STEP_COMPLETE if has_videos else WORKFLOW_STEP_MISSING,
-                meaning=(
-                    "Local videos are the input the machine reviews. They stay on this computer."
-                ),
+                meaning=("The system checks these videos. They stay on this computer."),
                 actions=video_actions,
                 required_for_validation=True,
             ),
@@ -217,9 +352,9 @@ class ValidationSiteStatus:
                     WORKFLOW_STEP_COMPLETE if self.reference_region_found else WORKFLOW_STEP_MISSING
                 ),
                 meaning=(
-                    "Pick the part of the video where the machine should look for water "
-                    "change. Validation cannot run without it. The selector currently "
-                    "opens inside video intake, so set the area while adding a video."
+                    "Pick the part of the video where the system should look for water "
+                    "change. A run cannot start without it. You pick this area when you "
+                    "add a video."
                 ),
                 actions=[WorkflowAction(label="Set area in video intake", action_id="add_video")],
                 required_for_validation=True,
@@ -232,8 +367,8 @@ class ValidationSiteStatus:
                     WORKFLOW_STEP_COMPLETE if self.labels_found else WORKFLOW_STEP_NEEDS_REVIEW
                 ),
                 meaning=(
-                    "Human labels say what a person saw. Without them the run is machine-only "
-                    "and results stay cannot_compare."
+                    "A human label says what a person saw. Without labels the system "
+                    "cannot check its work, and results stay cannot_compare."
                 ),
                 actions=label_actions,
                 required_for_validation=False,
@@ -246,8 +381,8 @@ class ValidationSiteStatus:
                     WORKFLOW_STEP_COMPLETE if self.manifest_found else WORKFLOW_STEP_NEEDS_REVIEW
                 ),
                 meaning=(
-                    "The manifest tracks which video is which and whether it may be shared. "
-                    "Human comparison needs it."
+                    "The manifest says which video is which, and if it can be shared. "
+                    "You need it to compare with human labels."
                 ),
                 actions=[
                     WorkflowAction(label="Add video to update manifest", action_id="add_video")
@@ -267,9 +402,7 @@ class ValidationSiteStatus:
                         else WORKFLOW_STEP_MISSING
                     )
                 ),
-                meaning=(
-                    "Run the local videos, create machine evidence, and compare with any labels."
-                ),
+                meaning=("Check the videos, save what the system saw, and compare with labels."),
                 actions=[WorkflowAction(label="Run validation", action_id="run_validation")],
                 required_for_validation=True,
             ),
@@ -281,8 +414,8 @@ class ValidationSiteStatus:
                     WORKFLOW_STEP_COMPLETE if self.latest_report_path else WORKFLOW_STEP_MISSING
                 ),
                 meaning=(
-                    "Read the report, scorecard, and review images. Unclear cases stay visible "
-                    "as cannot_compare."
+                    "Read the report, the scorecard, and the review images. Unclear "
+                    "cases stay as cannot_compare."
                 ),
                 actions=[WorkflowAction(label="Review results", action_id="review_results")],
                 required_for_validation=False,
@@ -300,6 +433,7 @@ class ValidationSiteStatus:
         payload["human_comparison_explanation"] = self.human_comparison_explanation
         payload["next_steps"] = self.next_steps
         payload["workflow_steps"] = [step.to_dict() for step in self.workflow_steps]
+        payload["validation_readiness"] = self.validation_readiness.to_dict()
         return payload
 
 
