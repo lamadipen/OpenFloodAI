@@ -606,6 +606,8 @@ The launcher is a thin command wrapper; reusable Home UI server code lives in `s
 
 Simple meaning: this page checks folders under `data/sites/` and shows whether each site has config, videos, labels, manifest, output reports, and a latest report.
 
+In Setup New Validation Site, the folder name fills from the site name: Colorado River Site becomes Colorado-River-Site. Extra spaces are removed or joined with one hyphen. You can edit the folder name before creating the site.
+
 From the same page you can create a site folder, add a local validation video, or create human label records. Adding a video copies a file already on this computer into `inputs/videos/` and writes one `manifest.jsonl` row. Adding a label validates time windows and label text without manual JSON Lines editing. After you choose a site, the label form offers existing video IDs from that site’s local videos and labels already used for that site. Selecting a video fills the Video ID field; manual entry is also available. Switching sites clears the previous video selection; if the value is missing, type a short manual label like `bridge_pillar_covered`. Sharing stays off unless you explicitly mark the video as approved for the repo.
 
 The site card also shows a **What to do next** section. It explains the next useful local action when config, videos, labels, the manifest, or a validation report is missing. When a site is ready, **Run Validation** runs the local multi-video validation flow and refreshes the report counts and review-image path.

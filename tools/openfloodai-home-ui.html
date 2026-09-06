@@ -438,8 +438,12 @@
         <h2 style="margin-top: 0;">Setup New Validation Site</h2>
         <form id="siteForm" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
           <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Site Name *</label>
+            <input type="text" name="site_name" id="setupSiteNameInput" placeholder="e.g. Demo Bridge" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+          </div>
+          <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Folder Name *</label>
-            <input type="text" name="folder_name" placeholder="e.g. demo-bridge" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+            <input type="text" name="folder_name" id="setupFolderNameInput" placeholder="e.g. Demo-Bridge" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
           </div>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Site ID *</label>
@@ -448,10 +452,6 @@
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Camera ID *</label>
             <input type="text" name="camera_id" placeholder="e.g. camera-demo-bridge-01" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
-          </div>
-          <div>
-            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Site Name *</label>
-            <input type="text" name="site_name" placeholder="e.g. Demo Bridge" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
           </div>
           <div style="grid-column: span 2;">
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Public Location (optional)</label>
@@ -615,6 +615,11 @@
       const addLabelButton = document.querySelector("#addLabelButton");
       const setupForm = document.querySelector("#setupForm");
       const siteForm = document.querySelector("#siteForm");
+      const setupSiteNameInput = document.querySelector("#setupSiteNameInput");
+      const setupFolderNameInput = document.querySelector("#setupFolderNameInput");
+      setupSiteNameInput.addEventListener("input", () => {
+        setupFolderNameInput.value = setupSiteNameInput.value.trim().replace(/\s+/g, "-");
+      });
       const cancelSetup = document.querySelector("#cancelSetup");
       const videoFormPanel = document.querySelector("#videoFormPanel");
       const videoForm = document.querySelector("#videoForm");
