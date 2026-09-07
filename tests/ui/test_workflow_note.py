@@ -35,3 +35,15 @@ def test_home_ui_explains_both_validation_routes_before_forms() -> None:
     for form in ("setupForm", "videoFormPanel", "labelFormPanel"):
         assert position < html.index(f'<section id="{form}"')
     assert "display: none" not in panel
+
+
+def test_workflow_note_is_collapsible_and_not_hidden_in_classic_view() -> None:
+    html = (Path(__file__).resolve().parents[2] / "tools/openfloodai-home-ui.html").read_text()
+    note = html.split('<section id="validationWorkflowNote"', 1)[1].split("</section>", 1)[0]
+    assert "<details>" in note
+    assert "<details open>" not in note
+    assert '<summary id="validationWorkflowHeading"' in note
+    assert "</summary>" in note
+    assert "</details>" in note
+    assert 'body[data-view="classic"] #validationWorkflowNote' not in html
+    assert 'body[data-view="guided"] #validationWorkflowNote' not in html

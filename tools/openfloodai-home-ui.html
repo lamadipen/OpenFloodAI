@@ -115,7 +115,6 @@
         transform: none;
       }
 
-      body[data-view="classic"] #validationWorkflowNote,
       body[data-view="classic"] #workflowPanel {
         display: none;
       }
@@ -817,7 +816,8 @@
     </header>
     <main>
        <section id="validationWorkflowNote" aria-labelledby="validationWorkflowHeading" style="background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 24px; margin-bottom: 22px;">
-        <h2 id="validationWorkflowHeading" style="margin-top: 0;">Two ways to review a video</h2>
+        <details>
+        <summary id="validationWorkflowHeading" style="cursor: pointer; font-size: 1.4rem; font-weight: 700;">Two ways to review a video</summary>
         <p>Human labels are optional for running validation, but required if you want to compare the machine result with human review.</p>
         <h3>Route 1: Machine-only review</h3>
         <ul>
@@ -830,6 +830,7 @@
           <li>Needs: site config + video + watched area + human label + manifest.</li>
           <li>Result: compares what the machine saw with what the human saw.</li>
         </ul>
+        </details>
       </section>
       <section class="workflow-panel" id="workflowPanel" aria-labelledby="workflowTitle">
         <div class="workflow-header">

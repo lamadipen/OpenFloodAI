@@ -968,3 +968,5 @@ Each result also shows a human-comparison status tag: **Agree**, **Disagree**, o
 In **Add Label**, selecting a video defaults the start to **0 seconds** and the end to the video's duration. Both times stay editable. If duration cannot be read, enter the end time manually. Changing videos loads a new full-video window; refreshing site information preserves your edits for the same selection. Restart the Home UI server after updating to enable duration lookup.
 
 **Run Validation** shows a spinner and **Running validation…** while waiting for the server. The clicked button is disabled and duplicate runs for the same site are ignored until the request finishes. The spinner clears on both success and failure.
+
+The **Two ways to review a video** note appears in both Classic and Workflow views. Click its heading to expand or collapse it; it starts collapsed.
