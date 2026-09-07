@@ -20,6 +20,7 @@ from openfloodai.review import (
     load_human_label_records,
     render_label_comparison_report,
 )
+from openfloodai.validation.result_explanation import explain_result
 
 VIDEO_SUFFIXES = {".avi", ".mkv", ".mov", ".mp4"}
 
@@ -283,9 +284,19 @@ def render_site_validation_report(report: SiteValidationReport) -> str:
         if result.comparisons:
             lines.append("- Per-window comparisons:")
             for index, comparison in enumerate(result.comparisons, start=1):
+                explanation = explain_result(
+                    comparison.system_result,
+                    comparison.human_label,
+                    comparison.result,
+                    comparison.note,
+                )
                 lines.extend(
                     [
                         f"  - Window {index}:",
+                        f"    - What the machine saw: {explanation['machine_observation']}",
+                        f"    - What the person saw: {explanation['human_observation']}",
+                        f"    - Human comparison: {explanation['comparison_outcome']}",
+                        f"    - Comparison explanation: {explanation['reason']}",
                         f"    - Human label: {comparison.human_label}",
                         f"    - System result: {comparison.system_result}",
                         f"    - Result: {comparison.result}",

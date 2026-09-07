@@ -961,3 +961,10 @@ Under **Review images**, use **View Path** to show the evidence folder, or **Vie
 After updating Home UI Python code, restart the local server (Ctrl+C, then `python3 scripts/run_openfloodai_home_ui.py`) and refresh the browser. Refreshing the page alone does not load new server endpoints.
 
 Under **Latest report**, use **View Path** to reveal the report location or **View Report** to read the complete report text in the Home UI. Both controls can be toggled closed. Restart the Home UI server after this update to load the report endpoint.
+
+Latest results separate **What the machine saw**, **What the person saw**, **Human comparison**, and **Why** for each video time window. Missing labels explicitly show **No human label for comparison**. Other reasons, such as unclear machine evidence, an uncertain human review, missing output, or inadequate time coverage, remain visible. A visual change does not establish rising or falling water. Existing reports can show these explanations after restarting the Home UI server; new reports include the plain-language explanations too.
+Each result also shows a human-comparison status tag: **Agree**, **Disagree**, or **Cannot compare**. The tag describes agreement with human review, not flood risk.
+
+In **Add Label**, selecting a video defaults the start to **0 seconds** and the end to the video's duration. Both times stay editable. If duration cannot be read, enter the end time manually. Changing videos loads a new full-video window; refreshing site information preserves your edits for the same selection. Restart the Home UI server after updating to enable duration lookup.
+
+**Run Validation** shows a spinner and **Running validation…** while waiting for the server. The clicked button is disabled and duplicate runs for the same site are ignored until the request finishes. The spinner clears on both success and failure.

@@ -783,6 +783,21 @@
           width: 100%;
         }
       }
+      .validation-spinner {
+        display: inline-block;
+        width: 1em;
+        height: 1em;
+        margin-right: 8px;
+        vertical-align: -0.15em;
+        border: 2px solid currentColor;
+        border-right-color: transparent;
+        border-radius: 50%;
+        animation: validation-spin 0.8s linear infinite;
+      }
+      @keyframes validation-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) {
+        .validation-spinner { animation: none; }
+      }
     </style>
   </head>
   <body data-view="classic" data-page="home">
@@ -1010,12 +1025,13 @@
           </div>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Start second *</label>
-            <input type="number" name="start_second" id="labelStartInput" min="0" step="any" placeholder="e.g. 30" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+            <input type="number" name="start_second" id="labelStartInput" value="0" min="0" step="any" placeholder="e.g. 30" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
           </div>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">End second *</label>
             <input type="number" name="end_second" id="labelEndInput" min="0" step="any" placeholder="e.g. 60" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
           </div>
+          <p class="meta" id="labelTimeHelp" role="status" style="grid-column: span 2;">Select a video to fill its full time window. You can edit both times.</p>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Human label *</label>
             <select name="human_label" id="labelValueSelect" aria-describedby="humanLabelHelp" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
@@ -1252,6 +1268,49 @@
 
       let labelVideoSite = null;
 
+      let labelDurationKey = null;
+      let labelDurationRequest = 0;
+      let labelTimeEditVersion = 0;
+      labelStartInput.addEventListener("input", () => { labelTimeEditVersion += 1; });
+      labelEndInput.addEventListener("input", () => { labelTimeEditVersion += 1; });
+      labelForm.addEventListener("reset", () => {
+        labelDurationKey = null;
+        labelDurationRequest += 1;
+        document.querySelector("#labelTimeHelp").textContent = "Select a video to fill its full time window. You can edit both times.";
+      });
+
+      async function updateLabelTimeDefaults() {
+        const siteName = labelSiteSelect.value;
+        const videoId = labelVideoIdInput.value.trim();
+        const key = JSON.stringify([siteName, videoId]);
+        if (key === labelDurationKey) return;
+        labelDurationKey = key;
+        const request = ++labelDurationRequest;
+        const editVersion = labelTimeEditVersion;
+        labelStartInput.value = "0";
+        labelEndInput.value = "";
+        const help = document.querySelector("#labelTimeHelp");
+        if (!siteName || !videoId) {
+          help.textContent = "Select a video to fill its full time window. You can edit both times.";
+          return;
+        }
+        help.textContent = "Reading video duration… You can also enter the times yourself.";
+        try {
+          const response = await fetch(`/api/video-duration?folder_name=${encodeURIComponent(siteName)}&video_id=${encodeURIComponent(videoId)}`);
+          if (!response.ok) throw new Error("Duration unavailable");
+          const result = await response.json();
+          if (request !== labelDurationRequest) return;
+          if (editVersion === labelTimeEditVersion) {
+            labelEndInput.value = String(result.duration_seconds);
+          }
+          help.textContent = `Video duration: ${result.duration_seconds} seconds. You can edit the start and end times.`;
+        } catch (error) {
+          if (request === labelDurationRequest) {
+            help.textContent = "Could not read the duration. Enter the end time yourself. If you just updated the code, restart the Home UI server.";
+          }
+        }
+      }
+
       function updateLabelOptionsForSelectedSite() {
         if (labelVideoSite !== labelSiteSelect.value) {
           labelVideoSelect.value = "";
@@ -1262,6 +1321,7 @@
         const videoIds = selectedSite?.video_ids || [];
         fillSelect(labelVideoSelect, videoIds, videoIds.length ? "Choose video ID" : "No local videos — enter ID below");
         fillSelect(labelValueSelect, labelsForSelectedSite(), "Choose human label", humanLabelDisplayLabels);
+        updateLabelTimeDefaults();
       }
 
       function fileStem(filename) {
@@ -1551,6 +1611,29 @@
         }
       };
 
+      function comparisonStatusTag(status) {
+        const tags = {
+          agree: ["Agree", "ok"],
+          disagree: ["Disagree", "missing"],
+          cannot_compare: ["Cannot compare", "warn"],
+        };
+        const [label, color] = Object.hasOwn(tags, status) ? tags[status] : ["Status unavailable", "warn"];
+        return `<span class="badge ${color}" aria-label="Human comparison status: ${label}">${label}</span>`;
+      }
+
+      function renderResultExplanations(site) {
+        const results = site.latest_result_explanations || [];
+        if (!results.length) return "";
+        return results.map((result) => `<div class="detail-item">
+          <div class="detail-label">${escapeHtml(result.video_id)} · ${escapeHtml(result.time_window === "missing" ? "No human time window" : result.time_window)}</div>
+          ${comparisonStatusTag(result.status)}
+          <p><strong>What the machine saw:</strong> ${escapeHtml(result.machine_observation)}</p>
+          <p><strong>What the person saw:</strong> ${escapeHtml(result.human_observation)}</p>
+          <p><strong>Human comparison:</strong> ${escapeHtml(result.comparison_outcome)}</p>
+          <p><strong>Why:</strong> ${escapeHtml(result.reason)}</p>
+        </div>`).join("");
+      }
+
       function renderValidationSummary(site) {
         const scorecard = site.latest_scorecard;
         if (!scorecard) {
@@ -1697,7 +1780,7 @@
                         <button
                           type="button"
                           class="workflow-action${action.action_id.startsWith("select_") ? " workflow-action-secondary" : ""}"
-                          onclick="startWorkflowStep('${escapeHtml(action.action_id)}', '${escapeHtml(site.site_name)}', '${escapeHtml(step.key)}')"
+                          onclick="startWorkflowStep('${escapeHtml(action.action_id)}', '${escapeHtml(site.site_name)}', '${escapeHtml(step.key)}', this)"
                           ${action.action_id === "run_validation" && !site.ready_for_validation ? "disabled" : ""}
                         >${escapeHtml(action.label)}</button>
                       `
@@ -1731,6 +1814,7 @@
           detailItem("Validation reports", String(site.report_count)),
           latestReportControls(site),
           renderValidationSummary(site),
+          renderResultExplanations(site),
           renderReportHistory(site),
           detailPreview(site.latest_report_preview),
           detailItem("Machine review", site.machine_review_explanation, "detail-explanation"),
@@ -1829,11 +1913,12 @@
               ${row("Output reports", countText(site.report_count, "report", "reports"), site.report_count > 0 ? "ok" : "warn")}
               ${latestReportControls(site)}
               ${row("Latest result", reportCountsText(site), site.latest_report_counts ? "ok" : "warn")}
+              ${renderResultExplanations(site)}
               ${reviewImagesControls(site)}
             </div>
             ${renderNextSteps(site)}
             <div style="padding: 0 18px 14px; display: flex; gap: 8px;">
-              <button type="button" onclick="runValidationForSite('${escapeHtml(site.site_name)}')" ${site.ready_for_validation ? "" : "disabled"}>Run Validation</button>
+              <button type="button" onclick="runValidationForSite('${escapeHtml(site.site_name)}', this)" ${site.ready_for_validation ? "" : "disabled"}>Run Validation</button>
               <button type="button" onclick="openVideoFormForSite('${escapeHtml(site.site_name)}')" style="font-size: 13px; min-height: 34px; padding: 6px 12px;">+ Add Video</button>
               <button type="button" onclick="openLabelFormForSite('${escapeHtml(site.site_name)}')" style="font-size: 13px; min-height: 34px; padding: 6px 12px; background: var(--accent-strong); border-color: var(--accent-strong);">+ Add Label</button>
               <a class="site-action-link" href="/site-details.html?site=${encodeURIComponent(site.site_name)}">Details View</a>
@@ -1900,9 +1985,11 @@
       labelSiteSelect.addEventListener("change", updateLabelOptionsForSelectedSite);
       labelVideoSelect.addEventListener("change", () => {
         labelVideoIdInput.value = labelVideoSelect.value;
+        updateLabelTimeDefaults();
       });
       labelVideoIdInput.addEventListener("input", () => {
         labelVideoSelect.value = labelVideoIdInput.value;
+        updateLabelTimeDefaults();
       });
 
       createSiteButton.addEventListener("click", () => {
@@ -2059,7 +2146,7 @@
         }
       };
 
-      window.startWorkflowStep = function (actionId, siteName, stepKey) {
+      window.startWorkflowStep = function (actionId, siteName, stepKey, button) {
         if (detailSiteSelect && siteName) {
           detailSiteSelect.value = siteName;
         }
@@ -2072,7 +2159,7 @@
           return;
         }
         if (actionId === "run_validation") {
-          window.runValidationForSite(siteName);
+          window.runValidationForSite(siteName, button);
           return;
         }
         if (actionId === "repair_manifest") {
@@ -2104,7 +2191,23 @@
         revealPanel(panel);
       };
 
-      window.runValidationForSite = async function (siteName) {
+      const runningValidationSites = new Set();
+      window.runValidationForSite = async function (siteName, button) {
+        if (runningValidationSites.has(siteName)) return;
+        runningValidationSites.add(siteName);
+        const originalContent = button?.innerHTML;
+        const originalDisabled = button?.disabled;
+        const stopSpinner = () => {
+          if (!button) return;
+          button.innerHTML = originalContent;
+          button.disabled = originalDisabled;
+          button.removeAttribute("aria-busy");
+        };
+        if (button) {
+          button.disabled = true;
+          button.setAttribute("aria-busy", "true");
+          button.innerHTML = '<span class="validation-spinner" aria-hidden="true"></span><span role="status">Running validation…</span>';
+        }
         try {
           const response = await fetch("/api/run-validation", {
             method: "POST",
@@ -2117,12 +2220,17 @@
           if (!response.ok || !result.success) {
             throw new Error(result.message || `Request failed: ${response.status}`);
           }
+          stopSpinner();
           alert(
             `Validation complete. Agree: ${result.counts.agree}; Disagree: ${result.counts.disagree}; Cannot compare: ${result.counts.cannot_compare}`
           );
           await loadSites();
         } catch (error) {
+          stopSpinner();
           alert(`Validation failed: ${error.message}`);
+        } finally {
+          runningValidationSites.delete(siteName);
+          stopSpinner();
         }
       };
 

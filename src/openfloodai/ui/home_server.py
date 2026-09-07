@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import tempfile
 from email.parser import BytesParser
 from email.policy import HTTP
@@ -10,6 +11,8 @@ from http.server import SimpleHTTPRequestHandler
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlencode, urlsplit
+
+import cv2
 
 from openfloodai.config import SiteConfigError, write_reference_region
 from openfloodai.review import (
@@ -44,6 +47,9 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         if path == "/api/validation-report":
             self._send_validation_report()
             return
+        if path == "/api/video-duration":
+            self._send_video_duration()
+            return
         if path == "/api/sites":
             self._send_sites_json()
             return
@@ -51,6 +57,43 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             self._send_file(self.ui_path, content_type="text/html; charset=utf-8")
             return
         self.send_error(404, "Not found")
+
+    def _send_video_duration(self) -> None:
+        """Read duration metadata for a selected local video without serving its bytes."""
+
+        query = parse_qs(urlsplit(self.path).query)
+        folder = query.get("folder_name", [""])[0]
+        video_id = query.get("video_id", [""])[0]
+        try:
+            site = (self.sites_dir / folder).resolve()
+            if not folder or site.parent != self.sites_dir.resolve():
+                raise ValueError("Invalid site")
+            videos = site / "inputs" / "videos"
+            matches = [
+                path
+                for path in videos.iterdir()
+                if path.stem == video_id
+                and path.suffix.lower() in VIDEO_SUFFIXES
+                and path.is_file()
+                and path.resolve().is_relative_to(site)
+            ]
+            if len(matches) != 1:
+                raise ValueError("Video missing or ambiguous")
+            capture = cv2.VideoCapture(str(matches[0]))
+            try:
+                fps = capture.get(cv2.CAP_PROP_FPS)
+                frames = capture.get(cv2.CAP_PROP_FRAME_COUNT)
+                duration = frames / fps if fps > 0 else 0
+                if not capture.isOpened() or not math.isfinite(duration) or duration <= 0:
+                    raise ValueError("Duration unavailable")
+            finally:
+                capture.release()
+            self._send_json({"duration_seconds": duration}, status_code=200)
+        except (OSError, ValueError, cv2.error):
+            self._send_json(
+                {"message": "Could not read the video duration. Enter the end time yourself."},
+                status_code=400,
+            )
 
     def _send_validation_report(self) -> None:
         """Read a generated validation report inside the local sites directory."""

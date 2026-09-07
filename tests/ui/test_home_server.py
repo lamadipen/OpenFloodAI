@@ -785,7 +785,7 @@ def test_mvp_rehearsal_setup_to_five_video_result_review(
             source = tmp_path / f"{video_id}.avi"
             writer = cv2.VideoWriter(
                 str(source),
-                cv2.VideoWriter_fourcc(*"MJPG"),  # type: ignore[attr-defined]
+                cv2.VideoWriter.fourcc(*"MJPG"),
                 2.0,
                 (32, 24),
             )
@@ -946,3 +946,24 @@ def test_view_validation_report_rejects_private_and_missing_files(tmp_path: Path
             with pytest.raises(HTTPError) as error:
                 get_json(f"{base_url}/api/validation-report?{urlencode({'path': str(path)})}")
             assert error.value.code == 404
+
+
+def test_label_video_duration_reads_local_metadata(tmp_path: Path) -> None:
+    videos = tmp_path / "river/inputs/videos"
+    videos.mkdir(parents=True)
+    writer = cv2.VideoWriter(str(videos / "clip.avi"), cv2.VideoWriter.fourcc(*"MJPG"), 2, (32, 24))
+    try:
+        assert writer.isOpened()
+        for _ in range(20):
+            writer.write(np.zeros((24, 32, 3), dtype=np.uint8))
+    finally:
+        writer.release()
+    with serve_home_ui(tmp_path) as base_url:
+        result = get_json(base_url + "/api/video-duration?folder_name=river&video_id=clip")
+        assert result["duration_seconds"] == 10
+        with pytest.raises(HTTPError) as error:
+            get_json(base_url + "/api/video-duration?folder_name=../outside&video_id=clip")
+        assert error.value.code == 400
+        with pytest.raises(HTTPError) as error:
+            get_json(base_url + "/api/video-duration?folder_name=river&video_id=missing")
+        assert error.value.code == 400
