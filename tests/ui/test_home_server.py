@@ -361,6 +361,22 @@ def test_home_ui_page_has_guided_workflow_section(tmp_path: Path) -> None:
     assert "window.startWorkflowStep" in body
 
 
+def test_home_ui_offers_separate_guided_and_classic_views(tmp_path: Path) -> None:
+    with serve_home_ui(tmp_path) as base_url:
+        _, _, body = get_text(f"{base_url}/openfloodai-home-ui.html")
+
+    assert 'data-view="guided"' in body
+    assert 'id="guidedViewButton"' in body
+    assert 'id="classicViewButton"' in body
+    assert 'body[data-view="classic"] #workflowPanel' in body
+    assert 'body[data-view="guided"] #classicToolbar' in body
+    assert "function setActiveView(view)" in body
+    assert 'setActiveView("guided")' in body
+    assert 'setActiveView("classic")' in body
+    assert "document.body.dataset.view !== \"guided\"" in body
+    assert "grid-template-columns: 42px minmax(0, 1fr);" in body
+
+
 def test_home_ui_page_keeps_standalone_actions_next_to_the_workflow(tmp_path: Path) -> None:
     """Users must still be able to run one action without walking the whole workflow."""
 

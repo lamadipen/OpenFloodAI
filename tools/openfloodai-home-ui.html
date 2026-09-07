@@ -85,6 +85,55 @@
         box-shadow: 0 10px 26px rgba(31, 41, 51, 0.06);
       }
 
+      .view-switch {
+        display: inline-flex;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        overflow: hidden;
+      }
+
+      .view-switch button {
+        background: var(--panel);
+        border: 0;
+        border-radius: 0;
+        color: var(--muted);
+        min-height: 38px;
+        padding: 7px 12px;
+      }
+
+      .view-switch button + button {
+        border-left: 1px solid var(--line);
+      }
+
+      .view-switch button[aria-pressed="true"] {
+        background: var(--accent-strong);
+        color: #fff;
+      }
+
+      .view-switch button:hover {
+        box-shadow: none;
+        transform: none;
+      }
+
+      body[data-view="classic"] #validationWorkflowNote,
+      body[data-view="classic"] #workflowPanel {
+        display: none;
+      }
+
+      body[data-view="guided"] #classicToolbar,
+      body[data-view="guided"] #detailPanel,
+      body[data-view="guided"] #overview,
+      body[data-view="guided"] #siteGrid,
+      body[data-view="guided"] main > #formHome,
+      body[data-view="guided"] main > #siteListPanel,
+      body[data-view="guided"] main > #videoListPanel,
+      body[data-view="guided"] main > #labelListPanel,
+      body[data-view="guided"] main > #setupForm,
+      body[data-view="guided"] main > #videoFormPanel,
+      body[data-view="guided"] main > #labelFormPanel {
+        display: none;
+      }
+
       button {
         border: 1px solid var(--accent-strong);
         border-radius: 6px;
@@ -675,10 +724,23 @@
           min-width: 100%;
           width: 100%;
         }
+
+        .workflow-step {
+          grid-template-columns: 42px minmax(0, 1fr);
+        }
+
+        .workflow-actions {
+          grid-column: 1 / -1;
+        }
+
+        .workflow-action {
+          white-space: normal;
+          width: 100%;
+        }
       }
     </style>
   </head>
-  <body>
+  <body data-view="guided">
     <header>
       <div class="eyebrow">Local validation workspace</div>
       <h1>OpenFloodAI Home UI</h1>
@@ -687,6 +749,10 @@
         and what is missing before running local validation. You can also create a site or
         add a local video from this page.
       </p>
+      <div class="view-switch" role="group" aria-label="Home UI view" style="margin-top: 18px;">
+        <button type="button" id="guidedViewButton" aria-pressed="true">Guided workflow</button>
+        <button type="button" id="classicViewButton" aria-pressed="false">Classic view</button>
+      </div>
     </header>
     <main>
        <section id="validationWorkflowNote" aria-labelledby="validationWorkflowHeading" style="background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 24px; margin-bottom: 22px;">
@@ -714,7 +780,7 @@
         </p>
         <div class="workflow-steps" id="workflowSteps" aria-live="polite"></div>
       </section>
-          <section class="toolbar" aria-label="Local UI controls">
+          <section class="toolbar" id="classicToolbar" aria-label="Local UI controls">
         <div>
           <div class="meta" id="sitesDir">Loading site folder...</div>
           <div class="safety" id="safetyNote"></div>
@@ -919,6 +985,8 @@
       const sitesDir = document.querySelector("#sitesDir");
       const safetyNote = document.querySelector("#safetyNote");
       const refreshButton = document.querySelector("#refreshButton");
+      const guidedViewButton = document.querySelector("#guidedViewButton");
+      const classicViewButton = document.querySelector("#classicViewButton");
       const createSiteButton = document.querySelector("#createSiteButton");
       const addVideoButton = document.querySelector("#addVideoButton");
       const addLabelButton = document.querySelector("#addLabelButton");
@@ -979,6 +1047,18 @@
         "camera_video_problem",
         "cannot_judge",
       ];
+
+      function setActiveView(view) {
+        hideForms();
+        document.body.dataset.view = view;
+        const guided = view === "guided";
+        guidedViewButton.setAttribute("aria-pressed", String(guided));
+        classicViewButton.setAttribute("aria-pressed", String(!guided));
+        const selectedSite = latestSites.find(
+          (site) => site.site_name === detailSiteSelect.value
+        );
+        renderWorkflow(selectedSite);
+      }
 
       function fillSiteSelect(sites) {
         const current = videoSiteSelect.value;
@@ -1338,7 +1418,7 @@
 
       function renderWorkflow(site) {
         detachWorkflowForm();
-        if (!site) {
+        if (!site || document.body.dataset.view !== "guided") {
           workflowPanel.style.display = "none";
           return;
         }
@@ -1558,6 +1638,8 @@
       }
 
       refreshButton.addEventListener("click", loadSites);
+      guidedViewButton.addEventListener("click", () => setActiveView("guided"));
+      classicViewButton.addEventListener("click", () => setActiveView("classic"));
       detailSiteSelect.addEventListener("change", () => {
         const selectedSite = latestSites.find(
           (site) => site.site_name === detailSiteSelect.value
