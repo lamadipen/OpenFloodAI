@@ -14,6 +14,7 @@ nav:
   - Community Feedback: community-feedback.md
   - Learning:
       - Learning Home: learning/index.md
+      - Your First End-to-End Review: learning/end-to-end-workflow.html
       - OpenFloodAI Pipeline Basics: learning/openfloodai-pipeline-learning.html
   - Privacy And Retention: privacy-retention.md
   - V1 Requirements: product/requirements.md
@@ -24,6 +25,7 @@ nav:
       - Windowed Video Evidence: architecture/windowed-video-evidence.md
   - Research:
       - Research Notes: research/README.md
+      - MVP Workflow Rehearsal: research/mvp-workflow-rehearsal.md
       - Labeling Guide: research/labeling-guide.md
       - Human Label Format: research/human-label-format.md
       - Human Label Comparison: research/human-label-comparison.md

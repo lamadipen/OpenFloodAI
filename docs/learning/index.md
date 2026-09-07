@@ -6,6 +6,8 @@ Start here if you want to understand how the current proof of concept works and 
 
 ## Guides
 
+- [Your First End-to-End Review](end-to-end-workflow.html) — commands, examples, and a practical checklist.
+
 - [OpenFloodAI Pipeline Basics](openfloodai-pipeline-learning.html)
 
 ## Important Reminder

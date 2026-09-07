@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 from collections.abc import Iterator
 from contextlib import contextmanager
 from http.server import ThreadingHTTPServer
@@ -11,6 +12,11 @@ from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+import cv2
+import numpy as np
+import pytest
+
+from openfloodai.review import load_manifest_records
 from openfloodai.ui.home_server import OpenFloodAIHomeHandler
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -631,3 +637,145 @@ def test_readiness_panel_spans_the_whole_step_card(tmp_path: Path) -> None:
     readiness_rule = body[body.index(".readiness {") : body.index(".readiness.is-full")]
 
     assert "grid-column: 1 / -1;" in readiness_rule
+
+
+def test_mvp_rehearsal_setup_to_five_video_result_review(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exercise real endpoints and real decoding using only generated local media."""
+
+    original_connect = socket.socket.connect
+
+    def local_only(sock: socket.socket, address: Any) -> None:
+        assert isinstance(address, tuple) and address[0] == "127.0.0.1", (
+            "Rehearsal must not connect to external services"
+        )
+        original_connect(sock, address)
+
+    monkeypatch.setattr(socket.socket, "connect", local_only)
+    sites = tmp_path / "sites"
+    sites.mkdir()
+    cases = [
+        ("stable", [80] * 20, "no_clear_change"),
+        ("rising", list(range(50, 90, 2)), "water_rising"),
+        ("falling", list(range(90, 50, -2)), "water_falling"),
+        ("dark", [0] * 20, "cannot_judge"),
+        ("unclear", [80] * 20, "cannot_judge"),
+    ]
+    region = {"x": 0, "y": 50, "width": 100, "height": 50}
+    with serve_home_ui(sites) as base:
+
+        def post(endpoint: str, data: dict[str, object]) -> dict[str, Any]:
+            request = Request(
+                base + endpoint,
+                data=json.dumps(data).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urlopen(request, timeout=30) as response:
+                result: dict[str, Any] = json.load(response)
+            assert result["success"], result
+            return result
+
+        created = post(
+            "/api/setup-site",
+            {
+                "folder_name": "rehearsal",
+                "site_id": "rehearsal",
+                "camera_id": "test-camera",
+                "site_name": "Rehearsal",
+                "privacy_notes": "Generated images only.",
+            },
+        )
+        site = Path(created["site_dir"])
+        assert get_json(base + "/api/sites")["sites"][0]["validation_readiness"]["can_run"] is False
+
+        for video_id, values, _ in cases:
+            source = tmp_path / f"{video_id}.avi"
+            writer = cv2.VideoWriter(
+                str(source),
+                cv2.VideoWriter_fourcc(*"MJPG"),  # type: ignore[attr-defined]
+                2.0,
+                (32, 24),
+            )
+            assert writer.isOpened()
+            try:
+                for value in values:
+                    writer.write(np.full((24, 32, 3), value, dtype=np.uint8))
+            finally:
+                writer.release()
+            original = source.read_bytes()
+            post(
+                "/api/intake-video",
+                {
+                    "folder_name": "rehearsal",
+                    "video_path": str(source),
+                    "video_id": video_id,
+                    "purpose": "practice_normal_water",
+                    "split": "practice",
+                    "notes": "Synthetic workflow test; not flood evidence.",
+                    "reference_region": region,
+                },
+            )
+            assert source.read_bytes() == original
+            assert (site / "inputs/videos" / source.name).read_bytes() == original
+
+        assert json.loads(Path(created["config_path"]).read_text())["reference_region"] == region
+        rows = load_manifest_records(site / "manifest.jsonl")
+        assert len(rows) == 5
+        assert all(row["approved_for_repo"] is False for row in rows)
+        assert all(row["has_human_label"] is False for row in rows)
+        post("/api/repair-manifest", {"folder_name": "rehearsal"})
+        assert load_manifest_records(site / "manifest.jsonl") == rows
+
+        assert (
+            get_json(base + "/api/sites")["sites"][0]["validation_readiness"]["mode"]
+            == "machine_only"
+        )
+        machine = post("/api/run-validation", {"folder_name": "rehearsal"})
+        machine_report = Path(machine["report_path"]).read_text()
+        assert machine["counts"]["agree"] == 0
+        assert machine["counts"]["cannot_compare"] == 5
+        assert "No human label" in machine_report
+
+        for video_id, _, human_label in cases:
+            post(
+                "/api/add-label",
+                {
+                    "folder_name": "rehearsal",
+                    "video_id": video_id,
+                    "start_second": 0,
+                    "end_second": 10,
+                    "human_label": human_label,
+                },
+            )
+        reviewed = post("/api/run-validation", {"folder_name": "rehearsal"})
+        run = Path(reviewed["report_path"]).parent
+        # Flat synthetic scenes do not establish water-level evidence. Do not count
+        # successful API execution as successful human/machine agreement.
+        assert reviewed["counts"] == {"agree": 0, "disagree": 0, "cannot_compare": 5}
+        assert Path(machine["report_path"]).read_text() == machine_report
+        assert run != Path(machine["report_path"]).parent
+        assert len(list((run / "records").glob("*.jsonl"))) == 5
+        assert list((run / "review-images").rglob("*.png"))
+        assert not list((run / "review-images/dark").glob("*.png"))
+        assert (run / "scorecard.json").is_file()
+        assert (run / "run-metadata.json").is_file()
+        report_text = Path(reviewed["report_path"]).read_text()
+        assert "No human label was found" not in report_text
+        assert "- Label windows compared: 5" in report_text
+        assert "dark" in report_text and "cannot_compare" in report_text
+        assert "unclear" in report_text
+        refreshed = get_json(base + "/api/sites")["sites"][0]
+        assert refreshed["latest_report_path"] == reviewed["report_path"]
+        assert refreshed["latest_scorecard"]["cannot_compare"] == 5
+        assert refreshed["review_images_path"]
+        assert len(refreshed["report_history"]) == 2
+        assert all(
+            row["approved_for_repo"] is False
+            for row in load_manifest_records(site / "manifest.jsonl")
+        )
+        assert {p.name for p in (site / "outputs").iterdir()} == {".gitkeep", "runs"}
+
+    print(f"Synthetic rehearsal files: {tmp_path}")
