@@ -404,6 +404,41 @@ def test_home_ui_page_keeps_standalone_actions_next_to_the_workflow(tmp_path: Pa
     assert "window.runValidationForSite" in body
 
 
+def test_create_site_form_generates_fields_from_a_selected_video(tmp_path: Path) -> None:
+    with serve_home_ui(tmp_path) as base_url:
+        _, _, body = get_text(f"{base_url}/openfloodai-home-ui.html")
+
+    assert 'id="setupVideoFileInput"' in body
+    assert body.index('id="setupVideoFileInput"') < body.index('id="setupSiteNameInput"')
+    assert 'id="setupSiteIdInput"' in body
+    assert 'id="setupCameraIdInput"' in body
+    assert "function sanitizeSiteFolderName(value)" in body
+    assert "function fillSiteFieldsFromVideo(videoName)" in body
+    assert "`${folderName}_sid`" in body
+    assert "`${folderName}_camid`" in body
+    assert 'setupVideoFileInput.addEventListener("change"' in body
+
+
+def test_create_site_form_collects_the_first_video_and_watched_area(tmp_path: Path) -> None:
+    with serve_home_ui(tmp_path) as base_url:
+        _, _, body = get_text(f"{base_url}/openfloodai-home-ui.html")
+
+    assert 'name="video_file" id="setupVideoFileInput"' in body
+    assert 'id="setupVideoRegionCanvas"' in body
+    assert 'name="reference_region" id="setupReferenceRegionInput"' in body
+    assert 'name="video_id" id="setupVideoIdInput"' in body
+    assert 'name="purpose" id="setupPurposeSelect"' in body
+    assert 'name="notes" required' in body
+    assert 'fetch("/api/setup-site-with-video"' in body
+
+
+def test_home_server_exposes_combined_site_and_first_video_endpoint(tmp_path: Path) -> None:
+    with serve_home_ui(tmp_path) as base_url:
+        _, _, body = get_text(f"{base_url}/openfloodai-home-ui.html")
+
+    assert "/api/setup-site-with-video" in body
+
+
 def test_classic_site_cards_offer_a_dedicated_details_view(tmp_path: Path) -> None:
     with serve_home_ui(tmp_path) as base_url:
         _, _, body = get_text(f"{base_url}/openfloodai-home-ui.html")
@@ -413,6 +448,16 @@ def test_classic_site_cards_offer_a_dedicated_details_view(tmp_path: Path) -> No
     assert 'body[data-page="details"] #siteGrid' in body
     assert 'body[data-page="details"] #detailPanel' not in body
     assert "Back to dashboard" in body
+
+
+def test_classic_site_cards_offer_video_intake_for_existing_sites(tmp_path: Path) -> None:
+    with serve_home_ui(tmp_path) as base_url:
+        _, _, body = get_text(f"{base_url}/openfloodai-home-ui.html")
+
+    assert "+ Add Video" in body
+    assert "window.openVideoFormForSite" in body
+    assert "openVideoFormForSite('${escapeHtml(site.site_name)}')" in body
+    assert "videoSiteSelect.value = siteName" in body
 
 
 def test_sites_api_exposes_workflow_steps_for_the_home_ui(tmp_path: Path) -> None:

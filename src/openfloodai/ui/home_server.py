@@ -49,6 +49,9 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
     def do_POST(self) -> None:
         """Handle site setup and video intake requests."""
 
+        if self.path == "/api/setup-site-with-video":
+            self._handle_setup_site_with_video()
+            return
         if self.path == "/api/setup-site":
             self._handle_setup_site()
             return
@@ -94,6 +97,79 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             },
             status_code=200 if result.created else 400,
         )
+
+    def _handle_setup_site_with_video(self) -> None:
+        parsed = self._read_multipart_intake()
+        if parsed is None:
+            return
+        data, temp_video = parsed
+        if temp_video is None:
+            self._send_json(
+                {
+                    "success": False,
+                    "message": "Choose a local video file before creating the site.",
+                },
+                status_code=400,
+            )
+            return
+        try:
+            reference_region = _parse_reference_region(data.get("reference_region"))
+            if reference_region is None:
+                self._send_json(
+                    {
+                        "success": False,
+                        "message": "Select a watched area before creating the site.",
+                    },
+                    status_code=400,
+                )
+                return
+            setup_result = setup_validation_site(
+                sites_base_dir=self.sites_dir,
+                folder_name=str(data.get("folder_name", "")),
+                site_id=str(data.get("site_id", "")),
+                camera_id=str(data.get("camera_id", "")),
+                site_name=str(data.get("site_name", "")),
+                public_location=str(data.get("public_location", "")),
+                privacy_notes=str(data.get("privacy_notes", "")),
+                overwrite=False,
+            )
+            if not setup_result.created:
+                self._send_json(
+                    {"success": False, "message": setup_result.message}, status_code=400
+                )
+                return
+            intake_result = intake_validation_video(
+                site_dir=setup_result.site_dir,
+                video_path=temp_video,
+                video_id=str(data.get("video_id", "")),
+                purpose=str(data.get("purpose", "")),
+                split=str(data.get("split", "")),
+                notes=str(data.get("notes", "")),
+                approved_for_repo=_as_bool(data.get("approved_for_repo"), default=False),
+                hard_case_type=str(data.get("hard_case_type", "")),
+                overwrite=False,
+            )
+            if not intake_result.created:
+                self._send_json(
+                    {"success": False, "message": intake_result.message}, status_code=400
+                )
+                return
+            write_reference_region(setup_result.config_path, reference_region)
+            self._send_json(
+                {
+                    "success": True,
+                    "message": "Created the site and added its first local video.",
+                    "site_dir": str(setup_result.site_dir),
+                    "config_path": str(setup_result.config_path),
+                    "video_path": str(intake_result.video_path),
+                },
+                status_code=200,
+            )
+        except SiteConfigError as error:
+            self._send_json({"success": False, "message": str(error)}, status_code=400)
+        finally:
+            if temp_video is not None and temp_video.exists():
+                temp_video.unlink()
 
     def _handle_intake_video(self) -> None:
         parsed = self._read_intake_request()

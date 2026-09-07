@@ -862,6 +862,17 @@
       <section id="setupForm" class="form-panel" style="display: none;">
         <h2 style="margin-top: 0;">Setup New Validation Site</h2>
         <form id="siteForm" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div style="grid-column: span 2;">
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Local video file *</label>
+            <input type="file" name="video_file" id="setupVideoFileInput" accept=".avi,.mkv,.mov,.mp4,video/*" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px; background: #fff;">
+          </div>
+          <div style="grid-column: span 2;">
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Watched area *</label>
+            <video id="setupVideoPreview" controls preload="metadata" style="display: none; margin-top: 8px; max-width: 100%; width: 100%; background: #182b35;"></video>
+            <canvas id="setupVideoRegionCanvas" class="video-region-canvas" width="800" height="450" aria-label="Select watched area from first video" style="display: none;"></canvas>
+            <input type="hidden" name="reference_region" id="setupReferenceRegionInput">
+            <div class="meta" id="setupVideoRegionStatus" role="status" style="margin-top: 6px;">Choose a video to select the watched area.</div>
+          </div>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Site Name *</label>
             <input type="text" name="site_name" id="setupSiteNameInput" placeholder="e.g. Demo Bridge" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
@@ -872,12 +883,39 @@
           </div>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Site ID *</label>
-            <input type="text" name="site_id" placeholder="e.g. site-demo-bridge" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+            <input type="text" name="site_id" id="setupSiteIdInput" placeholder="e.g. demo-bridge_sid" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
           </div>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Camera ID *</label>
-            <input type="text" name="camera_id" placeholder="e.g. camera-demo-bridge-01" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+            <input type="text" name="camera_id" id="setupCameraIdInput" placeholder="e.g. demo-bridge_camid" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
           </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Video ID *</label>
+            <input type="text" name="video_id" id="setupVideoIdInput" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Video purpose *</label>
+            <select name="purpose" id="setupPurposeSelect" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Dataset group *</label>
+            <select name="split" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+              <option value="practice">practice</option>
+              <option value="locked_validation">locked_validation</option>
+            </select>
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Difficult case type</label>
+            <select name="hard_case_type" id="setupHardCaseTypeSelect" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
+          </div>
+          <div style="grid-column: span 2;">
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Video notes *</label>
+            <textarea name="notes" required placeholder="Short note about this video, such as what is visible, camera quality, or why it is useful." style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px; min-height: 60px;"></textarea>
+          </div>
+          <label style="display: flex; align-items: center; gap: 8px; grid-column: span 2;">
+            <input type="checkbox" name="approved_for_repo" value="true">
+            Safe to share in repository (keep unchecked by default)
+          </label>
           <div style="grid-column: span 2;">
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Public Location (optional)</label>
             <input type="text" name="public_location" placeholder="e.g. Demo River near Bridge St" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
@@ -887,7 +925,7 @@
             <textarea name="privacy_notes" placeholder="Optional notes about privacy..." style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px; min-height: 60px;"></textarea>
           </div>
           <div style="grid-column: span 2; display: flex; gap: 12px; margin-top: 8px;">
-            <button type="submit" style="background: var(--ok); border-color: var(--ok);">Create Folder Structure</button>
+            <button type="submit" style="background: var(--ok); border-color: var(--ok);">Create Site And Add Video</button>
             <button type="button" id="cancelSetup" style="background: transparent; color: var(--muted); border-color: var(--line);">Cancel</button>
           </div>
         </form>
@@ -1038,10 +1076,21 @@
       const addLabelButton = document.querySelector("#addLabelButton");
       const setupForm = document.querySelector("#setupForm");
       const siteForm = document.querySelector("#siteForm");
+      const setupVideoFileInput = document.querySelector("#setupVideoFileInput");
       const setupSiteNameInput = document.querySelector("#setupSiteNameInput");
       const setupFolderNameInput = document.querySelector("#setupFolderNameInput");
+      const setupSiteIdInput = document.querySelector("#setupSiteIdInput");
+      const setupCameraIdInput = document.querySelector("#setupCameraIdInput");
+      const setupVideoIdInput = document.querySelector("#setupVideoIdInput");
+      const setupVideoPreview = document.querySelector("#setupVideoPreview");
+      const setupVideoRegionCanvas = document.querySelector("#setupVideoRegionCanvas");
+      const setupVideoRegionContext = setupVideoRegionCanvas.getContext("2d");
+      const setupReferenceRegionInput = document.querySelector("#setupReferenceRegionInput");
+      const setupVideoRegionStatus = document.querySelector("#setupVideoRegionStatus");
+      const setupPurposeSelect = document.querySelector("#setupPurposeSelect");
+      const setupHardCaseTypeSelect = document.querySelector("#setupHardCaseTypeSelect");
       setupSiteNameInput.addEventListener("input", () => {
-        setupFolderNameInput.value = setupSiteNameInput.value.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9_-]/g, "");
+        setupFolderNameInput.value = sanitizeSiteFolderName(setupSiteNameInput.value);
       });
       const cancelSetup = document.querySelector("#cancelSetup");
       const videoFormPanel = document.querySelector("#videoFormPanel");
@@ -1088,6 +1137,9 @@
       let videoObjectUrl = null;
       let videoRegionSelection = null;
       let videoRegionDragStart = null;
+      let setupVideoObjectUrl = null;
+      let setupVideoRegionSelection = null;
+      let setupVideoRegionDragStart = null;
       let defaultHumanLabelOptions = [
         "water_rising",
         "water_falling",
@@ -1216,6 +1268,45 @@
 
       function fileStem(filename) {
         return filename.replace(/\.[^/.]+$/, "");
+      }
+
+      function sanitizeSiteFolderName(value) {
+        return value.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9_-]/g, "");
+      }
+
+      function fillSiteFieldsFromVideo(videoName) {
+        const siteName = fileStem(videoName);
+        const folderName = sanitizeSiteFolderName(siteName);
+        setupSiteNameInput.value = siteName;
+        setupFolderNameInput.value = folderName;
+        setupSiteIdInput.value = `${folderName}_sid`;
+        setupCameraIdInput.value = `${folderName}_camid`;
+        setupVideoIdInput.value = folderName;
+      }
+
+      function setupVideoCanvasPoint(event) {
+        const rect = setupVideoRegionCanvas.getBoundingClientRect();
+        return {
+          x: Math.max(0, Math.min(setupVideoRegionCanvas.width, (event.clientX - rect.left) * setupVideoRegionCanvas.width / rect.width)),
+          y: Math.max(0, Math.min(setupVideoRegionCanvas.height, (event.clientY - rect.top) * setupVideoRegionCanvas.height / rect.height)),
+        };
+      }
+
+      function drawSetupVideoFrame() {
+        if (!setupVideoPreview.videoWidth || setupVideoPreview.readyState < 2) return;
+        const scale = Math.min(1, 800 / setupVideoPreview.videoWidth);
+        setupVideoRegionCanvas.width = Math.max(1, Math.round(setupVideoPreview.videoWidth * scale));
+        setupVideoRegionCanvas.height = Math.max(1, Math.round(setupVideoPreview.videoHeight * scale));
+        setupVideoRegionContext.drawImage(setupVideoPreview, 0, 0, setupVideoRegionCanvas.width, setupVideoRegionCanvas.height);
+        if (setupVideoRegionSelection) {
+          setupVideoRegionContext.fillStyle = "rgba(8, 127, 91, 0.2)";
+          setupVideoRegionContext.strokeStyle = "#087f5b";
+          setupVideoRegionContext.lineWidth = 3;
+          setupVideoRegionContext.fillRect(setupVideoRegionSelection.x, setupVideoRegionSelection.y, setupVideoRegionSelection.width, setupVideoRegionSelection.height);
+          setupVideoRegionContext.strokeRect(setupVideoRegionSelection.x, setupVideoRegionSelection.y, setupVideoRegionSelection.width, setupVideoRegionSelection.height);
+          setupReferenceRegionInput.value = JSON.stringify({ x: Number(((setupVideoRegionSelection.x / setupVideoRegionCanvas.width) * 100).toFixed(6)), y: Number(((setupVideoRegionSelection.y / setupVideoRegionCanvas.height) * 100).toFixed(6)), width: Number(((setupVideoRegionSelection.width / setupVideoRegionCanvas.width) * 100).toFixed(6)), height: Number(((setupVideoRegionSelection.height / setupVideoRegionCanvas.height) * 100).toFixed(6)) });
+          setupVideoRegionStatus.textContent = `Selected at ${setupVideoPreview.currentTime.toFixed(1)} seconds.`;
+        }
       }
 
       function videoCanvasPoint(event) {
@@ -1640,6 +1731,7 @@
             ${renderNextSteps(site)}
             <div style="padding: 0 18px 14px; display: flex; gap: 8px;">
               <button type="button" onclick="runValidationForSite('${escapeHtml(site.site_name)}')" ${site.ready_for_validation ? "" : "disabled"}>Run Validation</button>
+              <button type="button" onclick="openVideoFormForSite('${escapeHtml(site.site_name)}')" style="font-size: 13px; min-height: 34px; padding: 6px 12px;">+ Add Video</button>
               <button type="button" onclick="openLabelFormForSite('${escapeHtml(site.site_name)}')" style="font-size: 13px; min-height: 34px; padding: 6px 12px; background: var(--accent-strong); border-color: var(--accent-strong);">+ Add Label</button>
               <a class="site-action-link" href="/site-details.html?site=${encodeURIComponent(site.site_name)}">Details View</a>
             </div>
@@ -1664,6 +1756,8 @@
           fillSiteSelect(payload.sites);
           fillSelect(purposeSelect, payload.purpose_options || [], "Choose purpose", videoPurposeLabels);
           fillSelect(hardCaseTypeSelect, payload.hard_case_type_options || [], "No difficult case", difficultCaseLabels);
+          fillSelect(setupPurposeSelect, payload.purpose_options || [], "Choose purpose", videoPurposeLabels);
+          fillSelect(setupHardCaseTypeSelect, payload.hard_case_type_options || [], "No difficult case", difficultCaseLabels);
           updateLabelOptionsForSelectedSite();
           fillSelect(
             labelConfidenceSelect,
@@ -1734,6 +1828,15 @@
         if (labelSiteSelect) {
           labelSiteSelect.value = siteName;
           updateLabelOptionsForSelectedSite();
+        }
+      };
+
+      window.openVideoFormForSite = function (siteName) {
+        hideForms();
+        videoFormPanel.style.display = "block";
+        addVideoButton.style.display = "none";
+        if (videoSiteSelect) {
+          videoSiteSelect.value = siteName;
         }
       };
 
@@ -1949,6 +2052,27 @@
         hideForms();
       });
 
+      setupVideoFileInput.addEventListener("change", () => {
+        const file = setupVideoFileInput.files[0];
+        if (file) {
+          fillSiteFieldsFromVideo(file.name);
+          if (setupVideoObjectUrl) URL.revokeObjectURL(setupVideoObjectUrl);
+          setupVideoObjectUrl = URL.createObjectURL(file);
+          setupVideoPreview.src = setupVideoObjectUrl;
+          setupVideoPreview.style.display = "block";
+          setupVideoRegionCanvas.style.display = "block";
+          setupVideoRegionSelection = null;
+          setupReferenceRegionInput.value = "";
+          setupVideoRegionStatus.textContent = "Move to a frame, pause it, then drag to select the watched area.";
+        }
+      });
+
+      setupVideoPreview.addEventListener("loadedmetadata", () => { setupVideoPreview.currentTime = 0; drawSetupVideoFrame(); });
+      setupVideoPreview.addEventListener("seeked", drawSetupVideoFrame);
+      setupVideoRegionCanvas.addEventListener("pointerdown", (event) => { setupVideoPreview.pause(); setupVideoRegionCanvas.setPointerCapture(event.pointerId); setupVideoRegionDragStart = setupVideoCanvasPoint(event); setupVideoRegionSelection = null; drawSetupVideoFrame(); });
+      setupVideoRegionCanvas.addEventListener("pointermove", (event) => { if (!setupVideoRegionDragStart) return; setupVideoRegionSelection = normalizedVideoRect(setupVideoRegionDragStart, setupVideoCanvasPoint(event)); drawSetupVideoFrame(); });
+      setupVideoRegionCanvas.addEventListener("pointerup", (event) => { if (!setupVideoRegionDragStart) return; setupVideoRegionSelection = normalizedVideoRect(setupVideoRegionDragStart, setupVideoCanvasPoint(event)); setupVideoRegionDragStart = null; if (setupVideoRegionSelection.width < 4 || setupVideoRegionSelection.height < 4) { setupVideoRegionSelection = null; setupReferenceRegionInput.value = ""; setupVideoRegionStatus.textContent = "Drag a larger rectangle around the watched area."; } drawSetupVideoFrame(); });
+
       cancelVideo.addEventListener("click", () => {
         videoForm.reset();
         resetVideoPreview();
@@ -2021,16 +2145,16 @@
 
       siteForm.addEventListener("submit", async (e) => {
         e.preventDefault();
+        if (!setupVideoRegionSelection) {
+          alert("Select the watched area from the first video before creating the site.");
+          return;
+        }
         const formData = new FormData(siteForm);
-        const data = Object.fromEntries(formData.entries());
 
         try {
-          const response = await fetch("/api/setup-site", {
+          const response = await fetch("/api/setup-site-with-video", {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(data),
+            body: formData,
           });
 
           const result = await response.json();
