@@ -833,7 +833,6 @@
         </div>
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
           <button type="button" id="createSiteButton" style="background: var(--ok); border-color: var(--ok);">Create Site</button>
-          <button type="button" id="addVideoButton">Add Video</button>
           <button type="button" id="addLabelButton" style="background: var(--accent-strong); border-color: var(--accent-strong);">Add Label</button>
           <button type="button" id="refreshButton">Refresh</button>
         </div>
@@ -1072,7 +1071,6 @@
       const guidedViewButton = document.querySelector("#guidedViewButton");
       const classicViewButton = document.querySelector("#classicViewButton");
       const createSiteButton = document.querySelector("#createSiteButton");
-      const addVideoButton = document.querySelector("#addVideoButton");
       const addLabelButton = document.querySelector("#addLabelButton");
       const setupForm = document.querySelector("#setupForm");
       const siteForm = document.querySelector("#siteForm");
@@ -1379,7 +1377,6 @@
         videoFormPanel.style.display = "none";
         labelFormPanel.style.display = "none";
         createSiteButton.style.display = "inline-block";
-        addVideoButton.style.display = "inline-block";
         addLabelButton.style.display = "inline-block";
       }
 
@@ -1444,6 +1441,116 @@
         return value === undefined || value === null ? "Not available" : value;
       }
 
+      function latestReportControls(site) {
+        if (!site.latest_report_path) {
+          return detailItem("Latest report", "No validation report available. Run validation first.");
+        }
+        return `<div class="detail-item">
+          <div class="detail-label">Latest report</div>
+          <button type="button" onclick="toggleReportPath(this)" aria-expanded="false">View Path</button>
+          <button type="button" data-path="${escapeHtml(site.latest_report_path)}" onclick="viewLatestReport(this)" aria-expanded="false">View Report</button>
+          <div class="latest-report-path" hidden style="overflow-wrap: anywhere;">${escapeHtml(site.latest_report_path)}</div>
+          <pre class="latest-report-content report-preview" hidden aria-live="polite" style="white-space: pre-wrap; overflow-wrap: anywhere;"></pre>
+        </div>`;
+      }
+
+      window.toggleReportPath = function (button) {
+        const path = button.parentElement.querySelector(".latest-report-path");
+        path.hidden = !path.hidden;
+        button.textContent = path.hidden ? "View Path" : "Hide Path";
+        button.setAttribute("aria-expanded", String(!path.hidden));
+      };
+
+      window.viewLatestReport = async function (button) {
+        const report = button.parentElement.querySelector(".latest-report-content");
+        if (!report.hidden) {
+          report.hidden = true;
+          button.textContent = "View Report";
+          button.setAttribute("aria-expanded", "false");
+          return;
+        }
+        report.hidden = false;
+        button.textContent = "Hide Report";
+        button.setAttribute("aria-expanded", "true");
+        report.textContent = "Loading validation report…";
+        try {
+          const response = await fetch(`/api/validation-report?path=${encodeURIComponent(button.dataset.path)}`);
+          if (!response.ok) {
+            throw new Error("Could not load the report. If you just updated the code, restart the Home UI server and refresh this page. Otherwise, the report may have been moved or removed.");
+          }
+          const result = await response.json();
+          report.textContent = result.report || "This report is empty.";
+        } catch (error) {
+          report.textContent = error.message;
+        }
+      };
+
+      function reviewImagesControls(site) {
+        if (!site.review_images_path) {
+          return detailItem("Review images", "No review images available. Run validation first.");
+        }
+        return `<div class="detail-item">
+          <div class="detail-label">Review images</div>
+          <button type="button" onclick="toggleReviewImagePath(this)" aria-expanded="false">View Path</button>
+          <button type="button" data-path="${escapeHtml(site.review_images_path)}" onclick="viewReviewImages(this)" aria-expanded="false">View Images</button>
+          <div class="review-image-path" hidden style="overflow-wrap: anywhere;">${escapeHtml(site.review_images_path)}</div>
+          <div class="review-image-gallery" hidden aria-live="polite"></div>
+        </div>`;
+      }
+
+      window.toggleReviewImagePath = function (button) {
+        const path = button.parentElement.querySelector(".review-image-path");
+        path.hidden = !path.hidden;
+        button.textContent = path.hidden ? "View Path" : "Hide Path";
+        button.setAttribute("aria-expanded", String(!path.hidden));
+      };
+
+      window.viewReviewImages = async function (button) {
+        const gallery = button.parentElement.querySelector(".review-image-gallery");
+        if (!gallery.hidden) {
+          gallery.hidden = true;
+          button.textContent = "View Images";
+          button.setAttribute("aria-expanded", "false");
+          return;
+        }
+        gallery.hidden = false;
+        button.textContent = "Hide Images";
+        button.setAttribute("aria-expanded", "true");
+        gallery.textContent = "Loading review images…";
+        try {
+          const response = await fetch(`/api/review-images?path=${encodeURIComponent(button.dataset.path)}`);
+          if (response.status === 404) {
+            throw new Error("Review images are unavailable. If you just updated the code, stop the Home UI server with Ctrl+C, run python3 scripts/run_openfloodai_home_ui.py again, then refresh this page. Otherwise, the evidence folder may have been moved or removed.");
+          }
+          if (!response.ok) throw new Error("Could not load review images. Refresh the site and try again.");
+          const result = await response.json();
+          gallery.replaceChildren();
+          if (!result.images.length) gallery.textContent = "No images were generated for this run. Check the validation report for details.";
+          for (const entry of result.images) {
+            const figure = document.createElement("figure");
+            figure.style.margin = "16px 0";
+            const link = document.createElement("a");
+            link.href = entry.url;
+            link.target = "_blank";
+            link.rel = "noopener";
+            const image = document.createElement("img");
+            image.src = entry.url;
+            image.alt = entry.name;
+            image.loading = "lazy";
+            image.style.maxWidth = "100%";
+            image.onerror = () => { image.alt = `Image unavailable: ${entry.name}`; };
+            const caption = document.createElement("figcaption");
+            caption.textContent = entry.name;
+            caption.style.overflowWrap = "anywhere";
+            link.append(image);
+            figure.append(link, caption);
+            gallery.append(figure);
+          }
+        } catch (error) {
+          gallery.textContent = error.message;
+        }
+      };
+
       function renderValidationSummary(site) {
         const scorecard = site.latest_scorecard;
         if (!scorecard) {
@@ -1463,10 +1570,7 @@
             <div class="detail-value">Cannot compare: ${escapeHtml(scorecardValue(scorecard.cannot_compare))}</div>
             <div class="detail-value">${escapeHtml(reviewText)}</div>
           </div>
-          <div class="detail-item">
-            <div class="detail-label">Evidence folder</div>
-            <div class="detail-value">${escapeHtml(site.review_images_path || "No review evidence folder available.")}</div>
-          </div>
+          ${reviewImagesControls(site)}
         `;
       }
 
@@ -1625,7 +1729,7 @@
           detailItem("Videos tracked", String(site.manifest_tracked_video_count || 0)),
           detailItem("Manifest details", (site.manifest_issues || []).join(" ") || "All local videos are tracked."),
           detailItem("Validation reports", String(site.report_count)),
-          detailItem("Latest report", site.latest_report_path || "Not available"),
+          latestReportControls(site),
           renderValidationSummary(site),
           renderReportHistory(site),
           detailPreview(site.latest_report_preview),
@@ -1697,7 +1801,6 @@
         const readyText = site.ready_for_machine_review
           ? "Machine ready"
           : "Needs setup, video, or watched area";
-        const latestReport = site.latest_report_path || "not found";
         const machineReviewText = site.ready_for_machine_review
           ? "Ready"
           : "Needs setup, video, or watched area";
@@ -1724,9 +1827,9 @@
               ${row("Videos tracked", countText(site.manifest_tracked_video_count || 0, "video", "videos"), site.manifest_status === "Found" ? "ok" : "warn")}
               ${site.manifest_issues?.length ? row("Manifest details", site.manifest_issues.join(" "), "warn") : ""}
               ${row("Output reports", countText(site.report_count, "report", "reports"), site.report_count > 0 ? "ok" : "warn")}
-              ${row("Latest report", latestReport, site.latest_report_path ? "ok" : "warn")}
+              ${latestReportControls(site)}
               ${row("Latest result", reportCountsText(site), site.latest_report_counts ? "ok" : "warn")}
-              ${row("Review images", site.review_images_path || "not found", site.review_images_path ? "ok" : "warn")}
+              ${reviewImagesControls(site)}
             </div>
             ${renderNextSteps(site)}
             <div style="padding: 0 18px 14px; display: flex; gap: 8px;">
@@ -1808,12 +1911,6 @@
         createSiteButton.style.display = "none";
       });
 
-      addVideoButton.addEventListener("click", () => {
-        hideForms();
-        videoFormPanel.style.display = "block";
-        addVideoButton.style.display = "none";
-      });
-
       addLabelButton.addEventListener("click", () => {
         hideForms();
         updateLabelOptionsForSelectedSite();
@@ -1823,21 +1920,21 @@
 
       window.openLabelFormForSite = function (siteName) {
         hideForms();
+        labelForm.reset();
+        labelSiteSelect.value = siteName;
+        updateLabelOptionsForSelectedSite();
         labelFormPanel.style.display = "block";
         addLabelButton.style.display = "none";
-        if (labelSiteSelect) {
-          labelSiteSelect.value = siteName;
-          updateLabelOptionsForSelectedSite();
-        }
+        revealPanel(labelFormPanel);
       };
 
       window.openVideoFormForSite = function (siteName) {
         hideForms();
+        videoForm.reset();
+        resetVideoPreview();
+        videoSiteSelect.value = siteName;
         videoFormPanel.style.display = "block";
-        addVideoButton.style.display = "none";
-        if (videoSiteSelect) {
-          videoSiteSelect.value = siteName;
-        }
+        revealPanel(videoFormPanel);
       };
 
       function revealPanel(panel) {

@@ -951,3 +951,13 @@ Site validation writes directly into each run folder. It no longer creates a sha
 For a complete practice run without chat history, follow the [MVP workflow rehearsal checklist](docs/research/mvp-workflow-rehearsal.md). It covers five to ten videos, both review routes, result review, and recording confusing steps.
 
 A step-by-step [HTML how-to guide](docs/learning/end-to-end-workflow.html) explains the full local workflow with examples and checkboxes. Open it directly in a browser or from the documentation site.
+
+Create Site includes the first video and watched area. To add more videos to an existing site, use **+ Add Video** on that site. The form selects that site and lets you choose a video, watched area, and video details.
+
+Use **+ Add Label** on a site to open a fresh human-label form with that site selected and its video IDs available.
+
+Under **Review images**, use **View Path** to show the evidence folder, or **View Images** to browse generated images inside the Home UI. Click an image to open it at full size in a new tab. These images are served by the local Home UI server; nothing is uploaded. Empty runs show a message directing you to the validation report.
+
+After updating Home UI Python code, restart the local server (Ctrl+C, then `python3 scripts/run_openfloodai_home_ui.py`) and refresh the browser. Refreshing the page alone does not load new server endpoints.
+
+Under **Latest report**, use **View Path** to reveal the report location or **View Report** to read the complete report text in the Home UI. Both controls can be toggled closed. Restart the Home UI server after this update to load the report endpoint.

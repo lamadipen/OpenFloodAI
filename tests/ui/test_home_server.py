@@ -10,6 +10,7 @@ from pathlib import Path
 from threading import Thread
 from typing import Any
 from urllib.error import HTTPError
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 import cv2
@@ -160,7 +161,9 @@ def test_home_ui_page_has_validation_summary_and_evidence_labels(tmp_path: Path)
 
     assert "Latest validation summary" in body
     assert "Human review is still needed" in body
-    assert "Evidence folder" in body
+    assert "Review images" in body
+    assert ">View Path</button>" in body
+    assert ">View Images</button>" in body
     assert "function scorecardValue(value)" in body
     assert "Not available" in body
     assert "Videos tested: undefined" not in body
@@ -399,7 +402,7 @@ def test_home_ui_page_keeps_standalone_actions_next_to_the_workflow(tmp_path: Pa
         _, _, body = get_text(f"{base_url}/openfloodai-home-ui.html")
 
     assert 'id="createSiteButton"' in body
-    assert 'id="addVideoButton"' in body
+    assert "addVideoButton" not in body
     assert 'id="addLabelButton"' in body
     assert "window.runValidationForSite" in body
 
@@ -866,3 +869,80 @@ def test_mvp_rehearsal_setup_to_five_video_result_review(
         assert {p.name for p in (site / "outputs").iterdir()} == {".gitkeep", "runs"}
 
     print(f"Synthetic rehearsal files: {tmp_path}")
+
+
+@pytest.mark.parametrize(
+    "folder",
+    [
+        "outputs/review-images",
+        "outputs/smoke-test/review-images",
+        "outputs/runs/run-1/review-images",
+    ],
+)
+def test_review_image_gallery_serves_generated_images(tmp_path: Path, folder: str) -> None:
+    evidence = tmp_path / "river" / folder
+    evidence.mkdir(parents=True)
+    image = evidence / "frame 1.png"
+    encoded, png = cv2.imencode(".png", np.zeros((8, 8, 3), dtype=np.uint8))
+    assert encoded
+    image.write_bytes(png.tobytes())
+    (evidence / "notes.txt").write_text("Not an image")
+    with serve_home_ui(tmp_path) as base_url:
+        listing = get_json(f"{base_url}/api/review-images?{urlencode({'path': str(evidence)})}")
+        assert [entry["name"] for entry in listing["images"]] == ["frame 1.png"]
+        with urlopen(base_url + listing["images"][0]["url"], timeout=5) as response:
+            assert response.headers["Content-Type"] == "image/png"
+            assert response.read() == png.tobytes()
+        image.unlink()
+        assert get_json(f"{base_url}/api/review-images?{urlencode({'path': str(evidence)})}") == {
+            "images": []
+        }
+
+
+def test_review_images_reject_source_files_and_escaping_symlinks(tmp_path: Path) -> None:
+    evidence = tmp_path / "river/outputs/runs/run-1/review-images"
+    evidence.mkdir(parents=True)
+    source = tmp_path / "river/inputs/private.png"
+    source.parent.mkdir()
+    source.write_bytes(b"private source")
+    (evidence / "linked.png").symlink_to(source)
+    with serve_home_ui(tmp_path) as base_url:
+        assert get_json(f"{base_url}/api/review-images?{urlencode({'path': str(evidence)})}") == {
+            "images": []
+        }
+        for path in [source, evidence / "linked.png", tmp_path / "../outside.png"]:
+            with pytest.raises(HTTPError) as error:
+                get_text(f"{base_url}/api/review-image?{urlencode({'path': str(path)})}")
+            assert error.value.code == 404
+        _, _, body = get_text(base_url)
+        assert ">View Path</button>" in body
+        assert ">View Images</button>" in body
+        assert "No images were generated for this run" in body
+
+
+@pytest.mark.parametrize("folder", ["outputs", "outputs/runs/run-1"])
+def test_view_validation_report_returns_full_text(tmp_path: Path, folder: str) -> None:
+    report = tmp_path / "river" / folder / "validation-report.md"
+    report.parent.mkdir(parents=True)
+    content = "# Validation report\n" + "Local evidence only.\n" * 200
+    report.write_text(content)
+    with serve_home_ui(tmp_path) as base_url:
+        result = get_json(f"{base_url}/api/validation-report?{urlencode({'path': str(report)})}")
+        assert result["report"] == content
+        _, _, body = get_text(base_url)
+        assert ">View Report</button>" in body
+        assert "report.textContent = result.report" in body
+
+
+def test_view_validation_report_rejects_private_and_missing_files(tmp_path: Path) -> None:
+    source = tmp_path / "river/inputs/validation-report.md"
+    source.parent.mkdir(parents=True)
+    source.write_text("Private source")
+    link = tmp_path / "river/outputs/validation-report.md"
+    link.parent.mkdir()
+    link.symlink_to(source)
+    with serve_home_ui(tmp_path) as base_url:
+        for path in [source, link, link.parent / "validation-report-missing.md"]:
+            with pytest.raises(HTTPError) as error:
+                get_json(f"{base_url}/api/validation-report?{urlencode({'path': str(path)})}")
+            assert error.value.code == 404

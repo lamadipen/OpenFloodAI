@@ -9,7 +9,7 @@ from email.policy import HTTP
 from http.server import SimpleHTTPRequestHandler
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlencode, urlsplit
 
 from openfloodai.config import SiteConfigError, write_reference_region
 from openfloodai.review import (
@@ -38,6 +38,12 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         """Serve site-status JSON or the static local UI."""
 
         path = urlsplit(self.path).path
+        if path in {"/api/review-images", "/api/review-image"}:
+            self._send_review_images(single_image=path == "/api/review-image")
+            return
+        if path == "/api/validation-report":
+            self._send_validation_report()
+            return
         if path == "/api/sites":
             self._send_sites_json()
             return
@@ -45,6 +51,79 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             self._send_file(self.ui_path, content_type="text/html; charset=utf-8")
             return
         self.send_error(404, "Not found")
+
+    def _send_validation_report(self) -> None:
+        """Read a generated validation report inside the local sites directory."""
+
+        query = parse_qs(urlsplit(self.path).query)
+        try:
+            candidate = Path(query.get("path", [""])[0]).resolve()
+            relative = candidate.relative_to(self.sites_dir.resolve())
+            if (
+                len(relative.parts) < 3
+                or relative.parts[1] != "outputs"
+                or not candidate.match("validation-report*.md")
+                or not candidate.is_file()
+            ):
+                raise ValueError("Not a validation report")
+            self._send_json({"report": candidate.read_text(encoding="utf-8")}, status_code=200)
+        except (OSError, ValueError):
+            self._send_json({"message": "Validation report not found."}, status_code=404)
+
+    def _send_review_images(self, *, single_image: bool) -> None:
+        """Expose only generated review images inside the configured local sites."""
+
+        query = parse_qs(urlsplit(self.path).query)
+        requested = query.get("path", [""])[0]
+        try:
+            candidate = Path(requested).resolve()
+            relative = candidate.relative_to(self.sites_dir.resolve())
+            parts = relative.parts
+            # Support legacy evidence and per-run evidence, never source media.
+            if len(parts) >= 3 and parts[1:3] == ("outputs", "review-images"):
+                root_length = 3
+            elif len(parts) >= 4 and parts[1:4] == ("outputs", "smoke-test", "review-images"):
+                root_length = 4
+            elif (
+                len(parts) >= 5
+                and parts[1:3] == ("outputs", "runs")
+                and parts[4] == "review-images"
+            ):
+                root_length = 5
+            else:
+                raise ValueError("Not a review image path")
+            evidence_root = self.sites_dir.resolve().joinpath(*parts[:root_length])
+            content_types = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png"}
+            if single_image:
+                if not candidate.is_file() or candidate.suffix.lower() not in content_types:
+                    raise ValueError("Not a supported image")
+                body = candidate.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", content_types[candidate.suffix.lower()])
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if candidate != evidence_root or not candidate.is_dir():
+                raise ValueError("Review image folder not found")
+            images = []
+            for image in sorted(candidate.rglob("*")):
+                if (
+                    image.is_file()
+                    and image.suffix.lower() in content_types
+                    and image.resolve().is_relative_to(evidence_root)
+                ):
+                    images.append(
+                        {
+                            "name": str(image.relative_to(candidate)),
+                            "url": "/api/review-image?" + urlencode({"path": str(image.resolve())}),
+                        }
+                    )
+            self._send_json({"images": images}, status_code=200)
+        except (OSError, ValueError):
+            self.send_error(404, "Review images not found")
 
     def do_POST(self) -> None:
         """Handle site setup and video intake requests."""
