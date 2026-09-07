@@ -16,15 +16,13 @@ test("site name input fills the submitted folder field", () => {
     addEventListener(event, callback) { listeners[event] = callback; },
   };
   const folder = { value: "" };
-  const fields = {
-    "#setupSiteNameInput": name,
-    "#setupFolderNameInput": folder,
-  };
-  const start = script.indexOf("      const setupSiteNameInput =");
+  const start = script.indexOf('      setupSiteNameInput.addEventListener("input",');
   const end = script.indexOf("\n      });", start) + "\n      });".length;
+  const sanitize = script.match(/function sanitizeSiteFolderName\(value\) \{[\s\S]*?\n      \}/)[0];
   assert.ok(start >= 0 && end > start);
-  vm.runInNewContext(script.slice(start, end), {
-    document: { querySelector: (selector) => fields[selector] },
+  vm.runInNewContext(sanitize + "\n" + script.slice(start, end), {
+    setupSiteNameInput: name,
+    setupFolderNameInput: folder,
   });
   for (const [input, expected] of [
     ["Colorado River Site", "colorado-river-site"],

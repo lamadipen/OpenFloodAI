@@ -10,6 +10,7 @@ from pathlib import Path
 from threading import Thread
 from typing import Any
 from urllib.error import HTTPError
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 import cv2
@@ -138,6 +139,15 @@ def test_home_ui_page_is_served_at_root(tmp_path: Path) -> None:
     assert "<h1>OpenFloodAI Home UI</h1>" in body
 
 
+def test_site_details_page_loads_from_its_local_route(tmp_path: Path) -> None:
+    with serve_home_ui(tmp_path) as base_url:
+        status, content_type, body = get_text(f"{base_url}/site-details.html?site=example-site")
+
+    assert status == 200
+    assert "text/html" in content_type
+    assert 'id="detailSiteSelect"' in body
+
+
 def test_home_ui_page_has_safety_note_container(tmp_path: Path) -> None:
     with serve_home_ui(tmp_path) as base_url:
         _, _, body = get_text(f"{base_url}/openfloodai-home-ui.html")
@@ -151,7 +161,9 @@ def test_home_ui_page_has_validation_summary_and_evidence_labels(tmp_path: Path)
 
     assert "Latest validation summary" in body
     assert "Human review is still needed" in body
-    assert "Evidence folder" in body
+    assert "Review images" in body
+    assert ">View Path</button>" in body
+    assert ">View Images</button>" in body
     assert "function scorecardValue(value)" in body
     assert "Not available" in body
     assert "Videos tested: undefined" not in body
@@ -361,6 +373,28 @@ def test_home_ui_page_has_guided_workflow_section(tmp_path: Path) -> None:
     assert "window.startWorkflowStep" in body
 
 
+def test_home_ui_offers_separate_guided_and_classic_views(tmp_path: Path) -> None:
+    with serve_home_ui(tmp_path) as base_url:
+        _, _, body = get_text(f"{base_url}/openfloodai-home-ui.html")
+
+    assert 'data-view="classic"' in body
+    assert 'data-page="home"' in body
+    assert 'id="guidedViewButton"' in body
+    assert 'id="classicViewButton"' in body
+    assert 'body[data-view="classic"] #workflowPanel' in body
+    assert 'body[data-view="guided"] #classicToolbar' in body
+    assert "function setActiveView(view)" in body
+    assert 'setActiveView("guided")' in body
+    assert 'setActiveView("classic")' in body
+    assert 'document.body.dataset.view !== "guided"' in body
+    assert "grid-template-columns: 42px minmax(0, 1fr);" in body
+    assert 'id="detailSiteSelect"' in body
+    assert "isDetailsPage" in body
+    assert "requestedSiteName" in body
+    assert 'body[data-page="details"] .view-switch' in body
+    assert "if (!site || !isDetailsPage)" in body
+
+
 def test_home_ui_page_keeps_standalone_actions_next_to_the_workflow(tmp_path: Path) -> None:
     """Users must still be able to run one action without walking the whole workflow."""
 
@@ -368,9 +402,65 @@ def test_home_ui_page_keeps_standalone_actions_next_to_the_workflow(tmp_path: Pa
         _, _, body = get_text(f"{base_url}/openfloodai-home-ui.html")
 
     assert 'id="createSiteButton"' in body
-    assert 'id="addVideoButton"' in body
+    assert "addVideoButton" not in body
     assert 'id="addLabelButton"' in body
     assert "window.runValidationForSite" in body
+
+
+def test_create_site_form_generates_fields_from_a_selected_video(tmp_path: Path) -> None:
+    with serve_home_ui(tmp_path) as base_url:
+        _, _, body = get_text(f"{base_url}/openfloodai-home-ui.html")
+
+    assert 'id="setupVideoFileInput"' in body
+    assert body.index('id="setupVideoFileInput"') < body.index('id="setupSiteNameInput"')
+    assert 'id="setupSiteIdInput"' in body
+    assert 'id="setupCameraIdInput"' in body
+    assert "function sanitizeSiteFolderName(value)" in body
+    assert "function fillSiteFieldsFromVideo(videoName)" in body
+    assert "`${folderName}_sid`" in body
+    assert "`${folderName}_camid`" in body
+    assert 'setupVideoFileInput.addEventListener("change"' in body
+
+
+def test_create_site_form_collects_the_first_video_and_watched_area(tmp_path: Path) -> None:
+    with serve_home_ui(tmp_path) as base_url:
+        _, _, body = get_text(f"{base_url}/openfloodai-home-ui.html")
+
+    assert 'name="video_file" id="setupVideoFileInput"' in body
+    assert 'id="setupVideoRegionCanvas"' in body
+    assert 'name="reference_region" id="setupReferenceRegionInput"' in body
+    assert 'name="video_id" id="setupVideoIdInput"' in body
+    assert 'name="purpose" id="setupPurposeSelect"' in body
+    assert 'name="notes" required' in body
+    assert 'fetch("/api/setup-site-with-video"' in body
+
+
+def test_home_server_exposes_combined_site_and_first_video_endpoint(tmp_path: Path) -> None:
+    with serve_home_ui(tmp_path) as base_url:
+        _, _, body = get_text(f"{base_url}/openfloodai-home-ui.html")
+
+    assert "/api/setup-site-with-video" in body
+
+
+def test_classic_site_cards_offer_a_dedicated_details_view(tmp_path: Path) -> None:
+    with serve_home_ui(tmp_path) as base_url:
+        _, _, body = get_text(f"{base_url}/openfloodai-home-ui.html")
+
+    assert "Details View" in body
+    assert "/site-details.html?site=${encodeURIComponent(site.site_name)}" in body
+    assert 'body[data-page="details"] #siteGrid' in body
+    assert 'body[data-page="details"] #detailPanel' not in body
+    assert "Back to dashboard" in body
+
+
+def test_classic_site_cards_offer_video_intake_for_existing_sites(tmp_path: Path) -> None:
+    with serve_home_ui(tmp_path) as base_url:
+        _, _, body = get_text(f"{base_url}/openfloodai-home-ui.html")
+
+    assert "+ Add Video" in body
+    assert "window.openVideoFormForSite" in body
+    assert "openVideoFormForSite('${escapeHtml(site.site_name)}')" in body
+    assert "videoSiteSelect.value = siteName" in body
 
 
 def test_sites_api_exposes_workflow_steps_for_the_home_ui(tmp_path: Path) -> None:
@@ -695,7 +785,7 @@ def test_mvp_rehearsal_setup_to_five_video_result_review(
             source = tmp_path / f"{video_id}.avi"
             writer = cv2.VideoWriter(
                 str(source),
-                cv2.VideoWriter_fourcc(*"MJPG"),  # type: ignore[attr-defined]
+                cv2.VideoWriter.fourcc(*"MJPG"),
                 2.0,
                 (32, 24),
             )
@@ -779,3 +869,101 @@ def test_mvp_rehearsal_setup_to_five_video_result_review(
         assert {p.name for p in (site / "outputs").iterdir()} == {".gitkeep", "runs"}
 
     print(f"Synthetic rehearsal files: {tmp_path}")
+
+
+@pytest.mark.parametrize(
+    "folder",
+    [
+        "outputs/review-images",
+        "outputs/smoke-test/review-images",
+        "outputs/runs/run-1/review-images",
+    ],
+)
+def test_review_image_gallery_serves_generated_images(tmp_path: Path, folder: str) -> None:
+    evidence = tmp_path / "river" / folder
+    evidence.mkdir(parents=True)
+    image = evidence / "frame 1.png"
+    encoded, png = cv2.imencode(".png", np.zeros((8, 8, 3), dtype=np.uint8))
+    assert encoded
+    image.write_bytes(png.tobytes())
+    (evidence / "notes.txt").write_text("Not an image")
+    with serve_home_ui(tmp_path) as base_url:
+        listing = get_json(f"{base_url}/api/review-images?{urlencode({'path': str(evidence)})}")
+        assert [entry["name"] for entry in listing["images"]] == ["frame 1.png"]
+        with urlopen(base_url + listing["images"][0]["url"], timeout=5) as response:
+            assert response.headers["Content-Type"] == "image/png"
+            assert response.read() == png.tobytes()
+        image.unlink()
+        assert get_json(f"{base_url}/api/review-images?{urlencode({'path': str(evidence)})}") == {
+            "images": []
+        }
+
+
+def test_review_images_reject_source_files_and_escaping_symlinks(tmp_path: Path) -> None:
+    evidence = tmp_path / "river/outputs/runs/run-1/review-images"
+    evidence.mkdir(parents=True)
+    source = tmp_path / "river/inputs/private.png"
+    source.parent.mkdir()
+    source.write_bytes(b"private source")
+    (evidence / "linked.png").symlink_to(source)
+    with serve_home_ui(tmp_path) as base_url:
+        assert get_json(f"{base_url}/api/review-images?{urlencode({'path': str(evidence)})}") == {
+            "images": []
+        }
+        for path in [source, evidence / "linked.png", tmp_path / "../outside.png"]:
+            with pytest.raises(HTTPError) as error:
+                get_text(f"{base_url}/api/review-image?{urlencode({'path': str(path)})}")
+            assert error.value.code == 404
+        _, _, body = get_text(base_url)
+        assert ">View Path</button>" in body
+        assert ">View Images</button>" in body
+        assert "No images were generated for this run" in body
+
+
+@pytest.mark.parametrize("folder", ["outputs", "outputs/runs/run-1"])
+def test_view_validation_report_returns_full_text(tmp_path: Path, folder: str) -> None:
+    report = tmp_path / "river" / folder / "validation-report.md"
+    report.parent.mkdir(parents=True)
+    content = "# Validation report\n" + "Local evidence only.\n" * 200
+    report.write_text(content)
+    with serve_home_ui(tmp_path) as base_url:
+        result = get_json(f"{base_url}/api/validation-report?{urlencode({'path': str(report)})}")
+        assert result["report"] == content
+        _, _, body = get_text(base_url)
+        assert ">View Report</button>" in body
+        assert "report.textContent = result.report" in body
+
+
+def test_view_validation_report_rejects_private_and_missing_files(tmp_path: Path) -> None:
+    source = tmp_path / "river/inputs/validation-report.md"
+    source.parent.mkdir(parents=True)
+    source.write_text("Private source")
+    link = tmp_path / "river/outputs/validation-report.md"
+    link.parent.mkdir()
+    link.symlink_to(source)
+    with serve_home_ui(tmp_path) as base_url:
+        for path in [source, link, link.parent / "validation-report-missing.md"]:
+            with pytest.raises(HTTPError) as error:
+                get_json(f"{base_url}/api/validation-report?{urlencode({'path': str(path)})}")
+            assert error.value.code == 404
+
+
+def test_label_video_duration_reads_local_metadata(tmp_path: Path) -> None:
+    videos = tmp_path / "river/inputs/videos"
+    videos.mkdir(parents=True)
+    writer = cv2.VideoWriter(str(videos / "clip.avi"), cv2.VideoWriter.fourcc(*"MJPG"), 2, (32, 24))
+    try:
+        assert writer.isOpened()
+        for _ in range(20):
+            writer.write(np.zeros((24, 32, 3), dtype=np.uint8))
+    finally:
+        writer.release()
+    with serve_home_ui(tmp_path) as base_url:
+        result = get_json(base_url + "/api/video-duration?folder_name=river&video_id=clip")
+        assert result["duration_seconds"] == 10
+        with pytest.raises(HTTPError) as error:
+            get_json(base_url + "/api/video-duration?folder_name=../outside&video_id=clip")
+        assert error.value.code == 400
+        with pytest.raises(HTTPError) as error:
+            get_json(base_url + "/api/video-duration?folder_name=river&video_id=missing")
+        assert error.value.code == 400

@@ -614,9 +614,23 @@ The launcher is a thin command wrapper; reusable Home UI server code lives in `s
 
 Simple meaning: this page checks folders under `data/sites/` and shows whether each site has config, videos, labels, manifest, output reports, and a latest report.
 
-In Setup New Validation Site, the folder name fills from the site name: Colorado River Site becomes colorado-river-site. Names are lowercased, extra spaces are removed or joined with one hyphen, and characters other than letters a–z, numbers, dash, and underscore are removed. You can edit the folder name before creating the site.
+Use the **Guided workflow** or **Classic view** switch below the page heading to
+show one workspace at a time. Classic view is the default and shows site cards
+and standalone actions; Guided workflow is available for step-by-step setup.
 
-From the same page you can create a site folder, add a local validation video, or create human label records. The Human label dropdown shows plain-language options such as “Water is rising” while saving water_rising. Its helper text explains that the label describes what a person sees during the selected time window for comparison with machine results. Video purpose and difficult-case dropdowns show plain-language labels while saving the existing manifest values. For example, “Dark video” saves night_or_dark_frame; “No difficult case” leaves the value empty. Video intake sets has_human_label to false; add human labels separately through the label form. The Add Video To Site form calls the manifest split field “Dataset group” and uses plain-language labels for video details. Adding a video copies a file already on this computer into `inputs/videos/` and writes one `manifest.jsonl` row. Adding a label validates time windows and label text without manual JSON Lines editing. After you choose a site, the label form offers existing video IDs from that site’s local videos and labels already used for that site. Selecting a video fills the Video ID field; manual entry is also available. Switching sites clears the previous video selection; if the value is missing, type a short manual label like `bridge_pillar_covered`. Sharing stays off unless you explicitly mark the video as approved for the repo.
+In Classic view, choose **Details View** beside **Run Validation** and **Add
+Label** on a site card to open that site's details page. The page keeps the
+selected-site dropdown so you can switch directly to another local site.
+
+In Setup New Validation Site, choosing a local video first fills the site name from
+the filename without its extension. The folder name uses the same filtering as the
+site name: Colorado River Site becomes colorado-river-site. Names are lowercased,
+extra spaces are removed or joined with one hyphen, and characters other than
+letters a–z, numbers, dash, and underscore are removed. The form also fills the
+site ID as `<folder-name>_sid` and camera ID as `<folder-name>_camid`; you can edit
+all generated values before creating the site.
+
+Create Site saves the initial local video, its watched area, and its manifest metadata in one local-only submission. Use **+ Add Video** on an existing site card for later clips. The Human label dropdown shows plain-language options such as “Water is rising” while saving water_rising. Its helper text explains that the label describes what a person sees during the selected time window for comparison with machine results. Video purpose and difficult-case dropdowns show plain-language labels while saving the existing manifest values. For example, “Dark video” saves night_or_dark_frame; “No difficult case” leaves the value empty. Video intake sets has_human_label to false; add human labels separately through the label form. Adding a video copies a file already on this computer into `inputs/videos/` and writes one `manifest.jsonl` row. Adding a label validates time windows and label text without manual JSON Lines editing. After you choose a site, the label form offers existing video IDs from that site’s local videos and labels already used for that site. Selecting a video fills the Video ID field; manual entry is also available. Switching sites clears the previous video selection; if the value is missing, type a short manual label like `bridge_pillar_covered`. Sharing stays off unless you explicitly mark the video as approved for the repo.
 
 The page opens with a **Guided validation workflow** panel for the selected site. It
 turns the local process into seven visible steps:
@@ -937,3 +951,22 @@ Site validation writes directly into each run folder. It no longer creates a sha
 For a complete practice run without chat history, follow the [MVP workflow rehearsal checklist](docs/research/mvp-workflow-rehearsal.md). It covers five to ten videos, both review routes, result review, and recording confusing steps.
 
 A step-by-step [HTML how-to guide](docs/learning/end-to-end-workflow.html) explains the full local workflow with examples and checkboxes. Open it directly in a browser or from the documentation site.
+
+Create Site includes the first video and watched area. To add more videos to an existing site, use **+ Add Video** on that site. The form selects that site and lets you choose a video, watched area, and video details.
+
+Use **+ Add Label** on a site to open a fresh human-label form with that site selected and its video IDs available.
+
+Under **Review images**, use **View Path** to show the evidence folder, or **View Images** to browse generated images inside the Home UI. Click an image to open it at full size in a new tab. These images are served by the local Home UI server; nothing is uploaded. Empty runs show a message directing you to the validation report.
+
+After updating Home UI Python code, restart the local server (Ctrl+C, then `python3 scripts/run_openfloodai_home_ui.py`) and refresh the browser. Refreshing the page alone does not load new server endpoints.
+
+Under **Latest report**, use **View Path** to reveal the report location or **View Report** to read the complete report text in the Home UI. Both controls can be toggled closed. Restart the Home UI server after this update to load the report endpoint.
+
+Latest results separate **What the machine saw**, **What the person saw**, **Human comparison**, and **Why** for each video time window. Missing labels explicitly show **No human label for comparison**. Other reasons, such as unclear machine evidence, an uncertain human review, missing output, or inadequate time coverage, remain visible. A visual change does not establish rising or falling water. Existing reports can show these explanations after restarting the Home UI server; new reports include the plain-language explanations too.
+Each result also shows a human-comparison status tag: **Agree**, **Disagree**, or **Cannot compare**. The tag describes agreement with human review, not flood risk.
+
+In **Add Label**, selecting a video defaults the start to **0 seconds** and the end to the video's duration. Both times stay editable. If duration cannot be read, enter the end time manually. Changing videos loads a new full-video window; refreshing site information preserves your edits for the same selection. Restart the Home UI server after updating to enable duration lookup.
+
+**Run Validation** shows a spinner and **Running validation…** while waiting for the server. The clicked button is disabled and duplicate runs for the same site are ignored until the request finishes. The spinner clears on both success and failure.
+
+The **Two ways to review a video** note appears in both Classic and Workflow views. Click its heading to expand or collapse it; it starts collapsed.

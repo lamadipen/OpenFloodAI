@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import json
+import math
 import tempfile
 from email.parser import BytesParser
 from email.policy import HTTP
 from http.server import SimpleHTTPRequestHandler
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote
+from urllib.parse import parse_qs, unquote, urlencode, urlsplit
+
+import cv2
 
 from openfloodai.config import SiteConfigError, write_reference_region
 from openfloodai.review import (
@@ -37,17 +40,140 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
     def do_GET(self) -> None:
         """Serve site-status JSON or the static local UI."""
 
-        if self.path == "/api/sites":
+        path = urlsplit(self.path).path
+        if path in {"/api/review-images", "/api/review-image"}:
+            self._send_review_images(single_image=path == "/api/review-image")
+            return
+        if path == "/api/validation-report":
+            self._send_validation_report()
+            return
+        if path == "/api/video-duration":
+            self._send_video_duration()
+            return
+        if path == "/api/sites":
             self._send_sites_json()
             return
-        if self.path in {"/", "/openfloodai-home-ui.html"}:
+        if path in {"/", "/openfloodai-home-ui.html", "/site-details.html"}:
             self._send_file(self.ui_path, content_type="text/html; charset=utf-8")
             return
         self.send_error(404, "Not found")
 
+    def _send_video_duration(self) -> None:
+        """Read duration metadata for a selected local video without serving its bytes."""
+
+        query = parse_qs(urlsplit(self.path).query)
+        folder = query.get("folder_name", [""])[0]
+        video_id = query.get("video_id", [""])[0]
+        try:
+            site = (self.sites_dir / folder).resolve()
+            if not folder or site.parent != self.sites_dir.resolve():
+                raise ValueError("Invalid site")
+            videos = site / "inputs" / "videos"
+            matches = [
+                path
+                for path in videos.iterdir()
+                if path.stem == video_id
+                and path.suffix.lower() in VIDEO_SUFFIXES
+                and path.is_file()
+                and path.resolve().is_relative_to(site)
+            ]
+            if len(matches) != 1:
+                raise ValueError("Video missing or ambiguous")
+            capture = cv2.VideoCapture(str(matches[0]))
+            try:
+                fps = capture.get(cv2.CAP_PROP_FPS)
+                frames = capture.get(cv2.CAP_PROP_FRAME_COUNT)
+                duration = frames / fps if fps > 0 else 0
+                if not capture.isOpened() or not math.isfinite(duration) or duration <= 0:
+                    raise ValueError("Duration unavailable")
+            finally:
+                capture.release()
+            self._send_json({"duration_seconds": duration}, status_code=200)
+        except (OSError, ValueError, cv2.error):
+            self._send_json(
+                {"message": "Could not read the video duration. Enter the end time yourself."},
+                status_code=400,
+            )
+
+    def _send_validation_report(self) -> None:
+        """Read a generated validation report inside the local sites directory."""
+
+        query = parse_qs(urlsplit(self.path).query)
+        try:
+            candidate = Path(query.get("path", [""])[0]).resolve()
+            relative = candidate.relative_to(self.sites_dir.resolve())
+            if (
+                len(relative.parts) < 3
+                or relative.parts[1] != "outputs"
+                or not candidate.match("validation-report*.md")
+                or not candidate.is_file()
+            ):
+                raise ValueError("Not a validation report")
+            self._send_json({"report": candidate.read_text(encoding="utf-8")}, status_code=200)
+        except (OSError, ValueError):
+            self._send_json({"message": "Validation report not found."}, status_code=404)
+
+    def _send_review_images(self, *, single_image: bool) -> None:
+        """Expose only generated review images inside the configured local sites."""
+
+        query = parse_qs(urlsplit(self.path).query)
+        requested = query.get("path", [""])[0]
+        try:
+            candidate = Path(requested).resolve()
+            relative = candidate.relative_to(self.sites_dir.resolve())
+            parts = relative.parts
+            # Support legacy evidence and per-run evidence, never source media.
+            if len(parts) >= 3 and parts[1:3] == ("outputs", "review-images"):
+                root_length = 3
+            elif len(parts) >= 4 and parts[1:4] == ("outputs", "smoke-test", "review-images"):
+                root_length = 4
+            elif (
+                len(parts) >= 5
+                and parts[1:3] == ("outputs", "runs")
+                and parts[4] == "review-images"
+            ):
+                root_length = 5
+            else:
+                raise ValueError("Not a review image path")
+            evidence_root = self.sites_dir.resolve().joinpath(*parts[:root_length])
+            content_types = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png"}
+            if single_image:
+                if not candidate.is_file() or candidate.suffix.lower() not in content_types:
+                    raise ValueError("Not a supported image")
+                body = candidate.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", content_types[candidate.suffix.lower()])
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if candidate != evidence_root or not candidate.is_dir():
+                raise ValueError("Review image folder not found")
+            images = []
+            for image in sorted(candidate.rglob("*")):
+                if (
+                    image.is_file()
+                    and image.suffix.lower() in content_types
+                    and image.resolve().is_relative_to(evidence_root)
+                ):
+                    images.append(
+                        {
+                            "name": str(image.relative_to(candidate)),
+                            "url": "/api/review-image?" + urlencode({"path": str(image.resolve())}),
+                        }
+                    )
+            self._send_json({"images": images}, status_code=200)
+        except (OSError, ValueError):
+            self.send_error(404, "Review images not found")
+
     def do_POST(self) -> None:
         """Handle site setup and video intake requests."""
 
+        if self.path == "/api/setup-site-with-video":
+            self._handle_setup_site_with_video()
+            return
         if self.path == "/api/setup-site":
             self._handle_setup_site()
             return
@@ -93,6 +219,79 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             },
             status_code=200 if result.created else 400,
         )
+
+    def _handle_setup_site_with_video(self) -> None:
+        parsed = self._read_multipart_intake()
+        if parsed is None:
+            return
+        data, temp_video = parsed
+        if temp_video is None:
+            self._send_json(
+                {
+                    "success": False,
+                    "message": "Choose a local video file before creating the site.",
+                },
+                status_code=400,
+            )
+            return
+        try:
+            reference_region = _parse_reference_region(data.get("reference_region"))
+            if reference_region is None:
+                self._send_json(
+                    {
+                        "success": False,
+                        "message": "Select a watched area before creating the site.",
+                    },
+                    status_code=400,
+                )
+                return
+            setup_result = setup_validation_site(
+                sites_base_dir=self.sites_dir,
+                folder_name=str(data.get("folder_name", "")),
+                site_id=str(data.get("site_id", "")),
+                camera_id=str(data.get("camera_id", "")),
+                site_name=str(data.get("site_name", "")),
+                public_location=str(data.get("public_location", "")),
+                privacy_notes=str(data.get("privacy_notes", "")),
+                overwrite=False,
+            )
+            if not setup_result.created:
+                self._send_json(
+                    {"success": False, "message": setup_result.message}, status_code=400
+                )
+                return
+            intake_result = intake_validation_video(
+                site_dir=setup_result.site_dir,
+                video_path=temp_video,
+                video_id=str(data.get("video_id", "")),
+                purpose=str(data.get("purpose", "")),
+                split=str(data.get("split", "")),
+                notes=str(data.get("notes", "")),
+                approved_for_repo=_as_bool(data.get("approved_for_repo"), default=False),
+                hard_case_type=str(data.get("hard_case_type", "")),
+                overwrite=False,
+            )
+            if not intake_result.created:
+                self._send_json(
+                    {"success": False, "message": intake_result.message}, status_code=400
+                )
+                return
+            write_reference_region(setup_result.config_path, reference_region)
+            self._send_json(
+                {
+                    "success": True,
+                    "message": "Created the site and added its first local video.",
+                    "site_dir": str(setup_result.site_dir),
+                    "config_path": str(setup_result.config_path),
+                    "video_path": str(intake_result.video_path),
+                },
+                status_code=200,
+            )
+        except SiteConfigError as error:
+            self._send_json({"success": False, "message": str(error)}, status_code=400)
+        finally:
+            if temp_video is not None and temp_video.exists():
+                temp_video.unlink()
 
     def _handle_intake_video(self) -> None:
         parsed = self._read_intake_request()

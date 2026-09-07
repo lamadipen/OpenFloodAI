@@ -11,6 +11,7 @@ from typing import Any
 
 from openfloodai.contracts import read_jsonl_records
 from openfloodai.review import validate_manifest_record
+from openfloodai.validation.result_explanation import read_result_explanations
 
 VIDEO_SUFFIXES = {".avi", ".mkv", ".mov", ".mp4"}
 REPORT_PREVIEW_MAX_LENGTH = 1200
@@ -436,6 +437,9 @@ class ValidationSiteStatus:
         """Return a JSON-friendly representation of this status."""
 
         payload = asdict(self)
+        payload["latest_result_explanations"] = read_result_explanations(
+            Path(self.latest_report_path) if self.latest_report_path else None
+        )
         payload["ready_for_machine_review"] = self.ready_for_machine_review
         payload["ready_for_human_comparison"] = self.ready_for_human_comparison
         payload["ready_for_validation"] = self.ready_for_validation

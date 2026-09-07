@@ -85,6 +85,77 @@
         box-shadow: 0 10px 26px rgba(31, 41, 51, 0.06);
       }
 
+      .view-switch {
+        display: inline-flex;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        overflow: hidden;
+      }
+
+      .view-switch button {
+        background: var(--panel);
+        border: 0;
+        border-radius: 0;
+        color: var(--muted);
+        min-height: 38px;
+        padding: 7px 12px;
+      }
+
+      .view-switch button + button {
+        border-left: 1px solid var(--line);
+      }
+
+      .view-switch button[aria-pressed="true"] {
+        background: var(--accent-strong);
+        color: #fff;
+      }
+
+      .view-switch button:hover {
+        box-shadow: none;
+        transform: none;
+      }
+
+      body[data-view="classic"] #workflowPanel {
+        display: none;
+      }
+
+      body[data-view="guided"] #classicToolbar,
+      body[data-view="guided"] #detailPanel,
+      body[data-view="guided"] #overview,
+      body[data-view="guided"] #siteGrid,
+      body[data-view="guided"] main > #formHome,
+      body[data-view="guided"] main > #siteListPanel,
+      body[data-view="guided"] main > #videoListPanel,
+      body[data-view="guided"] main > #labelListPanel,
+      body[data-view="guided"] main > #setupForm,
+      body[data-view="guided"] main > #videoFormPanel,
+      body[data-view="guided"] main > #labelFormPanel {
+        display: none;
+      }
+
+      body[data-page="details"] #validationWorkflowNote,
+      body[data-page="details"] #workflowPanel,
+      body[data-page="details"] #classicToolbar,
+      body[data-page="details"] #overview,
+      body[data-page="details"] #siteGrid,
+      body[data-page="details"] #formHome,
+      body[data-page="details"] main > .form-panel {
+        display: none;
+      }
+
+      body[data-page="details"] .view-switch {
+        display: none;
+      }
+
+      .details-back {
+        display: none;
+      }
+
+      body[data-page="details"] .details-back {
+        display: inline-block;
+        margin-top: 18px;
+      }
+
       button {
         border: 1px solid var(--accent-strong);
         border-radius: 6px;
@@ -104,6 +175,28 @@
       button:hover {
         background: var(--accent);
         box-shadow: 0 8px 18px rgba(23, 105, 170, 0.22);
+        transform: translateY(-1px);
+      }
+
+      .site-action-link {
+        align-items: center;
+        background: var(--accent-strong);
+        border: 1px solid var(--accent-strong);
+        border-radius: 6px;
+        color: #fff;
+        display: inline-flex;
+        font: inherit;
+        font-size: 13px;
+        font-weight: 700;
+        min-height: 34px;
+        padding: 6px 12px;
+        text-decoration: none;
+      }
+
+      .site-action-link:hover {
+        background: var(--accent);
+        box-shadow: 0 8px 18px rgba(23, 105, 170, 0.22);
+        color: #fff;
         transform: translateY(-1px);
       }
 
@@ -675,10 +768,38 @@
           min-width: 100%;
           width: 100%;
         }
+
+        .workflow-step {
+          grid-template-columns: 42px minmax(0, 1fr);
+        }
+
+        .workflow-actions {
+          grid-column: 1 / -1;
+        }
+
+        .workflow-action {
+          white-space: normal;
+          width: 100%;
+        }
+      }
+      .validation-spinner {
+        display: inline-block;
+        width: 1em;
+        height: 1em;
+        margin-right: 8px;
+        vertical-align: -0.15em;
+        border: 2px solid currentColor;
+        border-right-color: transparent;
+        border-radius: 50%;
+        animation: validation-spin 0.8s linear infinite;
+      }
+      @keyframes validation-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) {
+        .validation-spinner { animation: none; }
       }
     </style>
   </head>
-  <body>
+  <body data-view="classic" data-page="home">
     <header>
       <div class="eyebrow">Local validation workspace</div>
       <h1>OpenFloodAI Home UI</h1>
@@ -687,10 +808,16 @@
         and what is missing before running local validation. You can also create a site or
         add a local video from this page.
       </p>
+      <div class="view-switch" role="group" aria-label="Home UI view" style="margin-top: 18px;">
+        <button type="button" id="guidedViewButton" aria-pressed="false">Guided workflow</button>
+        <button type="button" id="classicViewButton" aria-pressed="true">Classic view</button>
+      </div>
+      <a class="details-back" href="/openfloodai-home-ui.html">Back to dashboard</a>
     </header>
     <main>
        <section id="validationWorkflowNote" aria-labelledby="validationWorkflowHeading" style="background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 24px; margin-bottom: 22px;">
-        <h2 id="validationWorkflowHeading" style="margin-top: 0;">Two ways to review a video</h2>
+        <details>
+        <summary id="validationWorkflowHeading" style="cursor: pointer; font-size: 1.4rem; font-weight: 700;">Two ways to review a video</summary>
         <p>Human labels are optional for running validation, but required if you want to compare the machine result with human review.</p>
         <h3>Route 1: Machine-only review</h3>
         <ul>
@@ -703,6 +830,7 @@
           <li>Needs: site config + video + watched area + human label + manifest.</li>
           <li>Result: compares what the machine saw with what the human saw.</li>
         </ul>
+        </details>
       </section>
       <section class="workflow-panel" id="workflowPanel" aria-labelledby="workflowTitle">
         <div class="workflow-header">
@@ -714,14 +842,13 @@
         </p>
         <div class="workflow-steps" id="workflowSteps" aria-live="polite"></div>
       </section>
-          <section class="toolbar" aria-label="Local UI controls">
+          <section class="toolbar" id="classicToolbar" aria-label="Local UI controls">
         <div>
           <div class="meta" id="sitesDir">Loading site folder...</div>
           <div class="safety" id="safetyNote"></div>
         </div>
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
           <button type="button" id="createSiteButton" style="background: var(--ok); border-color: var(--ok);">Create Site</button>
-          <button type="button" id="addVideoButton">Add Video</button>
           <button type="button" id="addLabelButton" style="background: var(--accent-strong); border-color: var(--accent-strong);">Add Label</button>
           <button type="button" id="refreshButton">Refresh</button>
         </div>
@@ -750,6 +877,17 @@
       <section id="setupForm" class="form-panel" style="display: none;">
         <h2 style="margin-top: 0;">Setup New Validation Site</h2>
         <form id="siteForm" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div style="grid-column: span 2;">
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Local video file *</label>
+            <input type="file" name="video_file" id="setupVideoFileInput" accept=".avi,.mkv,.mov,.mp4,video/*" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px; background: #fff;">
+          </div>
+          <div style="grid-column: span 2;">
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Watched area *</label>
+            <video id="setupVideoPreview" controls preload="metadata" style="display: none; margin-top: 8px; max-width: 100%; width: 100%; background: #182b35;"></video>
+            <canvas id="setupVideoRegionCanvas" class="video-region-canvas" width="800" height="450" aria-label="Select watched area from first video" style="display: none;"></canvas>
+            <input type="hidden" name="reference_region" id="setupReferenceRegionInput">
+            <div class="meta" id="setupVideoRegionStatus" role="status" style="margin-top: 6px;">Choose a video to select the watched area.</div>
+          </div>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Site Name *</label>
             <input type="text" name="site_name" id="setupSiteNameInput" placeholder="e.g. Demo Bridge" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
@@ -760,12 +898,39 @@
           </div>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Site ID *</label>
-            <input type="text" name="site_id" placeholder="e.g. site-demo-bridge" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+            <input type="text" name="site_id" id="setupSiteIdInput" placeholder="e.g. demo-bridge_sid" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
           </div>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Camera ID *</label>
-            <input type="text" name="camera_id" placeholder="e.g. camera-demo-bridge-01" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+            <input type="text" name="camera_id" id="setupCameraIdInput" placeholder="e.g. demo-bridge_camid" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
           </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Video ID *</label>
+            <input type="text" name="video_id" id="setupVideoIdInput" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Video purpose *</label>
+            <select name="purpose" id="setupPurposeSelect" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Dataset group *</label>
+            <select name="split" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+              <option value="practice">practice</option>
+              <option value="locked_validation">locked_validation</option>
+            </select>
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Difficult case type</label>
+            <select name="hard_case_type" id="setupHardCaseTypeSelect" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
+          </div>
+          <div style="grid-column: span 2;">
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Video notes *</label>
+            <textarea name="notes" required placeholder="Short note about this video, such as what is visible, camera quality, or why it is useful." style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px; min-height: 60px;"></textarea>
+          </div>
+          <label style="display: flex; align-items: center; gap: 8px; grid-column: span 2;">
+            <input type="checkbox" name="approved_for_repo" value="true">
+            Safe to share in repository (keep unchecked by default)
+          </label>
           <div style="grid-column: span 2;">
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Public Location (optional)</label>
             <input type="text" name="public_location" placeholder="e.g. Demo River near Bridge St" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
@@ -775,7 +940,7 @@
             <textarea name="privacy_notes" placeholder="Optional notes about privacy..." style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px; min-height: 60px;"></textarea>
           </div>
           <div style="grid-column: span 2; display: flex; gap: 12px; margin-top: 8px;">
-            <button type="submit" style="background: var(--ok); border-color: var(--ok);">Create Folder Structure</button>
+            <button type="submit" style="background: var(--ok); border-color: var(--ok);">Create Site And Add Video</button>
             <button type="button" id="cancelSetup" style="background: transparent; color: var(--muted); border-color: var(--line);">Cancel</button>
           </div>
         </form>
@@ -861,12 +1026,13 @@
           </div>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Start second *</label>
-            <input type="number" name="start_second" id="labelStartInput" min="0" step="any" placeholder="e.g. 30" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+            <input type="number" name="start_second" id="labelStartInput" value="0" min="0" step="any" placeholder="e.g. 30" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
           </div>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">End second *</label>
             <input type="number" name="end_second" id="labelEndInput" min="0" step="any" placeholder="e.g. 60" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
           </div>
+          <p class="meta" id="labelTimeHelp" role="status" style="grid-column: span 2;">Select a video to fill its full time window. You can edit both times.</p>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Human label *</label>
             <select name="human_label" id="labelValueSelect" aria-describedby="humanLabelHelp" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
@@ -919,15 +1085,27 @@
       const sitesDir = document.querySelector("#sitesDir");
       const safetyNote = document.querySelector("#safetyNote");
       const refreshButton = document.querySelector("#refreshButton");
+      const guidedViewButton = document.querySelector("#guidedViewButton");
+      const classicViewButton = document.querySelector("#classicViewButton");
       const createSiteButton = document.querySelector("#createSiteButton");
-      const addVideoButton = document.querySelector("#addVideoButton");
       const addLabelButton = document.querySelector("#addLabelButton");
       const setupForm = document.querySelector("#setupForm");
       const siteForm = document.querySelector("#siteForm");
+      const setupVideoFileInput = document.querySelector("#setupVideoFileInput");
       const setupSiteNameInput = document.querySelector("#setupSiteNameInput");
       const setupFolderNameInput = document.querySelector("#setupFolderNameInput");
+      const setupSiteIdInput = document.querySelector("#setupSiteIdInput");
+      const setupCameraIdInput = document.querySelector("#setupCameraIdInput");
+      const setupVideoIdInput = document.querySelector("#setupVideoIdInput");
+      const setupVideoPreview = document.querySelector("#setupVideoPreview");
+      const setupVideoRegionCanvas = document.querySelector("#setupVideoRegionCanvas");
+      const setupVideoRegionContext = setupVideoRegionCanvas.getContext("2d");
+      const setupReferenceRegionInput = document.querySelector("#setupReferenceRegionInput");
+      const setupVideoRegionStatus = document.querySelector("#setupVideoRegionStatus");
+      const setupPurposeSelect = document.querySelector("#setupPurposeSelect");
+      const setupHardCaseTypeSelect = document.querySelector("#setupHardCaseTypeSelect");
       setupSiteNameInput.addEventListener("input", () => {
-        setupFolderNameInput.value = setupSiteNameInput.value.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9_-]/g, "");
+        setupFolderNameInput.value = sanitizeSiteFolderName(setupSiteNameInput.value);
       });
       const cancelSetup = document.querySelector("#cancelSetup");
       const videoFormPanel = document.querySelector("#videoFormPanel");
@@ -967,11 +1145,16 @@
       const videoListContent = document.querySelector("#videoListContent");
       const labelListPanel = document.querySelector("#labelListPanel");
       const labelListContent = document.querySelector("#labelListContent");
+      const isDetailsPage = window.location.pathname.endsWith("/site-details.html");
+      const requestedSiteName = new URLSearchParams(window.location.search).get("site");
       let latestSites = [];
       let openWorkflowForm = null;
       let videoObjectUrl = null;
       let videoRegionSelection = null;
       let videoRegionDragStart = null;
+      let setupVideoObjectUrl = null;
+      let setupVideoRegionSelection = null;
+      let setupVideoRegionDragStart = null;
       let defaultHumanLabelOptions = [
         "water_rising",
         "water_falling",
@@ -979,6 +1162,22 @@
         "camera_video_problem",
         "cannot_judge",
       ];
+
+      if (isDetailsPage) {
+        document.body.dataset.page = "details";
+      }
+
+      function setActiveView(view) {
+        hideForms();
+        document.body.dataset.view = view;
+        const guided = view === "guided";
+        guidedViewButton.setAttribute("aria-pressed", String(guided));
+        classicViewButton.setAttribute("aria-pressed", String(!guided));
+        const selectedSite = latestSites.find(
+          (site) => site.site_name === detailSiteSelect.value
+        );
+        renderWorkflow(selectedSite);
+      }
 
       function fillSiteSelect(sites) {
         const current = videoSiteSelect.value;
@@ -1070,6 +1269,49 @@
 
       let labelVideoSite = null;
 
+      let labelDurationKey = null;
+      let labelDurationRequest = 0;
+      let labelTimeEditVersion = 0;
+      labelStartInput.addEventListener("input", () => { labelTimeEditVersion += 1; });
+      labelEndInput.addEventListener("input", () => { labelTimeEditVersion += 1; });
+      labelForm.addEventListener("reset", () => {
+        labelDurationKey = null;
+        labelDurationRequest += 1;
+        document.querySelector("#labelTimeHelp").textContent = "Select a video to fill its full time window. You can edit both times.";
+      });
+
+      async function updateLabelTimeDefaults() {
+        const siteName = labelSiteSelect.value;
+        const videoId = labelVideoIdInput.value.trim();
+        const key = JSON.stringify([siteName, videoId]);
+        if (key === labelDurationKey) return;
+        labelDurationKey = key;
+        const request = ++labelDurationRequest;
+        const editVersion = labelTimeEditVersion;
+        labelStartInput.value = "0";
+        labelEndInput.value = "";
+        const help = document.querySelector("#labelTimeHelp");
+        if (!siteName || !videoId) {
+          help.textContent = "Select a video to fill its full time window. You can edit both times.";
+          return;
+        }
+        help.textContent = "Reading video duration… You can also enter the times yourself.";
+        try {
+          const response = await fetch(`/api/video-duration?folder_name=${encodeURIComponent(siteName)}&video_id=${encodeURIComponent(videoId)}`);
+          if (!response.ok) throw new Error("Duration unavailable");
+          const result = await response.json();
+          if (request !== labelDurationRequest) return;
+          if (editVersion === labelTimeEditVersion) {
+            labelEndInput.value = String(result.duration_seconds);
+          }
+          help.textContent = `Video duration: ${result.duration_seconds} seconds. You can edit the start and end times.`;
+        } catch (error) {
+          if (request === labelDurationRequest) {
+            help.textContent = "Could not read the duration. Enter the end time yourself. If you just updated the code, restart the Home UI server.";
+          }
+        }
+      }
+
       function updateLabelOptionsForSelectedSite() {
         if (labelVideoSite !== labelSiteSelect.value) {
           labelVideoSelect.value = "";
@@ -1080,10 +1322,50 @@
         const videoIds = selectedSite?.video_ids || [];
         fillSelect(labelVideoSelect, videoIds, videoIds.length ? "Choose video ID" : "No local videos — enter ID below");
         fillSelect(labelValueSelect, labelsForSelectedSite(), "Choose human label", humanLabelDisplayLabels);
+        updateLabelTimeDefaults();
       }
 
       function fileStem(filename) {
         return filename.replace(/\.[^/.]+$/, "");
+      }
+
+      function sanitizeSiteFolderName(value) {
+        return value.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9_-]/g, "");
+      }
+
+      function fillSiteFieldsFromVideo(videoName) {
+        const siteName = fileStem(videoName);
+        const folderName = sanitizeSiteFolderName(siteName);
+        setupSiteNameInput.value = siteName;
+        setupFolderNameInput.value = folderName;
+        setupSiteIdInput.value = `${folderName}_sid`;
+        setupCameraIdInput.value = `${folderName}_camid`;
+        setupVideoIdInput.value = folderName;
+      }
+
+      function setupVideoCanvasPoint(event) {
+        const rect = setupVideoRegionCanvas.getBoundingClientRect();
+        return {
+          x: Math.max(0, Math.min(setupVideoRegionCanvas.width, (event.clientX - rect.left) * setupVideoRegionCanvas.width / rect.width)),
+          y: Math.max(0, Math.min(setupVideoRegionCanvas.height, (event.clientY - rect.top) * setupVideoRegionCanvas.height / rect.height)),
+        };
+      }
+
+      function drawSetupVideoFrame() {
+        if (!setupVideoPreview.videoWidth || setupVideoPreview.readyState < 2) return;
+        const scale = Math.min(1, 800 / setupVideoPreview.videoWidth);
+        setupVideoRegionCanvas.width = Math.max(1, Math.round(setupVideoPreview.videoWidth * scale));
+        setupVideoRegionCanvas.height = Math.max(1, Math.round(setupVideoPreview.videoHeight * scale));
+        setupVideoRegionContext.drawImage(setupVideoPreview, 0, 0, setupVideoRegionCanvas.width, setupVideoRegionCanvas.height);
+        if (setupVideoRegionSelection) {
+          setupVideoRegionContext.fillStyle = "rgba(8, 127, 91, 0.2)";
+          setupVideoRegionContext.strokeStyle = "#087f5b";
+          setupVideoRegionContext.lineWidth = 3;
+          setupVideoRegionContext.fillRect(setupVideoRegionSelection.x, setupVideoRegionSelection.y, setupVideoRegionSelection.width, setupVideoRegionSelection.height);
+          setupVideoRegionContext.strokeRect(setupVideoRegionSelection.x, setupVideoRegionSelection.y, setupVideoRegionSelection.width, setupVideoRegionSelection.height);
+          setupReferenceRegionInput.value = JSON.stringify({ x: Number(((setupVideoRegionSelection.x / setupVideoRegionCanvas.width) * 100).toFixed(6)), y: Number(((setupVideoRegionSelection.y / setupVideoRegionCanvas.height) * 100).toFixed(6)), width: Number(((setupVideoRegionSelection.width / setupVideoRegionCanvas.width) * 100).toFixed(6)), height: Number(((setupVideoRegionSelection.height / setupVideoRegionCanvas.height) * 100).toFixed(6)) });
+          setupVideoRegionStatus.textContent = `Selected at ${setupVideoPreview.currentTime.toFixed(1)} seconds.`;
+        }
       }
 
       function videoCanvasPoint(event) {
@@ -1156,7 +1438,6 @@
         videoFormPanel.style.display = "none";
         labelFormPanel.style.display = "none";
         createSiteButton.style.display = "inline-block";
-        addVideoButton.style.display = "inline-block";
         addLabelButton.style.display = "inline-block";
       }
 
@@ -1221,6 +1502,139 @@
         return value === undefined || value === null ? "Not available" : value;
       }
 
+      function latestReportControls(site) {
+        if (!site.latest_report_path) {
+          return detailItem("Latest report", "No validation report available. Run validation first.");
+        }
+        return `<div class="detail-item">
+          <div class="detail-label">Latest report</div>
+          <button type="button" onclick="toggleReportPath(this)" aria-expanded="false">View Path</button>
+          <button type="button" data-path="${escapeHtml(site.latest_report_path)}" onclick="viewLatestReport(this)" aria-expanded="false">View Report</button>
+          <div class="latest-report-path" hidden style="overflow-wrap: anywhere;">${escapeHtml(site.latest_report_path)}</div>
+          <pre class="latest-report-content report-preview" hidden aria-live="polite" style="white-space: pre-wrap; overflow-wrap: anywhere;"></pre>
+        </div>`;
+      }
+
+      window.toggleReportPath = function (button) {
+        const path = button.parentElement.querySelector(".latest-report-path");
+        path.hidden = !path.hidden;
+        button.textContent = path.hidden ? "View Path" : "Hide Path";
+        button.setAttribute("aria-expanded", String(!path.hidden));
+      };
+
+      window.viewLatestReport = async function (button) {
+        const report = button.parentElement.querySelector(".latest-report-content");
+        if (!report.hidden) {
+          report.hidden = true;
+          button.textContent = "View Report";
+          button.setAttribute("aria-expanded", "false");
+          return;
+        }
+        report.hidden = false;
+        button.textContent = "Hide Report";
+        button.setAttribute("aria-expanded", "true");
+        report.textContent = "Loading validation report…";
+        try {
+          const response = await fetch(`/api/validation-report?path=${encodeURIComponent(button.dataset.path)}`);
+          if (!response.ok) {
+            throw new Error("Could not load the report. If you just updated the code, restart the Home UI server and refresh this page. Otherwise, the report may have been moved or removed.");
+          }
+          const result = await response.json();
+          report.textContent = result.report || "This report is empty.";
+        } catch (error) {
+          report.textContent = error.message;
+        }
+      };
+
+      function reviewImagesControls(site) {
+        if (!site.review_images_path) {
+          return detailItem("Review images", "No review images available. Run validation first.");
+        }
+        return `<div class="detail-item">
+          <div class="detail-label">Review images</div>
+          <button type="button" onclick="toggleReviewImagePath(this)" aria-expanded="false">View Path</button>
+          <button type="button" data-path="${escapeHtml(site.review_images_path)}" onclick="viewReviewImages(this)" aria-expanded="false">View Images</button>
+          <div class="review-image-path" hidden style="overflow-wrap: anywhere;">${escapeHtml(site.review_images_path)}</div>
+          <div class="review-image-gallery" hidden aria-live="polite"></div>
+        </div>`;
+      }
+
+      window.toggleReviewImagePath = function (button) {
+        const path = button.parentElement.querySelector(".review-image-path");
+        path.hidden = !path.hidden;
+        button.textContent = path.hidden ? "View Path" : "Hide Path";
+        button.setAttribute("aria-expanded", String(!path.hidden));
+      };
+
+      window.viewReviewImages = async function (button) {
+        const gallery = button.parentElement.querySelector(".review-image-gallery");
+        if (!gallery.hidden) {
+          gallery.hidden = true;
+          button.textContent = "View Images";
+          button.setAttribute("aria-expanded", "false");
+          return;
+        }
+        gallery.hidden = false;
+        button.textContent = "Hide Images";
+        button.setAttribute("aria-expanded", "true");
+        gallery.textContent = "Loading review images…";
+        try {
+          const response = await fetch(`/api/review-images?path=${encodeURIComponent(button.dataset.path)}`);
+          if (response.status === 404) {
+            throw new Error("Review images are unavailable. If you just updated the code, stop the Home UI server with Ctrl+C, run python3 scripts/run_openfloodai_home_ui.py again, then refresh this page. Otherwise, the evidence folder may have been moved or removed.");
+          }
+          if (!response.ok) throw new Error("Could not load review images. Refresh the site and try again.");
+          const result = await response.json();
+          gallery.replaceChildren();
+          if (!result.images.length) gallery.textContent = "No images were generated for this run. Check the validation report for details.";
+          for (const entry of result.images) {
+            const figure = document.createElement("figure");
+            figure.style.margin = "16px 0";
+            const link = document.createElement("a");
+            link.href = entry.url;
+            link.target = "_blank";
+            link.rel = "noopener";
+            const image = document.createElement("img");
+            image.src = entry.url;
+            image.alt = entry.name;
+            image.loading = "lazy";
+            image.style.maxWidth = "100%";
+            image.onerror = () => { image.alt = `Image unavailable: ${entry.name}`; };
+            const caption = document.createElement("figcaption");
+            caption.textContent = entry.name;
+            caption.style.overflowWrap = "anywhere";
+            link.append(image);
+            figure.append(link, caption);
+            gallery.append(figure);
+          }
+        } catch (error) {
+          gallery.textContent = error.message;
+        }
+      };
+
+      function comparisonStatusTag(status) {
+        const tags = {
+          agree: ["Agree", "ok"],
+          disagree: ["Disagree", "missing"],
+          cannot_compare: ["Cannot compare", "warn"],
+        };
+        const [label, color] = Object.hasOwn(tags, status) ? tags[status] : ["Status unavailable", "warn"];
+        return `<span class="badge ${color}" aria-label="Human comparison status: ${label}">${label}</span>`;
+      }
+
+      function renderResultExplanations(site) {
+        const results = site.latest_result_explanations || [];
+        if (!results.length) return "";
+        return results.map((result) => `<div class="detail-item">
+          <div class="detail-label">${escapeHtml(result.video_id)} · ${escapeHtml(result.time_window === "missing" ? "No human time window" : result.time_window)}</div>
+          ${comparisonStatusTag(result.status)}
+          <p><strong>What the machine saw:</strong> ${escapeHtml(result.machine_observation)}</p>
+          <p><strong>What the person saw:</strong> ${escapeHtml(result.human_observation)}</p>
+          <p><strong>Human comparison:</strong> ${escapeHtml(result.comparison_outcome)}</p>
+          <p><strong>Why:</strong> ${escapeHtml(result.reason)}</p>
+        </div>`).join("");
+      }
+
       function renderValidationSummary(site) {
         const scorecard = site.latest_scorecard;
         if (!scorecard) {
@@ -1240,10 +1654,7 @@
             <div class="detail-value">Cannot compare: ${escapeHtml(scorecardValue(scorecard.cannot_compare))}</div>
             <div class="detail-value">${escapeHtml(reviewText)}</div>
           </div>
-          <div class="detail-item">
-            <div class="detail-label">Evidence folder</div>
-            <div class="detail-value">${escapeHtml(site.review_images_path || "No review evidence folder available.")}</div>
-          </div>
+          ${reviewImagesControls(site)}
         `;
       }
 
@@ -1338,7 +1749,7 @@
 
       function renderWorkflow(site) {
         detachWorkflowForm();
-        if (!site) {
+        if (!site || document.body.dataset.view !== "guided") {
           workflowPanel.style.display = "none";
           return;
         }
@@ -1370,7 +1781,7 @@
                         <button
                           type="button"
                           class="workflow-action${action.action_id.startsWith("select_") ? " workflow-action-secondary" : ""}"
-                          onclick="startWorkflowStep('${escapeHtml(action.action_id)}', '${escapeHtml(site.site_name)}', '${escapeHtml(step.key)}')"
+                          onclick="startWorkflowStep('${escapeHtml(action.action_id)}', '${escapeHtml(site.site_name)}', '${escapeHtml(step.key)}', this)"
                           ${action.action_id === "run_validation" && !site.ready_for_validation ? "disabled" : ""}
                         >${escapeHtml(action.label)}</button>
                       `
@@ -1387,7 +1798,7 @@
       }
 
       function renderSiteDetails(site) {
-        if (!site) {
+        if (!site || !isDetailsPage) {
           detailPanel.style.display = "none";
           return;
         }
@@ -1402,8 +1813,9 @@
           detailItem("Videos tracked", String(site.manifest_tracked_video_count || 0)),
           detailItem("Manifest details", (site.manifest_issues || []).join(" ") || "All local videos are tracked."),
           detailItem("Validation reports", String(site.report_count)),
-          detailItem("Latest report", site.latest_report_path || "Not available"),
+          latestReportControls(site),
           renderValidationSummary(site),
+          renderResultExplanations(site),
           renderReportHistory(site),
           detailPreview(site.latest_report_preview),
           detailItem("Machine review", site.machine_review_explanation, "detail-explanation"),
@@ -1412,7 +1824,7 @@
       }
 
       function fillDetailSiteSelect(sites) {
-        const current = detailSiteSelect.value;
+        const current = requestedSiteName || detailSiteSelect.value;
         detailSiteSelect.innerHTML = "";
         for (const site of sites) {
           const option = document.createElement("option");
@@ -1474,7 +1886,6 @@
         const readyText = site.ready_for_machine_review
           ? "Machine ready"
           : "Needs setup, video, or watched area";
-        const latestReport = site.latest_report_path || "not found";
         const machineReviewText = site.ready_for_machine_review
           ? "Ready"
           : "Needs setup, video, or watched area";
@@ -1501,14 +1912,17 @@
               ${row("Videos tracked", countText(site.manifest_tracked_video_count || 0, "video", "videos"), site.manifest_status === "Found" ? "ok" : "warn")}
               ${site.manifest_issues?.length ? row("Manifest details", site.manifest_issues.join(" "), "warn") : ""}
               ${row("Output reports", countText(site.report_count, "report", "reports"), site.report_count > 0 ? "ok" : "warn")}
-              ${row("Latest report", latestReport, site.latest_report_path ? "ok" : "warn")}
+              ${latestReportControls(site)}
               ${row("Latest result", reportCountsText(site), site.latest_report_counts ? "ok" : "warn")}
-              ${row("Review images", site.review_images_path || "not found", site.review_images_path ? "ok" : "warn")}
+              ${renderResultExplanations(site)}
+              ${reviewImagesControls(site)}
             </div>
             ${renderNextSteps(site)}
             <div style="padding: 0 18px 14px; display: flex; gap: 8px;">
-              <button type="button" onclick="runValidationForSite('${escapeHtml(site.site_name)}')" ${site.ready_for_validation ? "" : "disabled"}>Run Validation</button>
+              <button type="button" onclick="runValidationForSite('${escapeHtml(site.site_name)}', this)" ${site.ready_for_validation ? "" : "disabled"}>Run Validation</button>
+              <button type="button" onclick="openVideoFormForSite('${escapeHtml(site.site_name)}')" style="font-size: 13px; min-height: 34px; padding: 6px 12px;">+ Add Video</button>
               <button type="button" onclick="openLabelFormForSite('${escapeHtml(site.site_name)}')" style="font-size: 13px; min-height: 34px; padding: 6px 12px; background: var(--accent-strong); border-color: var(--accent-strong);">+ Add Label</button>
+              <a class="site-action-link" href="/site-details.html?site=${encodeURIComponent(site.site_name)}">Details View</a>
             </div>
           </article>
         `;
@@ -1531,6 +1945,8 @@
           fillSiteSelect(payload.sites);
           fillSelect(purposeSelect, payload.purpose_options || [], "Choose purpose", videoPurposeLabels);
           fillSelect(hardCaseTypeSelect, payload.hard_case_type_options || [], "No difficult case", difficultCaseLabels);
+          fillSelect(setupPurposeSelect, payload.purpose_options || [], "Choose purpose", videoPurposeLabels);
+          fillSelect(setupHardCaseTypeSelect, payload.hard_case_type_options || [], "No difficult case", difficultCaseLabels);
           updateLabelOptionsForSelectedSite();
           fillSelect(
             labelConfidenceSelect,
@@ -1558,6 +1974,8 @@
       }
 
       refreshButton.addEventListener("click", loadSites);
+      guidedViewButton.addEventListener("click", () => setActiveView("guided"));
+      classicViewButton.addEventListener("click", () => setActiveView("classic"));
       detailSiteSelect.addEventListener("change", () => {
         const selectedSite = latestSites.find(
           (site) => site.site_name === detailSiteSelect.value
@@ -1568,21 +1986,17 @@
       labelSiteSelect.addEventListener("change", updateLabelOptionsForSelectedSite);
       labelVideoSelect.addEventListener("change", () => {
         labelVideoIdInput.value = labelVideoSelect.value;
+        updateLabelTimeDefaults();
       });
       labelVideoIdInput.addEventListener("input", () => {
         labelVideoSelect.value = labelVideoIdInput.value;
+        updateLabelTimeDefaults();
       });
 
       createSiteButton.addEventListener("click", () => {
         hideForms();
         setupForm.style.display = "block";
         createSiteButton.style.display = "none";
-      });
-
-      addVideoButton.addEventListener("click", () => {
-        hideForms();
-        videoFormPanel.style.display = "block";
-        addVideoButton.style.display = "none";
       });
 
       addLabelButton.addEventListener("click", () => {
@@ -1594,12 +2008,21 @@
 
       window.openLabelFormForSite = function (siteName) {
         hideForms();
+        labelForm.reset();
+        labelSiteSelect.value = siteName;
+        updateLabelOptionsForSelectedSite();
         labelFormPanel.style.display = "block";
         addLabelButton.style.display = "none";
-        if (labelSiteSelect) {
-          labelSiteSelect.value = siteName;
-          updateLabelOptionsForSelectedSite();
-        }
+        revealPanel(labelFormPanel);
+      };
+
+      window.openVideoFormForSite = function (siteName) {
+        hideForms();
+        videoForm.reset();
+        resetVideoPreview();
+        videoSiteSelect.value = siteName;
+        videoFormPanel.style.display = "block";
+        revealPanel(videoFormPanel);
       };
 
       function revealPanel(panel) {
@@ -1724,7 +2147,7 @@
         }
       };
 
-      window.startWorkflowStep = function (actionId, siteName, stepKey) {
+      window.startWorkflowStep = function (actionId, siteName, stepKey, button) {
         if (detailSiteSelect && siteName) {
           detailSiteSelect.value = siteName;
         }
@@ -1737,7 +2160,7 @@
           return;
         }
         if (actionId === "run_validation") {
-          window.runValidationForSite(siteName);
+          window.runValidationForSite(siteName, button);
           return;
         }
         if (actionId === "repair_manifest") {
@@ -1769,7 +2192,23 @@
         revealPanel(panel);
       };
 
-      window.runValidationForSite = async function (siteName) {
+      const runningValidationSites = new Set();
+      window.runValidationForSite = async function (siteName, button) {
+        if (runningValidationSites.has(siteName)) return;
+        runningValidationSites.add(siteName);
+        const originalContent = button?.innerHTML;
+        const originalDisabled = button?.disabled;
+        const stopSpinner = () => {
+          if (!button) return;
+          button.innerHTML = originalContent;
+          button.disabled = originalDisabled;
+          button.removeAttribute("aria-busy");
+        };
+        if (button) {
+          button.disabled = true;
+          button.setAttribute("aria-busy", "true");
+          button.innerHTML = '<span class="validation-spinner" aria-hidden="true"></span><span role="status">Running validation…</span>';
+        }
         try {
           const response = await fetch("/api/run-validation", {
             method: "POST",
@@ -1782,12 +2221,17 @@
           if (!response.ok || !result.success) {
             throw new Error(result.message || `Request failed: ${response.status}`);
           }
+          stopSpinner();
           alert(
             `Validation complete. Agree: ${result.counts.agree}; Disagree: ${result.counts.disagree}; Cannot compare: ${result.counts.cannot_compare}`
           );
           await loadSites();
         } catch (error) {
+          stopSpinner();
           alert(`Validation failed: ${error.message}`);
+        } finally {
+          runningValidationSites.delete(siteName);
+          stopSpinner();
         }
       };
 
@@ -1813,6 +2257,27 @@
         siteForm.reset();
         hideForms();
       });
+
+      setupVideoFileInput.addEventListener("change", () => {
+        const file = setupVideoFileInput.files[0];
+        if (file) {
+          fillSiteFieldsFromVideo(file.name);
+          if (setupVideoObjectUrl) URL.revokeObjectURL(setupVideoObjectUrl);
+          setupVideoObjectUrl = URL.createObjectURL(file);
+          setupVideoPreview.src = setupVideoObjectUrl;
+          setupVideoPreview.style.display = "block";
+          setupVideoRegionCanvas.style.display = "block";
+          setupVideoRegionSelection = null;
+          setupReferenceRegionInput.value = "";
+          setupVideoRegionStatus.textContent = "Move to a frame, pause it, then drag to select the watched area.";
+        }
+      });
+
+      setupVideoPreview.addEventListener("loadedmetadata", () => { setupVideoPreview.currentTime = 0; drawSetupVideoFrame(); });
+      setupVideoPreview.addEventListener("seeked", drawSetupVideoFrame);
+      setupVideoRegionCanvas.addEventListener("pointerdown", (event) => { setupVideoPreview.pause(); setupVideoRegionCanvas.setPointerCapture(event.pointerId); setupVideoRegionDragStart = setupVideoCanvasPoint(event); setupVideoRegionSelection = null; drawSetupVideoFrame(); });
+      setupVideoRegionCanvas.addEventListener("pointermove", (event) => { if (!setupVideoRegionDragStart) return; setupVideoRegionSelection = normalizedVideoRect(setupVideoRegionDragStart, setupVideoCanvasPoint(event)); drawSetupVideoFrame(); });
+      setupVideoRegionCanvas.addEventListener("pointerup", (event) => { if (!setupVideoRegionDragStart) return; setupVideoRegionSelection = normalizedVideoRect(setupVideoRegionDragStart, setupVideoCanvasPoint(event)); setupVideoRegionDragStart = null; if (setupVideoRegionSelection.width < 4 || setupVideoRegionSelection.height < 4) { setupVideoRegionSelection = null; setupReferenceRegionInput.value = ""; setupVideoRegionStatus.textContent = "Drag a larger rectangle around the watched area."; } drawSetupVideoFrame(); });
 
       cancelVideo.addEventListener("click", () => {
         videoForm.reset();
@@ -1886,16 +2351,16 @@
 
       siteForm.addEventListener("submit", async (e) => {
         e.preventDefault();
+        if (!setupVideoRegionSelection) {
+          alert("Select the watched area from the first video before creating the site.");
+          return;
+        }
         const formData = new FormData(siteForm);
-        const data = Object.fromEntries(formData.entries());
 
         try {
-          const response = await fetch("/api/setup-site", {
+          const response = await fetch("/api/setup-site-with-video", {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(data),
+            body: formData,
           });
 
           const result = await response.json();
