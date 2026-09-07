@@ -134,6 +134,29 @@
         display: none;
       }
 
+      body[data-page="details"] #validationWorkflowNote,
+      body[data-page="details"] #workflowPanel,
+      body[data-page="details"] #classicToolbar,
+      body[data-page="details"] #overview,
+      body[data-page="details"] #siteGrid,
+      body[data-page="details"] #formHome,
+      body[data-page="details"] main > .form-panel {
+        display: none;
+      }
+
+      body[data-page="details"] .view-switch {
+        display: none;
+      }
+
+      .details-back {
+        display: none;
+      }
+
+      body[data-page="details"] .details-back {
+        display: inline-block;
+        margin-top: 18px;
+      }
+
       button {
         border: 1px solid var(--accent-strong);
         border-radius: 6px;
@@ -153,6 +176,28 @@
       button:hover {
         background: var(--accent);
         box-shadow: 0 8px 18px rgba(23, 105, 170, 0.22);
+        transform: translateY(-1px);
+      }
+
+      .site-action-link {
+        align-items: center;
+        background: var(--accent-strong);
+        border: 1px solid var(--accent-strong);
+        border-radius: 6px;
+        color: #fff;
+        display: inline-flex;
+        font: inherit;
+        font-size: 13px;
+        font-weight: 700;
+        min-height: 34px;
+        padding: 6px 12px;
+        text-decoration: none;
+      }
+
+      .site-action-link:hover {
+        background: var(--accent);
+        box-shadow: 0 8px 18px rgba(23, 105, 170, 0.22);
+        color: #fff;
         transform: translateY(-1px);
       }
 
@@ -740,7 +785,7 @@
       }
     </style>
   </head>
-  <body data-view="guided">
+  <body data-view="classic" data-page="home">
     <header>
       <div class="eyebrow">Local validation workspace</div>
       <h1>OpenFloodAI Home UI</h1>
@@ -750,9 +795,10 @@
         add a local video from this page.
       </p>
       <div class="view-switch" role="group" aria-label="Home UI view" style="margin-top: 18px;">
-        <button type="button" id="guidedViewButton" aria-pressed="true">Guided workflow</button>
-        <button type="button" id="classicViewButton" aria-pressed="false">Classic view</button>
+        <button type="button" id="guidedViewButton" aria-pressed="false">Guided workflow</button>
+        <button type="button" id="classicViewButton" aria-pressed="true">Classic view</button>
       </div>
+      <a class="details-back" href="/openfloodai-home-ui.html">Back to dashboard</a>
     </header>
     <main>
        <section id="validationWorkflowNote" aria-labelledby="validationWorkflowHeading" style="background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 24px; margin-bottom: 22px;">
@@ -1035,6 +1081,8 @@
       const videoListContent = document.querySelector("#videoListContent");
       const labelListPanel = document.querySelector("#labelListPanel");
       const labelListContent = document.querySelector("#labelListContent");
+      const isDetailsPage = window.location.pathname.endsWith("/site-details.html");
+      const requestedSiteName = new URLSearchParams(window.location.search).get("site");
       let latestSites = [];
       let openWorkflowForm = null;
       let videoObjectUrl = null;
@@ -1047,6 +1095,10 @@
         "camera_video_problem",
         "cannot_judge",
       ];
+
+      if (isDetailsPage) {
+        document.body.dataset.page = "details";
+      }
 
       function setActiveView(view) {
         hideForms();
@@ -1467,7 +1519,7 @@
       }
 
       function renderSiteDetails(site) {
-        if (!site) {
+        if (!site || !isDetailsPage) {
           detailPanel.style.display = "none";
           return;
         }
@@ -1492,7 +1544,7 @@
       }
 
       function fillDetailSiteSelect(sites) {
-        const current = detailSiteSelect.value;
+        const current = requestedSiteName || detailSiteSelect.value;
         detailSiteSelect.innerHTML = "";
         for (const site of sites) {
           const option = document.createElement("option");
@@ -1589,6 +1641,7 @@
             <div style="padding: 0 18px 14px; display: flex; gap: 8px;">
               <button type="button" onclick="runValidationForSite('${escapeHtml(site.site_name)}')" ${site.ready_for_validation ? "" : "disabled"}>Run Validation</button>
               <button type="button" onclick="openLabelFormForSite('${escapeHtml(site.site_name)}')" style="font-size: 13px; min-height: 34px; padding: 6px 12px; background: var(--accent-strong); border-color: var(--accent-strong);">+ Add Label</button>
+              <a class="site-action-link" href="/site-details.html?site=${encodeURIComponent(site.site_name)}">Details View</a>
             </div>
           </article>
         `;

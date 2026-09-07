@@ -9,7 +9,7 @@ from email.policy import HTTP
 from http.server import SimpleHTTPRequestHandler
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote
+from urllib.parse import unquote, urlsplit
 
 from openfloodai.config import SiteConfigError, write_reference_region
 from openfloodai.review import (
@@ -37,10 +37,11 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
     def do_GET(self) -> None:
         """Serve site-status JSON or the static local UI."""
 
-        if self.path == "/api/sites":
+        path = urlsplit(self.path).path
+        if path == "/api/sites":
             self._send_sites_json()
             return
-        if self.path in {"/", "/openfloodai-home-ui.html"}:
+        if path in {"/", "/openfloodai-home-ui.html", "/site-details.html"}:
             self._send_file(self.ui_path, content_type="text/html; charset=utf-8")
             return
         self.send_error(404, "Not found")

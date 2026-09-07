@@ -615,8 +615,12 @@ The launcher is a thin command wrapper; reusable Home UI server code lives in `s
 Simple meaning: this page checks folders under `data/sites/` and shows whether each site has config, videos, labels, manifest, output reports, and a latest report.
 
 Use the **Guided workflow** or **Classic view** switch below the page heading to
-show one workspace at a time. Guided workflow is the default for step-by-step
-setup; Classic view shows the site cards, details, and standalone actions.
+show one workspace at a time. Classic view is the default and shows site cards
+and standalone actions; Guided workflow is available for step-by-step setup.
+
+In Classic view, choose **Details View** beside **Run Validation** and **Add
+Label** on a site card to open that site's details page. The page keeps the
+selected-site dropdown so you can switch directly to another local site.
 
 In Setup New Validation Site, the folder name fills from the site name: Colorado River Site becomes colorado-river-site. Names are lowercased, extra spaces are removed or joined with one hyphen, and characters other than letters a–z, numbers, dash, and underscore are removed. You can edit the folder name before creating the site.
 

@@ -138,6 +138,15 @@ def test_home_ui_page_is_served_at_root(tmp_path: Path) -> None:
     assert "<h1>OpenFloodAI Home UI</h1>" in body
 
 
+def test_site_details_page_loads_from_its_local_route(tmp_path: Path) -> None:
+    with serve_home_ui(tmp_path) as base_url:
+        status, content_type, body = get_text(f"{base_url}/site-details.html?site=example-site")
+
+    assert status == 200
+    assert "text/html" in content_type
+    assert 'id="detailSiteSelect"' in body
+
+
 def test_home_ui_page_has_safety_note_container(tmp_path: Path) -> None:
     with serve_home_ui(tmp_path) as base_url:
         _, _, body = get_text(f"{base_url}/openfloodai-home-ui.html")
@@ -365,7 +374,8 @@ def test_home_ui_offers_separate_guided_and_classic_views(tmp_path: Path) -> Non
     with serve_home_ui(tmp_path) as base_url:
         _, _, body = get_text(f"{base_url}/openfloodai-home-ui.html")
 
-    assert 'data-view="guided"' in body
+    assert 'data-view="classic"' in body
+    assert 'data-page="home"' in body
     assert 'id="guidedViewButton"' in body
     assert 'id="classicViewButton"' in body
     assert 'body[data-view="classic"] #workflowPanel' in body
@@ -373,8 +383,13 @@ def test_home_ui_offers_separate_guided_and_classic_views(tmp_path: Path) -> Non
     assert "function setActiveView(view)" in body
     assert 'setActiveView("guided")' in body
     assert 'setActiveView("classic")' in body
-    assert "document.body.dataset.view !== \"guided\"" in body
+    assert 'document.body.dataset.view !== "guided"' in body
     assert "grid-template-columns: 42px minmax(0, 1fr);" in body
+    assert 'id="detailSiteSelect"' in body
+    assert "isDetailsPage" in body
+    assert "requestedSiteName" in body
+    assert 'body[data-page="details"] .view-switch' in body
+    assert "if (!site || !isDetailsPage)" in body
 
 
 def test_home_ui_page_keeps_standalone_actions_next_to_the_workflow(tmp_path: Path) -> None:
@@ -387,6 +402,17 @@ def test_home_ui_page_keeps_standalone_actions_next_to_the_workflow(tmp_path: Pa
     assert 'id="addVideoButton"' in body
     assert 'id="addLabelButton"' in body
     assert "window.runValidationForSite" in body
+
+
+def test_classic_site_cards_offer_a_dedicated_details_view(tmp_path: Path) -> None:
+    with serve_home_ui(tmp_path) as base_url:
+        _, _, body = get_text(f"{base_url}/openfloodai-home-ui.html")
+
+    assert "Details View" in body
+    assert "/site-details.html?site=${encodeURIComponent(site.site_name)}" in body
+    assert 'body[data-page="details"] #siteGrid' in body
+    assert 'body[data-page="details"] #detailPanel' not in body
+    assert "Back to dashboard" in body
 
 
 def test_sites_api_exposes_workflow_steps_for_the_home_ui(tmp_path: Path) -> None:
