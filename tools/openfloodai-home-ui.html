@@ -129,6 +129,7 @@
       body[data-view="guided"] main > #labelListPanel,
       body[data-view="guided"] main > #setupForm,
       body[data-view="guided"] main > #videoFormPanel,
+      body[data-view="guided"] main > #watchedAreaFormPanel,
       body[data-view="guided"] main > #labelFormPanel {
         display: none;
       }
@@ -1007,6 +1008,37 @@
         </form>
       </section>
 
+      <section id="watchedAreaFormPanel" class="form-panel" style="display: none;">
+        <h2 style="margin-top: 0;">Set Watched Area</h2>
+        <p class="meta" style="margin-top: 0;">
+          Pick the part of the picture where the system should look for water change.
+          This uses a video that is already in this site. It does not copy the video again
+          and it does not upload anything.
+        </p>
+        <form id="watchedAreaForm" style="display: grid; gap: 16px;">
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Site *</label>
+            <select name="folder_name" id="watchedAreaSiteSelect" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Video in this site *</label>
+            <select id="watchedAreaVideoSelect" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Watched area *</label>
+            <div class="meta">Choose a frame with the video controls, then drag around the river area to watch.</div>
+            <video id="watchedAreaPreview" controls preload="metadata" style="display: none; margin-top: 8px; max-width: 100%; width: 100%; background: #182b35;"></video>
+            <canvas id="watchedAreaCanvas" class="video-region-canvas" width="800" height="450" aria-label="Select watched area from a video already in the site" style="display: none;"></canvas>
+            <input type="hidden" id="watchedAreaRegionInput">
+            <div class="meta" id="watchedAreaStatus" role="status" style="margin-top: 6px;">Choose a video to begin.</div>
+          </div>
+          <div style="display: flex; gap: 12px;">
+            <button type="submit" style="background: var(--ok); border-color: var(--ok);">Save Watched Area</button>
+            <button type="button" id="cancelWatchedArea" style="background: transparent; color: var(--muted); border-color: var(--line);">Cancel</button>
+          </div>
+        </form>
+      </section>
+
       <section id="labelFormPanel" class="form-panel" style="display: none;">
         <h2 style="margin-top: 0;">Add Human Label Record</h2>
         <p class="meta" style="margin-top: 0;">
@@ -1099,7 +1131,6 @@
       const setupVideoIdInput = document.querySelector("#setupVideoIdInput");
       const setupVideoPreview = document.querySelector("#setupVideoPreview");
       const setupVideoRegionCanvas = document.querySelector("#setupVideoRegionCanvas");
-      const setupVideoRegionContext = setupVideoRegionCanvas.getContext("2d");
       const setupReferenceRegionInput = document.querySelector("#setupReferenceRegionInput");
       const setupVideoRegionStatus = document.querySelector("#setupVideoRegionStatus");
       const setupPurposeSelect = document.querySelector("#setupPurposeSelect");
@@ -1116,11 +1147,19 @@
       const videoIdInput = document.querySelector("#videoIdInput");
       const videoPreview = document.querySelector("#videoPreview");
       const videoRegionCanvas = document.querySelector("#videoRegionCanvas");
-      const videoRegionContext = videoRegionCanvas.getContext("2d");
       const referenceRegionInput = document.querySelector("#referenceRegionInput");
       const videoRegionStatus = document.querySelector("#videoRegionStatus");
       const purposeSelect = document.querySelector("#purposeSelect");
       const hardCaseTypeSelect = document.querySelector("#hardCaseTypeSelect");
+      const watchedAreaFormPanel = document.querySelector("#watchedAreaFormPanel");
+      const watchedAreaForm = document.querySelector("#watchedAreaForm");
+      const cancelWatchedArea = document.querySelector("#cancelWatchedArea");
+      const watchedAreaSiteSelect = document.querySelector("#watchedAreaSiteSelect");
+      const watchedAreaVideoSelect = document.querySelector("#watchedAreaVideoSelect");
+      const watchedAreaPreview = document.querySelector("#watchedAreaPreview");
+      const watchedAreaCanvas = document.querySelector("#watchedAreaCanvas");
+      const watchedAreaRegionInput = document.querySelector("#watchedAreaRegionInput");
+      const watchedAreaStatus = document.querySelector("#watchedAreaStatus");
       const labelFormPanel = document.querySelector("#labelFormPanel");
       const labelForm = document.querySelector("#labelForm");
       const cancelLabel = document.querySelector("#cancelLabel");
@@ -1149,12 +1188,27 @@
       const requestedSiteName = new URLSearchParams(window.location.search).get("site");
       let latestSites = [];
       let openWorkflowForm = null;
-      let videoObjectUrl = null;
-      let videoRegionSelection = null;
-      let videoRegionDragStart = null;
-      let setupVideoObjectUrl = null;
-      let setupVideoRegionSelection = null;
-      let setupVideoRegionDragStart = null;
+      const setupVideoRegionSelector = createRegionSelector({
+        video: setupVideoPreview,
+        canvas: setupVideoRegionCanvas,
+        input: setupReferenceRegionInput,
+        status: setupVideoRegionStatus,
+        emptyText: "Choose a video to select the watched area.",
+      });
+      const videoRegionSelector = createRegionSelector({
+        video: videoPreview,
+        canvas: videoRegionCanvas,
+        input: referenceRegionInput,
+        status: videoRegionStatus,
+        emptyText: "Choose a video to begin.",
+      });
+      const watchedAreaSelector = createRegionSelector({
+        video: watchedAreaPreview,
+        canvas: watchedAreaCanvas,
+        input: watchedAreaRegionInput,
+        status: watchedAreaStatus,
+        emptyText: "Choose a video to begin.",
+      });
       let defaultHumanLabelOptions = [
         "water_rising",
         "water_falling",
@@ -1211,6 +1265,64 @@
         if ([...labelSiteSelect.options].some((option) => option.value === currentLabelSite)) {
           labelSiteSelect.value = currentLabelSite;
         }
+        fillWatchedAreaSites(sites);
+      }
+
+      function fillWatchedAreaSites(sites) {
+        const current = watchedAreaSiteSelect.value;
+        watchedAreaSiteSelect.innerHTML = "";
+        for (const site of sites) {
+          const option = document.createElement("option");
+          option.value = site.site_name;
+          option.textContent = site.site_name;
+          watchedAreaSiteSelect.append(option);
+        }
+        if (!sites.length) {
+          const option = document.createElement("option");
+          option.value = "";
+          option.textContent = "Create a site first";
+          watchedAreaSiteSelect.append(option);
+        }
+        if ([...watchedAreaSiteSelect.options].some((option) => option.value === current)) {
+          watchedAreaSiteSelect.value = current;
+        }
+        fillWatchedAreaVideos();
+      }
+
+      function fillWatchedAreaVideos() {
+        const site = latestSites.find((entry) => entry.site_name === watchedAreaSiteSelect.value);
+        const videoIds = (site && site.video_ids) || [];
+        watchedAreaVideoSelect.innerHTML = "";
+        watchedAreaSelector.reset();
+        if (!videoIds.length) {
+          const option = document.createElement("option");
+          option.value = "";
+          option.textContent = "Add a video to this site first";
+          watchedAreaVideoSelect.append(option);
+          watchedAreaStatus.textContent = "This site has no video yet. Add a video first.";
+          return;
+        }
+        const chooseOption = document.createElement("option");
+        chooseOption.value = "";
+        chooseOption.textContent = "Choose a video";
+        watchedAreaVideoSelect.append(chooseOption);
+        for (const videoId of videoIds) {
+          const option = document.createElement("option");
+          option.value = videoId;
+          option.textContent = videoId;
+          watchedAreaVideoSelect.append(option);
+        }
+      }
+
+      function showWatchedAreaVideo() {
+        const folderName = watchedAreaSiteSelect.value;
+        const videoId = watchedAreaVideoSelect.value;
+        if (!folderName || !videoId) {
+          watchedAreaSelector.reset();
+          return;
+        }
+        const query = new URLSearchParams({ folder_name: folderName, video_id: videoId });
+        watchedAreaSelector.show(`/api/site-video?${query}`);
       }
 
       const humanLabelDisplayLabels = {
@@ -1343,39 +1455,6 @@
         setupVideoIdInput.value = folderName;
       }
 
-      function setupVideoCanvasPoint(event) {
-        const rect = setupVideoRegionCanvas.getBoundingClientRect();
-        return {
-          x: Math.max(0, Math.min(setupVideoRegionCanvas.width, (event.clientX - rect.left) * setupVideoRegionCanvas.width / rect.width)),
-          y: Math.max(0, Math.min(setupVideoRegionCanvas.height, (event.clientY - rect.top) * setupVideoRegionCanvas.height / rect.height)),
-        };
-      }
-
-      function drawSetupVideoFrame() {
-        if (!setupVideoPreview.videoWidth || setupVideoPreview.readyState < 2) return;
-        const scale = Math.min(1, 800 / setupVideoPreview.videoWidth);
-        setupVideoRegionCanvas.width = Math.max(1, Math.round(setupVideoPreview.videoWidth * scale));
-        setupVideoRegionCanvas.height = Math.max(1, Math.round(setupVideoPreview.videoHeight * scale));
-        setupVideoRegionContext.drawImage(setupVideoPreview, 0, 0, setupVideoRegionCanvas.width, setupVideoRegionCanvas.height);
-        if (setupVideoRegionSelection) {
-          setupVideoRegionContext.fillStyle = "rgba(8, 127, 91, 0.2)";
-          setupVideoRegionContext.strokeStyle = "#087f5b";
-          setupVideoRegionContext.lineWidth = 3;
-          setupVideoRegionContext.fillRect(setupVideoRegionSelection.x, setupVideoRegionSelection.y, setupVideoRegionSelection.width, setupVideoRegionSelection.height);
-          setupVideoRegionContext.strokeRect(setupVideoRegionSelection.x, setupVideoRegionSelection.y, setupVideoRegionSelection.width, setupVideoRegionSelection.height);
-          setupReferenceRegionInput.value = JSON.stringify({ x: Number(((setupVideoRegionSelection.x / setupVideoRegionCanvas.width) * 100).toFixed(6)), y: Number(((setupVideoRegionSelection.y / setupVideoRegionCanvas.height) * 100).toFixed(6)), width: Number(((setupVideoRegionSelection.width / setupVideoRegionCanvas.width) * 100).toFixed(6)), height: Number(((setupVideoRegionSelection.height / setupVideoRegionCanvas.height) * 100).toFixed(6)) });
-          setupVideoRegionStatus.textContent = `Selected at ${setupVideoPreview.currentTime.toFixed(1)} seconds.`;
-        }
-      }
-
-      function videoCanvasPoint(event) {
-        const rect = videoRegionCanvas.getBoundingClientRect();
-        return {
-          x: Math.max(0, Math.min(videoRegionCanvas.width, (event.clientX - rect.left) * videoRegionCanvas.width / rect.width)),
-          y: Math.max(0, Math.min(videoRegionCanvas.height, (event.clientY - rect.top) * videoRegionCanvas.height / rect.height)),
-        };
-      }
-
       function normalizedVideoRect(start, end) {
         return {
           x: Math.min(start.x, end.x),
@@ -1385,48 +1464,124 @@
         };
       }
 
-      function videoRegionToPercent(rect) {
+      // One watched-area selector, shared by site setup, video intake, and step 3.
+      function createRegionSelector({ video, canvas, input, status, emptyText }) {
+        const context = canvas.getContext("2d");
+        let selection = null;
+        let dragStart = null;
+        let objectUrl = null;
+
+        function canvasPoint(event) {
+          const bounds = canvas.getBoundingClientRect();
+          return {
+            x: Math.max(0, Math.min(canvas.width, (event.clientX - bounds.left) * canvas.width / bounds.width)),
+            y: Math.max(0, Math.min(canvas.height, (event.clientY - bounds.top) * canvas.height / bounds.height)),
+          };
+        }
+
+        function toPercent(rect) {
+          return {
+            x: Number(((rect.x / canvas.width) * 100).toFixed(6)),
+            y: Number(((rect.y / canvas.height) * 100).toFixed(6)),
+            width: Number(((rect.width / canvas.width) * 100).toFixed(6)),
+            height: Number(((rect.height / canvas.height) * 100).toFixed(6)),
+          };
+        }
+
+        function clearSelection() {
+          selection = null;
+          input.value = "";
+        }
+
+        function draw() {
+          if (!video.videoWidth || video.readyState < 2) {
+            return;
+          }
+          const scale = Math.min(1, 800 / video.videoWidth);
+          canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+          canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+          context.drawImage(video, 0, 0, canvas.width, canvas.height);
+          if (!selection) {
+            return;
+          }
+          context.fillStyle = "rgba(8, 127, 91, 0.2)";
+          context.strokeStyle = "#087f5b";
+          context.lineWidth = 3;
+          context.fillRect(selection.x, selection.y, selection.width, selection.height);
+          context.strokeRect(selection.x, selection.y, selection.width, selection.height);
+          input.value = JSON.stringify(toPercent(selection));
+          status.textContent = `Selected at ${video.currentTime.toFixed(1)} seconds.`;
+        }
+
+        function reset() {
+          clearSelection();
+          dragStart = null;
+          canvas.style.display = "none";
+          video.style.display = "none";
+          status.textContent = emptyText;
+          if (objectUrl) {
+            URL.revokeObjectURL(objectUrl);
+            objectUrl = null;
+          }
+          video.removeAttribute("src");
+          video.load();
+        }
+
+        function show(source, { revokeWhenDone = false } = {}) {
+          reset();
+          objectUrl = revokeWhenDone ? source : null;
+          video.src = source;
+          video.style.display = "block";
+          canvas.style.display = "block";
+          status.textContent = "Move to a frame, pause it, then drag to select the watched area.";
+        }
+
+        video.addEventListener("loadedmetadata", () => {
+          video.currentTime = 0;
+          draw();
+        });
+        video.addEventListener("seeked", draw);
+        canvas.addEventListener("pointerdown", (event) => {
+          if (!video.videoWidth) {
+            status.textContent = "Choose a video first.";
+            return;
+          }
+          video.pause();
+          canvas.setPointerCapture(event.pointerId);
+          dragStart = canvasPoint(event);
+          clearSelection();
+          draw();
+        });
+        canvas.addEventListener("pointermove", (event) => {
+          if (!dragStart) {
+            return;
+          }
+          selection = normalizedVideoRect(dragStart, canvasPoint(event));
+          draw();
+        });
+        canvas.addEventListener("pointerup", (event) => {
+          if (!dragStart) {
+            return;
+          }
+          selection = normalizedVideoRect(dragStart, canvasPoint(event));
+          dragStart = null;
+          if (selection.width < 4 || selection.height < 4) {
+            clearSelection();
+            status.textContent = "Drag a larger rectangle around the watched area.";
+          }
+          draw();
+        });
+
         return {
-          x: Number(((rect.x / videoRegionCanvas.width) * 100).toFixed(6)),
-          y: Number(((rect.y / videoRegionCanvas.height) * 100).toFixed(6)),
-          width: Number(((rect.width / videoRegionCanvas.width) * 100).toFixed(6)),
-          height: Number(((rect.height / videoRegionCanvas.height) * 100).toFixed(6)),
+          show,
+          reset,
+          hasSelection: () => selection !== null,
+          region: () => (selection ? toPercent(selection) : null),
         };
       }
 
-      function drawVideoFrame() {
-        if (!videoPreview.videoWidth || videoPreview.readyState < 2) {
-          return;
-        }
-        const maxWidth = 800;
-        const scale = Math.min(1, maxWidth / videoPreview.videoWidth);
-        videoRegionCanvas.width = Math.max(1, Math.round(videoPreview.videoWidth * scale));
-        videoRegionCanvas.height = Math.max(1, Math.round(videoPreview.videoHeight * scale));
-        videoRegionContext.drawImage(videoPreview, 0, 0, videoRegionCanvas.width, videoRegionCanvas.height);
-        if (videoRegionSelection) {
-          videoRegionContext.fillStyle = "rgba(8, 127, 91, 0.2)";
-          videoRegionContext.strokeStyle = "#087f5b";
-          videoRegionContext.lineWidth = 3;
-          videoRegionContext.fillRect(videoRegionSelection.x, videoRegionSelection.y, videoRegionSelection.width, videoRegionSelection.height);
-          videoRegionContext.strokeRect(videoRegionSelection.x, videoRegionSelection.y, videoRegionSelection.width, videoRegionSelection.height);
-          referenceRegionInput.value = JSON.stringify(videoRegionToPercent(videoRegionSelection));
-          videoRegionStatus.textContent = `Selected at ${videoPreview.currentTime.toFixed(1)} seconds.`;
-        }
-      }
-
       function resetVideoPreview() {
-        videoRegionSelection = null;
-        videoRegionDragStart = null;
-        referenceRegionInput.value = "";
-        videoRegionCanvas.style.display = "none";
-        videoPreview.style.display = "none";
-        videoRegionStatus.textContent = "Choose a video to begin.";
-        if (videoObjectUrl) {
-          URL.revokeObjectURL(videoObjectUrl);
-          videoObjectUrl = null;
-        }
-        videoPreview.removeAttribute("src");
-        videoPreview.load();
+        videoRegionSelector.reset();
       }
 
       function hideForms() {
@@ -1436,6 +1591,7 @@
         labelListPanel.style.display = "none";
         setupForm.style.display = "none";
         videoFormPanel.style.display = "none";
+        watchedAreaFormPanel.style.display = "none";
         labelFormPanel.style.display = "none";
         createSiteButton.style.display = "inline-block";
         addLabelButton.style.display = "inline-block";
@@ -2048,6 +2204,9 @@
         if (actionId === "select_video") {
           return videoListPanel;
         }
+        if (actionId === "set_watched_area") {
+          return watchedAreaFormPanel;
+        }
         if (actionId === "select_label") {
           return labelListPanel;
         }
@@ -2183,6 +2342,10 @@
         if (actionId === "add_video" && videoSiteSelect && siteName) {
           videoSiteSelect.value = siteName;
         }
+        if (actionId === "set_watched_area" && watchedAreaSiteSelect && siteName) {
+          watchedAreaSiteSelect.value = siteName;
+          fillWatchedAreaVideos();
+        }
         if (actionId === "add_label" && labelSiteSelect && siteName) {
           labelSiteSelect.value = siteName;
           updateLabelOptionsForSelectedSite();
@@ -2262,27 +2425,51 @@
         const file = setupVideoFileInput.files[0];
         if (file) {
           fillSiteFieldsFromVideo(file.name);
-          if (setupVideoObjectUrl) URL.revokeObjectURL(setupVideoObjectUrl);
-          setupVideoObjectUrl = URL.createObjectURL(file);
-          setupVideoPreview.src = setupVideoObjectUrl;
-          setupVideoPreview.style.display = "block";
-          setupVideoRegionCanvas.style.display = "block";
-          setupVideoRegionSelection = null;
-          setupReferenceRegionInput.value = "";
-          setupVideoRegionStatus.textContent = "Move to a frame, pause it, then drag to select the watched area.";
+          setupVideoRegionSelector.show(URL.createObjectURL(file), { revokeWhenDone: true });
         }
       });
 
-      setupVideoPreview.addEventListener("loadedmetadata", () => { setupVideoPreview.currentTime = 0; drawSetupVideoFrame(); });
-      setupVideoPreview.addEventListener("seeked", drawSetupVideoFrame);
-      setupVideoRegionCanvas.addEventListener("pointerdown", (event) => { setupVideoPreview.pause(); setupVideoRegionCanvas.setPointerCapture(event.pointerId); setupVideoRegionDragStart = setupVideoCanvasPoint(event); setupVideoRegionSelection = null; drawSetupVideoFrame(); });
-      setupVideoRegionCanvas.addEventListener("pointermove", (event) => { if (!setupVideoRegionDragStart) return; setupVideoRegionSelection = normalizedVideoRect(setupVideoRegionDragStart, setupVideoCanvasPoint(event)); drawSetupVideoFrame(); });
-      setupVideoRegionCanvas.addEventListener("pointerup", (event) => { if (!setupVideoRegionDragStart) return; setupVideoRegionSelection = normalizedVideoRect(setupVideoRegionDragStart, setupVideoCanvasPoint(event)); setupVideoRegionDragStart = null; if (setupVideoRegionSelection.width < 4 || setupVideoRegionSelection.height < 4) { setupVideoRegionSelection = null; setupReferenceRegionInput.value = ""; setupVideoRegionStatus.textContent = "Drag a larger rectangle around the watched area."; } drawSetupVideoFrame(); });
 
       cancelVideo.addEventListener("click", () => {
         videoForm.reset();
         resetVideoPreview();
         hideForms();
+      });
+
+      watchedAreaSiteSelect.addEventListener("change", fillWatchedAreaVideos);
+      watchedAreaVideoSelect.addEventListener("change", showWatchedAreaVideo);
+
+      cancelWatchedArea.addEventListener("click", () => {
+        watchedAreaSelector.reset();
+        hideForms();
+      });
+
+      watchedAreaForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!watchedAreaSelector.hasSelection()) {
+          alert("Drag a rectangle on the video to select the watched area first.");
+          return;
+        }
+        try {
+          const response = await fetch("/api/set-watched-area", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              folder_name: watchedAreaSiteSelect.value,
+              video_id: watchedAreaVideoSelect.value,
+              reference_region: watchedAreaSelector.region(),
+            }),
+          });
+          const result = await response.json();
+          alert(response.ok ? result.message : `Error: ${result.message}`);
+          if (response.ok) {
+            watchedAreaSelector.reset();
+            hideForms();
+            loadSites();
+          }
+        } catch (error) {
+          alert(`Failed to save the watched area: ${error.message}`);
+        }
       });
 
       cancelLabel.addEventListener("click", () => {
@@ -2299,59 +2486,12 @@
         if (!videoIdInput.value.trim()) {
           videoIdInput.value = fileStem(file.name);
         }
-        if (videoObjectUrl) {
-          URL.revokeObjectURL(videoObjectUrl);
-        }
-        videoObjectUrl = URL.createObjectURL(file);
-        videoPreview.src = videoObjectUrl;
-        videoPreview.style.display = "block";
-        videoRegionCanvas.style.display = "block";
-        videoRegionSelection = null;
-        referenceRegionInput.value = "";
-        videoRegionStatus.textContent = "Move to a frame, pause it, then drag to select the watched area.";
-      });
-
-      videoPreview.addEventListener("loadedmetadata", () => {
-        videoPreview.currentTime = 0;
-        drawVideoFrame();
-      });
-      videoPreview.addEventListener("seeked", drawVideoFrame);
-      videoRegionCanvas.addEventListener("pointerdown", (event) => {
-        if (!videoPreview.videoWidth) {
-          videoRegionStatus.textContent = "Choose a video first.";
-          return;
-        }
-        videoPreview.pause();
-        videoRegionCanvas.setPointerCapture(event.pointerId);
-        videoRegionDragStart = videoCanvasPoint(event);
-        videoRegionSelection = null;
-        referenceRegionInput.value = "";
-        drawVideoFrame();
-      });
-      videoRegionCanvas.addEventListener("pointermove", (event) => {
-        if (!videoRegionDragStart) {
-          return;
-        }
-        videoRegionSelection = normalizedVideoRect(videoRegionDragStart, videoCanvasPoint(event));
-        drawVideoFrame();
-      });
-      videoRegionCanvas.addEventListener("pointerup", (event) => {
-        if (!videoRegionDragStart) {
-          return;
-        }
-        videoRegionSelection = normalizedVideoRect(videoRegionDragStart, videoCanvasPoint(event));
-        videoRegionDragStart = null;
-        if (videoRegionSelection.width < 4 || videoRegionSelection.height < 4) {
-          videoRegionSelection = null;
-          referenceRegionInput.value = "";
-          videoRegionStatus.textContent = "Drag a larger rectangle around the watched area.";
-        }
-        drawVideoFrame();
+        videoRegionSelector.show(URL.createObjectURL(file), { revokeWhenDone: true });
       });
 
       siteForm.addEventListener("submit", async (e) => {
         e.preventDefault();
-        if (!setupVideoRegionSelection) {
+        if (!setupVideoRegionSelector.hasSelection()) {
           alert("Select the watched area from the first video before creating the site.");
           return;
         }
@@ -2379,7 +2519,7 @@
 
       videoForm.addEventListener("submit", async (e) => {
         e.preventDefault();
-        if (!videoRegionSelection) {
+        if (!videoRegionSelector.hasSelection()) {
           alert("Select the watched area from a video frame before adding the video.");
           return;
         }

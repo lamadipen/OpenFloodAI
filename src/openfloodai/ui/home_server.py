@@ -30,6 +30,13 @@ from openfloodai.validation import (
 )
 from openfloodai.validation.site_status import VIDEO_SUFFIXES
 
+VIDEO_CONTENT_TYPES = {
+    ".avi": "video/x-msvideo",
+    ".mkv": "video/x-matroska",
+    ".mov": "video/quicktime",
+    ".mp4": "video/mp4",
+}
+
 
 class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
     """Serve the local UI and site-status JSON."""
@@ -50,6 +57,9 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         if path == "/api/video-duration":
             self._send_video_duration()
             return
+        if path == "/api/site-video":
+            self._send_site_video()
+            return
         if path == "/api/sites":
             self._send_sites_json()
             return
@@ -65,21 +75,7 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         folder = query.get("folder_name", [""])[0]
         video_id = query.get("video_id", [""])[0]
         try:
-            site = (self.sites_dir / folder).resolve()
-            if not folder or site.parent != self.sites_dir.resolve():
-                raise ValueError("Invalid site")
-            videos = site / "inputs" / "videos"
-            matches = [
-                path
-                for path in videos.iterdir()
-                if path.stem == video_id
-                and path.suffix.lower() in VIDEO_SUFFIXES
-                and path.is_file()
-                and path.resolve().is_relative_to(site)
-            ]
-            if len(matches) != 1:
-                raise ValueError("Video missing or ambiguous")
-            capture = cv2.VideoCapture(str(matches[0]))
+            capture = cv2.VideoCapture(str(self._resolve_site_video(folder, video_id)))
             try:
                 fps = capture.get(cv2.CAP_PROP_FPS)
                 frames = capture.get(cv2.CAP_PROP_FRAME_COUNT)
@@ -94,6 +90,57 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
                 {"message": "Could not read the video duration. Enter the end time yourself."},
                 status_code=400,
             )
+
+    def _send_site_video(self) -> None:
+        """Send one local site video to the browser so a user can draw the watched area.
+
+        The bytes stay on this computer. Nothing is uploaded or published.
+        """
+
+        query = parse_qs(urlsplit(self.path).query)
+        folder = query.get("folder_name", [""])[0]
+        video_id = query.get("video_id", [""])[0]
+        try:
+            video_path = self._resolve_site_video(folder, video_id)
+            size = video_path.stat().st_size
+        except (OSError, ValueError):
+            self.send_error(404, "Video not found")
+            return
+
+        start, end = _parse_byte_range(self.headers.get("Range"), size)
+        with video_path.open("rb") as video_file:
+            video_file.seek(start)
+            body = video_file.read(end - start + 1)
+        partial = (start, end) != (0, size - 1)
+        self.send_response(206 if partial else 200)
+        self.send_header("Content-Type", VIDEO_CONTENT_TYPES[video_path.suffix.lower()])
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Accept-Ranges", "bytes")
+        if partial:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _resolve_site_video(self, folder: str, video_id: str) -> Path:
+        """Find one video inside a site folder, refusing anything outside it."""
+
+        site = (self.sites_dir / folder).resolve()
+        if not folder or site.parent != self.sites_dir.resolve():
+            raise ValueError("Invalid site")
+        videos = site / "inputs" / "videos"
+        matches = [
+            path
+            for path in videos.iterdir()
+            if path.stem == video_id
+            and path.suffix.lower() in VIDEO_SUFFIXES
+            and path.is_file()
+            and path.resolve().is_relative_to(site)
+        ]
+        if len(matches) != 1:
+            raise ValueError("Video missing or ambiguous")
+        return matches[0]
 
     def _send_validation_report(self) -> None:
         """Read a generated validation report inside the local sites directory."""
@@ -188,6 +235,9 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             return
         if self.path == "/api/repair-manifest":
             self._handle_repair_manifest()
+            return
+        if self.path == "/api/set-watched-area":
+            self._handle_set_watched_area()
             return
         self.send_error(404, "Not found")
 
@@ -358,6 +408,61 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         finally:
             if temp_video is not None and temp_video.exists():
                 temp_video.unlink()
+
+    def _handle_set_watched_area(self) -> None:
+        """Save only the watched area for a video that is already in the site folder."""
+
+        data = self._read_json_body()
+        if data is None:
+            return
+
+        folder_name = str(data.get("folder_name", "")).strip()
+        site_dir = (self.sites_dir / folder_name).resolve()
+        if not folder_name or site_dir.parent != self.sites_dir.resolve():
+            self._send_json(
+                {
+                    "success": False,
+                    "message": (
+                        "Invalid folder_name: site folder must stay inside the sites directory."
+                    ),
+                },
+                status_code=400,
+            )
+            return
+
+        video_id = str(data.get("video_id", "")).strip()
+        try:
+            self._resolve_site_video(folder_name, video_id)
+        except ValueError:
+            self._send_json(
+                {
+                    "success": False,
+                    "message": (
+                        "Choose an existing video in this site before saving the watched area."
+                    ),
+                },
+                status_code=400,
+            )
+            return
+
+        try:
+            reference_region = _parse_reference_region(data.get("reference_region"))
+            if reference_region is None:
+                raise SiteConfigError("Draw the watched area on the video first.")
+            config_path = _find_site_config(site_dir)
+            write_reference_region(config_path, reference_region)
+        except SiteConfigError as error:
+            self._send_json({"success": False, "message": str(error)}, status_code=400)
+            return
+
+        self._send_json(
+            {
+                "success": True,
+                "message": "Watched area saved. This site can run validation now.",
+                "config_path": str(config_path),
+            },
+            status_code=200,
+        )
 
     def _handle_add_label(self) -> None:
         data = self._read_json_body()
@@ -639,6 +744,27 @@ def _as_bool(value: object, *, default: bool = False) -> bool:
         if lowered in {"false", "0", "no", "off"}:
             return False
     return default
+
+
+def _parse_byte_range(header: str | None, size: int) -> tuple[int, int]:
+    """Read a simple single byte range, falling back to the whole file."""
+
+    whole_file = (0, max(0, size - 1))
+    if not header or not header.startswith("bytes=") or "," in header:
+        return whole_file
+    first, _, last = header[len("bytes=") :].partition("-")
+    try:
+        if not first:
+            length = int(last)
+            return (max(0, size - length), size - 1) if length > 0 else whole_file
+        start = int(first)
+        end = int(last) if last else size - 1
+    except ValueError:
+        return whole_file
+    end = min(end, size - 1)
+    if start > end or start < 0:
+        return whole_file
+    return start, end
 
 
 def _find_site_config(site_dir: Path) -> Path:

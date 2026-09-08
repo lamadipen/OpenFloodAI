@@ -209,8 +209,8 @@ def test_label_step_offers_select_only_when_labels_exist(tmp_path: Path) -> None
     ]
 
 
-def test_watched_area_step_says_where_the_selector_actually_lives(tmp_path: Path) -> None:
-    """The selector ships inside video intake, so the step must not imply a standalone tool."""
+def test_watched_area_step_opens_the_selector_when_a_video_exists(tmp_path: Path) -> None:
+    """A site with videos can set the area without importing the same video again."""
 
     site_dir = tmp_path / "example-site"
     _write_config(site_dir, reference_region=False)
@@ -218,6 +218,18 @@ def test_watched_area_step_says_where_the_selector_actually_lives(tmp_path: Path
 
     step = _steps_by_key(site_dir)["watched_area"]
 
-    assert _action_labels(step) == ["Set area in video intake"]
+    assert _action_labels(step) == ["Set watched area"]
+    assert _action_ids(step) == ["set_watched_area"]
+    assert "already in this site" in step.meaning
+
+
+def test_watched_area_step_asks_for_a_video_first_when_none_exists(tmp_path: Path) -> None:
+    """The selector draws on a real frame, so it needs a video before it can open."""
+
+    site_dir = tmp_path / "example-site"
+    _write_config(site_dir, reference_region=False)
+
+    step = _steps_by_key(site_dir)["watched_area"]
+
+    assert _action_labels(step) == ["Add video first"]
     assert _action_ids(step) == ["add_video"]
-    assert "when you add a video" in step.meaning

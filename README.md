@@ -656,6 +656,14 @@ the result stays `cannot_compare` until a human label exists.
 You need the watched area because the system only looks inside the `reference_region`
 from the config. A site with no `reference_region` cannot finish a run.
 
+Step 3 opens the **Set Watched Area** form. Choose a site, choose a video that is
+already in that site, move the video to a clear frame, and drag a box around the part
+of the picture to watch. **Save Watched Area** writes only that box into the site
+config and keeps every other config field as it was. The video is not copied again and
+nothing is uploaded: the browser reads the file from this computer through the local
+server. If the site has no video yet, step 3 says `Add video first` and opens the video
+form instead, because the box is drawn on a real frame.
+
 The Manifest step shows whether the manifest is `Found`, `Missing`, or `Incomplete`,
 along with the number of local videos it tracks. For a missing or incomplete manifest,
 choose **Create manifest from local videos** or **Repair manifest from local videos**.
@@ -690,10 +698,6 @@ There are three states:
 A site needs a config, videos, and a watched area before the system can check it. The
 page always shows what is missing. A run with no labels is marked clearly, so nobody
 reads it as a successful comparison.
-
-Known limit: you can only pick the watched area while adding a video, so step 3 opens
-the Add Video form. If a site already has videos but no `reference_region`, add the
-area while adding a video, or write the region into the config file by hand.
 
 You can start from any step that still needs work. The workflow does not force a
 restart from step 1, and the separate **Create Site**, **Add Video**, **Add Label**,

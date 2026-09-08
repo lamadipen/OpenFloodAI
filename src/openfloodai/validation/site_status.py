@@ -329,6 +329,13 @@ class ValidationSiteStatus:
                 WorkflowAction(label="Add video", action_id="add_video"),
             ]
 
+        # The selector draws on a real frame, so it needs a video in the site first.
+        watched_area_actions = [WorkflowAction(label="Add video first", action_id="add_video")]
+        if has_videos:
+            watched_area_actions = [
+                WorkflowAction(label="Set watched area", action_id="set_watched_area")
+            ]
+
         label_actions = [WorkflowAction(label="Add label", action_id="add_label")]
         if self.labels_found:
             label_actions = [
@@ -364,10 +371,10 @@ class ValidationSiteStatus:
                 ),
                 meaning=(
                     "Pick the part of the video where the system should look for water "
-                    "change. A run cannot start without it. You pick this area when you "
-                    "add a video."
+                    "change. A run cannot start without it. You can set this area on a "
+                    "video that is already in this site."
                 ),
-                actions=[WorkflowAction(label="Set area in video intake", action_id="add_video")],
+                actions=watched_area_actions,
                 required_for_validation=True,
             ),
             WorkflowStep(
