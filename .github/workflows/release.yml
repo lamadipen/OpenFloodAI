@@ -40,7 +40,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $proc = Start-Process -FilePath "dist\OpenFloodAI.exe" -ArgumentList "--port","8799" -PassThru -RedirectStandardOutput "run.log" -RedirectStandardError "run.err.log"
+          $proc = Start-Process -FilePath "dist\OpenFloodAI.exe" -ArgumentList "--port","8799","--no-browser","--no-tray" -PassThru -RedirectStandardOutput "run.log" -RedirectStandardError "run.err.log"
           Start-Sleep -Seconds 5
           try {
             $response = Invoke-WebRequest -Uri "http://127.0.0.1:8799/api/sites" -UseBasicParsing -TimeoutSec 10
@@ -52,7 +52,7 @@ jobs:
       - name: Smoke test (macOS)
         if: runner.os == 'macOS'
         run: |
-          "dist/OpenFloodAI.app/Contents/MacOS/OpenFloodAI" --port 8799 > run.log 2>&1 &
+          "dist/OpenFloodAI.app/Contents/MacOS/OpenFloodAI" --port 8799 --no-browser --no-tray > run.log 2>&1 &
           APP_PID=$!
           sleep 5
           if ! curl -sf --max-time 10 http://127.0.0.1:8799/api/sites > /dev/null; then

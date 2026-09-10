@@ -14,6 +14,7 @@ import argparse
 import io
 import subprocess
 import sys
+import time
 import webbrowser
 from contextlib import ExitStack
 from http.server import ThreadingHTTPServer
@@ -131,13 +132,22 @@ def _reveal_folder(path: Path) -> None:
 
 
 def main() -> None:
-    """Start the local server, open the browser, and run the tray icon."""
+    """Start the local server, open the browser, and run the tray icon.
+
+    ``--no-browser``/``--no-tray`` exist for release-build smoke testing:
+    a CI runner's non-interactive desktop session may not reliably support
+    creating a real tray/menu-bar icon, and a crash there must not be
+    mistaken for the HTTP server itself being broken. Real users get the
+    tray icon and browser by default; only smoke tests pass these flags.
+    """
 
     parser = argparse.ArgumentParser(description="Run the OpenFloodAI desktop app.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", default=0, type=int)
     parser.add_argument("--sites-dir", default=None, type=Path)
     parser.add_argument("--ui-path", default=None, type=Path)
+    parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument("--no-tray", action="store_true")
     args = parser.parse_args()
 
     with ExitStack() as resource_stack:
@@ -149,17 +159,26 @@ def main() -> None:
         port = server.server_address[1]
         url = f"http://{args.host}:{port}/openfloodai-home-ui.html"
 
-        print(f"OpenFloodAI is running at {url}")
-        print(f"Site folder: {sites_dir}")
+        print(f"OpenFloodAI is running at {url}", flush=True)
+        print(f"Site folder: {sites_dir}", flush=True)
 
-        try:
-            # A headless build/CI environment has no default browser configured.
-            webbrowser.open(url)
-        except Exception as error:
-            print(f"Could not open a browser automatically: {error}")
+        if not args.no_browser:
+            try:
+                # A headless build/CI environment has no default browser configured.
+                webbrowser.open(url)
+            except Exception as error:
+                print(f"Could not open a browser automatically: {error}", flush=True)
 
-        icon = build_tray_icon(server, url, sites_dir)
-        icon.run()
+        if args.no_tray:
+            print("Tray icon disabled (--no-tray); running until interrupted.", flush=True)
+            try:
+                while True:
+                    time.sleep(3600)
+            except KeyboardInterrupt:
+                pass
+        else:
+            icon = build_tray_icon(server, url, sites_dir)
+            icon.run()
 
 
 if __name__ == "__main__":

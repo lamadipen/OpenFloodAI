@@ -39,8 +39,7 @@ def event_schema_path() -> Path:
     rather than located by walking up from this file.
     """
 
-    traversable = resources.files("openfloodai") / "schemas" / _SCHEMA_FILENAME
-    with resources.as_file(traversable) as path:
+    with resources.as_file(_schema_traversable()) as path:
         return path
 
 
@@ -51,9 +50,16 @@ def _event_validator() -> Draft202012Validator:
     return Draft202012Validator(schema, format_checker=FormatChecker())
 
 
+def _schema_traversable() -> resources.abc.Traversable:
+    return resources.files("openfloodai") / "schemas" / _SCHEMA_FILENAME
+
+
 def _load_event_schema() -> dict[str, Any]:
-    with event_schema_path().open(encoding="utf-8") as schema_file:
-        return cast(dict[str, Any], json.load(schema_file))
+    # Read the schema while the as_file() context is still open, rather than
+    # via event_schema_path(): a path handed back after that context has
+    # already closed could point at an extraction the context tore down.
+    with resources.as_file(_schema_traversable()) as schema_path:
+        return cast(dict[str, Any], json.loads(schema_path.read_text(encoding="utf-8")))
 
 
 def _format_error(error: ValidationError) -> str:

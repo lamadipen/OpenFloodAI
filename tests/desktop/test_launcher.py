@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import re
+import subprocess
+import sys
 from contextlib import ExitStack
 from pathlib import Path
 from urllib.request import urlopen
@@ -12,6 +15,8 @@ from openfloodai.desktop.launcher import (
     resolve_packaged_ui_path,
     start_server,
 )
+
+_RUNNING_AT_PATTERN = re.compile(r"running at http://[^:]+:(\d+)/")
 
 
 def test_resolve_default_sites_dir_is_writable_and_created(
@@ -50,3 +55,40 @@ def test_start_server_binds_an_ephemeral_port_and_serves_the_app(tmp_path: Path)
         finally:
             server.shutdown()
             server.server_close()
+
+
+def test_no_tray_and_no_browser_still_serve_the_app(tmp_path: Path) -> None:
+    """The release-build smoke test runs with these flags: the HTTP server
+    must work with no tray icon and no browser launch attempted."""
+
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "openfloodai.desktop.launcher",
+            "--port",
+            "0",
+            "--sites-dir",
+            str(tmp_path),
+            "--no-browser",
+            "--no-tray",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    try:
+        port = None
+        assert process.stdout is not None
+        for line in process.stdout:
+            match = _RUNNING_AT_PATTERN.search(line)
+            if match:
+                port = int(match.group(1))
+                break
+        assert port is not None, "launcher never printed its running URL"
+
+        with urlopen(f"http://127.0.0.1:{port}/api/sites") as response:
+            assert response.status == 200
+    finally:
+        process.terminate()
+        process.wait(timeout=10)
