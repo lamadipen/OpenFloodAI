@@ -462,3 +462,25 @@ def test_pair_at_exclusive_end_is_not_counted() -> None:
         video_id="test",
     )
     assert report.cannot_compare_count == 1
+
+
+def test_duplicate_time_windows_are_not_silently_selected() -> None:
+    labels = [
+        {"video_id": "river", "time_window_seconds": [0, 30], "human_label": value}
+        for value in ("water_rising", "water_falling")
+    ]
+    report = compare_label_records(
+        video_id="river",
+        human_labels=labels,
+        system_records=[
+            {
+                "record_type": "visual_signal_output",
+                "video_time_seconds": 10,
+                "region_change_score": 0.42,
+            }
+        ],
+    )
+    assert len(report.comparisons) == 2
+    assert report.agree_count == 0
+    assert all(item.result == "cannot_compare" for item in report.comparisons)
+    assert all("Duplicate human labels" in item.note for item in report.comparisons)

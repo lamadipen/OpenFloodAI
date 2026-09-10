@@ -23,6 +23,7 @@ nav:
       - Architecture Notes: architecture/README.md
       - Dependency Map: architecture/dependencies.md
       - Windowed Video Evidence: architecture/windowed-video-evidence.md
+      - Validation Input Snapshots: architecture/validation-input-snapshots.md
   - Research:
       - Research Notes: research/README.md
       - MVP Workflow Rehearsal: research/mvp-workflow-rehearsal.md

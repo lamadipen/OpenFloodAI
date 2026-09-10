@@ -763,6 +763,7 @@ def _read_saved_run_history(runs_dir: Path) -> list[dict[str, Any]]:
                 "status": metadata.get("status", "unknown"),
                 "counts": _read_report_counts(report_path),
                 "evidence_path": metadata.get("review_images_path"),
+                "inputs_used_path": metadata.get("inputs_used_path"),
                 "legacy": False,
             }
         )

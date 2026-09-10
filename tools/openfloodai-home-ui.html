@@ -819,6 +819,7 @@
        <section id="validationWorkflowNote" aria-labelledby="validationWorkflowHeading" style="background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 24px; margin-bottom: 22px;">
         <details>
         <summary id="validationWorkflowHeading" style="cursor: pointer; font-size: 1.4rem; font-weight: 700;">Two ways to review a video</summary>
+        <p>Changes affect the next run only. Old runs keep their original inputs.</p>
         <p>Human labels are optional for running validation, but required if you want to compare the machine result with human review.</p>
         <h3>Route 1: Machine-only review</h3>
         <ul>
@@ -1831,6 +1832,7 @@
               <div class="report-history-path">${index === 0 ? "Latest: " : ""}${run.legacy ? "Legacy: " : ""}${escapeHtml(run.path || "Report path unavailable")}</div>
               <div class="report-history-meta">${escapeHtml(run.modified_time || "Time unavailable")} | ${escapeHtml(run.status || "Status unavailable")} | ${escapeHtml(countText)}</div>
               <div class="report-history-meta">Evidence: ${escapeHtml(run.evidence_path || "Not available")}</div>
+              <div class="report-history-meta">Inputs used: ${escapeHtml(run.inputs_used_path || "No input snapshot was saved for this older run.")}</div>
             </div>
           `;
         }).join("");

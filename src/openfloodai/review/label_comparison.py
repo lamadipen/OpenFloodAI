@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -79,6 +80,7 @@ def compare_label_records(
             )
         ]
     else:
+        window_counts = Counter(_time_window_seconds(label) for label in labels_for_video)
         comparisons = [
             _compare_one_label_window(
                 label,
@@ -87,6 +89,20 @@ def compare_label_records(
                 change_signal_threshold=change_signal_threshold,
             )
             for label in labels_for_video
+        ]
+        comparisons = [
+            replace(
+                comparison,
+                result="cannot_compare",
+                note=(
+                    "Duplicate human labels found for this video/time window. "
+                    "No label was chosen; review the labels before the next run."
+                ),
+            )
+            if comparison.time_window_seconds is not None
+            and window_counts[comparison.time_window_seconds] > 1
+            else comparison
+            for comparison in comparisons
         ]
 
     return LabelComparisonReport(
