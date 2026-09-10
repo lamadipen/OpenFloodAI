@@ -20,6 +20,7 @@ from openfloodai.review import (
     load_human_label_records,
     render_label_comparison_report,
 )
+from openfloodai.validation.input_snapshot import capture_run_inputs, finish_input_snapshot
 from openfloodai.validation.result_explanation import explain_result
 
 VIDEO_SUFFIXES = {".avi", ".mkv", ".mov", ".mp4"}
@@ -151,51 +152,56 @@ def run_site_validation(
     results: list[SiteValidationResult] = []
     seen_video_ids: set[str] = set()
 
-    for video_path in videos:
-        video_id = video_path.stem
-        seen_video_ids.add(video_id)
-        results.append(
-            _run_one_video(
-                video_path=video_path,
-                video_id=video_id,
-                run_dir=run_dir,
-                config_path=selected_config_path,
-                labels=labels,
-                sampling=sampling,
+    with capture_run_inputs(
+        site_dir=site_dir, run_dir=run_dir, config_path=selected_config_path,
+        videos=videos, labels=labels,
+    ) as (captured_config, captured_videos):
+        for video_path in captured_videos:
+            video_id = video_path.stem
+            seen_video_ids.add(video_id)
+            results.append(
+                _run_one_video(
+                    video_path=video_path,
+                    video_id=video_id,
+                    run_dir=run_dir,
+                    config_path=captured_config,
+                    labels=labels,
+                    sampling=sampling,
+                )
             )
-        )
 
-    for video_id in sorted(set(labels_by_video_id) - seen_video_ids):
-        results.append(
-            SiteValidationResult(
-                video_id=video_id,
-                video_filename="missing",
-                processed=False,
-                comparisons=[
-                    LabelComparison(
-                        video_id=video_id,
-                        human_label=_text(label.get("human_label"), fallback="unknown"),
-                        system_result="missing_video",
-                        result="cannot_compare",
-                        note="A human label exists, but no matching local video file was found.",
-                        time_window_seconds=_label_time_window_seconds(label),
-                    )
-                    for label in labels_by_video_id[video_id]
-                ],
-                output_dir=None,
+        for video_id in sorted(set(labels_by_video_id) - seen_video_ids):
+            results.append(
+                SiteValidationResult(
+                    video_id=video_id,
+                    video_filename="missing",
+                    processed=False,
+                    comparisons=[
+                        LabelComparison(
+                            video_id=video_id,
+                            human_label=_text(label.get("human_label"), fallback="unknown"),
+                            system_result="missing_video",
+                            result="cannot_compare",
+                            note="A human label exists, but no matching local video file was found.",
+                            time_window_seconds=_label_time_window_seconds(label),
+                        )
+                        for label in labels_by_video_id[video_id]
+                    ],
+                    output_dir=None,
+                )
             )
-        )
 
-    report_path = run_dir / "validation-report.md"
-    report = _build_report(
-        site_dir=site_dir,
-        output_path=report_path,
-        results=sorted(results, key=lambda result: result.video_id),
-    )
-    report = replace(report, run_id=run_id, run_dir=str(run_dir))
-    report_path.write_text(render_site_validation_report(report), encoding="utf-8")
-    _write_run_metadata(report=report)
-    return report
+        report_path = run_dir / "validation-report.md"
+        report = _build_report(
+            site_dir=site_dir,
+            output_path=report_path,
+            results=sorted(results, key=lambda result: result.video_id),
+        )
+        report = replace(report, run_id=run_id, run_dir=str(run_dir))
+        report_path.write_text(render_site_validation_report(report), encoding="utf-8")
+        _write_run_metadata(report=report)
+        return report
+
 
 
 def render_site_validation_report(report: SiteValidationReport) -> str:
@@ -203,6 +209,9 @@ def render_site_validation_report(report: SiteValidationReport) -> str:
 
     lines = [
         "# Site Validation Report",
+        "",
+        "Changes affect the next run only. Old runs keep their original inputs.",
+        "Input receipt: inputs-used/ (config, watched area, manifest, labels, video identities).",
         "",
         f"Validation Site: {report.site_name}",
         "",
@@ -463,6 +472,8 @@ def _write_run_metadata(*, report: SiteValidationReport) -> None:
         "failed_count": report.failed_count,
         "cannot_compare_count": report.cannot_compare_count,
     }
+    metadata["inputs_used_path"] = str(run_dir / "inputs-used")
+    finish_input_snapshot(run_dir, str(metadata["status"]))
     (run_dir / "run-metadata.json").write_text(
         json.dumps(metadata, indent=2) + "\n",
         encoding="utf-8",
@@ -485,6 +496,7 @@ def _comparison_reason(note: str) -> str:
     """Return a stable scorecard category from a detailed comparison note."""
 
     reason_prefixes = (
+        ("Duplicate human labels", "DUPLICATE_HUMAN_LABELS"),
         ("No human label", "NO_HUMAN_LABEL"),
         ("A human label exists, but no matching local video", "MISSING_VIDEO"),
         ("The human label time window is missing or invalid", "INVALID_LABEL_WINDOW"),
@@ -505,6 +517,7 @@ def _friendly_reason(reason: str) -> str:
     friendly_reasons = {
         "LABEL_AND_SYSTEM_DIFFER": "Human label and machine result do not match",
         "NO_HUMAN_LABEL": "No human label was found",
+        "DUPLICATE_HUMAN_LABELS": "Duplicate human labels for the same video/time window",
         "MISSING_VIDEO": "A human label exists, but the video is missing",
         "INVALID_LABEL_WINDOW": "The label time window is missing or invalid",
         "UNCLEAR_CASE": "The case is unclear",

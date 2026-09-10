@@ -285,3 +285,52 @@ def test_failed_video_is_reflected_in_run_metadata(tmp_path: Path) -> None:
 
     assert report.failed_count == len(report.results)
     assert metadata["status"] == "failed"
+
+
+def test_runs_preserve_input_receipts_across_site_edits(tmp_path: Path) -> None:
+    from openfloodai.validation.input_snapshot import read_input_snapshot
+
+    site = make_site_dir(tmp_path)
+    labels = site / "labels/labels.jsonl"
+    labels.write_text("")
+    video = site / "inputs/videos/rising-001.avi"
+    create_tiny_video(video, frame_values=(80, 80))
+    manifest = site / "manifest.jsonl"
+    manifest.write_text('{"video_id":"rising-001","notes":"first"}\n')
+    first = run_site_validation(site)
+    first_dir = Path(first.run_dir)
+    original_files = {str(p.relative_to(first_dir)): p.read_bytes() for p in first_dir.rglob("*") if p.is_file()}
+    first_inputs = read_input_snapshot(first_dir)
+    assert first_inputs["labels"] == []
+    assert first_inputs["receipt"]["mode"] == "machine_only"
+    assert "No human label" in first.results[0].note
+    assert len(first_inputs["videos"]) == 1
+    assert len(first_inputs["videos"][0]["sha256"]) == 64
+
+    config_path = site / "configs/site-config.json"
+    config = json.loads(config_path.read_text())
+    config["reference_region"]["height"] = 50
+    config_path.write_text(json.dumps(config))
+    manifest.write_text('{"video_id":"rising-001","notes":"second"}\n')
+    label = {"video_id": "rising-001", "time_window_seconds": [0, 30], "human_label": "water_rising"}
+    labels.write_text(json.dumps(label) + "\n")
+    second = run_site_validation(site)
+    assert read_input_snapshot(Path(second.run_dir))["labels"] == [label]
+    label2 = dict(label, human_label="water_falling")
+    labels.write_text(json.dumps(label) + "\n" + json.dumps(label2) + "\n")
+    create_tiny_video(site / "inputs/videos/new-video.avi", frame_values=(80, 80))
+    third = run_site_validation(site)
+    third_inputs = read_input_snapshot(Path(third.run_dir))
+    assert third_inputs["labels"] == [label, label2]
+    assert len(third_inputs["videos"]) == 2
+    assert third_inputs["watched_area"]["height"] == 50
+    assert "second" in third_inputs["manifest_text"]
+    duplicate_result = next(result for result in third.results if result.video_id == "rising-001")
+    assert all(c.result == "cannot_compare" and "Duplicate human labels" in c.note for c in duplicate_result.comparisons)
+    assert third_inputs["receipt"]["status"] == "completed_with_warnings"
+    assert read_input_snapshot(first_dir) == first_inputs
+    assert {str(p.relative_to(first_dir)): p.read_bytes() for p in first_dir.rglob("*") if p.is_file()} == original_files
+    # A future export reads the saved receipt even if the live manifest and labels disappear.
+    manifest.unlink()
+    labels.unlink()
+    assert read_input_snapshot(first_dir) == first_inputs

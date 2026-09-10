@@ -970,3 +970,5 @@ In **Add Label**, selecting a video defaults the start to **0 seconds** and the 
 **Run Validation** shows a spinner and **Running validation…** while waiting for the server. The clicked button is disabled and duplicate runs for the same site are ignored until the request finishes. The spinner clears on both success and failure.
 
 The **Two ways to review a video** note appears in both Classic and Workflow views. Click its heading to expand or collapse it; it starts collapsed.
+
+Every new validation run saves an **inputs-used** receipt with its config, watched area, manifest, labels, and video identities. Changes affect the next run only; old runs keep their original inputs. Duplicate labels for the same video/time window are reported as **Cannot compare**. See [Validation input snapshots](docs/architecture/validation-input-snapshots.md) for storage details and the local snapshot reader.
