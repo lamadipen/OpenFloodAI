@@ -27,6 +27,8 @@ from openfloodai.review.dataset_manifest import HARD_CASE_TYPE_OPTIONS, MANIFEST
 from openfloodai.validation import (
     build_export_all,
     build_run_export,
+    delete_all_sites,
+    delete_site,
     discover_validation_site_statuses,
     intake_validation_video,
     run_site_validation,
@@ -248,6 +250,12 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             return
         if self.path == "/api/set-watched-area":
             self._handle_set_watched_area()
+            return
+        if self.path == "/api/delete-site":
+            self._handle_delete_site()
+            return
+        if self.path == "/api/delete-all-sites":
+            self._handle_delete_all_sites()
             return
         self.send_error(404, "Not found")
 
@@ -681,6 +689,28 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
                 "issues": result.issues,
             },
             status_code=200 if not result.issues else 400,
+        )
+
+    def _handle_delete_site(self) -> None:
+        data = self._read_json_body()
+        if data is None:
+            return
+        folder_name = str(data.get("folder_name", "")).strip()
+        result = delete_site(self.sites_dir.resolve(), folder_name)
+        self._send_json(
+            {"success": result.deleted, "message": result.message},
+            status_code=200 if result.deleted else 400,
+        )
+
+    def _handle_delete_all_sites(self) -> None:
+        result = delete_all_sites(self.sites_dir.resolve())
+        self._send_json(
+            {
+                "success": result.deleted,
+                "message": result.message,
+                "deleted_site_names": result.deleted_site_names,
+            },
+            status_code=200 if result.deleted else 400,
         )
 
     def _read_intake_request(self) -> tuple[dict[str, Any], Path | None] | None:

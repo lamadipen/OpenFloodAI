@@ -6,6 +6,12 @@ from openfloodai.validation.run_export import (
     build_export_all,
     build_run_export,
 )
+from openfloodai.validation.site_delete import (
+    SiteDeleteAllResult,
+    SiteDeleteResult,
+    delete_all_sites,
+    delete_site,
+)
 from openfloodai.validation.site_runner import (
     SiteValidationReport,
     SiteValidationResult,
@@ -34,6 +40,8 @@ from openfloodai.validation.video_intake import (
 
 __all__ = [
     "RunExportResult",
+    "SiteDeleteAllResult",
+    "SiteDeleteResult",
     "SiteExportAllResult",
     "SiteValidationReport",
     "SiteValidationResult",
@@ -48,6 +56,8 @@ __all__ = [
     "WorkflowStep",
     "build_export_all",
     "build_run_export",
+    "delete_all_sites",
+    "delete_site",
     "discover_validation_site_statuses",
     "intake_validation_video",
     "read_validation_site_status",

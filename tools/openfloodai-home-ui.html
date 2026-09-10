@@ -852,12 +852,15 @@
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
           <button type="button" id="createSiteButton" style="background: var(--ok); border-color: var(--ok);">Create Site</button>
           <button type="button" id="addLabelButton" style="background: var(--accent-strong); border-color: var(--accent-strong);">Add Label</button>
-          <label style="display: flex; align-items: center; gap: 6px; font-size: 0.9rem;">
-            <input type="checkbox" id="exportAllRawVideoCheckbox">
-            Include raw video only if approved to share
-          </label>
-          <button type="button" id="exportAllButton" onclick="exportAllSites(this)">Export All Reports</button>
           <button type="button" id="refreshButton">Refresh</button>
+          <button type="button" id="deleteAllSitesButton" onclick="deleteAllSites(this)" style="background: var(--missing); border-color: var(--missing); color: #fff;">Delete All Local Sites</button>
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 0.9rem;">
+              <input type="checkbox" id="exportAllRawVideoCheckbox">
+              Include raw video only if approved to share
+            </label>
+            <button type="button" id="exportAllButton" onclick="exportAllSites(this)">Export All Reports</button>
+          </div>
         </div>
       </section>
 
@@ -1110,6 +1113,7 @@
             <span class="detail-label">Selected site</span>
             <select class="detail-select" id="detailSiteSelect" aria-label="Selected site"></select>
           </label>
+          <button type="button" id="deleteSiteButton" onclick="deleteSelectedSite(this)" style="background: var(--missing); border-color: var(--missing); color: #fff;">Delete Site</button>
         </div>
         <div class="detail-grid" id="detailContent"></div>
       </section>
@@ -2481,6 +2485,59 @@
           include_raw_video: includeRawVideo ? "true" : "false",
         });
         await downloadExportZip(`/api/export-all?${query.toString()}`, button);
+      };
+
+      window.deleteSelectedSite = async function (button) {
+        const siteName = detailSiteSelect.value;
+        if (!siteName) {
+          alert("Choose a site to delete first.");
+          return;
+        }
+        const confirmed = confirm(
+          `Delete this site and all of its local videos, labels, manifests, outputs, and runs?\n\nSite: ${siteName}`
+        );
+        if (!confirmed) return;
+
+        const originalDisabled = button.disabled;
+        button.disabled = true;
+        try {
+          const response = await fetch("/api/delete-site", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ folder_name: siteName }),
+          });
+          const result = await response.json();
+          alert(response.ok ? result.message : `Error: ${result.message}`);
+          if (response.ok) {
+            await loadSites();
+          }
+        } catch (error) {
+          alert(`Failed to delete the site: ${error.message}`);
+        } finally {
+          button.disabled = originalDisabled;
+        }
+      };
+
+      window.deleteAllSites = async function (button) {
+        const confirmed = confirm(
+          "Delete all local validation sites? This removes all local videos, labels, manifests, outputs, and runs inside the sites folder."
+        );
+        if (!confirmed) return;
+
+        const originalDisabled = button.disabled;
+        button.disabled = true;
+        try {
+          const response = await fetch("/api/delete-all-sites", { method: "POST" });
+          const result = await response.json();
+          alert(response.ok ? result.message : `Error: ${result.message}`);
+          if (response.ok) {
+            await loadSites();
+          }
+        } catch (error) {
+          alert(`Failed to delete local sites: ${error.message}`);
+        } finally {
+          button.disabled = originalDisabled;
+        }
       };
 
       cancelSetup.addEventListener("click", () => {
