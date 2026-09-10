@@ -94,7 +94,10 @@ def compare_label_records(
             replace(
                 comparison,
                 result="cannot_compare",
-                note="Duplicate human labels found for this video/time window. No label was chosen; review the labels before the next run.",
+                note=(
+                    "Duplicate human labels found for this video/time window. "
+                    "No label was chosen; review the labels before the next run."
+                ),
             )
             if comparison.time_window_seconds is not None
             and window_counts[comparison.time_window_seconds] > 1

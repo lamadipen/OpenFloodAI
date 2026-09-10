@@ -153,8 +153,11 @@ def run_site_validation(
     seen_video_ids: set[str] = set()
 
     with capture_run_inputs(
-        site_dir=site_dir, run_dir=run_dir, config_path=selected_config_path,
-        videos=videos, labels=labels,
+        site_dir=site_dir,
+        run_dir=run_dir,
+        config_path=selected_config_path,
+        videos=videos,
+        labels=labels,
     ) as (captured_config, captured_videos):
         for video_path in captured_videos:
             video_id = video_path.stem
@@ -182,7 +185,9 @@ def run_site_validation(
                             human_label=_text(label.get("human_label"), fallback="unknown"),
                             system_result="missing_video",
                             result="cannot_compare",
-                            note="A human label exists, but no matching local video file was found.",
+                            note=(
+                                "A human label exists, but no matching local video file was found."
+                            ),
                             time_window_seconds=_label_time_window_seconds(label),
                         )
                         for label in labels_by_video_id[video_id]
@@ -201,7 +206,6 @@ def run_site_validation(
         report_path.write_text(render_site_validation_report(report), encoding="utf-8")
         _write_run_metadata(report=report)
         return report
-
 
 
 def render_site_validation_report(report: SiteValidationReport) -> str:

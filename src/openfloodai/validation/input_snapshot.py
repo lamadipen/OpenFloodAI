@@ -28,9 +28,15 @@ def read_input_snapshot(run_dir: Path) -> dict[str, Any]:
     return {
         "receipt": json.loads((root / "receipt.json").read_text(encoding="utf-8")),
         "config": json.loads((root / "site-config.snapshot.json").read_text(encoding="utf-8")),
-        "watched_area": json.loads((root / "watched-area.snapshot.json").read_text(encoding="utf-8")),
+        "watched_area": json.loads(
+            (root / "watched-area.snapshot.json").read_text(encoding="utf-8")
+        ),
         "manifest_text": (root / "manifest.snapshot.jsonl").read_text(encoding="utf-8"),
-        "labels": [json.loads(line) for line in (root / "labels.snapshot.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()],
+        "labels": [
+            json.loads(line)
+            for line in (root / "labels.snapshot.jsonl").read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ],
         "videos": json.loads((root / "video-list.snapshot.json").read_text(encoding="utf-8")),
     }
 
@@ -46,8 +52,12 @@ def finish_input_snapshot(run_dir: Path, status: str) -> None:
 
 @contextmanager
 def capture_run_inputs(
-    *, site_dir: Path, run_dir: Path, config_path: Path,
-    videos: list[Path], labels: list[JsonObject],
+    *,
+    site_dir: Path,
+    run_dir: Path,
+    config_path: Path,
+    videos: list[Path],
+    labels: list[JsonObject],
 ) -> Iterator[tuple[Path, list[Path]]]:
     """Freeze inputs for processing; retain video hashes, not extra permanent media.
 
@@ -68,17 +78,27 @@ def capture_run_inputs(
     captured_config.write_bytes(config_bytes)
     _write_json(root / "watched-area.snapshot.json", (config or {}).get("reference_region"))
     manifest = site_dir / "manifest.jsonl"
-    (root / "manifest.snapshot.jsonl").write_bytes(manifest.read_bytes() if manifest.exists() else b"")
+    (root / "manifest.snapshot.jsonl").write_bytes(
+        manifest.read_bytes() if manifest.exists() else b""
+    )
     (root / "labels.snapshot.jsonl").write_text(
-        "".join(json.dumps(label) + "\n" for label in labels), encoding="utf-8",
+        "".join(json.dumps(label) + "\n" for label in labels),
+        encoding="utf-8",
     )
     receipt = {
-        "run_id": run_dir.name, "site_name": site_dir.name,
-        "site_id": (config or {}).get("site_id"), "camera_id": (config or {}).get("camera_id"),
-        "captured_at": datetime.now(tz=UTC).isoformat(), "status": "running",
-        "config_present": config_path.exists(), "manifest_present": manifest.exists(),
-        "human_label_count": len(labels), "mode": "human_comparison" if labels else "machine_only",
-        "video_storage": "Temporary processing copies; permanent receipt contains SHA-256 identities only.",
+        "run_id": run_dir.name,
+        "site_name": site_dir.name,
+        "site_id": (config or {}).get("site_id"),
+        "camera_id": (config or {}).get("camera_id"),
+        "captured_at": datetime.now(tz=UTC).isoformat(),
+        "status": "running",
+        "config_present": config_path.exists(),
+        "manifest_present": manifest.exists(),
+        "human_label_count": len(labels),
+        "mode": "human_comparison" if labels else "machine_only",
+        "video_storage": (
+            "Temporary processing copies; permanent receipt contains SHA-256 identities only."
+        ),
     }
     _write_json(root / "receipt.json", receipt)
     _write_json(root / "video-list.snapshot.json", [])
@@ -97,18 +117,36 @@ def capture_run_inputs(
                         digest.update(chunk)
                         size += len(chunk)
                     after = source.stat()
-                if (before.st_size, before.st_mtime_ns, before.st_ino) != (after.st_size, after.st_mtime_ns, after.st_ino):
-                    raise ValueError(f"Video changed during input capture: {source.name}. Run again.")
+                if (before.st_size, before.st_mtime_ns, before.st_ino) != (
+                    after.st_size,
+                    after.st_mtime_ns,
+                    after.st_ino,
+                ):
+                    raise ValueError(
+                        f"Video changed during input capture: {source.name}. Run again."
+                    )
                 captured_videos.append(destination)
-                video_list.append({"video_id": source.stem, "filename": source.name, "size_bytes": size, "sha256": digest.hexdigest()})
+                video_list.append(
+                    {
+                        "video_id": source.stem,
+                        "filename": source.name,
+                        "size_bytes": size,
+                        "sha256": digest.hexdigest(),
+                    }
+                )
             _write_json(root / "video-list.snapshot.json", video_list)
             yield captured_config, captured_videos
     except Exception:
         finish_input_snapshot(run_dir, "failed")
-        _write_json(run_dir / "run-metadata.json", {
-            "run_id": run_dir.name, "site_name": site_dir.name,
-            "created_at": receipt["captured_at"], "status": "failed",
-            "inputs_used_path": str(root),
-            "report_path": str(run_dir / "validation-report.md"),
-        })
+        _write_json(
+            run_dir / "run-metadata.json",
+            {
+                "run_id": run_dir.name,
+                "site_name": site_dir.name,
+                "created_at": receipt["captured_at"],
+                "status": "failed",
+                "inputs_used_path": str(root),
+                "report_path": str(run_dir / "validation-report.md"),
+            },
+        )
         raise

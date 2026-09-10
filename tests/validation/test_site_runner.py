@@ -299,7 +299,9 @@ def test_runs_preserve_input_receipts_across_site_edits(tmp_path: Path) -> None:
     manifest.write_text('{"video_id":"rising-001","notes":"first"}\n')
     first = run_site_validation(site)
     first_dir = Path(first.run_dir)
-    original_files = {str(p.relative_to(first_dir)): p.read_bytes() for p in first_dir.rglob("*") if p.is_file()}
+    original_files = {
+        str(p.relative_to(first_dir)): p.read_bytes() for p in first_dir.rglob("*") if p.is_file()
+    }
     first_inputs = read_input_snapshot(first_dir)
     assert first_inputs["labels"] == []
     assert first_inputs["receipt"]["mode"] == "machine_only"
@@ -312,7 +314,11 @@ def test_runs_preserve_input_receipts_across_site_edits(tmp_path: Path) -> None:
     config["reference_region"]["height"] = 50
     config_path.write_text(json.dumps(config))
     manifest.write_text('{"video_id":"rising-001","notes":"second"}\n')
-    label = {"video_id": "rising-001", "time_window_seconds": [0, 30], "human_label": "water_rising"}
+    label = {
+        "video_id": "rising-001",
+        "time_window_seconds": [0, 30],
+        "human_label": "water_rising",
+    }
     labels.write_text(json.dumps(label) + "\n")
     second = run_site_validation(site)
     assert read_input_snapshot(Path(second.run_dir))["labels"] == [label]
@@ -326,10 +332,15 @@ def test_runs_preserve_input_receipts_across_site_edits(tmp_path: Path) -> None:
     assert third_inputs["watched_area"]["height"] == 50
     assert "second" in third_inputs["manifest_text"]
     duplicate_result = next(result for result in third.results if result.video_id == "rising-001")
-    assert all(c.result == "cannot_compare" and "Duplicate human labels" in c.note for c in duplicate_result.comparisons)
+    assert all(
+        c.result == "cannot_compare" and "Duplicate human labels" in c.note
+        for c in duplicate_result.comparisons
+    )
     assert third_inputs["receipt"]["status"] == "completed_with_warnings"
     assert read_input_snapshot(first_dir) == first_inputs
-    assert {str(p.relative_to(first_dir)): p.read_bytes() for p in first_dir.rglob("*") if p.is_file()} == original_files
+    assert {
+        str(p.relative_to(first_dir)): p.read_bytes() for p in first_dir.rglob("*") if p.is_file()
+    } == original_files
     # A future export reads the saved receipt even if the live manifest and labels disappear.
     manifest.unlink()
     labels.unlink()

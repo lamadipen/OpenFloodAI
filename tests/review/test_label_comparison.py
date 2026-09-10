@@ -470,8 +470,15 @@ def test_duplicate_time_windows_are_not_silently_selected() -> None:
         for value in ("water_rising", "water_falling")
     ]
     report = compare_label_records(
-        video_id="river", human_labels=labels,
-        system_records=[{"record_type": "visual_signal_output", "video_time_seconds": 10, "region_change_score": 0.42}],
+        video_id="river",
+        human_labels=labels,
+        system_records=[
+            {
+                "record_type": "visual_signal_output",
+                "video_time_seconds": 10,
+                "region_change_score": 0.42,
+            }
+        ],
     )
     assert len(report.comparisons) == 2
     assert report.agree_count == 0

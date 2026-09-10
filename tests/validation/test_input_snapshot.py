@@ -15,7 +15,9 @@ def test_processing_uses_private_copies_and_cleans_them_on_failure(tmp_path: Pat
     run = site / "outputs/runs/run-1"
     run.mkdir(parents=True)
     with pytest.raises(RuntimeError, match="interrupted"):
-        with capture_run_inputs(site_dir=site, run_dir=run, config_path=config, videos=[video], labels=[]) as (saved_config, saved_videos):
+        with capture_run_inputs(
+            site_dir=site, run_dir=run, config_path=config, videos=[video], labels=[]
+        ) as (saved_config, saved_videos):
             video.write_bytes(b"changed later")
             config.write_text('{"reference_region":{"x":50}}')
             assert saved_videos[0].read_bytes() == b"original local bytes"
