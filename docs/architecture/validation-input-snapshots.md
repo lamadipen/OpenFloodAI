@@ -56,9 +56,10 @@ Use `read_input_snapshot(Path(run_directory))` from
 `inputs-used` folder. It never substitutes the current site's config, labels, or
 manifest. For an older run with no snapshot, it raises `FileNotFoundError`.
 
-There is no new upload, sharing, or export command. This reader provides a local
-input source for future export code. Do not infer permission to share from the
-existence of a receipt: labels, metadata, and paths can still contain private data.
+This reader is the local input source for run export packages; see
+[Run export packages](run-export-packages.md). Do not infer permission to share
+from the existence of a receipt: labels, metadata, and paths can still contain
+private data.
 
 Run history in the Home UI displays the inputs-used path and identifies older runs
 without receipts. New reports remind users that changes affect the next run only.

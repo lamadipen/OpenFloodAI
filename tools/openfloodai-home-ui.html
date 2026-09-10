@@ -852,6 +852,11 @@
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
           <button type="button" id="createSiteButton" style="background: var(--ok); border-color: var(--ok);">Create Site</button>
           <button type="button" id="addLabelButton" style="background: var(--accent-strong); border-color: var(--accent-strong);">Add Label</button>
+          <label style="display: flex; align-items: center; gap: 6px; font-size: 0.9rem;">
+            <input type="checkbox" id="exportAllRawVideoCheckbox">
+            Include raw video only if approved to share
+          </label>
+          <button type="button" id="exportAllButton" onclick="exportAllSites(this)">Export All Reports</button>
           <button type="button" id="refreshButton">Refresh</button>
         </div>
       </section>
@@ -1827,12 +1832,22 @@
             `Disagree ${scorecardValue(counts.disagree)}`,
             `Cannot compare ${scorecardValue(counts.cannot_compare)}`,
           ].join(", ");
+          const exportControls = run.run_id ? `
+              <div class="report-history-meta">
+                <label><input type="checkbox" class="export-raw-video-checkbox" data-run-id="${escapeHtml(run.run_id)}"> Include raw video only if this video is approved to share</label>
+              </div>
+              <div class="report-history-meta">This exports the selected run only. Later site changes are not included.</div>
+              <div class="report-history-meta">
+                <button type="button" onclick="exportRunForSite('${escapeHtml(site.site_name)}', '${escapeHtml(run.run_id)}', this)">Export Run Results</button>
+              </div>
+            ` : "";
           return `
             <div class="report-history-item">
               <div class="report-history-path">${index === 0 ? "Latest: " : ""}${run.legacy ? "Legacy: " : ""}${escapeHtml(run.path || "Report path unavailable")}</div>
               <div class="report-history-meta">${escapeHtml(run.modified_time || "Time unavailable")} | ${escapeHtml(run.status || "Status unavailable")} | ${escapeHtml(countText)}</div>
               <div class="report-history-meta">Evidence: ${escapeHtml(run.evidence_path || "Not available")}</div>
               <div class="report-history-meta">Inputs used: ${escapeHtml(run.inputs_used_path || "No input snapshot was saved for this older run.")}</div>
+              ${exportControls}
             </div>
           `;
         }).join("");
@@ -2416,6 +2431,56 @@
         } catch (error) {
           alert(`Manifest repair failed: ${error.message}`);
         }
+      };
+
+      async function downloadExportZip(url, button) {
+        const originalDisabled = button.disabled;
+        button.disabled = true;
+        try {
+          const response = await fetch(url);
+          const contentType = response.headers.get("Content-Type") || "";
+          if (!response.ok || !contentType.includes("application/zip")) {
+            const result = await response.json().catch(() => ({}));
+            throw new Error(result.message || `Request failed: ${response.status}`);
+          }
+          const disposition = response.headers.get("Content-Disposition") || "";
+          const nameMatch = disposition.match(/filename="([^"]+)"/);
+          const filename = nameMatch ? nameMatch[1] : "openfloodai-export.zip";
+          const blob = await response.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = blobUrl;
+          link.download = filename;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          URL.revokeObjectURL(blobUrl);
+        } catch (error) {
+          alert(`Export failed: ${error.message}`);
+        } finally {
+          button.disabled = originalDisabled;
+        }
+      }
+
+      window.exportRunForSite = async function (siteName, runId, button) {
+        const container = button.closest(".report-history-item");
+        const checkbox = container ? container.querySelector(".export-raw-video-checkbox") : null;
+        const includeRawVideo = checkbox ? checkbox.checked : false;
+        const query = new URLSearchParams({
+          folder_name: siteName,
+          run_id: runId,
+          include_raw_video: includeRawVideo ? "true" : "false",
+        });
+        await downloadExportZip(`/api/export-run?${query.toString()}`, button);
+      };
+
+      window.exportAllSites = async function (button) {
+        const checkbox = document.getElementById("exportAllRawVideoCheckbox");
+        const includeRawVideo = checkbox ? checkbox.checked : false;
+        const query = new URLSearchParams({
+          include_raw_video: includeRawVideo ? "true" : "false",
+        });
+        await downloadExportZip(`/api/export-all?${query.toString()}`, button);
       };
 
       cancelSetup.addEventListener("click", () => {

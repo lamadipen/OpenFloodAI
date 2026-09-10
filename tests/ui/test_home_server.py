@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import io
 import json
 import os
 import socket
+import zipfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from http.server import ThreadingHTTPServer
@@ -716,6 +718,98 @@ def test_run_validation_uses_the_main_site_validation_path(tmp_path: Path) -> No
     assert (runs[0] / "scorecard.json").is_file()
     assert (runs[0] / "run-metadata.json").is_file()
     assert Path(payload["report_path"]).is_file()
+
+
+def test_export_run_endpoint_downloads_a_zip_of_the_run_folder(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    make_site(sites_dir / "example-site")
+    write_json(
+        sites_dir / "example-site" / "configs" / "site-config.json",
+        {
+            "site_id": "example-site",
+            "camera_id": "camera-demo-01",
+            "site_name": "Example Site",
+            "input_type": "local_video",
+            "reference_region": {"x": 0, "y": 50, "width": 100, "height": 50},
+        },
+    )
+
+    with serve_home_ui(sites_dir) as base_url:
+        run_request = Request(
+            f"{base_url}/api/run-validation",
+            data=json.dumps({"folder_name": "example-site"}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(run_request) as response:
+            run_payload = json.loads(response.read().decode("utf-8"))
+        run_id = Path(run_payload["report_path"]).parent.name
+
+        query = urlencode({"folder_name": "example-site", "run_id": run_id})
+        with urlopen(f"{base_url}/api/export-run?{query}") as response:
+            assert response.status == 200
+            assert response.headers.get("Content-Type") == "application/zip"
+            content_disposition = response.headers.get("Content-Disposition", "")
+            assert f"{run_id}.zip" in content_disposition
+            archive = zipfile.ZipFile(io.BytesIO(response.read()))
+
+    names = set(archive.namelist())
+    assert f"{run_id}/validation-report.md" in names
+    assert f"{run_id}/run-metadata.json" in names
+    assert f"{run_id}/inputs-used/receipt.json" in names
+    assert f"{run_id}/README.md" in names
+    assert not any(name.startswith(f"{run_id}/videos/") for name in names)
+
+
+def test_export_run_endpoint_rejects_unknown_run(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    make_site(sites_dir / "example-site")
+
+    with serve_home_ui(sites_dir) as base_url:
+        query = urlencode({"folder_name": "example-site", "run_id": "20200101T000000Z-deadbeef"})
+        try:
+            urlopen(f"{base_url}/api/export-run?{query}")
+        except HTTPError as error:
+            assert error.code == 400
+            payload = json.loads(error.read().decode("utf-8"))
+        else:
+            raise AssertionError("expected export of an unknown run to fail")
+    assert payload["success"] is False
+
+
+def test_export_all_endpoint_downloads_a_zip_bundle_of_every_site(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    make_site(sites_dir / "site-one")
+    make_site(sites_dir / "site-two")
+
+    with serve_home_ui(sites_dir) as base_url:
+        with urlopen(f"{base_url}/api/export-all") as response:
+            assert response.status == 200
+            assert response.headers.get("Content-Type") == "application/zip"
+            content_disposition = response.headers.get("Content-Disposition", "")
+            assert "openfloodai-export-all_" in content_disposition
+            archive = zipfile.ZipFile(io.BytesIO(response.read()))
+
+    names = archive.namelist()
+    assert any(name.startswith("openfloodai-export-all/site-one/configs/") for name in names)
+    assert any(name.startswith("openfloodai-export-all/site-two/configs/") for name in names)
+    assert "openfloodai-export-all/README.md" in names
+    assert not any("/inputs/videos/" in name for name in names)
+
+
+def test_export_all_endpoint_includes_raw_video_when_requested(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    make_site(sites_dir / "site-one")
+
+    with serve_home_ui(sites_dir) as base_url:
+        query = urlencode({"include_raw_video": "true"})
+        with urlopen(f"{base_url}/api/export-all?{query}") as response:
+            archive = zipfile.ZipFile(io.BytesIO(response.read()))
+
+    names = archive.namelist()
+    assert any(
+        name == "openfloodai-export-all/site-one/inputs/videos/river-001.mp4" for name in names
+    )
 
 
 def test_readiness_panel_spans_the_whole_step_card(tmp_path: Path) -> None:
