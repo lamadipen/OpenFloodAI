@@ -1,0 +1,99 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version tag (e.g. v1.0.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build desktop app
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[desktop,packaging]"
+
+      - name: Build with PyInstaller
+        run: pyinstaller packaging/openfloodai_desktop.spec --distpath dist --workpath build --clean
+
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $proc = Start-Process -FilePath "dist\OpenFloodAI.exe" -ArgumentList "--port","8799" -PassThru -RedirectStandardOutput "run.log" -RedirectStandardError "run.err.log"
+          Start-Sleep -Seconds 5
+          try {
+            $response = Invoke-WebRequest -Uri "http://127.0.0.1:8799/api/sites" -UseBasicParsing -TimeoutSec 10
+            if ($response.StatusCode -ne 200) { throw "Unexpected status code: $($response.StatusCode)" }
+          } finally {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Smoke test (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          "dist/OpenFloodAI.app/Contents/MacOS/OpenFloodAI" --port 8799 > run.log 2>&1 &
+          APP_PID=$!
+          sleep 5
+          if ! curl -sf --max-time 10 http://127.0.0.1:8799/api/sites > /dev/null; then
+            cat run.log
+            kill "$APP_PID" 2>/dev/null || true
+            exit 1
+          fi
+          kill "$APP_PID" 2>/dev/null || true
+
+      - name: Package macOS artifact
+        if: runner.os == 'macOS'
+        run: ditto -c -k --sequesterRsrc --keepParent dist/OpenFloodAI.app OpenFloodAI-macOS.zip
+
+      - name: Upload Windows artifact
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: openfloodai-windows
+          path: dist/OpenFloodAI.exe
+
+      - name: Upload macOS artifact
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: openfloodai-macos
+          path: OpenFloodAI-macOS.zip
+
+  release:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.version }}
+          name: ${{ inputs.version }}
+          files: |
+            openfloodai-windows/OpenFloodAI.exe
+            openfloodai-macos/OpenFloodAI-macOS.zip
