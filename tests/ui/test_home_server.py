@@ -812,6 +812,91 @@ def test_export_all_endpoint_includes_raw_video_when_requested(tmp_path: Path) -
     )
 
 
+def test_delete_site_endpoint_removes_only_the_selected_site(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    make_site(sites_dir / "site-a")
+    make_site(sites_dir / "site-b")
+
+    with serve_home_ui(sites_dir) as base_url:
+        request = Request(
+            f"{base_url}/api/delete-site",
+            data=json.dumps({"folder_name": "site-a"}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+
+    assert payload["success"] is True
+    assert not (sites_dir / "site-a").exists()
+    assert (sites_dir / "site-b").is_dir()
+
+
+def test_delete_site_endpoint_refuses_path_traversal(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    sites_dir.mkdir()
+    outside_dir = tmp_path / "outside-site"
+    outside_dir.mkdir()
+
+    with serve_home_ui(sites_dir) as base_url:
+        request = Request(
+            f"{base_url}/api/delete-site",
+            data=json.dumps({"folder_name": "../outside-site"}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            urlopen(request)
+        except HTTPError as error:
+            assert error.code == 400
+            payload = json.loads(error.read().decode("utf-8"))
+        else:
+            raise AssertionError("expected deletion outside the sites directory to fail")
+
+    assert payload["success"] is False
+    assert outside_dir.is_dir()
+
+
+def test_delete_site_endpoint_refuses_missing_folder_name(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    make_site(sites_dir / "site-a")
+
+    with serve_home_ui(sites_dir) as base_url:
+        request = Request(
+            f"{base_url}/api/delete-site",
+            data=json.dumps({"folder_name": ""}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            urlopen(request)
+        except HTTPError as error:
+            assert error.code == 400
+            payload = json.loads(error.read().decode("utf-8"))
+        else:
+            raise AssertionError("expected deletion with an empty folder_name to fail")
+
+    assert payload["success"] is False
+    assert (sites_dir / "site-a").is_dir()
+
+
+def test_delete_all_sites_endpoint_removes_every_direct_site_folder(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    make_site(sites_dir / "site-a")
+    make_site(sites_dir / "site-b")
+
+    with serve_home_ui(sites_dir) as base_url:
+        request = Request(f"{base_url}/api/delete-all-sites", method="POST")
+        with urlopen(request) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+
+    assert payload["success"] is True
+    assert sorted(payload["deleted_site_names"]) == ["site-a", "site-b"]
+    assert sites_dir.is_dir()
+    assert not (sites_dir / "site-a").exists()
+    assert not (sites_dir / "site-b").exists()
+
+
 def test_readiness_panel_spans_the_whole_step_card(tmp_path: Path) -> None:
     """The step card is a grid, so a child without a span lands in the 42px number column."""
 
