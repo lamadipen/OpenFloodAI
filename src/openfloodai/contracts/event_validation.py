@@ -5,13 +5,14 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from functools import lru_cache
+from importlib import resources
 from pathlib import Path
 from typing import Any, cast
 
 from jsonschema import Draft202012Validator, FormatChecker
 from jsonschema.exceptions import ValidationError
 
-EVENT_SCHEMA_RELATIVE_PATH = Path("schemas") / "event.schema.json"
+_SCHEMA_FILENAME = "event.schema.json"
 
 
 def validate_event_record(record: Mapping[str, object]) -> list[str]:
@@ -31,9 +32,15 @@ def is_valid_event_record(record: Mapping[str, object]) -> bool:
 
 
 def event_schema_path() -> Path:
-    """Return the repository path to the V1 event/audit JSON Schema."""
+    """Return a filesystem path to the packaged V1 event/audit JSON Schema.
 
-    return _find_repo_root() / EVENT_SCHEMA_RELATIVE_PATH
+    Works unchanged from a source checkout, an installed wheel, or a
+    PyInstaller-frozen build, since the schema is loaded as package data
+    rather than located by walking up from this file.
+    """
+
+    with resources.as_file(_schema_traversable()) as path:
+        return path
 
 
 @lru_cache(maxsize=1)
@@ -43,16 +50,16 @@ def _event_validator() -> Draft202012Validator:
     return Draft202012Validator(schema, format_checker=FormatChecker())
 
 
+def _schema_traversable() -> resources.abc.Traversable:
+    return resources.files("openfloodai") / "schemas" / _SCHEMA_FILENAME
+
+
 def _load_event_schema() -> dict[str, Any]:
-    with event_schema_path().open(encoding="utf-8") as schema_file:
-        return cast(dict[str, Any], json.load(schema_file))
-
-
-def _find_repo_root() -> Path:
-    for directory in Path(__file__).resolve().parents:
-        if (directory / EVENT_SCHEMA_RELATIVE_PATH).is_file():
-            return directory
-    raise FileNotFoundError(f"Could not find {EVENT_SCHEMA_RELATIVE_PATH}")
+    # Read the schema while the as_file() context is still open, rather than
+    # via event_schema_path(): a path handed back after that context has
+    # already closed could point at an extraction the context tore down.
+    with resources.as_file(_schema_traversable()) as schema_path:
+        return cast(dict[str, Any], json.loads(schema_path.read_text(encoding="utf-8")))
 
 
 def _format_error(error: ValidationError) -> str:

@@ -17,7 +17,7 @@ def load_json(path: Path) -> dict[str, object]:
 
 
 def test_event_schema_path_uses_repository_schema() -> None:
-    assert event_schema_path() == ROOT / "schemas" / "event.schema.json"
+    assert event_schema_path() == ROOT / "src" / "openfloodai" / "schemas" / "event.schema.json"
 
 
 def test_valid_high_example_passes_shared_validator() -> None:

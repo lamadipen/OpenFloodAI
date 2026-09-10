@@ -9,7 +9,7 @@ import pytest
 from jsonschema import Draft202012Validator, FormatChecker
 
 ROOT = Path(__file__).resolve().parents[2]
-SCHEMA_PATH = ROOT / "schemas" / "event.schema.json"
+SCHEMA_PATH = ROOT / "src" / "openfloodai" / "schemas" / "event.schema.json"
 EXAMPLES_PATH = ROOT / "examples" / "events"
 
 REASON_CODE_PATTERN = re.compile(r"^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$")

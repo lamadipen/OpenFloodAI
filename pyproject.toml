@@ -16,6 +16,7 @@ dependencies = [
   "jsonschema[format]>=4.23",
   "numpy>=2",
   "opencv-python-headless>=4.10",
+  "platformdirs>=4.3",
 ]
 
 [project.optional-dependencies]
@@ -26,9 +27,19 @@ dev = [
   "ruff>=0.6",
   "types-jsonschema>=4.23",
 ]
+desktop = [
+  "pystray>=0.19.5",
+  "pillow>=10.4",
+]
+packaging = [
+  "pyinstaller>=6.10",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/openfloodai"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"tools/openfloodai-home-ui.html" = "openfloodai/ui/static/openfloodai-home-ui.html"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -50,3 +61,7 @@ select = [
 python_version = "3.12"
 strict = true
 files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+module = ["pystray.*", "PIL.*"]
+ignore_missing_imports = true
