@@ -754,7 +754,11 @@ def _read_saved_run_history(runs_dir: Path) -> list[dict[str, Any]]:
             continue
         if not isinstance(metadata, dict):
             continue
-        report_path = Path(str(metadata.get("report_path", run_dir / "validation-report.md")))
+        report_path = _resolve_run_metadata_path(run_dir, metadata.get("report_path")) or (
+            run_dir / "validation-report.md"
+        )
+        evidence_path = _resolve_run_metadata_path(run_dir, metadata.get("review_images_path"))
+        inputs_used_path = _resolve_run_metadata_path(run_dir, metadata.get("inputs_used_path"))
         history.append(
             {
                 "run_id": metadata.get("run_id", run_dir.name),
@@ -762,12 +766,27 @@ def _read_saved_run_history(runs_dir: Path) -> list[dict[str, Any]]:
                 "modified_time": metadata.get("created_at"),
                 "status": metadata.get("status", "unknown"),
                 "counts": _read_report_counts(report_path),
-                "evidence_path": metadata.get("review_images_path"),
-                "inputs_used_path": metadata.get("inputs_used_path"),
+                "evidence_path": str(evidence_path) if evidence_path else None,
+                "inputs_used_path": str(inputs_used_path) if inputs_used_path else None,
                 "legacy": False,
             }
         )
     return sorted(history, key=lambda entry: str(entry.get("modified_time") or ""), reverse=True)
+
+
+def _resolve_run_metadata_path(run_dir: Path, value: object) -> Path | None:
+    """Resolve a run-metadata.json path field against its own run folder.
+
+    A copied or imported run folder carries paths recorded on the machine
+    that produced it. A relative path (as written into a portable export)
+    is resolved against the run folder wherever it now lives; an absolute
+    path from a run-metadata.json produced on this machine is used as-is.
+    """
+
+    if not value:
+        return None
+    candidate = Path(str(value))
+    return candidate if candidate.is_absolute() else run_dir / candidate
 
 
 def _path_sort_key(path: Path) -> tuple[float, str]:

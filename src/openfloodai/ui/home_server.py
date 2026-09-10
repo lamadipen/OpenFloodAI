@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import math
+import shutil
 import tempfile
+from datetime import UTC, datetime
 from email.parser import BytesParser
 from email.policy import HTTP
 from http.server import SimpleHTTPRequestHandler
@@ -23,8 +25,9 @@ from openfloodai.review import (
 )
 from openfloodai.review.dataset_manifest import HARD_CASE_TYPE_OPTIONS, MANIFEST_PURPOSE_OPTIONS
 from openfloodai.validation import (
+    build_export_all,
+    build_run_export,
     discover_validation_site_statuses,
-    export_run,
     intake_validation_video,
     run_site_validation,
     setup_validation_site,
@@ -63,6 +66,12 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             return
         if path == "/api/sites":
             self._send_sites_json()
+            return
+        if path == "/api/export-run":
+            self._send_export_run()
+            return
+        if path == "/api/export-all":
+            self._send_export_all()
             return
         if path in {"/", "/openfloodai-home-ui.html", "/site-details.html"}:
             self._send_file(self.ui_path, content_type="text/html; charset=utf-8")
@@ -239,9 +248,6 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             return
         if self.path == "/api/set-watched-area":
             self._handle_set_watched_area()
-            return
-        if self.path == "/api/export-run":
-            self._handle_export_run()
             return
         self.send_error(404, "Not found")
 
@@ -571,13 +577,11 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             status_code=200,
         )
 
-    def _handle_export_run(self) -> None:
-        data = self._read_json_body()
-        if data is None:
-            return
-
-        folder_name = str(data.get("folder_name", "")).strip()
-        run_id = str(data.get("run_id", "")).strip()
+    def _send_export_run(self) -> None:
+        query = parse_qs(urlsplit(self.path).query)
+        folder_name = query.get("folder_name", [""])[0].strip()
+        run_id = query.get("run_id", [""])[0].strip()
+        include_raw_video = _as_bool(query.get("include_raw_video", [""])[0], default=False)
         if not folder_name or not run_id:
             self._send_json(
                 {"success": False, "message": "Missing required field: folder_name and run_id."},
@@ -600,22 +604,46 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        result = export_run(
-            site_dir,
-            run_id,
-            include_raw_video=_as_bool(data.get("include_raw_video"), default=False),
-        )
+        with tempfile.TemporaryDirectory(prefix="openfloodai-export-run-") as staging:
+            result = build_run_export(
+                site_dir, run_id, Path(staging), include_raw_video=include_raw_video
+            )
+            if not result.created:
+                self._send_json({"success": False, "message": result.message}, status_code=400)
+                return
+            self._send_zip_download(result.export_dir, download_name=f"{run_id}.zip")
 
-        self._send_json(
-            {
-                "success": result.created,
-                "message": result.message,
-                "export_dir": str(result.export_dir) if result.created else None,
-                "included_raw_video": result.included_raw_video,
-                "excluded_video_filenames": result.excluded_video_filenames,
-            },
-            status_code=200 if result.created else 400,
-        )
+    def _send_export_all(self) -> None:
+        query = parse_qs(urlsplit(self.path).query)
+        include_raw_video = _as_bool(query.get("include_raw_video", [""])[0], default=False)
+
+        with tempfile.TemporaryDirectory(prefix="openfloodai-export-all-") as staging:
+            bundle_dir = Path(staging) / "openfloodai-export-all"
+            result = build_export_all(
+                self.sites_dir, bundle_dir, include_raw_video=include_raw_video
+            )
+            if not result.created:
+                self._send_json({"success": False, "message": result.message}, status_code=400)
+                return
+            timestamp = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%SZ")
+            self._send_zip_download(
+                result.export_dir, download_name=f"openfloodai-export-all_{timestamp}.zip"
+            )
+
+    def _send_zip_download(self, source_dir: Path, *, download_name: str) -> None:
+        with tempfile.TemporaryDirectory(prefix="openfloodai-zip-") as archive_scratch:
+            archive_base = Path(archive_scratch) / "download"
+            shutil.make_archive(
+                str(archive_base), "zip", root_dir=source_dir.parent, base_dir=source_dir.name
+            )
+            body = Path(f"{archive_base}.zip").read_bytes()
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/zip")
+        self.send_header("Content-Disposition", f'attachment; filename="{download_name}"')
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def _handle_repair_manifest(self) -> None:
         data = self._read_json_body()

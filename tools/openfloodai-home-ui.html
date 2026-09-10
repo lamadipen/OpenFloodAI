@@ -852,6 +852,11 @@
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
           <button type="button" id="createSiteButton" style="background: var(--ok); border-color: var(--ok);">Create Site</button>
           <button type="button" id="addLabelButton" style="background: var(--accent-strong); border-color: var(--accent-strong);">Add Label</button>
+          <label style="display: flex; align-items: center; gap: 6px; font-size: 0.9rem;">
+            <input type="checkbox" id="exportAllRawVideoCheckbox">
+            Include raw video only if approved to share
+          </label>
+          <button type="button" id="exportAllButton" onclick="exportAllSites(this)">Export All Reports</button>
           <button type="button" id="refreshButton">Refresh</button>
         </div>
       </section>
@@ -2428,36 +2433,54 @@
         }
       };
 
-      window.exportRunForSite = async function (siteName, runId, button) {
-        const container = button.closest(".report-history-item");
-        const checkbox = container ? container.querySelector(".export-raw-video-checkbox") : null;
-        const includeRawVideo = checkbox ? checkbox.checked : false;
+      async function downloadExportZip(url, button) {
         const originalDisabled = button.disabled;
         button.disabled = true;
         try {
-          const response = await fetch("/api/export-run", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              folder_name: siteName,
-              run_id: runId,
-              include_raw_video: includeRawVideo,
-            }),
-          });
-          const result = await response.json();
-          if (!response.ok || !result.success) {
+          const response = await fetch(url);
+          const contentType = response.headers.get("Content-Type") || "";
+          if (!response.ok || !contentType.includes("application/zip")) {
+            const result = await response.json().catch(() => ({}));
             throw new Error(result.message || `Request failed: ${response.status}`);
           }
-          let message = `Export complete: ${result.export_dir}`;
-          if (result.excluded_video_filenames && result.excluded_video_filenames.length) {
-            message += `\nLeft out (missing or changed since the run): ${result.excluded_video_filenames.join(", ")}`;
-          }
-          alert(message);
+          const disposition = response.headers.get("Content-Disposition") || "";
+          const nameMatch = disposition.match(/filename="([^"]+)"/);
+          const filename = nameMatch ? nameMatch[1] : "openfloodai-export.zip";
+          const blob = await response.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = blobUrl;
+          link.download = filename;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          URL.revokeObjectURL(blobUrl);
         } catch (error) {
           alert(`Export failed: ${error.message}`);
         } finally {
           button.disabled = originalDisabled;
         }
+      }
+
+      window.exportRunForSite = async function (siteName, runId, button) {
+        const container = button.closest(".report-history-item");
+        const checkbox = container ? container.querySelector(".export-raw-video-checkbox") : null;
+        const includeRawVideo = checkbox ? checkbox.checked : false;
+        const query = new URLSearchParams({
+          folder_name: siteName,
+          run_id: runId,
+          include_raw_video: includeRawVideo ? "true" : "false",
+        });
+        await downloadExportZip(`/api/export-run?${query.toString()}`, button);
+      };
+
+      window.exportAllSites = async function (button) {
+        const checkbox = document.getElementById("exportAllRawVideoCheckbox");
+        const includeRawVideo = checkbox ? checkbox.checked : false;
+        const query = new URLSearchParams({
+          include_raw_video: includeRawVideo ? "true" : "false",
+        });
+        await downloadExportZip(`/api/export-all?${query.toString()}`, button);
       };
 
       cancelSetup.addEventListener("click", () => {

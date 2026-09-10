@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import cv2
 import numpy as np
 
-from openfloodai.validation import export_run, run_site_validation
+from openfloodai.validation import (
+    build_export_all,
+    build_run_export,
+    discover_validation_site_statuses,
+    run_site_validation,
+)
 
 
 def create_tiny_video(path: Path, *, frame_values: tuple[int, ...]) -> None:
@@ -23,9 +29,9 @@ def create_tiny_video(path: Path, *, frame_values: tuple[int, ...]) -> None:
         writer.release()
 
 
-def write_site_config(path: Path) -> None:
+def write_site_config(path: Path, *, site_id: str = "site-demo-01") -> None:
     config = {
-        "site_id": "site-demo-01",
+        "site_id": site_id,
         "camera_id": "camera-demo-01",
         "site_name": "Demo Site",
         "input_type": "local_video",
@@ -35,8 +41,10 @@ def write_site_config(path: Path) -> None:
     path.write_text(json.dumps(config))
 
 
-def make_site_with_completed_run(tmp_path: Path) -> tuple[Path, str]:
-    site_dir = tmp_path / "example-site"
+def make_site_with_completed_run(
+    sites_dir: Path, folder_name: str = "example-site"
+) -> tuple[Path, str]:
+    site_dir = sites_dir / folder_name
     (site_dir / "configs").mkdir(parents=True)
     (site_dir / "inputs" / "videos").mkdir(parents=True)
     (site_dir / "labels").mkdir(parents=True)
@@ -59,57 +67,60 @@ def make_site_with_completed_run(tmp_path: Path) -> tuple[Path, str]:
     return site_dir, report.run_id
 
 
-def test_export_creates_package_for_selected_run(tmp_path: Path) -> None:
-    site_dir, run_id = make_site_with_completed_run(tmp_path)
+def test_run_export_creates_portable_copy_of_the_run_folder(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    site_dir, run_id = make_site_with_completed_run(sites_dir)
+    destination = tmp_path / "downloads"
 
-    result = export_run(site_dir, run_id)
+    result = build_run_export(site_dir, run_id, destination)
 
     assert result.created, result.message
-    assert result.export_dir.is_dir()
-    assert result.export_dir.parent == site_dir / "exports"
-
-
-def test_default_export_includes_key_review_files(tmp_path: Path) -> None:
-    site_dir, run_id = make_site_with_completed_run(tmp_path)
-
-    result = export_run(site_dir, run_id)
-
+    assert result.export_dir == destination / run_id
     export_dir = result.export_dir
-    assert (export_dir / "report.md").is_file()
+    assert (export_dir / "validation-report.md").is_file()
     assert (export_dir / "scorecard.json").is_file()
-    assert (export_dir / "records.jsonl").is_file()
     assert (export_dir / "run-metadata.json").is_file()
-    assert (export_dir / "site-summary.json").is_file()
-    assert (export_dir / "README.md").is_file()
+    assert (export_dir / "records").is_dir()
     assert (export_dir / "review-images").is_dir()
     assert (export_dir / "inputs-used" / "receipt.json").is_file()
-    assert (export_dir / "inputs-used" / "labels.snapshot.jsonl").is_file()
+    assert (export_dir / "README.md").is_file()
 
-    records_text = (export_dir / "records.jsonl").read_text(encoding="utf-8")
-    assert records_text.strip() != ""
-    for line in records_text.splitlines():
-        json.loads(line)
-
-    summary = json.loads((export_dir / "site-summary.json").read_text(encoding="utf-8"))
-    assert summary["site_id"] == "site-demo-01"
-    assert summary["run_id"] == run_id
+    original_run_dir = site_dir / "outputs" / "runs" / run_id
+    original_records = {p.name for p in (original_run_dir / "records").glob("*.jsonl")}
+    exported_records = {p.name for p in (export_dir / "records").glob("*.jsonl")}
+    assert original_records == exported_records
 
 
-def test_default_export_excludes_raw_video(tmp_path: Path) -> None:
-    site_dir, run_id = make_site_with_completed_run(tmp_path)
+def test_run_export_metadata_paths_are_portable(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    site_dir, run_id = make_site_with_completed_run(sites_dir)
+    destination = tmp_path / "downloads"
 
-    result = export_run(site_dir, run_id)
+    result = build_run_export(site_dir, run_id, destination)
+
+    metadata = json.loads((result.export_dir / "run-metadata.json").read_text(encoding="utf-8"))
+    assert metadata["report_path"] == "validation-report.md"
+    assert metadata["scorecard_path"] == "scorecard.json"
+    assert metadata["records_path"] == "records"
+    assert metadata["review_images_path"] == "review-images"
+    assert metadata["inputs_used_path"] == "inputs-used"
+
+
+def test_run_export_default_excludes_raw_video(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    site_dir, run_id = make_site_with_completed_run(sites_dir)
+
+    result = build_run_export(site_dir, run_id, tmp_path / "downloads")
 
     assert result.included_raw_video is False
     assert not (result.export_dir / "videos").exists()
-    readme = (result.export_dir / "README.md").read_text(encoding="utf-8")
-    assert "not requested" in readme.lower() or "not included" in readme.lower()
 
 
-def test_raw_video_included_only_when_requested_and_unchanged(tmp_path: Path) -> None:
-    site_dir, run_id = make_site_with_completed_run(tmp_path)
+def test_run_export_raw_video_included_only_when_requested_and_unchanged(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    site_dir, run_id = make_site_with_completed_run(sites_dir)
 
-    result = export_run(site_dir, run_id, include_raw_video=True)
+    result = build_run_export(site_dir, run_id, tmp_path / "downloads", include_raw_video=True)
 
     assert result.included_raw_video is True
     exported_video = result.export_dir / "videos" / "rising-001.avi"
@@ -118,88 +129,113 @@ def test_raw_video_included_only_when_requested_and_unchanged(tmp_path: Path) ->
     assert exported_video.read_bytes() == original
 
 
-def test_raw_video_excluded_and_noted_when_changed_since_run(tmp_path: Path) -> None:
-    site_dir, run_id = make_site_with_completed_run(tmp_path)
+def test_run_export_excludes_and_notes_video_changed_since_run(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    site_dir, run_id = make_site_with_completed_run(sites_dir)
 
-    create_tiny_video(
-        site_dir / "inputs" / "videos" / "rising-001.avi",
-        frame_values=(5, 5),
-    )
+    create_tiny_video(site_dir / "inputs" / "videos" / "rising-001.avi", frame_values=(5, 5))
 
-    result = export_run(site_dir, run_id, include_raw_video=True)
+    result = build_run_export(site_dir, run_id, tmp_path / "downloads", include_raw_video=True)
 
     assert result.included_raw_video is False
     assert result.excluded_video_filenames == ["rising-001.avi"]
-    assert not (result.export_dir / "videos").exists()
     readme = (result.export_dir / "README.md").read_text(encoding="utf-8")
     assert "rising-001.avi" in readme
     assert "no longer matches" in readme.lower()
 
 
-def test_export_uses_saved_snapshot_not_live_site_files(tmp_path: Path) -> None:
-    site_dir, run_id = make_site_with_completed_run(tmp_path)
-    run_dir = site_dir / "outputs" / "runs" / run_id
+def test_run_export_refuses_missing_run(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    site_dir, _run_id = make_site_with_completed_run(sites_dir)
 
-    config_path = site_dir / "configs" / "site-config.json"
-    config = json.loads(config_path.read_text())
-    config["camera_id"] = "camera-changed-after-run"
-    config_path.write_text(json.dumps(config))
-    (site_dir / "labels" / "labels.jsonl").write_text(
-        json.dumps(
-            {
-                "video_id": "rising-001",
-                "time_window_seconds": [0, 30],
-                "human_label": "water_falling",
-            }
-        )
-        + "\n"
-    )
-
-    result = export_run(site_dir, run_id)
-
-    summary = json.loads((result.export_dir / "site-summary.json").read_text(encoding="utf-8"))
-    assert summary["camera_id"] == "camera-demo-01"
-    labels_snapshot = (result.export_dir / "inputs-used" / "labels.snapshot.jsonl").read_text(
-        encoding="utf-8"
-    )
-    assert "water_rising" in labels_snapshot
-    assert "water_falling" not in labels_snapshot
-    assert run_dir.exists()
-
-
-def test_export_refuses_missing_run(tmp_path: Path) -> None:
-    site_dir, _run_id = make_site_with_completed_run(tmp_path)
-
-    result = export_run(site_dir, "20200101T000000Z-deadbeef")
+    result = build_run_export(site_dir, "20200101T000000Z-deadbeef", tmp_path / "downloads")
 
     assert not result.created
     assert "does not exist" in result.message.lower()
 
 
-def test_export_refuses_invalid_run_id_path_traversal(tmp_path: Path) -> None:
-    site_dir, _run_id = make_site_with_completed_run(tmp_path)
+def test_run_export_refuses_invalid_run_id_path_traversal(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    site_dir, _run_id = make_site_with_completed_run(sites_dir)
 
-    result = export_run(site_dir, "../../etc")
+    result = build_run_export(site_dir, "../../etc", tmp_path / "downloads")
 
     assert not result.created
     assert "invalid run_id" in result.message.lower()
 
 
-def test_export_path_cannot_escape_exports_directory(tmp_path: Path) -> None:
-    site_dir, run_id = make_site_with_completed_run(tmp_path)
+def test_exported_run_folder_is_picked_up_after_copy_into_another_site(tmp_path: Path) -> None:
+    """The whole point of a portable export: drop it into another site and it just shows up."""
 
-    result = export_run(site_dir, run_id)
+    source_sites_dir = tmp_path / "source-sites"
+    site_dir, run_id = make_site_with_completed_run(source_sites_dir, folder_name="source-site")
+    export_result = build_run_export(site_dir, run_id, tmp_path / "downloads")
 
-    assert result.created
-    assert result.export_dir.resolve().is_relative_to((site_dir / "exports").resolve())
+    other_sites_dir = tmp_path / "other-sites"
+    other_site_dir = other_sites_dir / "teammate-site"
+    (other_site_dir / "outputs" / "runs").mkdir(parents=True)
+    (other_site_dir / "configs").mkdir(parents=True)
+    write_site_config(other_site_dir / "configs" / "site-config.json")
+
+    shutil.copytree(export_result.export_dir, other_site_dir / "outputs" / "runs" / run_id)
+
+    statuses = discover_validation_site_statuses(other_sites_dir)
+    teammate_status = next(status for status in statuses if status.site_name == "teammate-site")
+    assert teammate_status.report_history
+    entry = teammate_status.report_history[0]
+    assert entry["run_id"] == run_id
+    assert entry["counts"] is not None
+    assert str(other_site_dir) in entry["path"]
+    assert str(other_site_dir) in (entry["inputs_used_path"] or "")
 
 
-def test_export_as_zip_produces_archive_without_loose_folder(tmp_path: Path) -> None:
-    site_dir, run_id = make_site_with_completed_run(tmp_path)
+def test_export_all_bundles_every_site_with_config_labels_manifest_and_runs(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    make_site_with_completed_run(sites_dir, folder_name="site-a")
+    make_site_with_completed_run(sites_dir, folder_name="site-b")
+    destination = tmp_path / "bundle"
 
-    result = export_run(site_dir, run_id, as_zip=True)
+    result = build_export_all(sites_dir, destination)
 
-    assert result.created
-    assert result.zip_path is not None
-    assert result.zip_path.is_file()
-    assert result.zip_path.suffix == ".zip"
+    assert result.created, result.message
+    assert sorted(result.exported_site_names) == ["site-a", "site-b"]
+    for site_name in ("site-a", "site-b"):
+        site_export = destination / site_name
+        assert (site_export / "configs" / "site-config.json").is_file()
+        assert (site_export / "labels" / "labels.jsonl").is_file()
+        run_dirs = list((site_export / "outputs" / "runs").iterdir())
+        assert len(run_dirs) == 1
+        assert (run_dirs[0] / "validation-report.md").is_file()
+        assert (run_dirs[0] / "run-metadata.json").is_file()
+    assert (destination / "README.md").is_file()
+
+
+def test_export_all_excludes_raw_video_by_default(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    make_site_with_completed_run(sites_dir, folder_name="site-a")
+
+    result = build_export_all(sites_dir, tmp_path / "bundle")
+
+    assert result.included_raw_video is False
+    assert not (result.export_dir / "site-a" / "inputs" / "videos").exists()
+
+
+def test_export_all_includes_raw_video_when_requested(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    make_site_with_completed_run(sites_dir, folder_name="site-a")
+
+    result = build_export_all(sites_dir, tmp_path / "bundle", include_raw_video=True)
+
+    assert result.included_raw_video is True
+    videos = list((result.export_dir / "site-a" / "inputs" / "videos").glob("*.avi"))
+    assert len(videos) == 1
+
+
+def test_export_all_refuses_when_no_sites_exist(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "empty-sites"
+    sites_dir.mkdir()
+
+    result = build_export_all(sites_dir, tmp_path / "bundle")
+
+    assert not result.created
+    assert "no sites" in result.message.lower()
