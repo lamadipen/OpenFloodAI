@@ -24,6 +24,7 @@ nav:
       - Dependency Map: architecture/dependencies.md
       - Windowed Video Evidence: architecture/windowed-video-evidence.md
       - Validation Input Snapshots: architecture/validation-input-snapshots.md
+      - Run Export Packages: architecture/run-export-packages.md
   - Research:
       - Research Notes: research/README.md
       - MVP Workflow Rehearsal: research/mvp-workflow-rehearsal.md

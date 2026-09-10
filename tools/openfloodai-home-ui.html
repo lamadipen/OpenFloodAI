@@ -1827,12 +1827,22 @@
             `Disagree ${scorecardValue(counts.disagree)}`,
             `Cannot compare ${scorecardValue(counts.cannot_compare)}`,
           ].join(", ");
+          const exportControls = run.run_id ? `
+              <div class="report-history-meta">
+                <label><input type="checkbox" class="export-raw-video-checkbox" data-run-id="${escapeHtml(run.run_id)}"> Include raw video only if this video is approved to share</label>
+              </div>
+              <div class="report-history-meta">This exports the selected run only. Later site changes are not included.</div>
+              <div class="report-history-meta">
+                <button type="button" onclick="exportRunForSite('${escapeHtml(site.site_name)}', '${escapeHtml(run.run_id)}', this)">Export Run Results</button>
+              </div>
+            ` : "";
           return `
             <div class="report-history-item">
               <div class="report-history-path">${index === 0 ? "Latest: " : ""}${run.legacy ? "Legacy: " : ""}${escapeHtml(run.path || "Report path unavailable")}</div>
               <div class="report-history-meta">${escapeHtml(run.modified_time || "Time unavailable")} | ${escapeHtml(run.status || "Status unavailable")} | ${escapeHtml(countText)}</div>
               <div class="report-history-meta">Evidence: ${escapeHtml(run.evidence_path || "Not available")}</div>
               <div class="report-history-meta">Inputs used: ${escapeHtml(run.inputs_used_path || "No input snapshot was saved for this older run.")}</div>
+              ${exportControls}
             </div>
           `;
         }).join("");
@@ -2415,6 +2425,38 @@
           await loadSites();
         } catch (error) {
           alert(`Manifest repair failed: ${error.message}`);
+        }
+      };
+
+      window.exportRunForSite = async function (siteName, runId, button) {
+        const container = button.closest(".report-history-item");
+        const checkbox = container ? container.querySelector(".export-raw-video-checkbox") : null;
+        const includeRawVideo = checkbox ? checkbox.checked : false;
+        const originalDisabled = button.disabled;
+        button.disabled = true;
+        try {
+          const response = await fetch("/api/export-run", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              folder_name: siteName,
+              run_id: runId,
+              include_raw_video: includeRawVideo,
+            }),
+          });
+          const result = await response.json();
+          if (!response.ok || !result.success) {
+            throw new Error(result.message || `Request failed: ${response.status}`);
+          }
+          let message = `Export complete: ${result.export_dir}`;
+          if (result.excluded_video_filenames && result.excluded_video_filenames.length) {
+            message += `\nLeft out (missing or changed since the run): ${result.excluded_video_filenames.join(", ")}`;
+          }
+          alert(message);
+        } catch (error) {
+          alert(`Export failed: ${error.message}`);
+        } finally {
+          button.disabled = originalDisabled;
         }
       };
 

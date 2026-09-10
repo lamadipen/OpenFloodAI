@@ -718,6 +718,74 @@ def test_run_validation_uses_the_main_site_validation_path(tmp_path: Path) -> No
     assert Path(payload["report_path"]).is_file()
 
 
+def test_export_run_endpoint_builds_a_review_package(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    site_dir = make_site(sites_dir / "example-site")
+    write_json(
+        site_dir / "configs" / "site-config.json",
+        {
+            "site_id": "example-site",
+            "camera_id": "camera-demo-01",
+            "site_name": "Example Site",
+            "input_type": "local_video",
+            "reference_region": {"x": 0, "y": 50, "width": 100, "height": 50},
+        },
+    )
+
+    with serve_home_ui(sites_dir) as base_url:
+        run_request = Request(
+            f"{base_url}/api/run-validation",
+            data=json.dumps({"folder_name": "example-site"}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(run_request) as response:
+            run_payload = json.loads(response.read().decode("utf-8"))
+        run_id = Path(run_payload["report_path"]).parent.name
+
+        export_request = Request(
+            f"{base_url}/api/export-run",
+            data=json.dumps({"folder_name": "example-site", "run_id": run_id}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(export_request) as response:
+            export_payload = json.loads(response.read().decode("utf-8"))
+
+    assert export_payload["success"] is True
+    assert export_payload["included_raw_video"] is False
+    export_dir = Path(export_payload["export_dir"])
+    assert export_dir.is_dir()
+    assert export_dir.parent == site_dir / "exports"
+    assert (export_dir / "README.md").is_file()
+    assert (export_dir / "inputs-used" / "receipt.json").is_file()
+    assert not (export_dir / "videos").exists()
+
+
+def test_export_run_endpoint_rejects_unknown_run(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    make_site(sites_dir / "example-site")
+
+    with serve_home_ui(sites_dir) as base_url:
+        request = Request(
+            f"{base_url}/api/export-run",
+            data=json.dumps(
+                {"folder_name": "example-site", "run_id": "20200101T000000Z-deadbeef"}
+            ).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            urlopen(request)
+        except HTTPError as error:
+            assert error.code == 400
+            payload = json.loads(error.read().decode("utf-8"))
+        else:
+            raise AssertionError("expected export of an unknown run to fail")
+
+    assert payload["success"] is False
+
+
 def test_readiness_panel_spans_the_whole_step_card(tmp_path: Path) -> None:
     """The step card is a grid, so a child without a span lands in the 42px number column."""
 

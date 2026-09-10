@@ -1,5 +1,9 @@
 """Local validation runners for OpenFloodAI."""
 
+from openfloodai.validation.run_export import (
+    RunExportResult,
+    export_run,
+)
 from openfloodai.validation.site_runner import (
     SiteValidationReport,
     SiteValidationResult,
@@ -27,6 +31,7 @@ from openfloodai.validation.video_intake import (
 )
 
 __all__ = [
+    "RunExportResult",
     "SiteValidationReport",
     "SiteValidationResult",
     "ValidationRunnerError",
@@ -39,6 +44,7 @@ __all__ = [
     "WorkflowAction",
     "WorkflowStep",
     "discover_validation_site_statuses",
+    "export_run",
     "intake_validation_video",
     "read_validation_site_status",
     "render_site_validation_report",

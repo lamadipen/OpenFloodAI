@@ -24,6 +24,7 @@ from openfloodai.review import (
 from openfloodai.review.dataset_manifest import HARD_CASE_TYPE_OPTIONS, MANIFEST_PURPOSE_OPTIONS
 from openfloodai.validation import (
     discover_validation_site_statuses,
+    export_run,
     intake_validation_video,
     run_site_validation,
     setup_validation_site,
@@ -238,6 +239,9 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             return
         if self.path == "/api/set-watched-area":
             self._handle_set_watched_area()
+            return
+        if self.path == "/api/export-run":
+            self._handle_export_run()
             return
         self.send_error(404, "Not found")
 
@@ -565,6 +569,52 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
                 },
             },
             status_code=200,
+        )
+
+    def _handle_export_run(self) -> None:
+        data = self._read_json_body()
+        if data is None:
+            return
+
+        folder_name = str(data.get("folder_name", "")).strip()
+        run_id = str(data.get("run_id", "")).strip()
+        if not folder_name or not run_id:
+            self._send_json(
+                {"success": False, "message": "Missing required field: folder_name and run_id."},
+                status_code=400,
+            )
+            return
+
+        site_dir = (self.sites_dir / folder_name).resolve()
+        try:
+            site_dir.relative_to(self.sites_dir.resolve())
+        except ValueError:
+            self._send_json(
+                {
+                    "success": False,
+                    "message": (
+                        "Invalid folder_name: site folder must stay inside the sites directory."
+                    ),
+                },
+                status_code=400,
+            )
+            return
+
+        result = export_run(
+            site_dir,
+            run_id,
+            include_raw_video=_as_bool(data.get("include_raw_video"), default=False),
+        )
+
+        self._send_json(
+            {
+                "success": result.created,
+                "message": result.message,
+                "export_dir": str(result.export_dir) if result.created else None,
+                "included_raw_video": result.included_raw_video,
+                "excluded_video_filenames": result.excluded_video_filenames,
+            },
+            status_code=200 if result.created else 400,
         )
 
     def _handle_repair_manifest(self) -> None:
