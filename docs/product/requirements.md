@@ -369,8 +369,6 @@ Simple example: before trusting the system in a pilot, we should replay videos o
 
 ## Architect Review Notes
 
-Reviewed using the senior flood AI architect guidance.
-
 Key decisions:
 
 - Observation, risk assessment, and public warning are separated.
@@ -384,8 +382,6 @@ Main architecture risk:
 - If alert candidates are later connected directly to public warning tools without human review, the system boundary would be violated.
 
 ## QA Challenge Notes
-
-Independently challenged using the senior flood QA guidance.
 
 Requirements that need future test evidence:
 

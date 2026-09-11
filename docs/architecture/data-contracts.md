@@ -954,8 +954,6 @@ Reason-code details now live in [reason-codes.md](reason-codes.md).
 
 ## Architect Review Notes
 
-Reviewed conceptually using the senior flood AI architect guidance.
-
 Architecture decisions supported by these contracts:
 
 - Events are traceable to site, camera, time, software, config, model, evidence, risk state, and reason codes.
@@ -969,8 +967,6 @@ Main architecture caution:
 - Do not let future implementation hide sensitive details in logs or repeat exact GPS and camera-placement details in every event.
 
 ## QA Challenge Notes
-
-Challenged conceptually using the senior flood QA guidance.
 
 QA concerns to test in future stories:
 

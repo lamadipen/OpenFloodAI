@@ -648,8 +648,6 @@ Questions to answer later:
 
 ## Architect Review Notes
 
-Reviewed conceptually using the senior flood AI architect guidance.
-
 Architecture decisions:
 
 - Observation, risk assessment, alert candidates, and public warnings are separated.
@@ -664,8 +662,6 @@ Important architecture warning:
 - Do not connect ML output or alert candidates directly to sirens, evacuation messages, or official public-warning channels without approved human or local governance controls.
 
 ## QA Challenge Notes
-
-Challenged conceptually using the senior flood QA guidance.
 
 QA concerns to test in future stories:
 

@@ -282,8 +282,6 @@ Simple example: `CRITICAL_WATER_EVIDENCE` means urgent human review is needed. I
 
 ## Architect Review Notes
 
-Reviewed conceptually using the senior flood AI architect guidance.
-
 Architecture decisions supported by these reason codes:
 
 - Observation, risk assessment, alert candidates, and public warnings remain separate.
@@ -297,8 +295,6 @@ Main architecture caution:
 - Future code should not treat one reason code, one model output, one frame, or one camera as enough to issue an official public warning.
 
 ## QA Challenge Notes
-
-Challenged conceptually using the senior flood QA guidance.
 
 QA concerns to test in future stories:
 
