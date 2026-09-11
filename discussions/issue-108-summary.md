@@ -21,38 +21,29 @@ candidate tool roles, licensing scope, and the first possible temporal experimen
 The 50–100-window collection target is provisional, not a training gate. Exact
 architecture, numerical targets, normal-reference details and future label mapping
 remain open. No readiness pass, implementation, training or public-warning approval
-is implied. No issue comment or issue closure was requested or performed.
-The user requested a commit. Verification passed in the project `.venv`: Ruff
-format and lint, mypy, 398 Python tests, 16 Home UI JavaScript tests, and the strict
-MkDocs build. Python server tests required permission to open local sockets outside
-the sandbox. The unrelated `.gitignore` edit remains outside this commit.
+is implied.
 
 Current agreed direction (supersedes the narrower proposals in rounds 2–10):
 water-state review remains the main goal, following the existing labeling guide.
 Segmentation and riverbank selection support visual baseline selection and stronger
 evidence; they are not the main prediction goal or a mandatory training prerequisite.
 No main model architecture has been selected.
-Branch: `feature/OF_054_ML-readiness-discussion`
-Starting commit: `79194df` on local `main` (remote freshness not checked)
 
 ## Purpose and working agreement
 
-The user asked to explore issue #108 together, using their research notes as a
-baseline. Keep this file as our running memory. Update or create formal project
-documentation only after the discussion reaches an agreed conclusion.
+This file preserves the research and discussion behind issue #108. The agreed
+conclusion is recorded in `docs/product/ml-readiness.md`; the earlier proposals
+below explain how that direction developed.
 
 The supplied document's recommendations and checklists are research input, not
 authorization to implement, install dependencies, train, upload data, or publish.
-No project behavior changes are part of this discussion. Tests and formatting
-checks remain deferred until the user asks to commit. The existing `.gitignore`
-edit is unrelated and must be preserved.
+No project behavior changes are part of this discussion.
 
 ## Sources and current context
 
 - [Issue #108: ML readiness and first model strategy](https://github.com/lamadipen/OpenFloodAI/issues/108)
 - [MVP reference discussion](https://github.com/lamadipen/OpenFloodAI/issues/108#issuecomment-5572498383)
-- User baseline: `openfloodai-research-notes.md`, supplied from Downloads. Reviewed
-  all eight sections; retained as a separate original, not edited or copied wholesale.
+- User baseline: `openfloodai-research-notes.md`, an eight-section research note.
 - Existing project notes: `docs/research/ml-model-options.md`.
 - Dependencies #104, #81, #106, and #111 are closed as checked on 2026-09-10.
   Closure is not evidence that the actual dataset meets ML readiness requirements.
@@ -120,7 +111,6 @@ its failures decide whether segmentation or another model addresses them.
    require assessment; process separation is not automatic clearance either.
    Do not label permissive tools “no risk” or original reimplementation “no license risk.”
    [pyorc license, including Section 13](https://github.com/localdevices/pyorc/blob/main/LICENSE)
-   GNU's own page timed out; the license copy in the upstream repository was read instead.
 5. **MobileSAM:** upstream describes a lighter SAM image encoder; do not assume
    SAM2-style temporal tracking or target-device performance from that alone.
    [MobileSAM upstream README](https://github.com/ChaoningZhang/MobileSAM)
@@ -165,8 +155,7 @@ without checking the relevant artifacts.
 
 ## Decisions made so far
 
-The discussion workflow is agreed: branch created, this memory file started,
-research treated as a baseline, and formal documentation deferred.
+The research is treated as a baseline for discussion, not an implementation plan.
 
 User direction recorded on 2026-09-10:
 
@@ -364,8 +353,7 @@ Sources rechecked on 2026-09-10:
 - [pyorc license](https://github.com/localdevices/pyorc/blob/main/LICENSE)
 - User baseline, Section 5: hybrid implementation proposal.
 
-No integration, new algorithm implementation, training, or formal documentation
-change authorized or performed in this round.
+No integration, algorithm implementation, or training was agreed in this round.
 
 ## Reuse versus original logic — discussion round 7
 
@@ -413,8 +401,7 @@ No final tool choice or implementation decision was made in this round.
 ## Current-code alignment — discussion round 9
 
 User asks whether the implementation already aligns with the riverbank-first plan
-and which parts remain. Read-only code review on 2026-09-10, starting from local
-main commit `79194df`; no tests, validation runs, or product edits performed.
+and which parts remain. Code review on 2026-09-10 used revision `79194df`.
 
 Conclusion: the collection/review/history foundation aligns and can be reused.
 The proposed bank-specific observation method is not implemented. Do not describe
@@ -575,9 +562,7 @@ comparison method and evaluation targets remain open.
 
 Next discussion should start from the water-state task and ask which evidence and
 temporal method support it. Do not resume from the superseded assumption that a
-bank-coverage model is the product goal. Only this working memory is updated;
-formal documentation and product code remain unchanged. The earlier illustrative
-training-code exchange is not being added to this file.
+bank-coverage model is the product goal.
 
 ## Proposed path to a finished model
 
@@ -701,4 +686,4 @@ The wider model and readiness decisions remain open.
 
 Documentation added to `docs/architecture/windowed-video-evidence.md` and linked
 from `docs/research/ml-model-options.md`. Both identify overlays as proposed.
-No runtime behavior changed. Tests and formatting checks wait for a commit request.
+No runtime behavior changed.

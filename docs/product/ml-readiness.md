@@ -158,6 +158,8 @@ See [model options](../research/ml-model-options.md) for more background. Primar
 references include [SAM 2](https://github.com/facebookresearch/sam2),
 [MobileSAM](https://github.com/ChaoningZhang/MobileSAM),
 [pyOpenRiverCam](https://localdevices.github.io/pyorc/), and
+[Google flood-forecasting (OpenHydroNet)](https://github.com/google-research/flood-forecasting).
+Related background:
 [Google streamflow forecasting research](https://github.com/google-research-datasets/global_streamflow_model_paper).
 
 ## Consequences, Privacy And Risks
