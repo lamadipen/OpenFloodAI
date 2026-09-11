@@ -1,7 +1,31 @@
 # Issue #108 — ML readiness discussion memory
 
-Last updated: 2026-09-10
-Status: DISCUSSION ONLY — main goal reaffirmed; implementation/model choices open
+Last updated: 2026-09-11
+Status: DIRECTION AGREED — documentation finalised; implementation/model choices open
+
+## Final agreement — 2026-09-11
+
+The user approved the final summary and asked to finalise this discussion.
+The authoritative plan is now `docs/product/ml-readiness.md`, linked in MkDocs
+and the research index. Earlier rounds below are historical exploration and must
+not override that plan.
+
+Agreed: camera-first water-condition review; visible bank as the first reference;
+optional markers and assisted selection; visual overlays as supporting evidence;
+clear machine observations separate from human comparison; baseline-first model
+evaluation after the readiness gate. No complete velocity/height library is
+required for the first experiment. Segmentation is optional, not the main product.
+
+The documentation records data quality, grouped splits, privacy, evaluation,
+candidate tool roles, licensing scope, and the first possible temporal experiment.
+The 50–100-window collection target is provisional, not a training gate. Exact
+architecture, numerical targets, normal-reference details and future label mapping
+remain open. No readiness pass, implementation, training or public-warning approval
+is implied. No issue comment or issue closure was requested or performed.
+The user requested a commit. Verification passed in the project `.venv`: Ruff
+format and lint, mypy, 398 Python tests, 16 Home UI JavaScript tests, and the strict
+MkDocs build. Python server tests required permission to open local sockets outside
+the sandbox. The unrelated `.gitignore` edit remains outside this commit.
 
 Current agreed direction (supersedes the narrower proposals in rounds 2–10):
 water-state review remains the main goal, following the existing labeling guide.
@@ -597,9 +621,7 @@ plus a reproducible evaluation record. A successful bounded experiment is an MVP
 model candidate; production/public-warning readiness remains a separate gate.
 The whole plan can still conclude that a simpler non-neural method is preferable
 if the evaluated neural candidates do not improve the defined task.
-'''
-p.write_text(s)
-PY
+
 ## Future production and public-warning path
 
 User asks how the model could ultimately support public flood warnings and production.
@@ -651,3 +673,32 @@ not a certification, official approval, or a complete jurisdiction-specific stan
 Open decisions: pilot location, operational partner, independent evidence, acceptable
 errors and lead time, budget/ownership, and authority process. No final thresholds,
 public-warning algorithm or production deployment selected.
+
+## Video overlays and optional segmentation
+
+The user agreed to document this part of the discussion in the existing project
+docs. This authorises explanatory documentation, not implementation or training.
+The wider model and readiness decisions remain open.
+
+- Main goal: review water conditions and change over time. Riverbank references
+  and segmentation strengthen evidence and help visual baseline selection.
+- A person confirms a visible bank in normal conditions; automatic suggestions
+  may help, with correction and manual selection available. Markers are optional.
+- Proposed player: fixed bank outline and optional normal waterline; changing
+  estimated water boundary, shaded covered bank, observation text and timestamps.
+- Drawing these overlays needs no segmentation library. Browser canvas or OpenCV
+  can draw coordinates. Detecting meaningful boundaries needs separate analysis.
+- Evaluate simple OpenCV methods first; consider SAM 2 or MobileSAM only if useful
+  for the specific task. No segmentation dependency is selected or mandatory.
+- Never animate a waterline solely from pixel-change scores. Keep sampled times
+  explicit; do not imply continuous measurements between observations.
+- Camera movement requires reliable alignment or a stopped comparison. Poor
+  visibility requires an explicit cannot-judge result, not stale estimates.
+- Relative visual changes are not physical water-height measurements without
+  calibration, and bank coverage alone is not proof of flood danger.
+- Human comparison remains separate: missing labels must be explained without
+  hiding available machine evidence.
+
+Documentation added to `docs/architecture/windowed-video-evidence.md` and linked
+from `docs/research/ml-model-options.md`. Both identify overlays as proposed.
+No runtime behavior changed. Tests and formatting checks wait for a commit request.

@@ -2,6 +2,10 @@
 
 This note compares possible machine learning paths for OpenFloodAI.
 
+The [agreed ML readiness plan](../product/ml-readiness.md) records the final
+direction for issue #108 and takes precedence over earlier suggestions below.
+This page provides research background, not an approved dependency list.
+
 Simple meaning: before choosing a model, we should understand what already exists, what can help now, and what is risky.
 
 This is research only. It does not add model code, download data, connect to cloud services, or claim flood detection accuracy.
@@ -43,10 +47,13 @@ Important boundary: OpenFloodAI should not copy private product details, claim t
 
 Segmentation means drawing around parts of an image.
 
-Useful options:
+Candidates for later evaluation:
 
 - [Segment Anything Model 2](https://github.com/facebookresearch/sam2)
-- [Ultralytics YOLO segmentation](https://docs.ultralytics.com/tasks/segment/)
+- [MobileSAM](https://github.com/ChaoningZhang/MobileSAM)
+
+Ultralytics YOLO segmentation remains a research reference, excluded from the
+initial integration shortlist under the agreed licensing preference.
 
 How they may help:
 
@@ -68,7 +75,7 @@ Object detection means finding named things such as people, vehicles, bridges, o
 
 Useful options:
 
-- lightweight YOLO-style detectors
+- lightweight detectors, subject to code and weights license review
 - future custom detectors trained on OpenFloodAI labels
 
 How they may help:
@@ -109,6 +116,26 @@ Main limitation:
 - cannot understand local flood danger by itself
 
 Simple example: if a fixed camera usually sees a rock and later the rock disappears under water, a simple rule may notice the change. A reviewer still needs to decide what that means.
+
+### Visual Markers And Optional Segmentation
+
+Our main goal remains reviewing water conditions and changes over time. Bank
+selection and segmentation are supporting tools, not a replacement for that goal.
+
+Drawing a confirmed bank outline, baseline marker, or status on a video does not
+require a segmentation library. Browser canvas or OpenCV can draw the overlays.
+Automatically finding a water boundary or a bank area now covered by water is a
+separate analysis task. Segmentation may help, but a changed pixel alone is not
+proof of water.
+
+Evaluate a simple OpenCV approach first. SAM 2 or MobileSAM may be candidates for
+assisted selection or boundary estimation if they help on reviewed examples. No
+dependency or model choice is approved here; exact code, weights, and dependency
+licenses still need review before adoption.
+
+See [proposed video overlays](../architecture/windowed-video-evidence.md#proposed-video-overlays)
+for the normal baseline, changing observations, unclear-view handling, and an
+easy example. These overlays are proposed functionality, not current capability.
 
 ## Public Dataset Options
 
@@ -252,7 +279,8 @@ Simple example: if a public gage says water height rose quickly, that can help e
 Good near-term reuse:
 
 - public dataset documentation and label ideas
-- general segmentation models for offline experiments
+- segmentation research and candidate evaluation planning; installation or use
+  requires a separately scoped experiment
 - simple image metrics for baselines
 - USGS-style time-series and site metadata ideas
 - Vertex AI concepts for future experiment tracking

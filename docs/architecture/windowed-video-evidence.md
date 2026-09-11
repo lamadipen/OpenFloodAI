@@ -109,3 +109,79 @@ Revisit the settings if night footage is wrongly rejected, short events are
 missed, variable frame timing is needed, or memory/decoding cost is too high.
 Preserve unknown results when evidence is insufficient. Do not restore first-two-frame
 comparisons as a fallback.
+
+## Proposed Video Overlays
+
+Status: supporting direction agreed in the [ML readiness plan](../product/ml-readiness.md)
+for issue #108; detailed implementation remains proposed. The sampling and review
+images described above already exist; the moving video overlays described here
+are future work.
+
+The main goal remains reviewing water conditions and changes over time, following
+the [labeling guide](../research/labeling-guide.md). Riverbank selection and
+segmentation would help people and the machine see supporting evidence.
+
+### What The User Would See
+
+A person selects a clear view recorded during normal conditions and confirms the
+visible riverbank. The system could suggest a bank outline for the person to
+correct, with manual selection available. A pillar or another stable marker can
+provide an extra reference when available.
+
+The video player could then show:
+
+| Overlay | Meaning | Does it change? |
+| --- | --- | --- |
+| Blue bank outline | The riverbank confirmed in the normal reference view | Stays fixed to the same bank |
+| Dashed baseline line | The water boundary in the normal reference, if visible | Stays fixed |
+| Yellow estimated boundary | Where the machine estimates the water boundary at the displayed observation time | Updates when usable evidence is available |
+| Shaded bank area | Part of the baseline bank estimated to be covered by water now | Updates with the observation |
+| Text and time | The machine observation, its time window, and any visibility problem | Updates with the result |
+
+Colours are illustrative; text and line styles should also explain each overlay.
+The selected bank outline is a reference, not proof that the machine found water.
+The first usable frame in a current validation window is also not automatically
+a confirmed normal-condition baseline.
+
+### Drawing And Detecting Are Separate Jobs
+
+Drawing lines, markers, shading, and text does **not** require a segmentation
+library. Browser canvas or OpenCV drawing tools can display saved coordinates.
+
+Finding a trustworthy water boundary or covered bank area requires image analysis.
+Segmentation, which separates an image into areas, is one possible approach. It
+could help suggest a riverbank for a person to correct or estimate water coverage
+on later frames. It is optional, and its suggestions still need evaluation.
+
+Start by evaluating a simple OpenCV approach on approved examples. Consider SAM 2
+or MobileSAM if they improve the specific selection or boundary task enough to
+justify their cost. No new library or model has been selected. See
+[ML model options](../research/ml-model-options.md#visual-markers-and-optional-segmentation).
+
+### Keep The Display Honest
+
+- Save each observation with its video timestamp, reference, and estimated shape
+  so the player can show the matching evidence. Sampled observations do not prove
+  what happened in every frame between samples; show the actual observation time.
+- Keep the normal baseline anchored to the same physical bank. If the camera
+  moves, align the views reliably or stop the comparison and request review.
+- When the view is unclear, show “Cannot judge — water boundary unclear.” Hide
+  unavailable estimates instead of showing an old boundary as a current result.
+- Do not create a moving waterline from the current pixel-change score alone.
+  Lighting, shadows, or camera movement can also change pixels.
+- Show relative visual change. Do not report centimetres of water-level change
+  without suitable calibration.
+- Keep machine evidence separate from human comparison. A missing human label
+  means “No human label for comparison,” not that machine evidence is unavailable.
+
+### Easy Example
+
+In the normal reference, a strip of riverbank is visible. The user confirms its
+blue outline. Later, reliable analysis estimates that water covers part of that
+strip. The blue outline stays in place, while the yellow boundary and shaded
+area show the new observation. Text could say “More of the reference bank appears
+covered by water” and show the compared times.
+
+If glare hides the boundary in the next observation, show “Cannot judge” rather
+than continuing to move the line. Bank coverage strengthens the evidence; it
+does not by itself establish flood danger or authorise a public warning.
