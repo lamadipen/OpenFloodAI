@@ -11,5 +11,10 @@ Challenge Notes** record what a QA challenge flagged as needing future test
 evidence, plus an overall QA recommendation on production-readiness. Each
 document's own section covers only what is specific to that document.
 
-- [Sample video evidence across each review period](windowed-video-evidence.md)
+- [V1 Architecture](v1-architecture.md)
 - [Dependency Map](dependencies.md)
+- [Windowed Video Evidence](windowed-video-evidence.md)
+- [Validation Input Snapshots](validation-input-snapshots.md)
+- [Run Export Packages](run-export-packages.md)
+- [Data Contracts](data-contracts.md)
+- [Reason Codes](reason-codes.md)
