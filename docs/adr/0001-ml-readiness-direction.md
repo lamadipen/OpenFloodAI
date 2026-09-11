@@ -455,14 +455,14 @@ Candidate work order for discussion, not implementation authorization:
    Judge methods by coverage errors, false changes, unclear cases, correction effort,
    and performance across conditions; define targets before training.
 
-Useful existing code references (relative to this memory file):
-- [Home UI](../tools/openfloodai-home-ui.html)
-- [Config representation](../src/openfloodai/config/site_config.py)
-- [Visual measurements](../src/openfloodai/vision/simple_signals.py)
-- [Sample comparisons](../src/openfloodai/pipeline/local_poc.py)
-- [Human comparison rules](../src/openfloodai/review/label_comparison.py)
-- [Input receipts](../src/openfloodai/validation/input_snapshot.py)
-- [Run exports](../src/openfloodai/validation/run_export.py)
+Useful existing code references (links point at the GitHub source tree):
+- [Home UI](https://github.com/lamadipen/OpenFloodAI/blob/main/tools/openfloodai-home-ui.html)
+- [Config representation](https://github.com/lamadipen/OpenFloodAI/blob/main/src/openfloodai/config/site_config.py)
+- [Visual measurements](https://github.com/lamadipen/OpenFloodAI/blob/main/src/openfloodai/vision/simple_signals.py)
+- [Sample comparisons](https://github.com/lamadipen/OpenFloodAI/blob/main/src/openfloodai/pipeline/local_poc.py)
+- [Human comparison rules](https://github.com/lamadipen/OpenFloodAI/blob/main/src/openfloodai/review/label_comparison.py)
+- [Input receipts](https://github.com/lamadipen/OpenFloodAI/blob/main/src/openfloodai/validation/input_snapshot.py)
+- [Run exports](https://github.com/lamadipen/OpenFloodAI/blob/main/src/openfloodai/validation/run_export.py)
 
 No percentage-complete estimate is justified. Reuse the working review infrastructure;
 the central bank-coverage capability still requires design and measured evaluation.

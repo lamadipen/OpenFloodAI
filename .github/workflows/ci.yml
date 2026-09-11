@@ -47,3 +47,6 @@ jobs:
 
       - name: Build documentation
         run: mkdocs build --strict
+
+      - name: Build classic documentation
+        run: mkdocs build --strict -f mkdocs-classic.yml

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenFloodAI — Your First End-to-End Review</title>
+<style>
+:root{color-scheme:light;--ink:#183042;--blue:#0d6ea8;--line:#d8e4ec;--paper:#f5f9fc}
+*{box-sizing:border-box}body{margin:0;font:17px/1.65 system-ui,sans-serif;color:var(--ink);background:var(--paper)}
+header{background:#0b2f4f;color:white;padding:48px 24px}main,.wrap{max-width:960px;margin:auto}main{padding:20px}
+h1{font-size:clamp(2rem,5vw,3.2rem);line-height:1.15}h2{line-height:1.3;margin-top:0}a{color:#086394}header a{color:#a9eaff}
+section,nav{background:white;border:1px solid var(--line);border-radius:12px;padding:24px;margin:20px 0;scroll-margin-top:16px}
+.steps{display:flex;gap:8px;flex-wrap:wrap;padding:0;list-style:none}.steps a{display:block;border:1px solid var(--line);padding:6px 12px;border-radius:24px;text-decoration:none}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#102c40;color:#eff8ff;padding:18px;border-radius:8px;font-size:14px}code{font-family:ui-monospace,monospace}
+.note{background:#eaf5fb;border-left:4px solid var(--blue);padding:14px 18px;margin:16px 0}.caution{background:#fff6df;border-color:#a96b08}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}.route{padding:16px;background:var(--paper);border-radius:8px}
+.done{display:block;border-top:1px solid var(--line);padding-top:16px;margin-top:20px;font-weight:600}input[type=checkbox]{width:20px;height:20px;vertical-align:middle;margin-right:8px;accent-color:var(--blue)}
+textarea{width:100%;min-height:150px;padding:14px;font:inherit;border:1px solid #7d94a3;border-radius:8px}.eyebrow{letter-spacing:.12em;text-transform:uppercase;font-size:13px}footer{padding:24px;text-align:center}
+.skip{position:absolute;left:-9999px}.skip:focus{left:12px;top:12px;background:white;padding:10px;z-index:2}
+@media print{header{background:white;color:black;padding:12px}main{padding:0}section,nav{break-inside:avoid;box-shadow:none}nav,.skip{display:none}pre{background:#eee;color:black}textarea{min-height:100px}}
+</style>
+</head>
+<body>
+<a class="skip" href="#start">Skip to instructions</a>
+<header><div class="wrap"><div class="eyebrow">Local MVP · Practical guide</div>
+<h1>Your first end-to-end review</h1>
+<p>Create a site, add videos, run validation, and understand the result — without the chat history.</p>
+<p><strong>Plan:</strong> 30–60 minutes · 5 short practice videos · Python 3.12 or newer</p>
+</div></header>
+<main id="start">
+<section aria-labelledby="before"><h2 id="before">Before you start</h2>
+<p>This page is a guide. Run the commands in a terminal on your computer, then use the Home UI. Reading this page does not start validation.</p>
+<div class="grid">
+<div class="route"><h3>Machine-only review</h3><p>Needs a site config, a video, and a watched area. Produces machine evidence. Without a human label, there is no human comparison.</p></div>
+<div class="route"><h3>Human comparison review</h3><p>Add human labels and confirm the manifest. The report compares what the machine measured with what a person saw.</p></div>
+</div>
+<div class="note">Human labels are optional for running validation, but required for comparing the machine result with human review.</div>
+<p>Use synthetic or approved practice videos. Keep sharing unchecked. This workflow does not send public warnings or train a model. A successful run does not prove flood detection accuracy.</p>
+<p>Check the boxes as you go. They are a temporary aid, not a saved test record. Save your notes separately before closing this page.</p>
+</section>
+<nav aria-label="Guide steps"><strong>Jump to a step</strong><ol class="steps">
+<li><a href="#step-1">1 · Start</a></li><li><a href="#step-2">2 · Site</a></li><li><a href="#step-3">3 · Video</a></li><li><a href="#step-4">4 · Area</a></li><li><a href="#step-5">5 · Manifest</a></li><li><a href="#step-6">6 · Machine review</a></li><li><a href="#step-7">7 · Labels</a></li><li><a href="#step-8">8 · Run again</a></li><li><a href="#step-9">9 · Results</a></li><li><a href="#step-10">10 · Finish</a></li>
+</ol></nav>
+<section id="step-1"><h2>1. Start the Home UI</h2>
+<p>Open a terminal in your OpenFloodAI repository folder. For first-time setup on macOS or Linux:</p>
+<pre><code>python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -e ".[dev]"
+python3 scripts/run_openfloodai_home_ui.py</code></pre>
+<details><summary>Windows PowerShell commands</summary><pre><code>py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e ".[dev]"
+python scripts/run_openfloodai_home_ui.py</code></pre><p>If your computer blocks script activation, ask your system administrator or use the Python executable inside the virtual environment directly.</p></details>
+<p>If the environment is already installed, activate it and run only the last command.</p>
+<p>Open <a href="http://127.0.0.1:8765/openfloodai-home-ui.html" target="_blank" rel="noopener">the local Home UI</a>. Keep the terminal running. The page needs this server.</p>
+<label class="done"><input type="checkbox">I can see the Home UI and its guided workflow.</label>
+</section>
+<section id="step-2"><h2>2. Create a practice site</h2>
+<p>Choose <strong>Create Site</strong>. Use these example values:</p>
+<ul><li>Site Name: <strong>MVP Rehearsal</strong></li><li>Folder Name: <strong>mvp-rehearsal</strong> — filled automatically</li><li>Site ID: <strong>site-mvp-rehearsal</strong></li><li>Camera ID: <strong>camera-mvp-rehearsal</strong></li><li>Privacy Notes: <strong>Practice videos only.</strong></li></ul>
+<p>Choose <strong>Create Folder Structure</strong>. If that folder already exists, choose another name. Select your new site in the workflow.</p>
+<label class="done"><input type="checkbox">The site appears and its config is found.</label>
+</section>
+<section id="step-3"><h2>3. Choose a video and enter its details</h2>
+<p>Choose <strong>Add Video</strong> to open <strong>Add Video To Site</strong>. Select your practice site and a short local video.</p>
+<ul><li>Video ID: use a unique name such as <strong>practice-01</strong>.</li><li>Video purpose: choose why this video is useful.</li><li>Dataset group: choose <strong>practice</strong>.</li><li>Difficult case type: leave <strong>No difficult case</strong> unless it applies.</li><li>Video notes: write one sentence, such as “Clear view of the bridge; water looks steady.”</li></ul>
+<div class="note caution">Keep <strong>Safe to share in repository</strong> unchecked. This form copies the file locally and updates its manifest details. Human labels are added separately.</div>
+<p>Do not save yet if the watched area is still missing. Complete step 4 in the same form.</p>
+<details><summary>I need safe synthetic practice files</summary><p>With the environment activated, run:</p>
+<pre><code>python3 -m pytest tests/ui/test_home_server.py::test_mvp_rehearsal_setup_to_five_video_result_review -q -s</code></pre>
+<p>The test prints <strong>Synthetic rehearsal files:</strong> followed by a temporary folder. It contains five source AVI files. Select those files for a new manual practice site. They are simple grey scenes, not flood footage. Use “I cannot judge from this video” if you cannot identify water behavior.</p>
+<p>Some browsers cannot preview AVI. Record that issue or use an approved browser-compatible local MP4. Do not skip watched-area selection and call the rehearsal complete.</p></details>
+<label class="done"><input type="checkbox">I selected the right video and entered its details.</label>
+</section>
+<section id="step-4"><h2>4. Choose the watched area and save</h2>
+<p>Use the video controls to choose a clear frame. Drag a rectangle around a fixed riverbank, bridge pillar, or other useful reference area. Avoid a black opening frame.</p>
+<p>Choose <strong>Copy Video And Update Manifest</strong>. Confirm the watched-area step is complete.</p>
+<div class="note">The watched area is saved in the site's config. Use clips from the same camera view. Choosing an area for a later video can replace the site's saved area.</div>
+<p>Repeat steps 3–4 until the site contains five videos. Give each a different Video ID. You can repeat with ten videos later.</p>
+<label class="done"><input type="checkbox">Five videos are listed and the watched area is saved.</label>
+</section>
+<section id="step-5"><h2>5. Confirm the manifest</h2>
+<p>The <strong>manifest.jsonl</strong> file is the list of video details. You should not need to edit it by hand.</p>
+<p>Open the <strong>Manifest</strong> workflow step. Check that all five videos are tracked. If it says missing or incomplete, use its create/repair action and read the result message.</p>
+<p>Existing notes should remain, and sharing should stay off. If repair reports a conflict, record it instead of ignoring it.</p>
+<label class="done"><input type="checkbox">The manifest tracks all five videos.</label>
+</section>
+<section id="step-6"><h2>6. Try a machine-only run</h2>
+<p>Before adding labels, read the <strong>Run validation</strong> readiness summary. Confirm the site, videos, watched area, and local output destination.</p>
+<p>Run validation. With no labels, the report should clearly say human comparison is unavailable. <strong>Cannot compare</strong> is expected; it does not mean the software failed to run.</p>
+<label class="done"><input type="checkbox">A machine-only run exists and missing labels are explained.</label>
+</section>
+<section id="step-7"><h2>7. Add a human label for each video</h2>
+<p>Choose <strong>Add Label</strong>. Select the site and an existing Video ID. Enter a start and end time in seconds, within the video's actual duration.</p>
+<div class="note"><strong>Example:</strong> You review seconds 0–10. If the water looks steady, choose <strong>No clear water change</strong>. If you cannot see clearly, choose <strong>I cannot judge from this video</strong>.</div>
+<p>Choose what you actually see, add useful reviewer notes, and save the label. Repeat for all five videos. A period ending at 10 seconds uses frames before 10 seconds; the end time is excluded.</p>
+<p>A human label is a comparison reference. It does not train the machine or force agreement.</p>
+<label class="done"><input type="checkbox">Each of my five videos has a human-reviewed time period.</label>
+</section>
+<section id="step-8"><h2>8. Run with human labels</h2>
+<p>Read the readiness summary again. Check config, video count, watched area, human labels, manifest, and output location. Resolve blockers or record them.</p>
+<p>Choose <strong>Run Validation</strong> and wait. This creates a new folder under <strong>outputs/runs/</strong>. The earlier run should remain unchanged.</p>
+<label class="done"><input type="checkbox">The new run finished and the earlier run is still available.</label>
+</section>
+<section id="step-9"><h2>9. Review the result, not just the completion message</h2>
+<ul><li><strong>Agree:</strong> the human label and current machine evidence match. This is not proof of flood accuracy or water direction.</li><li><strong>Disagree:</strong> they do not match. Review the label period, watched area, and images.</li><li><strong>Cannot compare:</strong> evidence or a label is missing or unclear. Do not count it as success.</li></ul>
+<p>Check the Home UI counts and open the report, scorecard, comparison notes, and images. If the UI shows a path without an open action, open that path in your editor or file manager.</p>
+<pre><code>data/sites/mvp-rehearsal/outputs/runs/&lt;run-id&gt;/
+  validation-report.md
+  scorecard.json
+  run-metadata.json
+  records/&lt;video-id&gt;.jsonl
+  review-images/&lt;video-id&gt;/
+  videos/&lt;video-id&gt;/summary.md
+  videos/&lt;video-id&gt;/label-comparison.md</code></pre>
+<p>Check the image time captions against the label period. A dark clip may have no comparison images; its report should explain why. Even with labels, the generated grey clips may all remain cannot_compare.</p>
+<label class="done"><input type="checkbox">I can explain one result and one unclear case using the saved evidence.</label>
+</section>
+<section id="step-10"><h2>10. Record what worked and what was confusing</h2>
+<p>Do not change labels just to increase the Agree count. Record failures and questions so the next contributor has a better workflow.</p>
+<label for="rehearsal-notes"><strong>Your rehearsal notes</strong> — copy these into a local text file before closing:</label>
+<textarea id="rehearsal-notes" spellcheck="true">Date and commit:
+OS / browser:
+Number of videos:
+Machine-only run path:
+Human-comparison run path:
+Agree / Disagree / Cannot compare:
+Confusing steps or exact errors:
+Could I finish without help? Yes / No
+What needs fixing next:
+</textarea>
+<p>No information in this box is sent anywhere. This guide has no network scripts or save service. Use your browser's Print command if you want a paper checklist.</p>
+<p>Stop the Home UI server with <strong>Ctrl+C</strong>. Leave practice media and output files out of commits.</p>
+<label class="done"><input type="checkbox">I saved my notes and recorded any unfinished steps honestly.</label>
+</section>
+<section><h2>If something goes wrong</h2>
+<ul><li><strong>Page will not open:</strong> check that the server terminal is still running and use the local address from step 1.</li><li><strong>Video will not preview:</strong> try an approved browser-compatible file and record the original format/browser.</li><li><strong>Run is blocked:</strong> read the missing items in readiness, especially the watched area.</li><li><strong>Labels exist but comparison is unclear:</strong> check exact Video ID, time period, frame quality, and detailed notes.</li><li><strong>“Nones to Nones” in a report:</strong> this is a known wording problem for an empty usable range. It means there were no usable frame times.</li></ul>
+<p>The workflow is not independently verified until a contributor completes these steps without help. The automated rehearsal alone does not prove that.</p>
+</section>
+</main>
+<footer>OpenFloodAI · Local review evidence · No official public warnings</footer>
+</body>
+</html>
