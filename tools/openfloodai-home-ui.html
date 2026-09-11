@@ -130,6 +130,7 @@
       body[data-view="guided"] main > #setupForm,
       body[data-view="guided"] main > #videoFormPanel,
       body[data-view="guided"] main > #watchedAreaFormPanel,
+      body[data-view="guided"] main > #confirmedReferenceFormPanel,
       body[data-view="guided"] main > #labelFormPanel {
         display: none;
       }
@@ -177,6 +178,28 @@
         background: var(--accent);
         box-shadow: 0 8px 18px rgba(23, 105, 170, 0.22);
         transform: translateY(-1px);
+      }
+
+      .setup-phase-tab {
+        background: #fff;
+        border: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 700;
+        min-height: 34px;
+        padding: 6px 12px;
+      }
+
+      .setup-phase-tab.is-active {
+        background: var(--accent-strong);
+        border-color: var(--accent-strong);
+        color: #fff;
+      }
+
+      .setup-phase-tab:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+        transform: none;
       }
 
       .site-action-link {
@@ -893,10 +916,43 @@
           </div>
           <div style="grid-column: span 2;">
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Watched area *</label>
+            <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+              <button type="button" id="setupPhaseWatchedAreaTab" class="setup-phase-tab is-active">1. Watched Area</button>
+              <button type="button" id="setupPhaseConfirmedReferenceTab" class="setup-phase-tab" disabled>2. Confirmed Reference (optional)</button>
+            </div>
             <video id="setupVideoPreview" controls preload="metadata" style="display: none; margin-top: 8px; max-width: 100%; width: 100%; background: #182b35;"></video>
             <canvas id="setupVideoRegionCanvas" class="video-region-canvas" width="800" height="450" aria-label="Select watched area from first video" style="display: none;"></canvas>
             <input type="hidden" name="reference_region" id="setupReferenceRegionInput">
             <div class="meta" id="setupVideoRegionStatus" role="status" style="margin-top: 6px;">Choose a video to select the watched area.</div>
+
+            <div id="setupConfirmedReferenceSection" style="display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line);">
+              <label style="display: block; font-weight: 700; margin-bottom: 4px;">Stable extra markers (optional)</label>
+              <div class="meta">Bridge pillars, rocks, wall edges, or other stable visible features.</div>
+              <div style="display: flex; gap: 8px; align-items: center; margin-top: 6px;">
+                <button type="button" id="setupAddMarkerButton" style="font-size: 13px; min-height: 34px; padding: 6px 12px;">+ Add Marker</button>
+              </div>
+              <div id="setupPendingMarkerControls" style="display: none; gap: 8px; align-items: center; margin-top: 8px;">
+                <input type="text" id="setupMarkerLabelInput" placeholder="e.g. bridge pillar" style="flex: 1; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+                <button type="button" id="setupConfirmMarkerButton" style="font-size: 13px; min-height: 34px; padding: 6px 12px; background: var(--ok); border-color: var(--ok);">Add</button>
+                <button type="button" id="setupCancelMarkerButton" style="font-size: 13px; min-height: 34px; padding: 6px 12px; background: transparent; color: var(--muted); border-color: var(--line);">Cancel</button>
+              </div>
+              <div id="setupConfirmedReferenceMarkersList" style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;"></div>
+              <label style="display: flex; align-items: center; gap: 8px; font-weight: 700; margin-top: 12px;">
+                <input type="checkbox" id="setupNormalConditionCheckbox">
+                Regular river view (usual water level, not flooding or unusually low)
+              </label>
+              <div style="margin-top: 12px;">
+                <label style="display: block; font-weight: 700; margin-bottom: 4px;">Confirmed reference notes</label>
+                <textarea id="setupConfirmedReferenceNotesInput" rows="2" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;" placeholder="e.g. Clear view of the bridge pillar."></textarea>
+              </div>
+              <div style="margin-top: 12px;">
+                <label style="display: block; font-weight: 700; margin-bottom: 4px;">Save the confirmed reference as</label>
+                <select id="setupConfirmedReferenceStatusSelect" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+                  <option value="draft">Draft (needs confirmation later)</option>
+                  <option value="confirmed">Confirmed now</option>
+                </select>
+              </div>
+            </div>
           </div>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Site Name *</label>
@@ -1048,6 +1104,81 @@
         </form>
       </section>
 
+      <section id="confirmedReferenceFormPanel" class="form-panel" style="display: none;">
+        <h2 style="margin-top: 0;">Confirm Riverbank Reference</h2>
+        <p class="meta" style="margin-top: 0;">
+          Confirm the visible riverbank inside your watched area. Machine suggestions are
+          drafts until you confirm them. This uses a video already in this site.
+        </p>
+        <div style="display: grid; gap: 16px;">
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Site *</label>
+            <select id="confirmedReferenceSiteSelect" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Video in this site *</label>
+            <select id="confirmedReferenceVideoSelect" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Confirmed reference *</label>
+            <div class="meta">The dashed blue box is your watched area. Choose a frame, then drag inside it to mark the riverbank.</div>
+            <video id="confirmedReferencePreview" controls preload="metadata" style="display: none; margin-top: 8px; max-width: 100%; width: 100%; background: #182b35;"></video>
+            <canvas id="confirmedReferenceCanvas" class="video-region-canvas" width="800" height="450" aria-label="Confirm the riverbank reference inside the watched area" style="display: none;"></canvas>
+            <div class="meta" id="confirmedReferenceStatus" role="status" style="margin-top: 6px;">Choose a video to begin.</div>
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Stable extra markers (optional)</label>
+            <div class="meta">Bridge pillars, rocks, wall edges, or other stable visible features.</div>
+            <div style="display: flex; gap: 8px; align-items: center; margin-top: 6px;">
+              <button type="button" id="addMarkerButton" style="font-size: 13px; min-height: 34px; padding: 6px 12px;">+ Add Marker</button>
+            </div>
+            <div id="pendingMarkerControls" style="display: none; gap: 8px; align-items: center; margin-top: 8px;">
+              <input type="text" id="markerLabelInput" placeholder="e.g. bridge pillar" style="flex: 1; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+              <button type="button" id="confirmMarkerButton" style="font-size: 13px; min-height: 34px; padding: 6px 12px; background: var(--ok); border-color: var(--ok);">Add</button>
+              <button type="button" id="cancelMarkerButton" style="font-size: 13px; min-height: 34px; padding: 6px 12px; background: transparent; color: var(--muted); border-color: var(--line);">Cancel</button>
+            </div>
+            <div id="confirmedReferenceMarkersList" style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;"></div>
+          </div>
+          <label style="display: flex; align-items: center; gap: 8px; font-weight: 700;">
+            <input type="checkbox" id="normalConditionCheckbox">
+            Regular river view (usual water level, not flooding or unusually low)
+          </label>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Notes</label>
+            <textarea id="confirmedReferenceNotesInput" rows="3" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;" placeholder="e.g. Clear view of the bridge pillar."></textarea>
+          </div>
+          <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+            <button type="button" id="saveConfirmedReferenceDraftButton" style="background: var(--accent-strong); border-color: var(--accent-strong);">Save As Draft</button>
+            <button type="button" id="saveConfirmedReferenceConfirmedButton" style="background: var(--ok); border-color: var(--ok);">Save &amp; Confirm</button>
+            <button type="button" id="cancelConfirmedReference" style="background: transparent; color: var(--muted); border-color: var(--line);">Cancel</button>
+          </div>
+        </div>
+
+        <div id="invalidateReferenceSection" style="display: none; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line);">
+          <h3 style="margin-top: 0;">Invalidate This Reference</h3>
+          <p class="meta" style="margin-top: 0;">Use this if the camera moved, the view changed, the bank changed, or visibility is no longer reliable.</p>
+          <div style="display: grid; gap: 12px; max-width: 420px;">
+            <div>
+              <label style="display: block; font-weight: 700; margin-bottom: 4px;">Reason *</label>
+              <select id="invalidationReasonSelect" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+                <option value="camera_moved">Camera moved</option>
+                <option value="view_changed">View changed</option>
+                <option value="bank_changed">Bank changed</option>
+                <option value="visibility_unreliable">Visibility no longer reliable</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label style="display: block; font-weight: 700; margin-bottom: 4px;">Notes</label>
+              <input type="text" id="invalidationNotesInput" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+            </div>
+            <div>
+              <button type="button" id="invalidateReferenceButton" style="background: var(--missing); border-color: var(--missing); color: #fff;">Invalidate Reference</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section id="labelFormPanel" class="form-panel" style="display: none;">
         <h2 style="margin-top: 0;">Add Human Label Record</h2>
         <p class="meta" style="margin-top: 0;">
@@ -1143,6 +1274,18 @@
       const setupVideoRegionCanvas = document.querySelector("#setupVideoRegionCanvas");
       const setupReferenceRegionInput = document.querySelector("#setupReferenceRegionInput");
       const setupVideoRegionStatus = document.querySelector("#setupVideoRegionStatus");
+      const setupPhaseWatchedAreaTab = document.querySelector("#setupPhaseWatchedAreaTab");
+      const setupPhaseConfirmedReferenceTab = document.querySelector("#setupPhaseConfirmedReferenceTab");
+      const setupConfirmedReferenceSection = document.querySelector("#setupConfirmedReferenceSection");
+      const setupAddMarkerButton = document.querySelector("#setupAddMarkerButton");
+      const setupPendingMarkerControls = document.querySelector("#setupPendingMarkerControls");
+      const setupMarkerLabelInput = document.querySelector("#setupMarkerLabelInput");
+      const setupConfirmMarkerButton = document.querySelector("#setupConfirmMarkerButton");
+      const setupCancelMarkerButton = document.querySelector("#setupCancelMarkerButton");
+      const setupConfirmedReferenceMarkersList = document.querySelector("#setupConfirmedReferenceMarkersList");
+      const setupNormalConditionCheckbox = document.querySelector("#setupNormalConditionCheckbox");
+      const setupConfirmedReferenceNotesInput = document.querySelector("#setupConfirmedReferenceNotesInput");
+      const setupConfirmedReferenceStatusSelect = document.querySelector("#setupConfirmedReferenceStatusSelect");
       const setupPurposeSelect = document.querySelector("#setupPurposeSelect");
       const setupHardCaseTypeSelect = document.querySelector("#setupHardCaseTypeSelect");
       setupSiteNameInput.addEventListener("input", () => {
@@ -1170,6 +1313,27 @@
       const watchedAreaCanvas = document.querySelector("#watchedAreaCanvas");
       const watchedAreaRegionInput = document.querySelector("#watchedAreaRegionInput");
       const watchedAreaStatus = document.querySelector("#watchedAreaStatus");
+      const confirmedReferenceFormPanel = document.querySelector("#confirmedReferenceFormPanel");
+      const confirmedReferenceSiteSelect = document.querySelector("#confirmedReferenceSiteSelect");
+      const confirmedReferenceVideoSelect = document.querySelector("#confirmedReferenceVideoSelect");
+      const confirmedReferencePreview = document.querySelector("#confirmedReferencePreview");
+      const confirmedReferenceCanvas = document.querySelector("#confirmedReferenceCanvas");
+      const confirmedReferenceStatus = document.querySelector("#confirmedReferenceStatus");
+      const addMarkerButton = document.querySelector("#addMarkerButton");
+      const pendingMarkerControls = document.querySelector("#pendingMarkerControls");
+      const markerLabelInput = document.querySelector("#markerLabelInput");
+      const confirmMarkerButton = document.querySelector("#confirmMarkerButton");
+      const cancelMarkerButton = document.querySelector("#cancelMarkerButton");
+      const confirmedReferenceMarkersList = document.querySelector("#confirmedReferenceMarkersList");
+      const normalConditionCheckbox = document.querySelector("#normalConditionCheckbox");
+      const confirmedReferenceNotesInput = document.querySelector("#confirmedReferenceNotesInput");
+      const saveConfirmedReferenceDraftButton = document.querySelector("#saveConfirmedReferenceDraftButton");
+      const saveConfirmedReferenceConfirmedButton = document.querySelector("#saveConfirmedReferenceConfirmedButton");
+      const cancelConfirmedReference = document.querySelector("#cancelConfirmedReference");
+      const invalidateReferenceSection = document.querySelector("#invalidateReferenceSection");
+      const invalidationReasonSelect = document.querySelector("#invalidationReasonSelect");
+      const invalidationNotesInput = document.querySelector("#invalidationNotesInput");
+      const invalidateReferenceButton = document.querySelector("#invalidateReferenceButton");
       const labelFormPanel = document.querySelector("#labelFormPanel");
       const labelForm = document.querySelector("#labelForm");
       const cancelLabel = document.querySelector("#cancelLabel");
@@ -1198,12 +1362,16 @@
       const requestedSiteName = new URLSearchParams(window.location.search).get("site");
       let latestSites = [];
       let openWorkflowForm = null;
-      const setupVideoRegionSelector = createRegionSelector({
+      const setupVideoRegionSelector = createSiteSetupSelector({
         video: setupVideoPreview,
         canvas: setupVideoRegionCanvas,
         input: setupReferenceRegionInput,
         status: setupVideoRegionStatus,
         emptyText: "Choose a video to select the watched area.",
+        onChange: () => {
+          renderSetupMarkersList();
+          setupPhaseConfirmedReferenceTab.disabled = !setupVideoRegionSelector.canStartConfirmedReference();
+        },
       });
       const videoRegionSelector = createRegionSelector({
         video: videoPreview,
@@ -1218,6 +1386,13 @@
         input: watchedAreaRegionInput,
         status: watchedAreaStatus,
         emptyText: "Choose a video to begin.",
+      });
+      const confirmedReferenceSelector = createConfirmedReferenceSelector({
+        video: confirmedReferencePreview,
+        canvas: confirmedReferenceCanvas,
+        status: confirmedReferenceStatus,
+        emptyText: "Choose a video to begin.",
+        onChange: () => renderConfirmedReferenceMarkersList(),
       });
       let defaultHumanLabelOptions = [
         "water_rising",
@@ -1276,6 +1451,7 @@
           labelSiteSelect.value = currentLabelSite;
         }
         fillWatchedAreaSites(sites);
+        fillConfirmedReferenceSites(sites);
       }
 
       function fillWatchedAreaSites(sites) {
@@ -1334,6 +1510,140 @@
         const query = new URLSearchParams({ folder_name: folderName, video_id: videoId });
         watchedAreaSelector.show(`/api/site-video?${query}`);
       }
+
+      function fillConfirmedReferenceSites(sites) {
+        const current = confirmedReferenceSiteSelect.value;
+        confirmedReferenceSiteSelect.innerHTML = "";
+        for (const site of sites) {
+          const option = document.createElement("option");
+          option.value = site.site_name;
+          option.textContent = site.site_name;
+          confirmedReferenceSiteSelect.append(option);
+        }
+        if (!sites.length) {
+          const option = document.createElement("option");
+          option.value = "";
+          option.textContent = "Create a site first";
+          confirmedReferenceSiteSelect.append(option);
+        }
+        if ([...confirmedReferenceSiteSelect.options].some((option) => option.value === current)) {
+          confirmedReferenceSiteSelect.value = current;
+        }
+        fillConfirmedReferenceVideos();
+      }
+
+      function fillConfirmedReferenceVideos() {
+        const site = latestSites.find(
+          (entry) => entry.site_name === confirmedReferenceSiteSelect.value
+        );
+        const videoIds = (site && site.video_ids) || [];
+        confirmedReferenceVideoSelect.innerHTML = "";
+        confirmedReferenceSelector.reset();
+        updateInvalidateVisibility(null);
+        if (!videoIds.length) {
+          const option = document.createElement("option");
+          option.value = "";
+          option.textContent = "Add a video to this site first";
+          confirmedReferenceVideoSelect.append(option);
+          confirmedReferenceStatus.textContent = "This site has no video yet. Add a video first.";
+          return;
+        }
+        const chooseOption = document.createElement("option");
+        chooseOption.value = "";
+        chooseOption.textContent = "Choose a video";
+        confirmedReferenceVideoSelect.append(chooseOption);
+        for (const videoId of videoIds) {
+          const option = document.createElement("option");
+          option.value = videoId;
+          option.textContent = videoId;
+          confirmedReferenceVideoSelect.append(option);
+        }
+        if (site && !site.reference_region) {
+          confirmedReferenceStatus.textContent = "Set the watched area for this site first.";
+        }
+        const existingVideoId = site && site.confirmed_reference && site.confirmed_reference.video_id;
+        if (existingVideoId && videoIds.includes(existingVideoId)) {
+          confirmedReferenceVideoSelect.value = existingVideoId;
+          showConfirmedReferenceVideo();
+        }
+      }
+
+      function showConfirmedReferenceVideo() {
+        const folderName = confirmedReferenceSiteSelect.value;
+        const videoId = confirmedReferenceVideoSelect.value;
+        if (!folderName || !videoId) {
+          confirmedReferenceSelector.reset();
+          updateInvalidateVisibility(null);
+          return;
+        }
+        const site = latestSites.find((entry) => entry.site_name === folderName);
+        const guideRegion = site && site.reference_region ? site.reference_region : null;
+        const existingRecord =
+          site && site.confirmed_reference && site.confirmed_reference.video_id === videoId
+            ? site.confirmed_reference
+            : null;
+        const query = new URLSearchParams({ folder_name: folderName, video_id: videoId });
+        confirmedReferenceSelector.show(`/api/site-video?${query}`, {
+          guideRegion,
+          existing: existingRecord
+            ? {
+                region: existingRecord.region,
+                markers: existingRecord.markers || [],
+                videoTimeSeconds: existingRecord.video_time_seconds,
+              }
+            : null,
+        });
+        normalConditionCheckbox.checked = existingRecord ? Boolean(existingRecord.normal_condition) : false;
+        confirmedReferenceNotesInput.value = existingRecord ? existingRecord.notes || "" : "";
+        updateInvalidateVisibility(existingRecord);
+      }
+
+      function updateInvalidateVisibility(existingRecord) {
+        const canInvalidate = Boolean(existingRecord) && existingRecord.status !== "invalid";
+        invalidateReferenceSection.style.display = canInvalidate ? "block" : "none";
+      }
+
+      function renderConfirmedReferenceMarkersList() {
+        const markers = confirmedReferenceSelector.markers();
+        confirmedReferenceMarkersList.innerHTML = markers.length
+          ? markers
+              .map(
+                (marker, index) => `
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <span class="badge" style="background: var(--surface-yellow); color: #a96b08;">${escapeHtml(marker.label)}</span>
+                    <button type="button" onclick="removeConfirmedReferenceMarker(${index})" style="font-size: 12px; min-height: 28px; padding: 4px 10px; background: transparent; color: var(--muted); border-color: var(--line);">Remove</button>
+                  </div>
+                `
+              )
+              .join("")
+          : '<div class="meta">No markers added yet.</div>';
+      }
+
+      window.removeConfirmedReferenceMarker = function (index) {
+        confirmedReferenceSelector.removeMarker(index);
+        renderConfirmedReferenceMarkersList();
+      };
+
+      function renderSetupMarkersList() {
+        const markers = setupVideoRegionSelector.markers();
+        setupConfirmedReferenceMarkersList.innerHTML = markers.length
+          ? markers
+              .map(
+                (marker, index) => `
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <span class="badge" style="background: var(--surface-yellow); color: #a96b08;">${escapeHtml(marker.label)}</span>
+                    <button type="button" onclick="removeSetupMarker(${index})" style="font-size: 12px; min-height: 28px; padding: 4px 10px; background: transparent; color: var(--muted); border-color: var(--line);">Remove</button>
+                  </div>
+                `
+              )
+              .join("")
+          : '<div class="meta">No markers added yet.</div>';
+      }
+
+      window.removeSetupMarker = function (index) {
+        setupVideoRegionSelector.removeMarker(index);
+        renderSetupMarkersList();
+      };
 
       const humanLabelDisplayLabels = {
         water_rising: "Water is rising",
@@ -1590,6 +1900,503 @@
         };
       }
 
+      // Draws a fixed guide rectangle (the site's watched area) plus one draggable
+      // confirmed-reference rectangle and a set of named marker rectangles.
+      function createConfirmedReferenceSelector({ video, canvas, status, emptyText, onChange }) {
+        const context = canvas.getContext("2d");
+        let guideRegion = null;
+        let mainSelection = null;
+        let pendingMarker = null;
+        let markers = [];
+        let dragStart = null;
+        let drawMode = "main";
+        let objectUrl = null;
+        let pendingExisting = null;
+
+        function canvasPoint(event) {
+          const bounds = canvas.getBoundingClientRect();
+          return {
+            x: Math.max(0, Math.min(canvas.width, ((event.clientX - bounds.left) * canvas.width) / bounds.width)),
+            y: Math.max(0, Math.min(canvas.height, ((event.clientY - bounds.top) * canvas.height) / bounds.height)),
+          };
+        }
+
+        function toPercent(rect) {
+          return {
+            x: Number(((rect.x / canvas.width) * 100).toFixed(6)),
+            y: Number(((rect.y / canvas.height) * 100).toFixed(6)),
+            width: Number(((rect.width / canvas.width) * 100).toFixed(6)),
+            height: Number(((rect.height / canvas.height) * 100).toFixed(6)),
+          };
+        }
+
+        function toPixels(percentRect) {
+          return {
+            x: (percentRect.x / 100) * canvas.width,
+            y: (percentRect.y / 100) * canvas.height,
+            width: (percentRect.width / 100) * canvas.width,
+            height: (percentRect.height / 100) * canvas.height,
+          };
+        }
+
+        function drawMarkerRect(rect, label) {
+          context.save();
+          context.fillStyle = "rgba(217, 119, 6, 0.2)";
+          context.strokeStyle = "#d97706";
+          context.lineWidth = 2;
+          context.fillRect(rect.x, rect.y, rect.width, rect.height);
+          context.strokeRect(rect.x, rect.y, rect.width, rect.height);
+          context.fillStyle = "#a96b08";
+          context.font = "12px system-ui, sans-serif";
+          context.fillText(label, rect.x + 2, Math.max(12, rect.y - 4));
+          context.restore();
+        }
+
+        function clearSelection() {
+          mainSelection = null;
+        }
+
+        function draw() {
+          if (!video.videoWidth || video.readyState < 2) {
+            return;
+          }
+          const scale = Math.min(1, 800 / video.videoWidth);
+          canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+          canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+          context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+          if (pendingExisting) {
+            mainSelection = toPixels(pendingExisting.region);
+            markers = (pendingExisting.markers || []).map((marker) => ({
+              label: marker.label,
+              pixelRect: toPixels(marker.region),
+              region: marker.region,
+            }));
+            pendingExisting = null;
+          }
+
+          if (guideRegion) {
+            const guide = toPixels(guideRegion);
+            context.save();
+            context.setLineDash([6, 4]);
+            context.strokeStyle = "#0d4d7d";
+            context.lineWidth = 2;
+            context.strokeRect(guide.x, guide.y, guide.width, guide.height);
+            context.restore();
+          }
+
+          for (const marker of markers) {
+            drawMarkerRect(marker.pixelRect, marker.label);
+          }
+          if (pendingMarker) {
+            drawMarkerRect(pendingMarker, "New marker");
+          }
+
+          if (mainSelection) {
+            context.fillStyle = "rgba(8, 127, 91, 0.2)";
+            context.strokeStyle = "#087f5b";
+            context.lineWidth = 3;
+            context.fillRect(mainSelection.x, mainSelection.y, mainSelection.width, mainSelection.height);
+            context.strokeRect(mainSelection.x, mainSelection.y, mainSelection.width, mainSelection.height);
+            status.textContent = `Selected at ${video.currentTime.toFixed(1)} seconds.`;
+          }
+          if (onChange) {
+            onChange();
+          }
+        }
+
+        function reset() {
+          clearSelection();
+          pendingMarker = null;
+          markers = [];
+          guideRegion = null;
+          pendingExisting = null;
+          dragStart = null;
+          drawMode = "main";
+          canvas.style.display = "none";
+          video.style.display = "none";
+          status.textContent = emptyText;
+          if (objectUrl) {
+            URL.revokeObjectURL(objectUrl);
+            objectUrl = null;
+          }
+          video.removeAttribute("src");
+          video.load();
+          if (onChange) {
+            onChange();
+          }
+        }
+
+        function show(source, { revokeWhenDone = false, guideRegion: initialGuide = null, existing = null } = {}) {
+          reset();
+          guideRegion = initialGuide;
+          pendingExisting = existing;
+          objectUrl = revokeWhenDone ? source : null;
+          video.src = source;
+          video.style.display = "block";
+          canvas.style.display = "block";
+          status.textContent =
+            "Move to a frame, pause it, then drag inside the watched area to mark the riverbank.";
+        }
+
+        video.addEventListener("loadedmetadata", () => {
+          video.currentTime = pendingExisting && pendingExisting.videoTimeSeconds ? pendingExisting.videoTimeSeconds : 0;
+          draw();
+        });
+        video.addEventListener("seeked", draw);
+
+        canvas.addEventListener("pointerdown", (event) => {
+          if (!video.videoWidth) {
+            status.textContent = "Choose a video first.";
+            return;
+          }
+          video.pause();
+          canvas.setPointerCapture(event.pointerId);
+          dragStart = canvasPoint(event);
+          if (drawMode === "main") {
+            clearSelection();
+          } else {
+            pendingMarker = null;
+          }
+          draw();
+        });
+        canvas.addEventListener("pointermove", (event) => {
+          if (!dragStart) {
+            return;
+          }
+          const rect = normalizedVideoRect(dragStart, canvasPoint(event));
+          if (drawMode === "main") {
+            mainSelection = rect;
+          } else {
+            pendingMarker = rect;
+          }
+          draw();
+        });
+        canvas.addEventListener("pointerup", (event) => {
+          if (!dragStart) {
+            return;
+          }
+          const rect = normalizedVideoRect(dragStart, canvasPoint(event));
+          dragStart = null;
+          if (rect.width < 4 || rect.height < 4) {
+            if (drawMode === "main") {
+              clearSelection();
+              status.textContent = "Drag a larger rectangle to mark the riverbank.";
+            } else {
+              pendingMarker = null;
+              status.textContent = "Drag a larger rectangle for the marker.";
+            }
+            draw();
+            return;
+          }
+          if (drawMode === "main") {
+            mainSelection = rect;
+          } else {
+            pendingMarker = rect;
+          }
+          draw();
+        });
+
+        return {
+          show,
+          reset,
+          hasSelection: () => mainSelection !== null,
+          region: () => (mainSelection ? toPercent(mainSelection) : null),
+          startMarkerMode: () => {
+            drawMode = "marker";
+            status.textContent = "Drag on the video to draw the marker's area.";
+          },
+          hasPendingMarker: () => pendingMarker !== null,
+          commitPendingMarker: (label) => {
+            if (!pendingMarker) {
+              return false;
+            }
+            markers.push({ label, pixelRect: pendingMarker, region: toPercent(pendingMarker) });
+            pendingMarker = null;
+            drawMode = "main";
+            draw();
+            return true;
+          },
+          cancelPendingMarker: () => {
+            pendingMarker = null;
+            drawMode = "main";
+            draw();
+          },
+          removeMarker: (index) => {
+            markers.splice(index, 1);
+            draw();
+          },
+          markers: () => markers.map((marker) => ({ label: marker.label, region: marker.region })),
+        };
+      }
+
+      // Two-phase selector for the Create Site form: phase 1 draws the broad
+      // watched area (kept in `input` for the multipart form submit, same as
+      // the original single-rectangle selector); phase 2 (optional) freezes
+      // that rectangle as a guide and draws the smaller confirmed-reference
+      // rectangle plus named markers inside it, on the same canvas.
+      function createSiteSetupSelector({ video, canvas, input, status, emptyText, onChange }) {
+        const context = canvas.getContext("2d");
+        let phase = "watched_area";
+        let watchedAreaSelection = null;
+        let mainSelection = null;
+        let pendingMarker = null;
+        let markers = [];
+        let dragStart = null;
+        let markerMode = false;
+        let objectUrl = null;
+
+        function canvasPoint(event) {
+          const bounds = canvas.getBoundingClientRect();
+          return {
+            x: Math.max(0, Math.min(canvas.width, ((event.clientX - bounds.left) * canvas.width) / bounds.width)),
+            y: Math.max(0, Math.min(canvas.height, ((event.clientY - bounds.top) * canvas.height) / bounds.height)),
+          };
+        }
+
+        function toPercent(rect) {
+          return {
+            x: Number(((rect.x / canvas.width) * 100).toFixed(6)),
+            y: Number(((rect.y / canvas.height) * 100).toFixed(6)),
+            width: Number(((rect.width / canvas.width) * 100).toFixed(6)),
+            height: Number(((rect.height / canvas.height) * 100).toFixed(6)),
+          };
+        }
+
+        function drawMarkerRect(rect, label) {
+          context.save();
+          context.fillStyle = "rgba(217, 119, 6, 0.2)";
+          context.strokeStyle = "#d97706";
+          context.lineWidth = 2;
+          context.fillRect(rect.x, rect.y, rect.width, rect.height);
+          context.strokeRect(rect.x, rect.y, rect.width, rect.height);
+          context.fillStyle = "#a96b08";
+          context.font = "12px system-ui, sans-serif";
+          context.fillText(label, rect.x + 2, Math.max(12, rect.y - 4));
+          context.restore();
+        }
+
+        function draw() {
+          if (!video.videoWidth || video.readyState < 2) {
+            return;
+          }
+          const scale = Math.min(1, 800 / video.videoWidth);
+          canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+          canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+          context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+          if (watchedAreaSelection) {
+            if (phase === "watched_area") {
+              context.fillStyle = "rgba(8, 127, 91, 0.2)";
+              context.strokeStyle = "#087f5b";
+              context.lineWidth = 3;
+              context.fillRect(
+                watchedAreaSelection.x,
+                watchedAreaSelection.y,
+                watchedAreaSelection.width,
+                watchedAreaSelection.height
+              );
+              context.strokeRect(
+                watchedAreaSelection.x,
+                watchedAreaSelection.y,
+                watchedAreaSelection.width,
+                watchedAreaSelection.height
+              );
+              input.value = JSON.stringify(toPercent(watchedAreaSelection));
+              status.textContent = `Watched area selected at ${video.currentTime.toFixed(1)} seconds.`;
+            } else {
+              context.save();
+              context.setLineDash([6, 4]);
+              context.strokeStyle = "#0d4d7d";
+              context.lineWidth = 2;
+              context.strokeRect(
+                watchedAreaSelection.x,
+                watchedAreaSelection.y,
+                watchedAreaSelection.width,
+                watchedAreaSelection.height
+              );
+              context.restore();
+            }
+          }
+
+          if (phase === "confirmed_reference") {
+            for (const marker of markers) {
+              drawMarkerRect(marker.pixelRect, marker.label);
+            }
+            if (pendingMarker) {
+              drawMarkerRect(pendingMarker, "New marker");
+            }
+            if (mainSelection) {
+              context.fillStyle = "rgba(8, 127, 91, 0.2)";
+              context.strokeStyle = "#087f5b";
+              context.lineWidth = 3;
+              context.fillRect(mainSelection.x, mainSelection.y, mainSelection.width, mainSelection.height);
+              context.strokeRect(mainSelection.x, mainSelection.y, mainSelection.width, mainSelection.height);
+              status.textContent = `Confirmed reference selected at ${video.currentTime.toFixed(1)} seconds.`;
+            }
+          }
+          if (onChange) {
+            onChange();
+          }
+        }
+
+        function clearSelection() {
+          watchedAreaSelection = null;
+          input.value = "";
+        }
+
+        function reset() {
+          clearSelection();
+          mainSelection = null;
+          pendingMarker = null;
+          markers = [];
+          dragStart = null;
+          markerMode = false;
+          phase = "watched_area";
+          canvas.style.display = "none";
+          video.style.display = "none";
+          status.textContent = emptyText;
+          if (objectUrl) {
+            URL.revokeObjectURL(objectUrl);
+            objectUrl = null;
+          }
+          video.removeAttribute("src");
+          video.load();
+          if (onChange) {
+            onChange();
+          }
+        }
+
+        function show(source, { revokeWhenDone = false } = {}) {
+          reset();
+          objectUrl = revokeWhenDone ? source : null;
+          video.src = source;
+          video.style.display = "block";
+          canvas.style.display = "block";
+          status.textContent = "Move to a frame, pause it, then drag to select the watched area.";
+        }
+
+        video.addEventListener("loadedmetadata", () => {
+          video.currentTime = 0;
+          draw();
+        });
+        video.addEventListener("seeked", draw);
+
+        canvas.addEventListener("pointerdown", (event) => {
+          if (!video.videoWidth) {
+            status.textContent = "Choose a video first.";
+            return;
+          }
+          video.pause();
+          canvas.setPointerCapture(event.pointerId);
+          dragStart = canvasPoint(event);
+          if (phase === "watched_area") {
+            clearSelection();
+          } else if (markerMode) {
+            pendingMarker = null;
+          } else {
+            mainSelection = null;
+          }
+          draw();
+        });
+        canvas.addEventListener("pointermove", (event) => {
+          if (!dragStart) {
+            return;
+          }
+          const rect = normalizedVideoRect(dragStart, canvasPoint(event));
+          if (phase === "watched_area") {
+            watchedAreaSelection = rect;
+          } else if (markerMode) {
+            pendingMarker = rect;
+          } else {
+            mainSelection = rect;
+          }
+          draw();
+        });
+        canvas.addEventListener("pointerup", (event) => {
+          if (!dragStart) {
+            return;
+          }
+          const rect = normalizedVideoRect(dragStart, canvasPoint(event));
+          dragStart = null;
+          if (rect.width < 4 || rect.height < 4) {
+            if (phase === "watched_area") {
+              clearSelection();
+              status.textContent = "Drag a larger rectangle around the watched area.";
+            } else if (markerMode) {
+              pendingMarker = null;
+              status.textContent = "Drag a larger rectangle for the marker.";
+            } else {
+              mainSelection = null;
+              status.textContent = "Drag a larger rectangle to mark the riverbank.";
+            }
+            draw();
+            return;
+          }
+          if (phase === "watched_area") {
+            watchedAreaSelection = rect;
+          } else if (markerMode) {
+            pendingMarker = rect;
+          } else {
+            mainSelection = rect;
+          }
+          draw();
+        });
+
+        return {
+          show,
+          reset,
+          hasSelection: () => watchedAreaSelection !== null,
+          region: () => (watchedAreaSelection ? toPercent(watchedAreaSelection) : null),
+          canStartConfirmedReference: () => watchedAreaSelection !== null,
+          goToWatchedAreaPhase: () => {
+            phase = "watched_area";
+            markerMode = false;
+            status.textContent = watchedAreaSelection
+              ? `Watched area selected at ${video.currentTime.toFixed(1)} seconds.`
+              : "Move to a frame, pause it, then drag to select the watched area.";
+            draw();
+          },
+          goToConfirmedReferencePhase: () => {
+            if (!watchedAreaSelection) {
+              return;
+            }
+            phase = "confirmed_reference";
+            markerMode = false;
+            status.textContent = "Drag inside the dashed watched area to mark the riverbank (optional).";
+            draw();
+          },
+          phase: () => phase,
+          hasConfirmedReferenceSelection: () => mainSelection !== null,
+          confirmedReferenceRegion: () => (mainSelection ? toPercent(mainSelection) : null),
+          startMarkerMode: () => {
+            markerMode = true;
+            status.textContent = "Drag on the video to draw the marker's area.";
+          },
+          hasPendingMarker: () => pendingMarker !== null,
+          commitPendingMarker: (label) => {
+            if (!pendingMarker) {
+              return false;
+            }
+            markers.push({ label, pixelRect: pendingMarker, region: toPercent(pendingMarker) });
+            pendingMarker = null;
+            markerMode = false;
+            draw();
+            return true;
+          },
+          cancelPendingMarker: () => {
+            pendingMarker = null;
+            markerMode = false;
+            draw();
+          },
+          removeMarker: (index) => {
+            markers.splice(index, 1);
+            draw();
+          },
+          markers: () => markers.map((marker) => ({ label: marker.label, region: marker.region })),
+        };
+      }
+
       function resetVideoPreview() {
         videoRegionSelector.reset();
       }
@@ -1602,6 +2409,8 @@
         setupForm.style.display = "none";
         videoFormPanel.style.display = "none";
         watchedAreaFormPanel.style.display = "none";
+        confirmedReferenceFormPanel.style.display = "none";
+        pendingMarkerControls.style.display = "none";
         labelFormPanel.style.display = "none";
         createSiteButton.style.display = "inline-block";
         addLabelButton.style.display = "inline-block";
@@ -1626,6 +2435,43 @@
 
       function countText(count, singular, plural) {
         return count === 1 ? `1 ${singular}` : `${count} ${plural}`;
+      }
+
+      const invalidationReasonLabels = {
+        camera_moved: "camera moved",
+        view_changed: "view changed",
+        bank_changed: "bank changed",
+        visibility_unreliable: "visibility no longer reliable",
+        other: "other reason",
+      };
+
+      function confirmedReferenceStatusText(site) {
+        const reference = site.confirmed_reference;
+        if (!reference) {
+          return "Not set";
+        }
+        if (reference.status === "confirmed") {
+          return "Confirmed";
+        }
+        if (reference.status === "invalid") {
+          const reason = invalidationReasonLabels[reference.invalidation_reason] || "invalidated";
+          return `Invalid (${reason})`;
+        }
+        return "Draft (needs confirmation)";
+      }
+
+      function confirmedReferenceStatusClass(site) {
+        const reference = site.confirmed_reference;
+        if (!reference) {
+          return "warn";
+        }
+        if (reference.status === "confirmed") {
+          return "ok";
+        }
+        if (reference.status === "invalid") {
+          return "missing";
+        }
+        return "warn";
       }
 
       function reportCountsText(site) {
@@ -2084,6 +2930,7 @@
               ${row("Human comparison", humanComparisonText, site.ready_for_human_comparison ? "ok" : "warn")}
               ${row("Config", `${yesNo(site.config_found)} (${site.config_count})`, classForFound(site.config_found))}
               ${row("Videos", countText(site.video_count, "video", "videos"), site.video_count > 0 ? "ok" : "missing")}
+              ${row("Confirmed reference", confirmedReferenceStatusText(site), confirmedReferenceStatusClass(site))}
               ${row("Labels", `${yesNo(site.labels_found)} (${site.label_count})`, classForFound(site.labels_found))}
               ${row("Manifest", site.manifest_status || yesNo(site.manifest_found), classForFound(site.manifest_status === "Found"))}
               ${row("Videos tracked", countText(site.manifest_tracked_video_count || 0, "video", "videos"), site.manifest_status === "Found" ? "ok" : "warn")}
@@ -2099,6 +2946,7 @@
               <button type="button" onclick="runValidationForSite('${escapeHtml(site.site_name)}', this)" ${site.ready_for_validation ? "" : "disabled"}>Run Validation</button>
               <button type="button" onclick="openVideoFormForSite('${escapeHtml(site.site_name)}')" style="font-size: 13px; min-height: 34px; padding: 6px 12px;">+ Add Video</button>
               <button type="button" onclick="openLabelFormForSite('${escapeHtml(site.site_name)}')" style="font-size: 13px; min-height: 34px; padding: 6px 12px; background: var(--accent-strong); border-color: var(--accent-strong);">+ Add Label</button>
+              <button type="button" onclick="openConfirmedReferenceFormForSite('${escapeHtml(site.site_name)}')" style="font-size: 13px; min-height: 34px; padding: 6px 12px;" ${site.reference_region ? "" : "disabled"}>Confirmed Reference</button>
               <a class="site-action-link" href="/site-details.html?site=${encodeURIComponent(site.site_name)}">Details View</a>
             </div>
           </article>
@@ -2174,6 +3022,7 @@
         hideForms();
         setupForm.style.display = "block";
         createSiteButton.style.display = "none";
+        setSetupPhaseUI("watched_area");
       });
 
       addLabelButton.addEventListener("click", () => {
@@ -2202,6 +3051,14 @@
         revealPanel(videoFormPanel);
       };
 
+      window.openConfirmedReferenceFormForSite = function (siteName) {
+        hideForms();
+        confirmedReferenceSiteSelect.value = siteName;
+        fillConfirmedReferenceVideos();
+        confirmedReferenceFormPanel.style.display = "block";
+        revealPanel(confirmedReferenceFormPanel);
+      };
+
       function revealPanel(panel) {
         if (!panel) {
           return;
@@ -2227,6 +3084,9 @@
         }
         if (actionId === "set_watched_area") {
           return watchedAreaFormPanel;
+        }
+        if (actionId === "set_confirmed_reference" || actionId === "invalidate_confirmed_reference") {
+          return confirmedReferenceFormPanel;
         }
         if (actionId === "select_label") {
           return labelListPanel;
@@ -2366,6 +3226,14 @@
         if (actionId === "set_watched_area" && watchedAreaSiteSelect && siteName) {
           watchedAreaSiteSelect.value = siteName;
           fillWatchedAreaVideos();
+        }
+        if (
+          (actionId === "set_confirmed_reference" || actionId === "invalidate_confirmed_reference") &&
+          confirmedReferenceSiteSelect &&
+          siteName
+        ) {
+          confirmedReferenceSiteSelect.value = siteName;
+          fillConfirmedReferenceVideos();
         }
         if (actionId === "add_label" && labelSiteSelect && siteName) {
           labelSiteSelect.value = siteName;
@@ -2550,7 +3418,57 @@
         if (file) {
           fillSiteFieldsFromVideo(file.name);
           setupVideoRegionSelector.show(URL.createObjectURL(file), { revokeWhenDone: true });
+          setSetupPhaseUI("watched_area");
         }
+      });
+
+      function setSetupPhaseUI(phase) {
+        setupPhaseWatchedAreaTab.classList.toggle("is-active", phase === "watched_area");
+        setupPhaseConfirmedReferenceTab.classList.toggle("is-active", phase === "confirmed_reference");
+        setupPhaseConfirmedReferenceTab.disabled = !setupVideoRegionSelector.canStartConfirmedReference();
+        setupConfirmedReferenceSection.style.display = phase === "confirmed_reference" ? "block" : "none";
+        setupPendingMarkerControls.style.display = "none";
+      }
+
+      setupPhaseWatchedAreaTab.addEventListener("click", () => {
+        setupVideoRegionSelector.goToWatchedAreaPhase();
+        setSetupPhaseUI("watched_area");
+      });
+
+      setupPhaseConfirmedReferenceTab.addEventListener("click", () => {
+        if (!setupVideoRegionSelector.canStartConfirmedReference()) {
+          alert("Select the watched area first.");
+          return;
+        }
+        setupVideoRegionSelector.goToConfirmedReferencePhase();
+        setSetupPhaseUI("confirmed_reference");
+      });
+
+      setupAddMarkerButton.addEventListener("click", () => {
+        setupVideoRegionSelector.startMarkerMode();
+        setupPendingMarkerControls.style.display = "flex";
+        setupMarkerLabelInput.value = "";
+        setupMarkerLabelInput.focus();
+      });
+
+      setupConfirmMarkerButton.addEventListener("click", () => {
+        const label = setupMarkerLabelInput.value.trim();
+        if (!label) {
+          alert('Enter a short label for this marker, such as "bridge pillar".');
+          return;
+        }
+        if (!setupVideoRegionSelector.hasPendingMarker()) {
+          alert("Drag on the video to draw the marker's area first.");
+          return;
+        }
+        setupVideoRegionSelector.commitPendingMarker(label);
+        setupPendingMarkerControls.style.display = "none";
+        renderSetupMarkersList();
+      });
+
+      setupCancelMarkerButton.addEventListener("click", () => {
+        setupVideoRegionSelector.cancelPendingMarker();
+        setupPendingMarkerControls.style.display = "none";
       });
 
 
@@ -2596,6 +3514,103 @@
         }
       });
 
+      confirmedReferenceSiteSelect.addEventListener("change", fillConfirmedReferenceVideos);
+      confirmedReferenceVideoSelect.addEventListener("change", showConfirmedReferenceVideo);
+
+      addMarkerButton.addEventListener("click", () => {
+        if (!confirmedReferenceSelector.hasSelection()) {
+          alert("Draw the confirmed reference rectangle first.");
+          return;
+        }
+        confirmedReferenceSelector.startMarkerMode();
+        pendingMarkerControls.style.display = "flex";
+        markerLabelInput.value = "";
+        markerLabelInput.focus();
+      });
+
+      confirmMarkerButton.addEventListener("click", () => {
+        const label = markerLabelInput.value.trim();
+        if (!label) {
+          alert('Enter a short label for this marker, such as "bridge pillar".');
+          return;
+        }
+        if (!confirmedReferenceSelector.hasPendingMarker()) {
+          alert("Drag on the video to draw the marker's area first.");
+          return;
+        }
+        confirmedReferenceSelector.commitPendingMarker(label);
+        pendingMarkerControls.style.display = "none";
+        renderConfirmedReferenceMarkersList();
+      });
+
+      cancelMarkerButton.addEventListener("click", () => {
+        confirmedReferenceSelector.cancelPendingMarker();
+        pendingMarkerControls.style.display = "none";
+      });
+
+      cancelConfirmedReference.addEventListener("click", () => {
+        confirmedReferenceSelector.reset();
+        hideForms();
+      });
+
+      async function submitConfirmedReference(status) {
+        if (!confirmedReferenceSelector.hasSelection()) {
+          alert("Drag a rectangle inside the watched area to mark the confirmed reference first.");
+          return;
+        }
+        try {
+          const response = await fetch("/api/set-confirmed-reference", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              folder_name: confirmedReferenceSiteSelect.value,
+              video_id: confirmedReferenceVideoSelect.value,
+              video_time_seconds: confirmedReferencePreview.currentTime,
+              region: confirmedReferenceSelector.region(),
+              markers: confirmedReferenceSelector.markers(),
+              normal_condition: normalConditionCheckbox.checked,
+              notes: confirmedReferenceNotesInput.value,
+              status,
+            }),
+          });
+          const result = await response.json();
+          alert(response.ok ? result.message : `Error: ${result.message}`);
+          if (response.ok) {
+            confirmedReferenceSelector.reset();
+            hideForms();
+            loadSites();
+          }
+        } catch (error) {
+          alert(`Failed to save the confirmed reference: ${error.message}`);
+        }
+      }
+
+      saveConfirmedReferenceDraftButton.addEventListener("click", () => submitConfirmedReference("draft"));
+      saveConfirmedReferenceConfirmedButton.addEventListener("click", () => submitConfirmedReference("confirmed"));
+
+      invalidateReferenceButton.addEventListener("click", async () => {
+        try {
+          const response = await fetch("/api/invalidate-confirmed-reference", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              folder_name: confirmedReferenceSiteSelect.value,
+              invalidation_reason: invalidationReasonSelect.value,
+              notes: invalidationNotesInput.value,
+            }),
+          });
+          const result = await response.json();
+          alert(response.ok ? result.message : `Error: ${result.message}`);
+          if (response.ok) {
+            confirmedReferenceSelector.reset();
+            hideForms();
+            loadSites();
+          }
+        } catch (error) {
+          alert(`Failed to invalidate the reference: ${error.message}`);
+        }
+      });
+
       cancelLabel.addEventListener("click", () => {
         labelForm.reset();
         hideForms();
@@ -2629,8 +3644,16 @@
 
           const result = await response.json();
           if (response.ok) {
-            alert(result.message);
+            let message = result.message;
+            if (setupVideoRegionSelector.hasConfirmedReferenceSelection()) {
+              const referenceResult = await saveConfirmedReferenceFromSetup();
+              message += referenceResult.success
+                ? ` ${referenceResult.message}`
+                : ` Confirmed reference was not saved: ${referenceResult.message}`;
+            }
+            alert(message);
             siteForm.reset();
+            setupVideoRegionSelector.reset();
             hideForms();
             loadSites();
           } else {
@@ -2640,6 +3663,29 @@
           alert(`Failed to create site: ${error.message}`);
         }
       });
+
+      async function saveConfirmedReferenceFromSetup() {
+        try {
+          const response = await fetch("/api/set-confirmed-reference", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              folder_name: setupFolderNameInput.value,
+              video_id: setupVideoIdInput.value,
+              video_time_seconds: setupVideoPreview.currentTime,
+              region: setupVideoRegionSelector.confirmedReferenceRegion(),
+              markers: setupVideoRegionSelector.markers(),
+              normal_condition: setupNormalConditionCheckbox.checked,
+              notes: setupConfirmedReferenceNotesInput.value,
+              status: setupConfirmedReferenceStatusSelect.value,
+            }),
+          });
+          const result = await response.json();
+          return { success: response.ok, message: result.message };
+        } catch (error) {
+          return { success: false, message: error.message };
+        }
+      }
 
       videoForm.addEventListener("submit", async (e) => {
         e.preventDefault();

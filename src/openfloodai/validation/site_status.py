@@ -135,6 +135,8 @@ class ValidationSiteStatus:
     manifest_tracked_video_count: int
     manifest_issues: list[str]
     reference_region_found: bool
+    reference_region: dict[str, Any] | None
+    confirmed_reference: dict[str, Any] | None
     outputs_found: bool
     report_count: int
     latest_report_path: str | None
@@ -336,6 +338,24 @@ class ValidationSiteStatus:
                 WorkflowAction(label="Set watched area", action_id="set_watched_area")
             ]
 
+        if not self.reference_region_found:
+            confirmed_reference_actions = [
+                WorkflowAction(label="Set watched area first", action_id="set_watched_area")
+            ]
+        else:
+            confirmed_reference_actions = [
+                WorkflowAction(label="Set confirmed reference", action_id="set_confirmed_reference")
+            ]
+            if (
+                self.confirmed_reference is not None
+                and self.confirmed_reference.get("status") != "invalid"
+            ):
+                confirmed_reference_actions.append(
+                    WorkflowAction(
+                        label="Invalidate reference", action_id="invalidate_confirmed_reference"
+                    )
+                )
+
         label_actions = [WorkflowAction(label="Add label", action_id="add_label")]
         if self.labels_found:
             label_actions = [
@@ -379,6 +399,19 @@ class ValidationSiteStatus:
             ),
             WorkflowStep(
                 number=4,
+                key="confirmed_reference",
+                title="Confirmed reference",
+                status=_confirmed_reference_step_status(self.confirmed_reference),
+                meaning=(
+                    "Confirm the visible riverbank inside your watched area. Machine "
+                    "suggestions are drafts until you confirm them. This is not required "
+                    "before running validation."
+                ),
+                actions=confirmed_reference_actions,
+                required_for_validation=False,
+            ),
+            WorkflowStep(
+                number=5,
                 key="human_labels",
                 title="Human labels",
                 status=(
@@ -392,7 +425,7 @@ class ValidationSiteStatus:
                 required_for_validation=False,
             ),
             WorkflowStep(
-                number=5,
+                number=6,
                 key="manifest",
                 title="Manifest",
                 status=(
@@ -408,7 +441,7 @@ class ValidationSiteStatus:
                 required_for_validation=False,
             ),
             WorkflowStep(
-                number=6,
+                number=7,
                 key="run_validation",
                 title="Run validation",
                 status=(
@@ -425,7 +458,7 @@ class ValidationSiteStatus:
                 required_for_validation=True,
             ),
             WorkflowStep(
-                number=7,
+                number=8,
                 key="review_results",
                 title="Review results",
                 status=(
@@ -501,6 +534,8 @@ def read_validation_site_status(site_dir: Path) -> ValidationSiteStatus:
         manifest_tracked_video_count=manifest_tracked_video_count,
         manifest_issues=manifest_issues,
         reference_region_found=_has_reference_region(config_paths),
+        reference_region=_read_reference_region(config_paths),
+        confirmed_reference=_read_confirmed_reference(config_paths),
         outputs_found=bool(report_paths),
         report_count=len(report_paths),
         latest_report_path=str(latest_report_path) if latest_report_path else None,
@@ -530,6 +565,38 @@ def _has_reference_region(config_paths: list[Path]) -> bool:
         if isinstance(config, dict) and isinstance(config.get("reference_region"), dict):
             return True
     return False
+
+
+def _read_reference_region(config_paths: list[Path]) -> dict[str, Any] | None:
+    """Return the site's watched-area rectangle, if any, for display."""
+
+    for config_path in config_paths:
+        try:
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(config, dict):
+            continue
+        reference_region = config.get("reference_region")
+        if isinstance(reference_region, dict):
+            return reference_region
+    return None
+
+
+def _read_confirmed_reference(config_paths: list[Path]) -> dict[str, Any] | None:
+    """Return the site's confirmed riverbank reference record, if any, for display."""
+
+    for config_path in config_paths:
+        try:
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(config, dict):
+            continue
+        confirmed_reference = config.get("confirmed_reference")
+        if isinstance(confirmed_reference, dict):
+            return confirmed_reference
+    return None
 
 
 def _find_video_paths(site_dir: Path) -> list[Path]:
@@ -596,6 +663,14 @@ def _manifest_actions(manifest_status: str) -> list[WorkflowAction]:
             WorkflowAction(label="Repair manifest from local videos", action_id="repair_manifest")
         ]
     return [WorkflowAction(label="Add video to update manifest", action_id="add_video")]
+
+
+def _confirmed_reference_step_status(confirmed_reference: dict[str, Any] | None) -> str:
+    if confirmed_reference is None:
+        return WORKFLOW_STEP_MISSING
+    if confirmed_reference.get("status") == "confirmed":
+        return WORKFLOW_STEP_COMPLETE
+    return WORKFLOW_STEP_NEEDS_REVIEW
 
 
 def _find_human_label_options(label_paths: list[Path]) -> list[str]:

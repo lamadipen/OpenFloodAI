@@ -16,7 +16,13 @@ from urllib.parse import parse_qs, unquote, urlencode, urlsplit
 
 import cv2
 
-from openfloodai.config import SiteConfigError, write_reference_region
+from openfloodai.config import (
+    SiteConfigError,
+    invalidate_confirmed_reference,
+    load_site_config,
+    write_confirmed_reference,
+    write_reference_region,
+)
 from openfloodai.review import (
     ALLOWED_CONFIDENCE_LEVELS,
     ALLOWED_HUMAN_LABELS,
@@ -251,6 +257,12 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         if self.path == "/api/set-watched-area":
             self._handle_set_watched_area()
             return
+        if self.path == "/api/set-confirmed-reference":
+            self._handle_set_confirmed_reference()
+            return
+        if self.path == "/api/invalidate-confirmed-reference":
+            self._handle_invalidate_confirmed_reference()
+            return
         if self.path == "/api/delete-site":
             self._handle_delete_site()
             return
@@ -477,6 +489,113 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             {
                 "success": True,
                 "message": "Watched area saved. This site can run validation now.",
+                "config_path": str(config_path),
+            },
+            status_code=200,
+        )
+
+    def _handle_set_confirmed_reference(self) -> None:
+        """Save a draft or confirmed riverbank reference inside a site's watched area."""
+
+        data = self._read_json_body()
+        if data is None:
+            return
+
+        folder_name = str(data.get("folder_name", "")).strip()
+        site_dir = (self.sites_dir / folder_name).resolve()
+        if not folder_name or site_dir.parent != self.sites_dir.resolve():
+            self._send_json(
+                {
+                    "success": False,
+                    "message": (
+                        "Invalid folder_name: site folder must stay inside the sites directory."
+                    ),
+                },
+                status_code=400,
+            )
+            return
+
+        video_id = str(data.get("video_id", "")).strip()
+        try:
+            self._resolve_site_video(folder_name, video_id)
+        except ValueError:
+            self._send_json(
+                {
+                    "success": False,
+                    "message": ("Choose an existing video in this site before saving a reference."),
+                },
+                status_code=400,
+            )
+            return
+
+        try:
+            config_path = _find_site_config(site_dir)
+            site_config = load_site_config(config_path)
+            payload = {
+                "status": str(data.get("status", "")).strip(),
+                "region": _parse_reference_region(data.get("region")),
+                "video_id": video_id,
+                "video_time_seconds": data.get("video_time_seconds"),
+                "site_id": site_config.site_id,
+                "camera_id": site_config.camera_id,
+                "normal_condition": _as_bool(data.get("normal_condition"), default=False),
+                "notes": str(data.get("notes", "")).strip(),
+                "markers": data.get("markers", []),
+            }
+            confirmed_reference = write_confirmed_reference(config_path, payload)
+        except SiteConfigError as error:
+            self._send_json({"success": False, "message": str(error)}, status_code=400)
+            return
+
+        self._send_json(
+            {
+                "success": True,
+                "message": (
+                    "Reference confirmed."
+                    if confirmed_reference.status == "confirmed"
+                    else "Reference saved as a draft."
+                ),
+                "config_path": str(config_path),
+            },
+            status_code=200,
+        )
+
+    def _handle_invalidate_confirmed_reference(self) -> None:
+        """Mark a site's existing confirmed reference as invalid."""
+
+        data = self._read_json_body()
+        if data is None:
+            return
+
+        folder_name = str(data.get("folder_name", "")).strip()
+        site_dir = (self.sites_dir / folder_name).resolve()
+        if not folder_name or site_dir.parent != self.sites_dir.resolve():
+            self._send_json(
+                {
+                    "success": False,
+                    "message": (
+                        "Invalid folder_name: site folder must stay inside the sites directory."
+                    ),
+                },
+                status_code=400,
+            )
+            return
+
+        try:
+            config_path = _find_site_config(site_dir)
+            invalidated = invalidate_confirmed_reference(
+                config_path,
+                str(data.get("invalidation_reason", "")).strip(),
+                str(data.get("notes", "")).strip() or None,
+            )
+        except SiteConfigError as error:
+            self._send_json({"success": False, "message": str(error)}, status_code=400)
+            return
+
+        self._send_json(
+            {
+                "success": True,
+                "message": f"Reference marked invalid: {invalidated.invalidation_reason}.",
                 "config_path": str(config_path),
             },
             status_code=200,

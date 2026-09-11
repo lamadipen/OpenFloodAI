@@ -478,6 +478,7 @@ def test_sites_api_exposes_workflow_steps_for_the_home_ui(tmp_path: Path) -> Non
         "site_setup",
         "video_intake",
         "watched_area",
+        "confirmed_reference",
         "human_labels",
         "manifest",
         "run_validation",

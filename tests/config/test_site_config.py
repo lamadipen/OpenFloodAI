@@ -6,9 +6,13 @@ from pathlib import Path
 import pytest
 
 from openfloodai.config import (
+    ConfirmedReference,
+    ConfirmedReferenceMarker,
     ReferenceRegion,
     SiteConfigError,
+    invalidate_confirmed_reference,
     load_site_config,
+    write_confirmed_reference,
     write_reference_region,
 )
 
@@ -121,6 +125,163 @@ def test_write_reference_region_rejects_area_outside_frame(tmp_path: Path) -> No
             config_path,
             {"x": 80, "y": 50, "width": 30, "height": 50},
         )
+
+
+def confirmed_reference_payload(**overrides: object) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "status": "draft",
+        "region": {"x": 10, "y": 55, "width": 20, "height": 15},
+        "video_id": "practice-01",
+        "video_time_seconds": 4.5,
+        "site_id": "site-demo-01",
+        "camera_id": "camera-demo-01",
+        "normal_condition": True,
+        "notes": "Clear view of the bridge pillar.",
+        "markers": [],
+    }
+    payload.update(overrides)
+    return payload
+
+
+def site_with_watched_area(tmp_path: Path, name: str = "site.json") -> Path:
+    return write_config(tmp_path / name, valid_config_payload())
+
+
+def test_write_confirmed_reference_saves_draft(tmp_path: Path) -> None:
+    config_path = site_with_watched_area(tmp_path)
+
+    saved = write_confirmed_reference(config_path, confirmed_reference_payload())
+
+    assert saved.status == "draft"
+    assert saved.confirmed_at is None
+    config = load_site_config(config_path)
+    assert config.confirmed_reference == saved
+    assert config.reference_region == ReferenceRegion(x=0, y=50, width=100, height=50)
+
+
+def test_write_confirmed_reference_confirmed_sets_confirmed_at(tmp_path: Path) -> None:
+    config_path = site_with_watched_area(tmp_path)
+
+    saved = write_confirmed_reference(config_path, confirmed_reference_payload(status="confirmed"))
+
+    assert saved.status == "confirmed"
+    assert saved.confirmed_at is not None
+
+
+def test_write_confirmed_reference_with_markers(tmp_path: Path) -> None:
+    config_path = site_with_watched_area(tmp_path)
+
+    saved = write_confirmed_reference(
+        config_path,
+        confirmed_reference_payload(
+            markers=[
+                {"label": "bridge pillar", "region": {"x": 5, "y": 60, "width": 5, "height": 5}},
+            ]
+        ),
+    )
+
+    assert saved.markers == (
+        ConfirmedReferenceMarker(
+            label="bridge pillar",
+            region=ReferenceRegion(x=5, y=60, width=5, height=5),
+        ),
+    )
+
+
+def test_write_confirmed_reference_requires_existing_watched_area(tmp_path: Path) -> None:
+    payload = valid_config_payload()
+    del payload["reference_region"]
+    config_path = write_config(tmp_path / "no-watched-area.json", payload)
+
+    with pytest.raises(SiteConfigError, match="watched area"):
+        write_confirmed_reference(config_path, confirmed_reference_payload())
+
+
+def test_write_confirmed_reference_rejects_region_outside_watched_area(tmp_path: Path) -> None:
+    config_path = site_with_watched_area(tmp_path)
+
+    with pytest.raises(SiteConfigError, match="fit inside the site's watched area"):
+        write_confirmed_reference(
+            config_path,
+            confirmed_reference_payload(region={"x": 0, "y": 0, "width": 20, "height": 15}),
+        )
+
+
+def test_write_confirmed_reference_rejects_marker_outside_watched_area(tmp_path: Path) -> None:
+    config_path = site_with_watched_area(tmp_path)
+
+    with pytest.raises(SiteConfigError, match="must fit inside the site's watched area"):
+        write_confirmed_reference(
+            config_path,
+            confirmed_reference_payload(
+                markers=[
+                    {"label": "rock", "region": {"x": 0, "y": 0, "width": 5, "height": 5}},
+                ]
+            ),
+        )
+
+
+def test_write_confirmed_reference_rejects_empty_marker_label(tmp_path: Path) -> None:
+    config_path = site_with_watched_area(tmp_path)
+
+    with pytest.raises(SiteConfigError, match="label"):
+        write_confirmed_reference(
+            config_path,
+            confirmed_reference_payload(
+                markers=[{"label": " ", "region": {"x": 5, "y": 60, "width": 5, "height": 5}}]
+            ),
+        )
+
+
+def test_write_confirmed_reference_rejects_invalid_status_value(tmp_path: Path) -> None:
+    config_path = site_with_watched_area(tmp_path)
+
+    with pytest.raises(SiteConfigError, match="'draft' or 'confirmed'"):
+        write_confirmed_reference(config_path, confirmed_reference_payload(status="invalid"))
+
+
+def test_invalidate_confirmed_reference_sets_status_and_reason(tmp_path: Path) -> None:
+    config_path = site_with_watched_area(tmp_path)
+    write_confirmed_reference(config_path, confirmed_reference_payload(status="confirmed"))
+
+    invalidated = invalidate_confirmed_reference(config_path, "camera_moved", "Tilted after storm.")
+
+    assert invalidated.status == "invalid"
+    assert invalidated.invalidation_reason == "camera_moved"
+    assert invalidated.invalidated_at is not None
+    assert invalidated.notes == "Tilted after storm."
+    config = load_site_config(config_path)
+    assert config.confirmed_reference == invalidated
+
+
+def test_invalidate_confirmed_reference_requires_existing_record(tmp_path: Path) -> None:
+    config_path = site_with_watched_area(tmp_path)
+
+    with pytest.raises(SiteConfigError, match="no confirmed reference"):
+        invalidate_confirmed_reference(config_path, "camera_moved")
+
+
+def test_invalidate_confirmed_reference_rejects_bad_reason(tmp_path: Path) -> None:
+    config_path = site_with_watched_area(tmp_path)
+    write_confirmed_reference(config_path, confirmed_reference_payload(status="confirmed"))
+
+    with pytest.raises(SiteConfigError, match="Invalidation reason"):
+        invalidate_confirmed_reference(config_path, "not_a_real_reason")
+
+
+def test_resaving_after_invalidation_creates_a_fresh_record(tmp_path: Path) -> None:
+    config_path = site_with_watched_area(tmp_path)
+    write_confirmed_reference(config_path, confirmed_reference_payload(status="confirmed"))
+    invalidate_confirmed_reference(config_path, "bank_changed")
+
+    fresh: ConfirmedReference = write_confirmed_reference(
+        config_path, confirmed_reference_payload(status="draft", notes="New bank line chosen.")
+    )
+
+    assert fresh.status == "draft"
+    assert fresh.invalidated_at is None
+    assert fresh.invalidation_reason is None
+    assert fresh.notes == "New bank line chosen."
 
 
 def test_example_config_does_not_commit_private_fields() -> None:

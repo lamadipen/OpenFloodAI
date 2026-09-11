@@ -42,9 +42,14 @@ test("one region selector is shared instead of copied per form", () => {
   for (const gone of ["drawSetupVideoFrame", "setupVideoCanvasPoint", "videoRegionToPercent"]) {
     assert.ok(!script.includes(gone), `${gone} should be gone`);
   }
-  for (const id of ["setupVideoRegionSelector", "videoRegionSelector", "watchedAreaSelector"]) {
+  for (const id of ["videoRegionSelector", "watchedAreaSelector"]) {
     assert.ok(script.includes(`const ${id} = createRegionSelector({`), `${id} missing`);
   }
+  // The Create Site form needs a richer two-phase selector (watched area,
+  // then an optional confirmed-reference rectangle + markers inside it), so
+  // it intentionally uses a different, single, shared factory instead.
+  assert.equal(script.match(/function createSiteSetupSelector\(/g).length, 1);
+  assert.ok(script.includes("const setupVideoRegionSelector = createSiteSetupSelector({"));
 });
 
 test("the watched area step opens its own form, not video intake", () => {
