@@ -1,5 +1,8 @@
 # Project Overview
 
+*This page is for developers and contributors. Looking for a non-technical
+introduction? See the [Overview for Hydrologists & Disaster Management](end-user-overview.md).*
+
 OpenFloodAI aims to help communities watch river conditions using affordable hardware.
 
 Many places cannot install expensive river sensors everywhere. Some places may already have a camera, a small computer, and limited internet. OpenFloodAI explores whether that setup can help create useful warning-support evidence.

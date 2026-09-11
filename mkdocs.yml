@@ -29,7 +29,12 @@ markdown_extensions:
 nav:
   - Overview: index.md
   - Start:
-      - Project Overview: project-overview.md
+      - For Developers:
+          - Developer Overview: project-overview.md
+          - Developer Quickstart: dev-quickstart.md
+      - For Hydrologists & Disaster Management:
+          - Overview: end-user-overview.md
+          - Quickstart: end-user-quickstart.md
   - Product:
       - Product Notes: product/index.md
       - V1 Requirements: product/requirements.md
@@ -60,7 +65,7 @@ nav:
       - ML Model Options: research/ml-model-options.md
   - Learning:
       - Learning Home: learning/index.md
-      - Your First End-to-End Review: learning/end-to-end-workflow.html
+      - Your First End-to-End Review: learning/end-to-end-workflow.md
       - OpenFloodAI Pipeline Basics: learning/openfloodai-pipeline-learning.html
   - Packaging & Release:
       - Building The Desktop App: packaging.md

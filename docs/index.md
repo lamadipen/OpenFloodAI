@@ -10,6 +10,14 @@ OpenFloodAI is **not** a finished public warning system. Early code must not sen
 public warnings or make emergency decisions by itself. Current output means
 "please review this evidence," not "there is a confirmed flood."
 
+## Which one do I want?
+
+- **I'm a developer or contributor** — see the [Developer Overview](project-overview.md)
+  and [Developer Quickstart](dev-quickstart.md).
+- **I'm a hydrologist, disaster-management staff, or evaluating this as a
+  field tool** — see the [Overview](end-user-overview.md) and
+  [Quickstart](end-user-quickstart.md) written for you, no coding required.
+
 ## What's here
 
 <div class="grid cards" markdown>

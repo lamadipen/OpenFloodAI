@@ -14,28 +14,11 @@ This project is about flood warning support, so clear and careful work matters m
 6. Keep changes focused.
 7. Add tests when behavior changes.
 
-## Local Setup
+## Local Setup And Checks
 
-Use Python 3.12 or newer.
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python3 -m pip install --upgrade pip
-python3 -m pip install -e ".[dev]"
-```
-
-## Run Checks
-
-Before opening a pull request, run:
-
-```bash
-ruff check .
-ruff format --check .
-mypy src tests
-pytest
-mkdocs build --strict
-```
+See the [Developer Quickstart](dev-quickstart.md) for cloning the
+repository, setting up a virtual environment, and running the full
+check suite before opening a pull request.
 
 ## Contribution Rules
 
