@@ -1,6 +1,6 @@
 # MVP Workflow Rehearsal
 
-Prefer a visual walkthrough? Open [Your First End-to-End Review](../learning/end-to-end-workflow.md).
+Prefer a visual walkthrough? Open [Your First End-to-End Review](../learning/end-to-end-workflow.html).
 
 Use this page without the chat history. The goal is to check whether a new
 contributor can add 5–10 labelled videos, run validation, and explain the results.

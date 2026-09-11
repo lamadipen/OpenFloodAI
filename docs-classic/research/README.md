@@ -6,7 +6,7 @@ Avoid committing copyrighted datasets, sensitive imagery, or private field obser
 
 ## Notes
 
-- [MVP Workflow Rehearsal](mvp-workflow-rehearsal.md)
+- [Agreed ML Readiness And First Model Strategy](../product/ml-readiness.md)
 - [Human Labeling Guide For Water-Change Review](labeling-guide.md)
 - [Human Label Format](human-label-format.md)
 - [Human Label Comparison](human-label-comparison.md)
@@ -16,8 +16,4 @@ Avoid committing copyrighted datasets, sensitive imagery, or private field obser
 - [Hard-Case Validation Examples](hard-case-validation.md)
 - [Real Hard-Case Sample Workflow](real-hard-case-sample-workflow.md)
 - [ML Model, Dataset, And Cloud Options](ml-model-options.md)
-
-## See Also
-
-- [Agreed ML Readiness And First Model Strategy](../product/ml-readiness.md)
 - [Labelled Data Quality Checklist](../product/data-quality-checklist.md)

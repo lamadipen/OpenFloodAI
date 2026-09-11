@@ -22,7 +22,7 @@ So far, validation is local and small.
 | Threshold tuning | A few prototype visual-change thresholds | The report can show how different threshold numbers change the comparison result. |
 | Validation tracking | A plain-language known-limits page | The docs can now show what is tested, what is weak, and what should come next. |
 | Multi-video site validation | A folder of local videos for one site | The runner can create one combined summary table for several videos and multiple label windows. |
-| Hard-case expected behavior | See [Hard-Case Validation Examples](hard-case-validation.md) for the full case list | The docs say these should stay `UNKNOWN`, `DEGRADED`, or `cannot_compare` instead of success. |
+| Hard-case expected behavior | Missing, unreadable, dark, glare, noisy, shaky, and blocked-view cases | The docs say these should stay `UNKNOWN`, `DEGRADED`, or `cannot_compare` instead of success. |
 
 Simple example: a developer can run one local video, save POC records, add a human label, and compare whether the system output pointed in the same broad direction.
 

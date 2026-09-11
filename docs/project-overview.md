@@ -1,5 +1,8 @@
 # Project Overview
 
+*This page is for developers and contributors. Looking for a non-technical
+introduction? See the [Overview for Hydrologists & Disaster Management](end-user-overview.md).*
+
 OpenFloodAI aims to help communities watch river conditions using affordable hardware.
 
 Many places cannot install expensive river sensors everywhere. Some places may already have a camera, a small computer, and limited internet. OpenFloodAI explores whether that setup can help create useful warning-support evidence.
@@ -38,7 +41,7 @@ Simple example: a camera watches a river bridge. A marked region in the image ac
 
 ## How The Pieces Fit
 
-The first backend path is:
+The near-term backend path is:
 
 ```text
 video input
@@ -56,62 +59,68 @@ Simple example:
 4. The risk engine turns those inputs into a test risk state.
 5. The result is saved locally so people can inspect what happened.
 
-## Current POC Status
-
-OpenFloodAI can now run small local proof-of-concept steps.
-
-The current local validation MVP connects the basic review flow:
+The longer-term direction is:
 
 ```text
-local video
--> health check
--> selected reference region
--> simple visual-change records
--> review images
--> human labels
--> time-window comparison
--> comparison and threshold reports
--> validation notes
--> hard-case expectations
+configured river area -> virtual ruler or reference region -> water-level or water-coverage change -> clear metadata -> human review before public warning
 ```
 
-Simple example: a reviewer can watch one video, label it as `water_rising`, and compare that label with the simple system output.
+Simple example: a camera watches the same bridge every day. A marked part of the image works like a ruler. If water covers more of that marked area over time, OpenFloodAI should save evidence that a person can review.
 
-It can:
+## Phases
 
-- read a local video file
-- check whether the video is usable
-- create frame metadata records
+This roadmap is a simple first version. It will change as the project learns from tests, datasets, and field needs.
+
+| Phase | Focus | Status |
+| --- | --- | --- |
+| Phase 1 | Foundation and requirements | Complete |
+| Phase 2 | Research and validation preparation | Complete |
+| Phase 3 | Multi-video validation and reporting | Complete |
+| Phase 4 | Better reference-region water-change baseline | Started |
+| Phase 5 | Larger validation set and time-window comparison | Started |
+| Phase 6 | Edge-device deployment | Planned |
+| Phase 7 | Alert system | Planned |
+| Phase 8 | Field pilot | Planned |
+| Phase 9 | Production hardening | Planned |
+
+The phases depend on each other. The local validation workflow, scorecard, Home
+UI, windowed sampling, evidence images, threshold rules, synthetic fixtures, and
+label-quality checklist come before a locked dataset, ML work, field pilot, or
+alert design. Passing local tests does not move the project to production readiness.
+
+## Current Status
+
+OpenFloodAI has a usable local validation MVP. It can currently:
+
+- define shared data contracts and validate event/audit JSON records
+- read a local video file, check whether it is usable, and extract frame metadata
 - load safe site and camera config
-- measure simple full-frame visual signals
-- measure simple signals inside a configured reference region
-- write local JSON Lines records
-- create a test risk-state record
-- summarize saved records
-- turn technical records into plain-language operator notes
-- generate a few local review images for the biggest visual change
-- read human labels
-- compare human labels with local system output
-- compare label windows with machine records from the same time range
-- try prototype visual-change thresholds
-- run multi-video local validation and create a combined summary report
-- use the local Home UI to inspect site readiness, follow next-step guidance, and run validation
-- inspect scorecards, report previews, evidence paths, and recent validation history in the Home UI
-- use deterministic synthetic fixtures for rising, falling, no-change, and unreadable inputs
+- measure simple full-frame and reference-region visual signals, with upper, middle, and lower band scores
+- write and read local JSON Lines records
+- run a rule-based test risk-state evaluator
+- run local POC pipelines (full-frame and region-based) that save review records
+- create local replay summaries and plain-language operator notes
+- generate local review images for the biggest visual changes
+- read human labels and compare them with system output
+- compare human label windows with matching machine records from the same time range
+- try prototype visual-change thresholds against human labels
+- run multi-video local validation for one site folder and create a combined summary report
+- use the local Home UI to check site readiness, follow next-step guidance, run validation, and inspect scorecards, report previews, evidence paths, and recent run history
+- run deterministic synthetic known-answer checks for rising, falling, no-change, and unreadable inputs
 - use a labelled data quality checklist before preparing new examples
-- document hard-case expected behavior for confusing inputs
+- document hard-case expected behavior for confusing inputs (missing, dark, glare, shaky, blocked-view)
 - track validation results and known limits
 - provide privacy, retention, ML research, and labeling guidance
 
-Simple example: a developer can run a local video, save records, generate a comparison image with the watched area marked, and use the labeling guide to describe what changed.
+Simple example: a developer can run a local video, mark the lower part of a bridge pillar as the watched area, save records, generate review images, label the video as `water_rising`, and compare that label with the system output.
 
-OpenFloodAI still cannot:
+OpenFloodAI still does not:
 
 - detect real floods accurately
 - train or package ML models
-- connect to live cameras
-- send alerts
-- publish public warnings
+- connect to live cameras or run a live-camera adapter
+- send alerts or run a public warning workflow
+- use real cloud ML services
 - provide a production monitoring or fleet dashboard
 - replace local emergency decision-making
 
@@ -120,7 +129,7 @@ small and does not include a trained ML framework, cloud service, live-camera
 adapter, database, or alert provider. These are future engineering stages, not
 missing setup steps for the current MVP.
 
-## Current Validation Direction
+## Next Direction
 
 The current validation direction is:
 
@@ -130,22 +139,36 @@ more reviewed clips -> more records inside each label window -> hard-case eviden
 
 Simple meaning: first test more reviewed videos, compare the system and human labels over the same seconds, and keep confusing cases visible. ML should come later, after the project has safe labeled examples and stronger evaluation.
 
-What is already in place:
+What is already in place: multi-video validation for one local site folder, a
+combined validation summary report, comparison between human label windows and
+matching machine records, an improved reference-region signal with upper,
+middle, and lower band scores, documented hard-case expected behavior, and
+known-limits tracking.
 
-- multi-video validation for one local site folder
-- combined validation summary report
-- comparison between human label windows and matching machine records
-- improved reference-region signal with upper, middle, and lower region change scores
-- documented hard-case expected behavior
-- known-limits tracking
+Focus on five small pieces next:
 
-What should come next:
+1. **More approved validation clips** — add a small set of videos that are safe to use and easy to review.
+   Simple example: use a few normal clips, a few possible rising-water clips, and a few unclear clips.
+2. **More machine outputs inside each label window** — the comparison can use matching time windows now; next, the pipeline should create more useful machine records inside each reviewed window.
+   Simple example: if the human labels `00:30 to 01:00`, create machine evidence inside that same range, not only near the video start.
+3. **Real hard-case evidence** — add safe examples for glare, darkness, camera shake, blocked views, and unreadable input.
+   Simple example: a dark video should stay `DEGRADED` or `cannot_compare`, not success.
+4. **Locked validation set** — keep a small set of reviewed examples that are not changed every time thresholds are tuned.
+   Simple example: tune on practice clips, then check against a separate fixed set.
+5. **Clear review outputs** — keep reports simple enough for people who are not ML engineers.
+   Simple example: "lower watched area changed, but this is not proof of flooding."
 
-1. Add more approved validation clips for different conditions.
-2. Create more machine outputs inside each reviewed time window.
-3. Add real hard-case samples when they are safe to share.
-4. Define a small locked validation set before ML training.
-5. Keep review outputs simple enough for local teams and non-technical reviewers.
+Important choice: do not jump straight into ML yet. First define a locked data
+split, label-quality rules, evaluation metrics, and failure-case gates. Also keep
+strengthening privacy, validation, and failure handling as the project grows.
+
+The safer path is:
+
+```text
+reference region -> simple water/change scores -> saved records -> human review -> labels -> later ML
+```
+
+This keeps the project understandable, testable, and safer.
 
 ## Safety Boundaries
 

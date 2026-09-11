@@ -40,6 +40,9 @@ jobs:
       - name: Build documentation
         run: mkdocs build --strict
 
+      - name: Build classic documentation
+        run: mkdocs build --strict -f mkdocs-classic.yml
+
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:

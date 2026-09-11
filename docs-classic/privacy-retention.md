@@ -146,31 +146,6 @@ Do not commit:
 camera_url: rtsp://real-user:real-password@example-camera/live
 ```
 
-## People, Vehicles, And Sensitive Scene Content
-
-OpenFloodAI must not perform face recognition, person tracking, vehicle
-recognition, or license-plate recognition. If people, homes, roads, vehicles,
-or license plates appear in the scene, consider masking or cropping before
-public deployment. Access to stored video or event evidence should be
-limited, auditable, and documented (who can access it and why).
-
-Simple example: if a road is visible beside the river, OpenFloodAI should not
-analyze license plates. The project is about river risk, not tracking people.
-
-## Public Versus Restricted Fields In Event/Audit Records
-
-Event and audit records should split fields by sensitivity:
-
-- **Public fields**: coarse site name, river name, broad risk state, general
-  timestamp, non-sensitive reason codes.
-- **Restricted fields**: exact GPS, camera placement notes, raw video
-  references, private contact details, sensitive infrastructure details.
-  These should require access control in a future implementation.
-
-Simple example: a public dashboard might show "Example River near Old
-footbridge: HIGH candidate." It should not show the camera password or exact
-camera pole location.
-
 ## Default POC Retention
 
 Use these defaults for local POC work:

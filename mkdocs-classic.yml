@@ -1,0 +1,48 @@
+site_name: OpenFloodAI (Classic)
+site_description: Open-source, low-cost, edge-first flood detection support.
+site_url: https://lamadipen.github.io/OpenFloodAI/classic/
+repo_url: https://github.com/lamadipen/OpenFloodAI
+repo_name: lamadipen/OpenFloodAI
+
+docs_dir: docs-classic
+site_dir: site/classic
+
+theme:
+  name: mkdocs
+
+nav:
+  - Home: index.md
+  - Project Overview: project-overview.md
+  - Roadmap: roadmap.md
+  - Community Feedback: community-feedback.md
+  - Learning:
+      - Learning Home: learning/index.md
+      - Your First End-to-End Review: learning/end-to-end-workflow.html
+      - OpenFloodAI Pipeline Basics: learning/openfloodai-pipeline-learning.html
+  - Privacy And Retention: privacy-retention.md
+  - V1 Requirements: product/requirements.md
+  - Labelled Data Quality Checklist: product/data-quality-checklist.md
+  - ML Readiness And First Model Strategy: product/ml-readiness.md
+  - Architecture:
+      - Architecture Notes: architecture/README.md
+      - Dependency Map: architecture/dependencies.md
+      - Windowed Video Evidence: architecture/windowed-video-evidence.md
+      - Validation Input Snapshots: architecture/validation-input-snapshots.md
+      - Run Export Packages: architecture/run-export-packages.md
+  - Research:
+      - Research Notes: research/README.md
+      - MVP Workflow Rehearsal: research/mvp-workflow-rehearsal.md
+      - Labeling Guide: research/labeling-guide.md
+      - Human Label Format: research/human-label-format.md
+      - Human Label Comparison: research/human-label-comparison.md
+      - Validation Dataset Manifest: research/validation-dataset-manifest.md
+      - Prototype Threshold Tuning: research/threshold-tuning.md
+      - Validation Results And Known Limits: research/validation-results.md
+      - Hard-Case Validation Examples: research/hard-case-validation.md
+      - Real Hard-Case Sample Workflow: research/real-hard-case-sample-workflow.md
+      - ML Model Options: research/ml-model-options.md
+  - How to Contribute: contributing.md
+
+validation:
+  nav:
+    omitted_files: ignore

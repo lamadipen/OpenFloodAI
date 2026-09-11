@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mkdocs",
+      "runtimeExecutable": ".venv/bin/mkdocs",
+      "runtimeArgs": ["serve", "-a", "127.0.0.1:8321"],
+      "port": 8321
+    },
+    {
+      "name": "docs-both",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8322", "--directory", "site"],
+      "port": 8322
+    }
+  ]
+}
