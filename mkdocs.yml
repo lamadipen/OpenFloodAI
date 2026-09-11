@@ -66,7 +66,6 @@ nav:
       - Building The Desktop App: packaging.md
   - Decisions:
       - ADR Index: adr/README.md
-      - "0001 — ML Readiness Direction": adr/0001-ml-readiness-direction.md
   - How to Contribute: contributing.md
 
 validation:

@@ -1,14 +1,69 @@
 # ML Model, Dataset, And Cloud Options
 
-This note compares possible machine learning paths for OpenFloodAI.
+This note compares possible machine learning paths for OpenFloodAI and records
+the ADR for issue #108's ML readiness direction.
 
-The [agreed ML readiness plan](../product/ml-readiness.md) records the final
-direction for issue #108 and takes precedence over earlier suggestions below.
-This page provides research background, not an approved dependency list.
+The [agreed ML readiness plan](../product/ml-readiness.md) records the living,
+authoritative direction and takes precedence over earlier suggestions below.
+This page provides research background and decision history, not an approved
+dependency list.
 
 Simple meaning: before choosing a model, we should understand what already exists, what can help now, and what is risky.
 
 This is research only. It does not add model code, download data, connect to cloud services, or claim flood detection accuracy.
+
+## Decision Record — 0001 ML Readiness Direction (Issue #108)
+
+Status: Agreed 2026-09-11.
+
+### Context
+
+Issue #108 asked how OpenFloodAI should approach ML readiness and first-model
+strategy: whether to train a flood/no-flood classifier, make riverbank
+segmentation the main product, or center the product on reviewing water
+conditions and change over time. The question also covered candidate tool
+roles (SAM 2, MobileSAM, OpenRiverCam/pyorc, YOLO segmentation, and others),
+licensing scope, and what a first temporal experiment would need.
+
+The full research and discussion that led to this decision — including
+candidate-tool evaluation, licensing corrections (e.g. pyorc's AGPL terms),
+and ten rounds of proposal/correction — is preserved in this repository's
+history on issue #108 and is not repeated here; this record exists to state
+the agreed direction and its consequences, not to re-host that discussion.
+
+### Decision
+
+Camera-first water-condition review is the main goal, following the existing
+[labeling guide](labeling-guide.md). A visible riverbank is the first
+reference, with optional markers and assisted selection. Visual overlays are
+supporting evidence. Machine observations stay clearly separate from human
+comparison. Model evaluation is baseline-first, after the readiness gate
+defined in [ML Readiness And First Model Strategy](../product/ml-readiness.md).
+
+Segmentation and riverbank selection support visual baseline selection and
+stronger evidence; they are not the main prediction goal or a mandatory
+training prerequisite. No main model architecture has been selected. No
+readiness pass, implementation, training, or public-warning approval is
+implied by this decision.
+
+`docs/product/ml-readiness.md` is the authoritative, living plan (data
+quality, grouped splits, privacy, evaluation, candidate tool roles, licensing
+scope, and the first possible temporal experiment). This page is the broader
+research background. Both take precedence over any earlier proposal from the
+original discussion.
+
+### Consequences
+
+- Training stays blocked until the readiness gate in `product/ml-readiness.md`
+  is satisfied. Closing prerequisite issues does not by itself satisfy it.
+- No dependency, model, or license choice is approved by this record. SAM 2,
+  MobileSAM, and OpenCV remain candidates subject to version/weights/license
+  review; pyorc/ffpiv, YOLO segmentation, and FastSAM are excluded from the
+  initial integration shortlist under the current licensing preference (a
+  scope decision, not a claim that all have identical license terms).
+- Revisit this direction if bank references do not help, simpler methods work
+  better, camera movement cannot be handled, or quality/device requirements
+  cannot be met.
 
 ## Short Answer
 
@@ -47,15 +102,12 @@ Important boundary: OpenFloodAI should not copy private product details, claim t
 
 Segmentation means drawing around parts of an image.
 
-Candidates for later evaluation:
+The agreed candidate roles, licensing exclusions, and limitations for SAM 2,
+MobileSAM, and Ultralytics YOLO segmentation are recorded in the
+[Tools And Research Boundaries table](../product/ml-readiness.md#tools-and-research-boundaries) —
+this page does not restate that decision.
 
-- [Segment Anything Model 2](https://github.com/facebookresearch/sam2)
-- [MobileSAM](https://github.com/ChaoningZhang/MobileSAM)
-
-Ultralytics YOLO segmentation remains a research reference, excluded from the
-initial integration shortlist under the agreed licensing preference.
-
-How they may help:
+How segmentation may help in general:
 
 - mark the river or water-like area
 - help create labels for training data
@@ -67,7 +119,9 @@ Main limitation:
 - they may confuse shadows, roads, sky reflection, mud, rain, or glare with water
 - large models may be too heavy for low-cost edge devices
 
-Simple example: SAM 2 can help a reviewer select the river area in a video. That selected area can become training or testing data later. It should not automatically tell people there is a flood.
+Simple example: a segmentation model can help a reviewer select the river area
+in a video. That selected area can become training or testing data later. It
+should not automatically tell people there is a flood.
 
 ### Object Detection Models
 
@@ -128,10 +182,8 @@ Automatically finding a water boundary or a bank area now covered by water is a
 separate analysis task. Segmentation may help, but a changed pixel alone is not
 proof of water.
 
-Evaluate a simple OpenCV approach first. SAM 2 or MobileSAM may be candidates for
-assisted selection or boundary estimation if they help on reviewed examples. No
-dependency or model choice is approved here; exact code, weights, and dependency
-licenses still need review before adoption.
+Evaluate a simple OpenCV approach first. See the segmentation candidates and
+licensing scope above; no dependency or model choice is approved here.
 
 See [proposed video overlays](../architecture/windowed-video-evidence.md#proposed-video-overlays)
 for the normal baseline, changing observations, unclear-view handling, and an
