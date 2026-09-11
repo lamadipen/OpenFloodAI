@@ -6,6 +6,7 @@ Avoid committing copyrighted datasets, sensitive imagery, or private field obser
 
 ## Notes
 
+- [Agreed ML Readiness And First Model Strategy](../product/ml-readiness.md)
 - [Human Labeling Guide For Water-Change Review](labeling-guide.md)
 - [Human Label Format](human-label-format.md)
 - [Human Label Comparison](human-label-comparison.md)

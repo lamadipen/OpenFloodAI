@@ -19,6 +19,7 @@ nav:
   - Privacy And Retention: privacy-retention.md
   - V1 Requirements: product/requirements.md
   - Labelled Data Quality Checklist: product/data-quality-checklist.md
+  - ML Readiness And First Model Strategy: product/ml-readiness.md
   - Architecture:
       - Architecture Notes: architecture/README.md
       - Dependency Map: architecture/dependencies.md
