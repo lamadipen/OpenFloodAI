@@ -578,20 +578,11 @@ Simple example: if a storm knocks out the internet but the camera still works, l
 
 ## 13. Privacy and Security Boundaries
 
-OpenFloodAI should collect and store only what it needs for river monitoring.
-
-Privacy and security rules:
-
-- Raw video retention must be configurable by site.
-- The default should avoid storing raw video unless needed for review, research, or debugging.
-- Camera URLs and credentials must be treated as secrets.
-- Camera credentials must not be written into logs.
-- Location details should be shared only with people who need them.
-- Access to stored video or event evidence should be limited and auditable.
-- If people, homes, roads, vehicles, or license plates appear in the scene, masking or cropping should be considered before public deployment.
-- The system must not perform face recognition, person tracking, vehicle recognition, or license-plate recognition.
-
-Simple example: if a road is visible beside the river, OpenFloodAI should not analyze license plates. The system is about river risk, not tracking people.
+OpenFloodAI should collect and store only what it needs for river
+monitoring. Full privacy and security rules are defined in
+[Privacy And Retention](../privacy-retention.md), including the
+face/person/vehicle/license-plate recognition boundary and camera-secret
+handling; this architecture adopts that policy rather than restating it.
 
 ## 14. Component Testability Expectations
 

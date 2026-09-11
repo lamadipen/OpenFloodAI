@@ -298,20 +298,10 @@ Simple example: if leaves cover the camera lens, the system should say the camer
 
 ## 16. Privacy Considerations
 
-OpenFloodAI should collect only what is needed for river monitoring.
-
-Privacy expectations:
-
-- Avoid face, person, vehicle, or license-plate recognition.
-- Raw video retention must be configurable by site.
-- The default should avoid storing raw video unless needed for review, research, or debugging.
-- Prefer storing events, summaries, and cropped river-focused evidence where practical.
-- Protect camera URLs, credentials, and location details.
-- Do not write camera credentials into logs.
-- Document who can access stored video or event evidence.
-- Consider masking or cropping before public deployment if people, roads, homes, vehicles, or license plates appear in view.
-
-Simple example: if a camera view includes a road near the river, the system should not analyze license plates. The project is about flood risk, not tracking people or vehicles.
+OpenFloodAI should collect only what is needed for river monitoring. Full
+privacy and retention rules are defined in
+[Privacy And Retention](../privacy-retention.md); this requirement adopts
+that policy rather than restating it.
 
 ## 17. Known Unknowns
 

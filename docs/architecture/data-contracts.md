@@ -854,25 +854,13 @@ Simple example: if the internet is down, the edge node should still remember tha
 
 ## 18. Privacy and Sensitive-Data Rules
 
-OpenFloodAI should avoid storing sensitive data unless there is a clear reason.
-
-Rules:
-
-- Raw video retention must be configurable by site.
-- The default should avoid storing raw video unless needed for review, research, or debugging.
-- Short clips or snapshots around important events should follow site retention policy.
-- If people, homes, roads, vehicles, or license plates appear in view, masking or cropping should be considered before public deployment.
-- Camera URLs, usernames, passwords, and tokens must not be written into logs or general records.
-- Exact GPS coordinates are optional and should be restricted by default.
-- Public event fields should avoid exact coordinates and camera placement details.
-- Restricted fields should require access control in future implementation.
-
-Recommended split:
-
-- Public fields: coarse site name, river name, broad risk state, general timestamp, non-sensitive reason codes.
-- Restricted fields: exact GPS, camera placement notes, raw video references, private contact details, sensitive infrastructure details.
-
-Simple example: a public dashboard might show “Example River near Old footbridge: HIGH candidate.” It should not show the camera password or exact camera pole location.
+General privacy and retention rules are defined in
+[Privacy And Retention](../privacy-retention.md#public-versus-restricted-fields-in-eventaudit-records),
+including the public-versus-restricted field split for event/audit records.
+This document's schemas (Sections 14-15) follow that split: public fields
+stay coarse and non-sensitive; restricted fields (exact GPS, camera
+placement, raw video references, private contact details) require future
+access control.
 
 ## 19. Versioning Rules
 
