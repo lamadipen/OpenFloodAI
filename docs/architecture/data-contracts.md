@@ -1003,3 +1003,37 @@ record. Label comparison reports cannot_compare rather than treating missing
 measurements as zero change.
 
 See [the design decision](windowed-video-evidence.md) for defaults and limitations.
+
+
+## Confirmed Riverbank Reference (Issue #163)
+
+This record is stored on the site config alongside `reference_region`, tied to
+it rather than replacing it: `region` and every marker's `region` must fit
+inside the site's own `reference_region`. Only the current state is kept, the
+same as `reference_region` itself — reconfirming or invalidating overwrites
+it rather than appending to a history.
+
+- `status`: `draft` (machine-suggested or unconfirmed), `confirmed` (a human
+  confirmed it), or `invalid` (no longer trustworthy).
+- `region`: the confirmed riverbank rectangle, in the same percentage-of-frame
+  shape as `reference_region`.
+- `video_id` and `video_time_seconds`: which video and moment the reference
+  was drawn from.
+- `site_id` and `camera_id`: duplicated from the parent config onto the
+  record itself for self-contained provenance, matching this project's other
+  evidence records (for example the run-export receipt).
+- `normal_condition`: whether the source footage was normal-condition, per
+  the [ML readiness plan](../product/ml-readiness.md).
+- `notes`: free text.
+- `markers`: a list of `{label, region}` stable extra references (bridge
+  pillars, rocks, wall edges), each also constrained to fit inside the site's
+  watched area.
+- `confirmed_at`, `invalidated_at`, `invalidation_reason`: server-set
+  timestamps and reason (one of `camera_moved`, `view_changed`,
+  `bank_changed`, `visibility_unreliable`, `other`); never client-supplied.
+
+Confirming a reference is not required before running validation — see the
+[ML readiness plan](../product/ml-readiness.md) for why a visible riverbank
+is the agreed first reference, and
+[windowed video evidence](windowed-video-evidence.md#proposed-video-overlays)
+for how this record relates to the still-proposed moving-overlay display.

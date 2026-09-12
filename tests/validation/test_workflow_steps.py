@@ -9,6 +9,7 @@ EXPECTED_STEP_KEYS = [
     "site_setup",
     "video_intake",
     "watched_area",
+    "confirmed_reference",
     "human_labels",
     "manifest",
     "run_validation",
@@ -57,7 +58,7 @@ def test_workflow_lists_every_expected_step_in_order(tmp_path: Path) -> None:
     steps = read_validation_site_status(site_dir).workflow_steps
 
     assert [step.key for step in steps] == EXPECTED_STEP_KEYS
-    assert [step.number for step in steps] == [1, 2, 3, 4, 5, 6, 7]
+    assert [step.number for step in steps] == [1, 2, 3, 4, 5, 6, 7, 8]
 
 
 def test_empty_site_shows_required_steps_as_missing(tmp_path: Path) -> None:

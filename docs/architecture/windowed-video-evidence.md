@@ -114,8 +114,11 @@ comparisons as a fallback.
 
 Status: supporting direction agreed in the [ML readiness plan](../product/ml-readiness.md)
 for issue #108; detailed implementation remains proposed. The sampling and review
-images described above already exist; the moving video overlays described here
-are future work.
+images described above already exist. The confirmed-reference *record* described
+just below is now implemented (issue #163) — see
+[Confirmed Riverbank Reference](data-contracts.md#confirmed-riverbank-reference-issue-163)
+for its exact shape. The moving video overlays described in the rest of this
+section (drawing that record onto the video player) remain future work.
 
 The main goal remains reviewing water conditions and changes over time, following
 the [labeling guide](../research/labeling-guide.md). Riverbank selection and
@@ -124,9 +127,10 @@ segmentation would help people and the machine see supporting evidence.
 ### What The User Would See
 
 A person selects a clear view recorded during normal conditions and confirms the
-visible riverbank. The system could suggest a bank outline for the person to
-correct, with manual selection available. A pillar or another stable marker can
-provide an extra reference when available.
+visible riverbank, saved as a [confirmed reference record](data-contracts.md#confirmed-riverbank-reference-issue-163)
+tied to the existing watched area. The system could suggest a bank outline for
+the person to correct, with manual selection available. A pillar or another
+stable marker can provide an extra reference when available.
 
 The video player could then show:
 

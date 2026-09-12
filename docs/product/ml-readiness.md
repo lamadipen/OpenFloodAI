@@ -193,8 +193,11 @@ Revisit the design if bank references do not help, simpler methods work better,
 camera movement cannot be handled, or quality/device requirements cannot be met.
 Keep existing local review available while new components are evaluated separately.
 
-Next implementation planning should define the normal-reference record and visual
-selection workflow, while dataset preparation establishes the training gate.
-Choose one bounded follow-up task at a time. Exact model architecture, numerical
-acceptance targets, baseline frame selection and future label contracts remain
-open; the camera-first product direction is settled.
+The normal-reference record and its confirm/draft/invalidate visual selection
+workflow are now defined (issue #163) — see
+[Confirmed Riverbank Reference](../architecture/data-contracts.md#confirmed-riverbank-reference-issue-163).
+Next implementation planning should build on that record while dataset
+preparation establishes the training gate. Choose one bounded follow-up task
+at a time. Exact model architecture, numerical acceptance targets, baseline
+frame selection and future label contracts remain open; the camera-first
+product direction is settled.
