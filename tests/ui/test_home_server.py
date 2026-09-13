@@ -227,7 +227,10 @@ def test_add_label_response_includes_quality_block(tmp_path: Path) -> None:
     site_dir = make_site(sites_dir / "example-site")
     write_json(
         site_dir / "configs" / "site-config.json",
-        {"site_id": site_dir.name, "confirmed_reference": {"status": "confirmed"}},
+        {
+            "site_id": site_dir.name,
+            "confirmed_reference": {"status": "confirmed", "normal_condition": True},
+        },
     )
 
     with serve_home_ui(sites_dir) as base_url:

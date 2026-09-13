@@ -48,9 +48,19 @@ FRIENDLY_FAILURE_REASONS: dict[str, str] = {
 
 
 def is_normal_baseline_confirmed(confirmed_reference: Mapping[str, Any] | None) -> bool:
-    """Return whether the site's OF-082 confirmed reference has been confirmed."""
+    """Return whether the site has a confirmed, normal-condition OF-082 reference.
 
-    return confirmed_reference is not None and confirmed_reference.get("status") == "confirmed"
+    Both conditions matter: a reference with status "confirmed" but
+    normal_condition False was not drawn from normal-condition footage, so it
+    is not a trustworthy baseline to compare against.
+    """
+
+    if confirmed_reference is None:
+        return False
+    return (
+        confirmed_reference.get("status") == "confirmed"
+        and confirmed_reference.get("normal_condition") is True
+    )
 
 
 def compute_failure_reason(
@@ -65,7 +75,7 @@ def compute_failure_reason(
     penalized just because a reviewer wasn't certain about every question.
     """
 
-    if record.get("riverbank_visible") == "no" or record.get("stable_marker_visible") == "no":
+    if record.get("riverbank_visible") == "no":
         return FAILURE_RIVERBANK_NOT_VISIBLE
     if record.get("visibility_condition") == "obstruction":
         return FAILURE_OBSTRUCTED_VIEW
@@ -99,9 +109,11 @@ def is_baseline_ready(
     that is not the same as being confirmed good. Baseline-ready additionally
     requires an explicit "yes" on the two fields that directly define whether
     the riverbank can be compared against: riverbank_visible and
-    water_boundary_visible. The other fields (stable_marker_visible,
-    camera_stable) may stay "unsure" and still count, matching the issue's
-    instruction not to require perfect conditions for every sample.
+    water_boundary_visible. stable_marker_visible is extra, optional evidence
+    (a pillar, rock, or similar) rather than a requirement, so it never
+    affects baseline_ready or failure_reason regardless of its value; camera_stable
+    may also stay "unsure" and still count, matching the issue's instruction
+    not to require perfect conditions for every sample.
     """
 
     if compute_failure_reason(record, confirmed_reference) is not None:

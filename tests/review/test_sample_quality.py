@@ -11,15 +11,16 @@ from openfloodai.review import (
     summarize_sample_quality,
 )
 
-CONFIRMED = {"status": "confirmed"}
-DRAFT = {"status": "draft"}
+CONFIRMED = {"status": "confirmed", "normal_condition": True}
+CONFIRMED_NOT_NORMAL = {"status": "confirmed", "normal_condition": False}
+DRAFT = {"status": "draft", "normal_condition": True}
 
 
 @pytest.mark.parametrize(
     ("record", "confirmed_reference", "expected_reason"),
     [
         ({"riverbank_visible": "no"}, CONFIRMED, "riverbank_not_visible"),
-        ({"stable_marker_visible": "no"}, CONFIRMED, "riverbank_not_visible"),
+        ({"stable_marker_visible": "no"}, CONFIRMED, None),
         ({"visibility_condition": "obstruction"}, CONFIRMED, "obstructed_view"),
         ({"camera_stable": "no"}, CONFIRMED, "camera_moved"),
         ({"water_boundary_visible": "no"}, CONFIRMED, "water_boundary_unclear"),
@@ -28,6 +29,7 @@ DRAFT = {"status": "draft"}
         ({}, DRAFT, "baseline_not_confirmed"),
         ({}, None, "baseline_not_confirmed"),
         ({}, CONFIRMED, None),
+        ({}, CONFIRMED_NOT_NORMAL, "baseline_not_confirmed"),
     ],
 )
 def test_compute_failure_reason_priority_order(
@@ -59,16 +61,29 @@ def test_compute_failure_reason_ignores_unsure_and_missing() -> None:
     ("confirmed_reference", "expected"),
     [
         (CONFIRMED, True),
+        (CONFIRMED_NOT_NORMAL, False),
+        ({"status": "confirmed"}, False),
         (DRAFT, False),
-        ({"status": "invalid"}, False),
+        ({"status": "invalid", "normal_condition": True}, False),
         (None, False),
         ({}, False),
     ],
 )
 def test_is_normal_baseline_confirmed_reads_status(
-    confirmed_reference: dict[str, str] | None, expected: bool
+    confirmed_reference: dict[str, object] | None, expected: bool
 ) -> None:
     assert is_normal_baseline_confirmed(confirmed_reference) is expected
+
+
+def test_stable_marker_visible_is_optional_evidence_not_a_requirement() -> None:
+    record = {
+        "riverbank_visible": "yes",
+        "water_boundary_visible": "yes",
+        "stable_marker_visible": "no",
+    }
+
+    assert compute_failure_reason(record, CONFIRMED) is None
+    assert is_baseline_ready(record, CONFIRMED) is True
 
 
 def test_is_baseline_ready_requires_explicit_yes_on_core_fields() -> None:

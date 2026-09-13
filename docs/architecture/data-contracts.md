@@ -1055,8 +1055,9 @@ labeled time window already is the natural unit of "one reviewed sample":
 `normal_baseline_confirmed` is not stored on the record. It is derived at
 read time as `True` iff the site's
 [Confirmed Riverbank Reference](#confirmed-riverbank-reference-issue-163)
-has `status == "confirmed"` — this is the explicit link between OF-082 and
-OF-083.
+has both `status == "confirmed"` **and** `normal_condition == True` — a
+confirmed reference drawn from non-normal-condition footage is not a
+trustworthy baseline. This is the explicit link between OF-082 and OF-083.
 
 `failure_reason` is also derived, never reviewer-supplied, from a fixed
 priority order over the fields above (see
@@ -1065,7 +1066,9 @@ priority order over the fields above (see
 `water_boundary_unclear`, `poor_visibility`, `baseline_not_confirmed`, or
 `None` if no known problem is recorded. An explicit `"no"` always beats
 `"unsure"` or a missing answer, so a sample is never penalized just for a
-reviewer's uncertainty.
+reviewer's uncertainty. `stable_marker_visible` is extra, optional evidence
+(a pillar, rock, or similar) rather than a requirement, so a `"no"` there
+never contributes to `failure_reason` or `baseline_ready` on its own.
 
 A sample is `baseline_ready` when it has no `failure_reason` and the
 reviewer explicitly answered `"yes"` (not `"unsure"`) for both
