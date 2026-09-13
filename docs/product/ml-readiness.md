@@ -196,7 +196,11 @@ Keep existing local review available while new components are evaluated separate
 The normal-reference record and its confirm/draft/invalidate visual selection
 workflow are now defined (issue #163) — see
 [Confirmed Riverbank Reference](../architecture/data-contracts.md#confirmed-riverbank-reference-issue-163).
-Next implementation planning should build on that record while dataset
+Per-sample riverbank/reference quality checks that connect validation samples
+to that confirmed reference, and separate baseline-ready evidence from
+practice-only footage, are now defined too (issue #164) — see
+[Riverbank/Reference Quality Checks](../architecture/data-contracts.md#riverbankreference-quality-checks-on-validation-samples-issue-164).
+Next implementation planning should build on those records while dataset
 preparation establishes the training gate. Choose one bounded follow-up task
 at a time. Exact model architecture, numerical acceptance targets, baseline
 frame selection and future label contracts remain open; the camera-first

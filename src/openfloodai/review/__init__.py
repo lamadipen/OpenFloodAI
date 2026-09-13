@@ -14,6 +14,8 @@ from openfloodai.review.dataset_manifest import (
 from openfloodai.review.human_labels import (
     ALLOWED_CONFIDENCE_LEVELS,
     ALLOWED_HUMAN_LABELS,
+    ALLOWED_TRISTATE_VALUES,
+    ALLOWED_VISIBILITY_CONDITIONS,
     CreateHumanLabelResult,
     HumanLabelError,
     add_human_label_record,
@@ -36,6 +38,15 @@ from openfloodai.review.review_images import (
     ReviewImageSet,
     generate_biggest_change_review_images,
 )
+from openfloodai.review.sample_quality import (
+    ALLOWED_FAILURE_REASONS,
+    SampleQualitySummary,
+    compute_failure_reason,
+    friendly_failure_reason,
+    is_baseline_ready,
+    is_normal_baseline_confirmed,
+    summarize_sample_quality,
+)
 from openfloodai.review.threshold_tuning import (
     DEFAULT_CANDIDATE_THRESHOLDS,
     ThresholdTuningError,
@@ -48,8 +59,11 @@ from openfloodai.review.threshold_tuning import (
 
 __all__ = [
     "ALLOWED_CONFIDENCE_LEVELS",
+    "ALLOWED_FAILURE_REASONS",
     "ALLOWED_HUMAN_LABELS",
     "ALLOWED_MANIFEST_SPLITS",
+    "ALLOWED_TRISTATE_VALUES",
+    "ALLOWED_VISIBILITY_CONDITIONS",
     "HARD_CASE_TYPE_OPTIONS",
     "MANIFEST_PURPOSE_OPTIONS",
     "DEFAULT_CANDIDATE_THRESHOLDS",
@@ -62,6 +76,7 @@ __all__ = [
     "LabelComparisonReport",
     "ReviewImageError",
     "ReviewImageSet",
+    "SampleQualitySummary",
     "ThresholdTuningError",
     "ThresholdTuningReport",
     "ThresholdTuningResult",
@@ -69,8 +84,12 @@ __all__ = [
     "build_operator_note",
     "compare_label_files",
     "compare_label_records",
+    "compute_failure_reason",
     "create_human_label_record",
+    "friendly_failure_reason",
     "generate_biggest_change_review_images",
+    "is_baseline_ready",
+    "is_normal_baseline_confirmed",
     "is_valid_human_label_record",
     "is_valid_manifest_record",
     "load_human_label_records",
@@ -78,6 +97,7 @@ __all__ = [
     "repair_manifest_from_local_videos",
     "render_label_comparison_report",
     "render_threshold_tuning_report",
+    "summarize_sample_quality",
     "tune_threshold_files",
     "tune_threshold_records",
     "validate_human_label_record",

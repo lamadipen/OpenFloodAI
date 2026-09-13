@@ -240,8 +240,109 @@ def test_empty_validation_scorecard_stays_clear_and_safe(tmp_path: Path) -> None
     assert report.scorecard.label_windows == 0
     assert report.scorecard.top_reasons == []
     assert report.scorecard.summary == "No labelled windows were available for comparison yet."
+    assert report.scorecard.baseline_ready_count == 0
+    assert report.scorecard.practice_only_count == 0
     assert "Cannot compare: 0" in rendered
     assert "not proof of flood detection accuracy" in rendered
+
+
+def test_scorecard_reports_baseline_ready_and_practice_only_counts(tmp_path: Path) -> None:
+    site_dir = tmp_path / "quality-site"
+    (site_dir / "configs").mkdir(parents=True)
+    (site_dir / "labels").mkdir(parents=True)
+    config = {
+        "site_id": "site-demo-01",
+        "camera_id": "camera-demo-01",
+        "site_name": "Demo River Bridge",
+        "public_location": "Demo River near Example Town",
+        "input_type": "local_video",
+        "reference_region": {"x": 0, "y": 0, "width": 100, "height": 100},
+        "privacy_notes": "Synthetic test config only.",
+        "confirmed_reference": {
+            "status": "confirmed",
+            "region": {"x": 10, "y": 10, "width": 20, "height": 20},
+            "video_id": "rising-001",
+            "video_time_seconds": 5,
+            "site_id": "site-demo-01",
+            "camera_id": "camera-demo-01",
+            "normal_condition": True,
+            "notes": "",
+            "markers": [],
+        },
+    }
+    (site_dir / "configs" / "site-config.json").write_text(json.dumps(config), encoding="utf-8")
+    (site_dir / "labels" / "labels.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "video_id": "rising-001",
+                        "time_window_seconds": [0, 30],
+                        "human_label": "water_rising",
+                        "riverbank_visible": "yes",
+                        "water_boundary_visible": "yes",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "video_id": "rising-001",
+                        "time_window_seconds": [30, 60],
+                        "human_label": "cannot_judge",
+                        "riverbank_visible": "no",
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    report = run_site_validation(site_dir)
+
+    assert report.scorecard.baseline_ready_count == 1
+    assert report.scorecard.practice_only_count == 1
+    assert report.scorecard.quality_reasons == [("riverbank_not_visible", 1)]
+
+
+def test_scorecard_treats_unconfirmed_baseline_as_practice_only(tmp_path: Path) -> None:
+    site_dir = tmp_path / "unconfirmed-site"
+    (site_dir / "configs").mkdir(parents=True)
+    (site_dir / "labels").mkdir(parents=True)
+    write_site_config(site_dir / "configs" / "site-config.json")
+    (site_dir / "labels" / "labels.jsonl").write_text(
+        json.dumps(
+            {
+                "video_id": "rising-001",
+                "time_window_seconds": [0, 30],
+                "human_label": "water_rising",
+                "riverbank_visible": "yes",
+                "water_boundary_visible": "yes",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    report = run_site_validation(site_dir)
+
+    assert report.scorecard.baseline_ready_count == 0
+    assert report.scorecard.practice_only_count == 1
+    assert report.scorecard.quality_reasons == [("baseline_not_confirmed", 1)]
+
+
+def test_render_site_validation_report_includes_baseline_ready_section(tmp_path: Path) -> None:
+    site_dir = make_site_dir(tmp_path)
+    create_tiny_video(
+        site_dir / "inputs" / "videos" / "rising-001.avi",
+        frame_values=(20, 255),
+    )
+
+    report = run_site_validation(site_dir)
+    rendered = render_site_validation_report(report)
+
+    assert "- Baseline-ready samples:" in rendered
+    assert "- Practice-only samples:" in rendered
+    assert "- Reference-quality issues:" in rendered
 
 
 def test_each_validation_run_gets_its_own_snapshot(tmp_path: Path) -> None:
