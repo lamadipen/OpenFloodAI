@@ -149,6 +149,7 @@ def run_local_video_review(
             [frames[before], frames[after]],
             review_images_dir,
             reference_region=site_config.reference_region,
+            confirmed_reference=site_config.confirmed_reference,
             prefix=_window_image_prefix(image_prefix, bounds, index, len(windows)),
             frame_times=(
                 float(str(signal["comparison_start_seconds"])),

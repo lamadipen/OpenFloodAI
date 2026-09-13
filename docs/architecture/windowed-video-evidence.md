@@ -117,8 +117,16 @@ for issue #108; detailed implementation remains proposed. The sampling and revie
 images described above already exist. The confirmed-reference *record* described
 just below is now implemented (issue #163) — see
 [Confirmed Riverbank Reference](data-contracts.md#confirmed-riverbank-reference-issue-163)
-for its exact shape. The moving video overlays described in the rest of this
-section (drawing that record onto the video player) remain future work.
+for its exact shape. Drawing that record — the watched rectangle, the confirmed
+"blue bank outline," and its named markers (row 1 of the table below) — is now
+implemented two ways (issue #166): burned into saved review-image overlay PNGs
+(`generate_biggest_change_review_images`), and drawn live over a playing video
+in the Home UI's read-only "Watch" viewer. Both only draw the confirmed shape
+when it is truly confirmed (status `confirmed` and normal-condition footage),
+matching OF-083's `is_normal_baseline_confirmed` rule. The remaining rows —
+the dashed baseline water line, the yellow estimated boundary, and the shaded
+covered-bank area — have no underlying detection anywhere in the system and
+remain future work; nothing draws placeholder geometry for them today.
 
 The main goal remains reviewing water conditions and changes over time, following
 the [labeling guide](../research/labeling-guide.md). Riverbank selection and
