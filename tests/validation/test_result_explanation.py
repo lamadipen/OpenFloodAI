@@ -77,7 +77,6 @@ def test_confirmed_reference_present_names_video_and_time() -> None:
     assert explanation["available"] == "yes"
     assert "rising-001" in explanation["summary"]
     assert "5" in explanation["summary"]
-    assert "normal condition confirmed: yes" in explanation["summary"]
 
 
 def test_confirmed_reference_absent_is_plain() -> None:
@@ -85,6 +84,25 @@ def test_confirmed_reference_absent_is_plain() -> None:
 
     assert explanation["available"] == "no"
     assert explanation["summary"].startswith("No confirmed reference yet.")
+
+
+@pytest.mark.parametrize(
+    "not_confirmed_reference",
+    [
+        DRAFT,
+        {"status": "invalid", "normal_condition": True},
+        {"status": "confirmed", "normal_condition": False},
+        {"status": "confirmed"},
+    ],
+)
+def test_confirmed_reference_exists_but_not_confirmed_is_flagged(
+    not_confirmed_reference: dict[str, object],
+) -> None:
+    explanation = explain_confirmed_reference(not_confirmed_reference)
+
+    assert explanation["available"] == "no"
+    assert explanation["summary"].startswith("Reference exists but is not confirmed.")
+    assert "confirmed normal-condition reference" not in explanation["summary"]
 
 
 @pytest.mark.parametrize(
@@ -143,7 +161,7 @@ def test_usable_reason_clean_case() -> None:
     ("system_result", "expected_snippet"),
     [
         ("water_change_seen", "cannot yet tell whether"),
-        ("no_clear_change", "no sign of a coverage difference"),
+        ("no_clear_change", "has not measured coverage against the confirmed reference"),
         ("cannot_judge", "no coverage comparison can be made"),
         ("missing_system_output", "No machine result was available"),
     ],

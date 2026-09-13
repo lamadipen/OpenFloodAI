@@ -4,7 +4,11 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from openfloodai.review.sample_quality import compute_failure_reason, friendly_failure_reason
+from openfloodai.review.sample_quality import (
+    compute_failure_reason,
+    friendly_failure_reason,
+    is_normal_baseline_confirmed,
+)
 
 
 def explain_result(machine: str, human: str, result: str, note: str) -> dict[str, str]:
@@ -65,19 +69,25 @@ def explain_confirmed_reference(confirmed_reference: Mapping[str, Any] | None) -
                 "the machine's own before/after evidence for each video."
             ),
         }
-    status = confirmed_reference.get("status", "unknown")
+    if not is_normal_baseline_confirmed(confirmed_reference):
+        status = confirmed_reference.get("status", "unknown")
+        video_id = confirmed_reference.get("video_id", "unknown")
+        return {
+            "available": "no",
+            "summary": (
+                f"Reference exists but is not confirmed. A reference for video "
+                f"'{video_id}' is saved (status: {status}), but it is not yet a "
+                f"confirmed normal-condition baseline; comparisons below rely only on "
+                f"the machine's own before/after evidence for each video."
+            ),
+        }
     video_id = confirmed_reference.get("video_id", "unknown")
     video_time_seconds = confirmed_reference.get("video_time_seconds", "unknown")
-    normal_condition = confirmed_reference.get("normal_condition")
-    normal_text = (
-        "yes" if normal_condition is True else "no" if normal_condition is False else "not recorded"
-    )
     return {
         "available": "yes",
         "summary": (
             f"The confirmed normal-condition reference for this site is video "
-            f"'{video_id}' at {video_time_seconds} seconds (status: {status}; "
-            f"normal condition confirmed: {normal_text})."
+            f"'{video_id}' at {video_time_seconds} seconds."
         ),
     }
 
@@ -89,8 +99,8 @@ _COVERAGE_DIRECTION_TEXT = {
         "covered by water."
     ),
     "no_clear_change": (
-        "The machine did not detect a clear visual change, so there is no sign of a "
-        "coverage difference from the reference."
+        "The machine did not detect a clear visual change in this window; it has not "
+        "measured coverage against the confirmed reference yet."
     ),
     "cannot_judge": (
         "The machine could not reach a clear result, so no coverage comparison can be made."
