@@ -1078,3 +1078,15 @@ baseline. Validation reports (`render_site_validation_report`) and each
 site's scorecard summarize `baseline_ready` vs `practice_only` counts per
 site, cross-referenced against the site's confirmed reference — see the
 [ML readiness plan](../product/ml-readiness.md).
+
+**Report presentation (Issue #165 / OF-084).** `render_site_validation_report`
+now presents this data per comparison, rather than only aggregating it: a
+`## Confirmed Reference` section once per report naming the site's confirmed
+video/time (or a plain "No confirmed reference yet." line when absent), and
+per comparison window, whether that window's reference evidence was usable
+(via `compute_failure_reason`/`friendly_failure_reason`). The report is
+honest about a real limitation: the pipeline has no signal for whether water
+covers more or less of the reference area, only whether a change was seen at
+all, so a `water_change_seen` result says a change was seen without claiming
+a direction. See `openfloodai.validation.result_explanation.
+explain_confirmed_reference` and `explain_riverbank_evidence`.

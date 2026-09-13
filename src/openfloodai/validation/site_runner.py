@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections import Counter
 from collections.abc import Iterable, Mapping
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -24,7 +24,11 @@ from openfloodai.review import (
     summarize_sample_quality,
 )
 from openfloodai.validation.input_snapshot import capture_run_inputs, finish_input_snapshot
-from openfloodai.validation.result_explanation import explain_result
+from openfloodai.validation.result_explanation import (
+    explain_confirmed_reference,
+    explain_result,
+    explain_riverbank_evidence,
+)
 
 VIDEO_SUFFIXES = {".avi", ".mkv", ".mov", ".mp4"}
 
@@ -132,6 +136,8 @@ class SiteValidationReport:
     scorecard: ValidationScorecard
     run_id: str = ""
     run_dir: str = ""
+    confirmed_reference: dict[str, Any] | None = None
+    label_lookup: dict[tuple[str, tuple[float, float]], JsonObject] = field(default_factory=dict)
 
 
 def run_site_validation(
@@ -227,6 +233,9 @@ def render_site_validation_report(report: SiteValidationReport) -> str:
         "Input receipt: inputs-used/ (config, watched area, manifest, labels, video identities).",
         "",
         f"Validation Site: {report.site_name}",
+        "",
+        "## Confirmed Reference",
+        f"- {explain_confirmed_reference(report.confirmed_reference)['summary']}",
         "",
         "## Counts",
         f"- Videos processed: {report.processed_count}",
@@ -331,6 +340,16 @@ def render_site_validation_report(report: SiteValidationReport) -> str:
                     comparison.result,
                     comparison.note,
                 )
+                label_record = (
+                    report.label_lookup.get((comparison.video_id, comparison.time_window_seconds))
+                    if comparison.time_window_seconds is not None
+                    else None
+                )
+                evidence = explain_riverbank_evidence(
+                    label_record,
+                    report.confirmed_reference,
+                    comparison.system_result,
+                )
                 lines.extend(
                     [
                         f"  - Window {index}:",
@@ -343,6 +362,9 @@ def render_site_validation_report(report: SiteValidationReport) -> str:
                         f"    - Result: {comparison.result}",
                         f"    - Time window: {_time_window_text(comparison.time_window_seconds)}",
                         f"    - Note: {comparison.note}",
+                        f"    - Riverbank/reference visibility: {evidence['riverbank_status']}",
+                        f"    - Reference evidence usable: {evidence['usable_reason']}",
+                        f"    - Coverage vs reference: {evidence['coverage_direction']}",
                     ]
                 )
 
@@ -477,6 +499,8 @@ def _build_report(
         disagree_count=disagree_count,
         cannot_compare_count=cannot_compare_count,
         scorecard=scorecard,
+        confirmed_reference=confirmed_reference,
+        label_lookup=_index_labels_by_window(labels),
     )
 
 
@@ -653,6 +677,21 @@ def _label_time_window_seconds(label: Mapping[str, object] | None) -> tuple[floa
     if start_second < 0 or end_second <= start_second:
         return None
     return (start_second, end_second)
+
+
+def _index_labels_by_window(
+    labels: list[JsonObject],
+) -> dict[tuple[str, tuple[float, float]], JsonObject]:
+    """Index raw label records by (video_id, time_window_seconds) for report evidence lookup."""
+
+    index: dict[tuple[str, tuple[float, float]], JsonObject] = {}
+    for label in labels:
+        video_id = _text(label.get("video_id"))
+        window = _label_time_window_seconds(label)
+        if not video_id or window is None:
+            continue
+        index.setdefault((video_id, window), label)
+    return index
 
 
 def _time_window_text(time_window_seconds: tuple[float, float] | None) -> str:
