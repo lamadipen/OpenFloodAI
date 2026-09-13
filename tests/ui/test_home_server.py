@@ -189,6 +189,94 @@ def test_sites_api_handles_partial_scorecard_report(tmp_path: Path) -> None:
     }
 
 
+def post_json(url: str, data: dict[str, object]) -> dict[str, Any]:
+    request = Request(
+        url,
+        data=json.dumps(data).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=5) as response:
+            return dict(json.loads(response.read().decode("utf-8")))
+    except HTTPError as error:
+        return dict(json.loads(error.read().decode("utf-8")))
+
+
+def test_sites_payload_includes_tristate_and_visibility_options(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    make_site(sites_dir / "example-site")
+
+    with serve_home_ui(sites_dir) as base_url:
+        payload = get_json(f"{base_url}/api/sites")
+
+    assert payload["tristate_options"] == ["no", "unsure", "yes"]
+    assert set(payload["visibility_condition_options"]) == {
+        "clear",
+        "dark",
+        "glare",
+        "rain",
+        "fog",
+        "blur",
+        "obstruction",
+    }
+
+
+def test_add_label_response_includes_quality_block(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    site_dir = make_site(sites_dir / "example-site")
+    write_json(
+        site_dir / "configs" / "site-config.json",
+        {"site_id": site_dir.name, "confirmed_reference": {"status": "confirmed"}},
+    )
+
+    with serve_home_ui(sites_dir) as base_url:
+        result = post_json(
+            f"{base_url}/api/add-label",
+            {
+                "folder_name": "example-site",
+                "video_id": "river-002",
+                "start_second": 0,
+                "end_second": 10,
+                "human_label": "water_rising",
+                "riverbank_visible": "yes",
+                "water_boundary_visible": "yes",
+            },
+        )
+
+    assert result["success"] is True
+    assert result["quality"] == {
+        "normal_baseline_confirmed": True,
+        "baseline_ready": True,
+        "failure_reason": None,
+        "failure_reason_text": "No reference-quality issue was recorded.",
+    }
+
+
+def test_add_label_response_quality_reflects_unconfirmed_baseline(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    make_site(sites_dir / "example-site")
+
+    with serve_home_ui(sites_dir) as base_url:
+        result = post_json(
+            f"{base_url}/api/add-label",
+            {
+                "folder_name": "example-site",
+                "video_id": "river-003",
+                "start_second": 0,
+                "end_second": 10,
+                "human_label": "water_rising",
+                "riverbank_visible": "yes",
+                "water_boundary_visible": "yes",
+            },
+        )
+
+    assert result["success"] is True
+    assert result["quality"]["normal_baseline_confirmed"] is False
+    assert result["quality"]["baseline_ready"] is False
+    assert result["quality"]["failure_reason"] == "baseline_not_confirmed"
+
+
 def test_sites_api_reports_ready_site(tmp_path: Path) -> None:
     sites_dir = tmp_path / "sites"
     make_site(sites_dir / "example-site")
@@ -255,6 +343,32 @@ def test_sites_api_exposes_scorecard_and_review_state(tmp_path: Path) -> None:
         "human_review_needed": 3,
     }
     assert site["review_images_path"] == str(review_images)
+
+
+def test_sites_api_reads_baseline_ready_and_practice_only_counts(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    site_dir = make_site(sites_dir / "example-site")
+    (site_dir / "outputs").mkdir(exist_ok=True)
+    (site_dir / "outputs" / "validation-report.md").write_text(
+        "\n".join(
+            [
+                "# Site Validation Report",
+                "",
+                "## Validation Scorecard",
+                "- Agree: 2",
+                "- Baseline-ready samples: 3",
+                "- Practice-only samples: 1",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with serve_home_ui(sites_dir) as base_url:
+        site = get_json(f"{base_url}/api/sites")["sites"][0]
+
+    assert site["latest_scorecard"]["baseline_ready_samples"] == 3
+    assert site["latest_scorecard"]["practice_only_samples"] == 1
+    assert site["baseline_ready_summary_text"] == "3 of 4 sample(s) are baseline-ready."
 
 
 def test_sites_api_exposes_one_report_history_entry(tmp_path: Path) -> None:

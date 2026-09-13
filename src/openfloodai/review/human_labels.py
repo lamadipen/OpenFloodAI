@@ -20,6 +20,14 @@ ALLOWED_HUMAN_LABELS = {
     "cannot_judge",
 }
 ALLOWED_CONFIDENCE_LEVELS = {"low", "medium", "high"}
+ALLOWED_TRISTATE_VALUES = {"yes", "no", "unsure"}
+ALLOWED_VISIBILITY_CONDITIONS = {"clear", "dark", "glare", "rain", "fog", "blur", "obstruction"}
+TRISTATE_QUALITY_FIELDS = (
+    "riverbank_visible",
+    "stable_marker_visible",
+    "water_boundary_visible",
+    "camera_stable",
+)
 _HUMAN_LABEL_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 _MAX_HUMAN_LABEL_LENGTH = 64
 REQUIRED_FIELDS = {
@@ -33,6 +41,11 @@ OPTIONAL_FIELDS = {
     "confidence",
     "note",
     "reviewer_id",
+    "riverbank_visible",
+    "stable_marker_visible",
+    "water_boundary_visible",
+    "camera_stable",
+    "visibility_condition",
 }
 ALLOWED_FIELDS = REQUIRED_FIELDS | OPTIONAL_FIELDS
 
@@ -70,6 +83,21 @@ def validate_human_label_record(record: Mapping[str, object]) -> list[str]:
         record.get("confidence"),
         "confidence",
         ALLOWED_CONFIDENCE_LEVELS,
+        errors,
+        required=False,
+    )
+    for field_name in TRISTATE_QUALITY_FIELDS:
+        _validate_allowed_value(
+            record.get(field_name),
+            field_name,
+            ALLOWED_TRISTATE_VALUES,
+            errors,
+            required=False,
+        )
+    _validate_allowed_value(
+        record.get("visibility_condition"),
+        "visibility_condition",
+        ALLOWED_VISIBILITY_CONDITIONS,
         errors,
         required=False,
     )
@@ -204,6 +232,11 @@ def create_human_label_record(
     reviewer_id: str = "",
     site_id: str = "",
     camera_id: str = "",
+    riverbank_visible: str | None = None,
+    stable_marker_visible: str | None = None,
+    water_boundary_visible: str | None = None,
+    camera_stable: str | None = None,
+    visibility_condition: str | None = None,
     labels_filename: str | None = None,
     overwrite: bool = False,
 ) -> CreateHumanLabelResult:
@@ -310,6 +343,42 @@ def create_human_label_record(
             message=f"confidence must be one of: {joined}",
         )
 
+    clean_tristate_fields: dict[str, str] = {}
+    for field_name, raw_value in (
+        ("riverbank_visible", riverbank_visible),
+        ("stable_marker_visible", stable_marker_visible),
+        ("water_boundary_visible", water_boundary_visible),
+        ("camera_stable", camera_stable),
+    ):
+        clean_value = str(raw_value).strip() if raw_value is not None else ""
+        if clean_value and clean_value not in ALLOWED_TRISTATE_VALUES:
+            joined = ", ".join(sorted(ALLOWED_TRISTATE_VALUES))
+            return CreateHumanLabelResult(
+                site_dir=site_dir,
+                labels_path=Path(),
+                record=None,
+                created=False,
+                message=f"{field_name} must be one of: {joined}",
+            )
+        if clean_value:
+            clean_tristate_fields[field_name] = clean_value
+
+    clean_visibility_condition = (
+        str(visibility_condition).strip() if visibility_condition is not None else ""
+    )
+    if (
+        clean_visibility_condition
+        and clean_visibility_condition not in ALLOWED_VISIBILITY_CONDITIONS
+    ):
+        joined = ", ".join(sorted(ALLOWED_VISIBILITY_CONDITIONS))
+        return CreateHumanLabelResult(
+            site_dir=site_dir,
+            labels_path=Path(),
+            record=None,
+            created=False,
+            message=f"visibility_condition must be one of: {joined}",
+        )
+
     start_val: int | float = int(start_num) if start_num.is_integer() else start_num
     end_val: int | float = int(end_num) if end_num.is_integer() else end_num
     time_window: list[JsonValue] = [start_val, end_val]
@@ -329,6 +398,10 @@ def create_human_label_record(
         record["site_id"] = str(site_id).strip()
     if camera_id and str(camera_id).strip():
         record["camera_id"] = str(camera_id).strip()
+    for field_name, clean_value in clean_tristate_fields.items():
+        record[field_name] = clean_value
+    if clean_visibility_condition:
+        record["visibility_condition"] = clean_visibility_condition
 
     validation_errors = validate_human_label_record(record)
     if validation_errors:

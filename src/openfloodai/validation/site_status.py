@@ -488,7 +488,21 @@ class ValidationSiteStatus:
         payload["next_steps"] = self.next_steps
         payload["workflow_steps"] = [step.to_dict() for step in self.workflow_steps]
         payload["validation_readiness"] = self.validation_readiness.to_dict()
+        payload["baseline_ready_summary_text"] = self._baseline_ready_summary_text()
         return payload
+
+    def _baseline_ready_summary_text(self) -> str | None:
+        """Return a plain-language baseline-ready vs practice-only summary."""
+
+        scorecard = self.latest_scorecard
+        if not scorecard or "baseline_ready_samples" not in scorecard:
+            return None
+        ready = scorecard.get("baseline_ready_samples", 0)
+        practice = scorecard.get("practice_only_samples", 0)
+        total = ready + practice
+        if total == 0:
+            return "No samples reviewed yet."
+        return f"{ready} of {total} sample(s) are baseline-ready."
 
 
 def discover_validation_site_statuses(
@@ -768,6 +782,8 @@ def _read_scorecard(report_path: Path | None) -> dict[str, Any] | None:
         ("agree", "Agree", int),
         ("disagree", "Disagree", int),
         ("cannot_compare", "Cannot compare", int),
+        ("baseline_ready_samples", "Baseline-ready samples", int),
+        ("practice_only_samples", "Practice-only samples", int),
     )
     for key, label, converter in patterns:
         match = re.search(rf"^- {re.escape(label)}:\s*(\d+)\s*$", report_text, re.MULTILINE)

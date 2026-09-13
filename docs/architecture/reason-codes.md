@@ -8,6 +8,12 @@ Reason codes explain why the system chose a risk state such as `NORMAL`, `HIGH`,
 
 This is planning documentation only. It does not add risk-engine code, ML code, camera ingestion, alert delivery, database storage, dashboard UI, public warning logic, or training code.
 
+The uppercase codes below are a pipeline/frame-level concern (camera, feed, and risk-engine
+evidence). They are a distinct, separately implemented concept from the lowercase,
+human-reviewed sample failure reasons (`riverbank_not_visible`, `camera_moved`, and so on)
+defined in [Riverbank/Reference Quality Checks on Validation Samples](data-contracts.md#riverbankreference-quality-checks-on-validation-samples-issue-164) —
+do not conflate the two.
+
 ## 2. Plain-Language Summary
 
 A reason code is a short label that explains what happened.

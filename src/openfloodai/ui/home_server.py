@@ -26,7 +26,13 @@ from openfloodai.config import (
 from openfloodai.review import (
     ALLOWED_CONFIDENCE_LEVELS,
     ALLOWED_HUMAN_LABELS,
+    ALLOWED_TRISTATE_VALUES,
+    ALLOWED_VISIBILITY_CONDITIONS,
+    compute_failure_reason,
     create_human_label_record,
+    friendly_failure_reason,
+    is_baseline_ready,
+    is_normal_baseline_confirmed,
     repair_manifest_from_local_videos,
 )
 from openfloodai.review.dataset_manifest import HARD_CASE_TYPE_OPTIONS, MANIFEST_PURPOSE_OPTIONS
@@ -640,9 +646,25 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             reviewer_id=str(data.get("reviewer_id", "")),
             site_id=str(data.get("site_id", "")),
             camera_id=str(data.get("camera_id", "")),
+            riverbank_visible=str(data.get("riverbank_visible", "")).strip() or None,
+            stable_marker_visible=str(data.get("stable_marker_visible", "")).strip() or None,
+            water_boundary_visible=str(data.get("water_boundary_visible", "")).strip() or None,
+            camera_stable=str(data.get("camera_stable", "")).strip() or None,
+            visibility_condition=str(data.get("visibility_condition", "")).strip() or None,
             labels_filename=str(data.get("labels_filename", "")).strip() or None,
             overwrite=_as_bool(data.get("overwrite"), default=False),
         )
+
+        quality = None
+        if result.created and result.record is not None:
+            confirmed_reference = _read_confirmed_reference_dict(site_dir)
+            reason = compute_failure_reason(result.record, confirmed_reference)
+            quality = {
+                "normal_baseline_confirmed": is_normal_baseline_confirmed(confirmed_reference),
+                "baseline_ready": is_baseline_ready(result.record, confirmed_reference),
+                "failure_reason": reason,
+                "failure_reason_text": friendly_failure_reason(reason),
+            }
 
         self._send_json(
             {
@@ -651,6 +673,7 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
                 "site_dir": str(result.site_dir) if result.created else None,
                 "labels_path": str(result.labels_path) if result.created else None,
                 "record": result.record,
+                "quality": quality,
             },
             status_code=200 if result.created else 400,
         )
@@ -932,6 +955,8 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             "hard_case_type_options": list(HARD_CASE_TYPE_OPTIONS),
             "human_label_options": sorted(ALLOWED_HUMAN_LABELS),
             "confidence_options": sorted(ALLOWED_CONFIDENCE_LEVELS),
+            "tristate_options": sorted(ALLOWED_TRISTATE_VALUES),
+            "visibility_condition_options": sorted(ALLOWED_VISIBILITY_CONDITIONS),
             "safety_note": (
                 "This local UI stays on this computer. It does not upload videos, "
                 "connect to cameras, send alerts, train ML, or publish warnings."
@@ -999,6 +1024,20 @@ def _find_site_config(site_dir: Path) -> Path:
     if not config_paths:
         raise SiteConfigError(f"Site config was not found under {site_dir / 'configs'}")
     return config_paths[0]
+
+
+def _read_confirmed_reference_dict(site_dir: Path) -> dict[str, Any] | None:
+    """Return the site's confirmed_reference dict, if any, for quality checks."""
+
+    try:
+        config_path = _find_site_config(site_dir)
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except (SiteConfigError, OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(config, dict):
+        return None
+    confirmed_reference = config.get("confirmed_reference")
+    return confirmed_reference if isinstance(confirmed_reference, dict) else None
 
 
 def _parse_reference_region(value: object) -> dict[str, object] | None:

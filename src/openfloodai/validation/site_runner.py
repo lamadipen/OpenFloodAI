@@ -8,6 +8,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from openfloodai.contracts import read_jsonl_records
@@ -17,8 +18,10 @@ from openfloodai.pipeline import LocalPocSmokeError, run_local_video_review
 from openfloodai.review import (
     LabelComparison,
     compare_label_records,
+    friendly_failure_reason,
     load_human_label_records,
     render_label_comparison_report,
+    summarize_sample_quality,
 )
 from openfloodai.validation.input_snapshot import capture_run_inputs, finish_input_snapshot
 from openfloodai.validation.result_explanation import explain_result
@@ -95,6 +98,9 @@ class ValidationScorecard:
     disagree_count: int
     cannot_compare_count: int
     top_reasons: list[tuple[str, int]]
+    baseline_ready_count: int
+    practice_only_count: int
+    quality_reasons: list[tuple[str, int]]
 
     @property
     def summary(self) -> str:
@@ -196,11 +202,14 @@ def run_site_validation(
                 )
             )
 
+        confirmed_reference = _read_confirmed_reference(selected_config_path)
         report_path = run_dir / "validation-report.md"
         report = _build_report(
             site_dir=site_dir,
             output_path=report_path,
             results=sorted(results, key=lambda result: result.video_id),
+            labels=labels,
+            confirmed_reference=confirmed_reference,
         )
         report = replace(report, run_id=run_id, run_dir=str(run_dir))
         report_path.write_text(render_site_validation_report(report), encoding="utf-8")
@@ -244,6 +253,25 @@ def render_site_validation_report(report: SiteValidationReport) -> str:
         lines.extend(
             f"  - {_friendly_reason(reason)}: {count} case(s)"
             for reason, count in report.scorecard.top_reasons
+        )
+    else:
+        lines.append("  - None recorded.")
+
+    lines.extend(
+        [
+            f"- Baseline-ready samples: {report.scorecard.baseline_ready_count}",
+            f"- Practice-only samples: {report.scorecard.practice_only_count}",
+            "- Meaning: Baseline-ready samples have a confirmed riverbank reference "
+            "and a clear view of both the reference and the water boundary. "
+            "Practice-only samples are still useful for practicing the review "
+            "process but are not yet trusted for real comparison.",
+            "- Reference-quality issues:",
+        ]
+    )
+    if report.scorecard.quality_reasons:
+        lines.extend(
+            f"  - {friendly_failure_reason(reason)}: {count} case(s)"
+            for reason, count in report.scorecard.quality_reasons
         )
     else:
         lines.append("  - None recorded.")
@@ -404,6 +432,8 @@ def _build_report(
     site_dir: Path,
     output_path: Path,
     results: list[SiteValidationResult],
+    labels: list[JsonObject],
+    confirmed_reference: dict[str, Any] | None,
 ) -> SiteValidationReport:
     processed_count = sum(result.processed for result in results)
     failed_count = sum(not result.processed for result in results)
@@ -423,6 +453,7 @@ def _build_report(
         for result in results
         for comparison in result.comparisons
     )
+    quality_summary = summarize_sample_quality(labels, confirmed_reference)
     scorecard = ValidationScorecard(
         videos_reviewed=len(results),
         label_windows=label_window_count,
@@ -430,6 +461,9 @@ def _build_report(
         disagree_count=disagree_count,
         cannot_compare_count=cannot_compare_count,
         top_reasons=_top_comparison_reasons(results),
+        baseline_ready_count=quality_summary.baseline_ready_count,
+        practice_only_count=quality_summary.practice_only_count,
+        quality_reasons=quality_summary.failure_reason_counts,
     )
     return SiteValidationReport(
         site_name=site_dir.name,
@@ -552,6 +586,19 @@ def _find_config_path(site_dir: Path, *, required: bool) -> Path:
     if required:
         raise ValidationRunnerError(f"No site config JSON file found under: {configs_dir}")
     return configs_dir / "site-config.json"
+
+
+def _read_confirmed_reference(config_path: Path) -> dict[str, Any] | None:
+    """Return the site's confirmed_reference dict, if any, for quality checks."""
+
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(config, dict):
+        return None
+    confirmed_reference = config.get("confirmed_reference")
+    return confirmed_reference if isinstance(confirmed_reference, dict) else None
 
 
 def _load_site_labels(site_dir: Path) -> list[JsonObject]:

@@ -29,6 +29,48 @@ def test_valid_human_label_record_passes() -> None:
     assert is_valid_human_label_record(record) is True
 
 
+def test_valid_human_label_record_with_quality_fields_passes() -> None:
+    record = {
+        "video_id": "demo-river-001",
+        "time_window_seconds": [0, 30],
+        "human_label": "water_rising",
+        "riverbank_visible": "yes",
+        "stable_marker_visible": "unsure",
+        "water_boundary_visible": "yes",
+        "camera_stable": "no",
+        "visibility_condition": "glare",
+    }
+
+    assert validate_human_label_record(record) == []
+    assert is_valid_human_label_record(record) is True
+
+
+def test_human_label_record_rejects_invalid_tristate_value() -> None:
+    errors = validate_human_label_record(
+        {
+            "video_id": "demo-river-001",
+            "time_window_seconds": [0, 30],
+            "human_label": "water_rising",
+            "riverbank_visible": "maybe",
+        }
+    )
+
+    assert "riverbank_visible must be one of: no, unsure, yes" in errors
+
+
+def test_human_label_record_rejects_invalid_visibility_condition() -> None:
+    errors = validate_human_label_record(
+        {
+            "video_id": "demo-river-001",
+            "time_window_seconds": [0, 30],
+            "human_label": "water_rising",
+            "visibility_condition": "sunny",
+        }
+    )
+
+    assert any(error.startswith("visibility_condition must be one of:") for error in errors)
+
+
 def test_custom_human_label_record_passes() -> None:
     record = {
         "video_id": "demo-river-001",
@@ -211,6 +253,47 @@ def test_create_human_label_record_rejects_unknown_confidence_values(tmp_path: P
 
     assert result.created is False
     assert "confidence must be one of:" in result.message
+
+
+def test_create_human_label_record_accepts_quality_fields(tmp_path: Path) -> None:
+    site_dir = tmp_path / "test-site"
+    site_dir.mkdir()
+
+    result = create_human_label_record(
+        site_dir=site_dir,
+        video_id="rising-001",
+        start_second=0,
+        end_second=30,
+        human_label="water_rising",
+        riverbank_visible="yes",
+        water_boundary_visible="unsure",
+        visibility_condition="glare",
+    )
+
+    assert result.created is True
+    records = load_human_label_records(site_dir / "labels" / "labels.jsonl")
+    assert records[0]["riverbank_visible"] == "yes"
+    assert records[0]["water_boundary_visible"] == "unsure"
+    assert records[0]["visibility_condition"] == "glare"
+    assert "stable_marker_visible" not in records[0]
+    assert "camera_stable" not in records[0]
+
+
+def test_create_human_label_record_rejects_unknown_tristate_value(tmp_path: Path) -> None:
+    site_dir = tmp_path / "test-site"
+    site_dir.mkdir()
+
+    result = create_human_label_record(
+        site_dir=site_dir,
+        video_id="rising-001",
+        start_second=0,
+        end_second=30,
+        human_label="water_rising",
+        camera_stable="maybe",
+    )
+
+    assert result.created is False
+    assert "camera_stable must be one of:" in result.message
 
 
 def test_create_human_label_record_rejects_unsafe_video_ids(tmp_path: Path) -> None:

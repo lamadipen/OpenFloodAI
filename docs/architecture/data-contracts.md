@@ -1037,3 +1037,41 @@ Confirming a reference is not required before running validation — see the
 is the agreed first reference, and
 [windowed video evidence](windowed-video-evidence.md#proposed-video-overlays)
 for how this record relates to the still-proposed moving-overlay display.
+
+
+## Riverbank/Reference Quality Checks On Validation Samples (Issue #164)
+
+Adds five optional fields to the existing human-reviewed label record (see
+[Local Sampled Evidence](#local-sampled-evidence-issue-104) and
+`openfloodai.review.human_labels`), rather than a new record type — a
+labeled time window already is the natural unit of "one reviewed sample":
+
+- `riverbank_visible`, `stable_marker_visible`, `water_boundary_visible`,
+  `camera_stable`: `"yes"` | `"no"` | `"unsure"`. Tri-state on purpose — a
+  reviewer is not forced to claim certainty they do not have.
+- `visibility_condition`: one of `clear`, `dark`, `glare`, `rain`, `fog`,
+  `blur`, `obstruction`.
+
+`normal_baseline_confirmed` is not stored on the record. It is derived at
+read time as `True` iff the site's
+[Confirmed Riverbank Reference](#confirmed-riverbank-reference-issue-163)
+has `status == "confirmed"` — this is the explicit link between OF-082 and
+OF-083.
+
+`failure_reason` is also derived, never reviewer-supplied, from a fixed
+priority order over the fields above (see
+`openfloodai.review.sample_quality.compute_failure_reason`): one of
+`riverbank_not_visible`, `obstructed_view`, `camera_moved`,
+`water_boundary_unclear`, `poor_visibility`, `baseline_not_confirmed`, or
+`None` if no known problem is recorded. An explicit `"no"` always beats
+`"unsure"` or a missing answer, so a sample is never penalized just for a
+reviewer's uncertainty.
+
+A sample is `baseline_ready` when it has no `failure_reason` and the
+reviewer explicitly answered `"yes"` (not `"unsure"`) for both
+`riverbank_visible` and `water_boundary_visible`. Everything else is
+`practice_only` — never rejected, just not counted toward the trusted
+baseline. Validation reports (`render_site_validation_report`) and each
+site's scorecard summarize `baseline_ready` vs `practice_only` counts per
+site, cross-referenced against the site's confirmed reference — see the
+[ML readiness plan](../product/ml-readiness.md).

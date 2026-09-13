@@ -1219,6 +1219,27 @@
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Confidence</label>
             <select name="confidence" id="labelConfidenceSelect" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
           </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Riverbank/reference visible</label>
+            <select name="riverbank_visible" id="labelRiverbankVisibleSelect" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Stable marker visible</label>
+            <select name="stable_marker_visible" id="labelStableMarkerVisibleSelect" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
+            <div class="meta" style="margin-top: 4px;">e.g. a pillar, rock, wall, or other fixed bank feature.</div>
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Water boundary visible enough to judge</label>
+            <select name="water_boundary_visible" id="labelWaterBoundaryVisibleSelect" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Camera appears stable</label>
+            <select name="camera_stable" id="labelCameraStableSelect" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Visibility condition</label>
+            <select name="visibility_condition" id="labelVisibilityConditionSelect" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
+          </div>
           <div style="grid-column: span 2;">
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Reviewer notes</label>
             <textarea name="note" id="labelNoteInput" placeholder="Optional notes (e.g. water appears higher near the bridge pillar)..." style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px; min-height: 60px;"></textarea>
@@ -1345,6 +1366,11 @@
       const labelValueSelect = document.querySelector("#labelValueSelect");
       const labelManualInput = document.querySelector("#labelManualInput");
       const labelConfidenceSelect = document.querySelector("#labelConfidenceSelect");
+      const labelRiverbankVisibleSelect = document.querySelector("#labelRiverbankVisibleSelect");
+      const labelStableMarkerVisibleSelect = document.querySelector("#labelStableMarkerVisibleSelect");
+      const labelWaterBoundaryVisibleSelect = document.querySelector("#labelWaterBoundaryVisibleSelect");
+      const labelCameraStableSelect = document.querySelector("#labelCameraStableSelect");
+      const labelVisibilityConditionSelect = document.querySelector("#labelVisibilityConditionSelect");
       const labelNoteInput = document.querySelector("#labelNoteInput");
       const detailPanel = document.querySelector("#detailPanel");
       const detailSiteSelect = document.querySelector("#detailSiteSelect");
@@ -1645,6 +1671,20 @@
         renderSetupMarkersList();
       };
 
+      const tristateDisplayLabels = {
+        yes: "Yes",
+        no: "No",
+        unsure: "Unsure",
+      };
+      const visibilityConditionDisplayLabels = {
+        clear: "Clear",
+        dark: "Dark",
+        glare: "Glare",
+        rain: "Rain",
+        fog: "Fog",
+        blur: "Blur",
+        obstruction: "Obstruction",
+      };
       const humanLabelDisplayLabels = {
         water_rising: "Water is rising",
         water_falling: "Water is falling",
@@ -3003,6 +3043,25 @@
             payload.confidence_options || ["low", "medium", "high"],
             "None / unspecified"
           );
+          for (const select of [
+            labelRiverbankVisibleSelect,
+            labelStableMarkerVisibleSelect,
+            labelWaterBoundaryVisibleSelect,
+            labelCameraStableSelect,
+          ]) {
+            fillSelect(
+              select,
+              payload.tristate_options || ["yes", "no", "unsure"],
+              "Unsure / not checked",
+              tristateDisplayLabels
+            );
+          }
+          fillSelect(
+            labelVisibilityConditionSelect,
+            payload.visibility_condition_options || ["clear", "dark", "glare", "rain", "fog", "blur", "obstruction"],
+            "Not recorded",
+            visibilityConditionDisplayLabels
+          );
           overview.innerHTML = renderOverview(payload.sites);
 
           if (!payload.sites.length) {
@@ -3766,7 +3825,11 @@
 
           const result = await response.json();
           if (response.ok && result.success) {
-            alert(result.message);
+            let message = result.message;
+            if (result.quality && result.quality.baseline_ready === false) {
+              message += `\n${result.quality.failure_reason_text}`;
+            }
+            alert(message);
             labelForm.reset();
             hideForms();
             loadSites();
