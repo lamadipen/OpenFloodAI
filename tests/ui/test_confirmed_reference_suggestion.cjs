@@ -70,6 +70,56 @@ test("both save call sites include the selector's origin", () => {
   assert.ok(script.includes("origin: setupVideoRegionSelector.origin()"));
 });
 
+function grabSuggestReferenceMethod(selectorSource) {
+  const start = selectorSource.indexOf("suggestReference: () => {");
+  assert.ok(start >= 0, "suggestReference method not found in selector");
+  const bodyStart = selectorSource.indexOf("{", start);
+  let depth = 0;
+  for (let i = bodyStart; i < selectorSource.length; i += 1) {
+    if (selectorSource[i] === "{") depth += 1;
+    if (selectorSource[i] === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return selectorSource.slice(start, i + 1);
+      }
+    }
+  }
+  throw new Error("Could not find end of suggestReference method");
+}
+
+test("both selectors redraw the canvas before sampling pixels for a suggestion", () => {
+  const confirmedSelector = grabBlock("createConfirmedReferenceSelector");
+  const setupSelector = grabBlock("createSiteSetupSelector");
+  for (const source of [confirmedSelector, setupSelector]) {
+    const method = grabSuggestReferenceMethod(source);
+    const drawIndex = method.indexOf("draw();");
+    const sampleIndex = method.indexOf("suggestReferenceRegion(");
+    assert.ok(drawIndex >= 0, "expected a draw() call before sampling pixels");
+    assert.ok(sampleIndex >= 0, "expected a call to suggestReferenceRegion");
+    assert.ok(
+      drawIndex < sampleIndex,
+      "draw() must run before suggestReferenceRegion() so the canvas matches the current paused frame"
+    );
+  }
+});
+
+test("a confirmed or invalidated record never displays as an unconfirmed suggestion", () => {
+  const confirmedSelector = grabBlock("createConfirmedReferenceSelector");
+  assert.ok(confirmedSelector.includes("let recordStatus = null;"));
+  assert.ok(confirmedSelector.includes("recordStatus = pendingExisting.status || null;"));
+  assert.match(
+    confirmedSelector,
+    /const isPendingSuggestion =\s*origin === "machine_suggested" && recordStatus !== "confirmed" && recordStatus !== "invalid";/
+  );
+  // The suggested/dashed rendering and label must be gated on the computed
+  // flag, not on origin alone.
+  assert.ok(confirmedSelector.includes("if (isPendingSuggestion) {"));
+});
+
+test("showConfirmedReferenceVideo passes the saved record's status to the selector", () => {
+  assert.match(script, /videoTimeSeconds: existingRecord\.video_time_seconds,\s*origin: existingRecord\.origin,\s*status: existingRecord\.status,/);
+});
+
 test("a fresh manual drag resets origin back to manual", () => {
   const confirmedSelector = grabBlock("createConfirmedReferenceSelector");
   const setupSelector = grabBlock("createSiteSetupSelector");

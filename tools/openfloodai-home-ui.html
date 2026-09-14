@@ -1668,6 +1668,7 @@
                 markers: existingRecord.markers || [],
                 videoTimeSeconds: existingRecord.video_time_seconds,
                 origin: existingRecord.origin,
+                status: existingRecord.status,
               }
             : null,
         });
@@ -2138,6 +2139,13 @@
         let guideRegion = null;
         let mainSelection = null;
         let origin = "manual";
+        // The saved status of a loaded record, if any (null for a fresh,
+        // never-saved selection this session). Lets the suggested/dashed
+        // styling apply only while a suggestion is genuinely still
+        // unconfirmed — once a human has confirmed (or invalidated) it,
+        // it displays like any other trusted reference, even though its
+        // origin still remembers it started as a suggestion.
+        let recordStatus = null;
         let pendingMarker = null;
         let markers = [];
         let dragStart = null;
@@ -2201,6 +2209,7 @@
           if (pendingExisting) {
             mainSelection = toPixels(pendingExisting.region);
             origin = pendingExisting.origin || "manual";
+            recordStatus = pendingExisting.status || null;
             markers = (pendingExisting.markers || []).map((marker) => ({
               label: marker.label,
               pixelRect: toPixels(marker.region),
@@ -2227,8 +2236,15 @@
           }
 
           if (mainSelection) {
+            // A suggestion only displays as unconfirmed while it genuinely
+            // is: a saved record with status "confirmed" or "invalid" has
+            // already had a human decision made about it, even if it
+            // started from a suggestion — it displays as trusted from then
+            // on, exactly like a manually drawn one.
+            const isPendingSuggestion =
+              origin === "machine_suggested" && recordStatus !== "confirmed" && recordStatus !== "invalid";
             context.save();
-            if (origin === "machine_suggested") {
+            if (isPendingSuggestion) {
               context.setLineDash([8, 5]);
               context.fillStyle = "rgba(124, 58, 237, 0.15)";
               context.strokeStyle = "#7c3aed";
@@ -2240,7 +2256,7 @@
             context.fillRect(mainSelection.x, mainSelection.y, mainSelection.width, mainSelection.height);
             context.strokeRect(mainSelection.x, mainSelection.y, mainSelection.width, mainSelection.height);
             context.restore();
-            if (origin === "machine_suggested") {
+            if (isPendingSuggestion) {
               context.save();
               context.fillStyle = "#5b21b6";
               context.font = "bold 12px system-ui, sans-serif";
@@ -2263,6 +2279,7 @@
 
         function reset() {
           clearSelection();
+          recordStatus = null;
           pendingMarker = null;
           markers = [];
           guideRegion = null;
@@ -2368,6 +2385,10 @@
             if (!guideRegion) {
               return false;
             }
+            // Redraw first so the canvas reflects wherever the video is
+            // currently paused — play/pause (not just seeking) can leave
+            // the canvas showing an older frame otherwise.
+            draw();
             const suggestion = suggestReferenceRegion(context, toPixels(guideRegion));
             if (!suggestion) {
               return false;
@@ -2683,6 +2704,10 @@
             if (!watchedAreaSelection) {
               return false;
             }
+            // Redraw first so the canvas reflects wherever the video is
+            // currently paused — play/pause (not just seeking) can leave
+            // the canvas showing an older frame otherwise.
+            draw();
             const suggestion = suggestReferenceRegion(context, watchedAreaSelection);
             if (!suggestion) {
               return false;
