@@ -409,6 +409,7 @@ def _run_one_video(
             ]
             or None,
             sampling=sampling,
+            labels=labels,
         )
     except (LocalPocSmokeError, OSError, ValueError) as error:
         return SiteValidationResult(

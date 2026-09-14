@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 from numpy.typing import NDArray
 
+from openfloodai.review.sample_quality import is_normal_baseline_confirmed
 from openfloodai.vision.simple_signals import FrameArray
 
 
@@ -38,6 +39,25 @@ class ReferenceRegionLike(Protocol):
 type ReferenceRegionInput = Mapping[str, object] | ReferenceRegionLike
 
 
+class ConfirmedReferenceLike(Protocol):
+    """Shape shared by the config's ConfirmedReference dataclass and raw dicts."""
+
+    @property
+    def status(self) -> str: ...
+
+    @property
+    def normal_condition(self) -> bool: ...
+
+    @property
+    def region(self) -> ReferenceRegionInput: ...
+
+    @property
+    def markers(self) -> Sequence[object]: ...
+
+
+type ConfirmedReferenceInput = Mapping[str, object] | ConfirmedReferenceLike
+
+
 @dataclass(frozen=True)
 class ReviewImageSet:
     """Paths and metadata for one local visual-change review image set."""
@@ -57,6 +77,8 @@ def generate_biggest_change_review_images(
     output_dir: Path,
     *,
     reference_region: ReferenceRegionInput | None = None,
+    confirmed_reference: ConfirmedReferenceInput | None = None,
+    evidence_usability_note: str | None = None,
     prefix: str = "review",
     frame_times: tuple[float, float] | None = None,
 ) -> ReviewImageSet:
@@ -96,9 +118,20 @@ def generate_biggest_change_review_images(
         changed_overlay_frame = _draw_reference_region_box(
             prepared_frames[changed_frame_index], reference_region
         )
+        if confirmed_reference is not None:
+            baseline_overlay_frame = _draw_confirmed_reference_overlay(
+                baseline_overlay_frame, confirmed_reference
+            )
+            changed_overlay_frame = _draw_confirmed_reference_overlay(
+                changed_overlay_frame, confirmed_reference
+            )
         if frame_times is not None:
-            baseline_overlay_frame = _with_time_caption(baseline_overlay_frame, frame_times[0])
-            changed_overlay_frame = _with_time_caption(changed_overlay_frame, frame_times[1])
+            baseline_overlay_frame = _with_time_caption(
+                baseline_overlay_frame, frame_times[0], extra_line=evidence_usability_note
+            )
+            changed_overlay_frame = _with_time_caption(
+                changed_overlay_frame, frame_times[1], extra_line=evidence_usability_note
+            )
         comparison_overlay_frame = np.hstack([baseline_overlay_frame, changed_overlay_frame])
         baseline_overlay_path = output_dir / f"{prefix}-baseline-overlay.png"
         changed_overlay_path = output_dir / f"{prefix}-changed-overlay.png"
@@ -210,6 +243,78 @@ def _draw_reference_region_box(
     return output_frame
 
 
+def _confirmed_reference_field(source: object, field_name: str) -> object:
+    if isinstance(source, Mapping):
+        return source.get(field_name)
+    return getattr(source, field_name, None)
+
+
+def _is_confirmed_reference_trusted(confirmed_reference: ConfirmedReferenceInput) -> bool:
+    """A reference is only trustworthy when truly confirmed, not merely present.
+
+    Mirrors openfloodai.review.sample_quality.is_normal_baseline_confirmed exactly
+    (status == "confirmed" AND normal_condition is True), so this drawing code
+    can never reintroduce the "draft reference drawn as if trusted" bug fixed
+    for PR #171/OF-083.
+    """
+
+    return is_normal_baseline_confirmed(
+        {
+            "status": _confirmed_reference_field(confirmed_reference, "status"),
+            "normal_condition": _confirmed_reference_field(confirmed_reference, "normal_condition"),
+        }
+    )
+
+
+def _draw_confirmed_reference_overlay(
+    frame: NDArray[np.uint8],
+    confirmed_reference: ConfirmedReferenceInput,
+) -> NDArray[np.uint8]:
+    """Burn the confirmed riverbank reference and its markers onto a frame.
+
+    Draws nothing (returns the frame unchanged) unless the reference is truly
+    confirmed, so a draft or invalid reference is never shown as if trusted.
+    """
+
+    if not _is_confirmed_reference_trusted(confirmed_reference):
+        return frame
+
+    region = cast(ReferenceRegionInput, _confirmed_reference_field(confirmed_reference, "region"))
+    left, top, right, bottom = _reference_region_pixels(frame, region)
+    output_frame = frame.copy()
+    cv2.rectangle(output_frame, (left, top), (right - 1, bottom - 1), (0, 0, 0), 3)
+    cv2.rectangle(output_frame, (left, top), (right - 1, bottom - 1), (216, 64, 29), 2)
+
+    markers = _confirmed_reference_field(confirmed_reference, "markers") or ()
+    for marker in cast(Sequence[object], markers):
+        marker_region = cast(ReferenceRegionInput, _confirmed_reference_field(marker, "region"))
+        label = str(_confirmed_reference_field(marker, "label") or "")
+        m_left, m_top, m_right, m_bottom = _reference_region_pixels(output_frame, marker_region)
+        cv2.rectangle(output_frame, (m_left, m_top), (m_right - 1, m_bottom - 1), (6, 119, 217), 2)
+        text_position = (m_left, max(12, m_top - 6))
+        cv2.putText(
+            output_frame,
+            label,
+            text_position,
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.4,
+            (0, 0, 0),
+            2,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            output_frame,
+            label,
+            text_position,
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.4,
+            (255, 255, 255),
+            1,
+            cv2.LINE_AA,
+        )
+    return output_frame
+
+
 def _reference_region_pixels(
     frame: NDArray[np.uint8],
     reference_region: ReferenceRegionInput,
@@ -260,10 +365,16 @@ def _write_image(path: Path, frame: NDArray[np.uint8]) -> None:
         raise ReviewImageError(f"Could not write review image: {path}")
 
 
-def _with_time_caption(frame: NDArray[np.uint8], second: float) -> NDArray[np.uint8]:
+def _with_time_caption(
+    frame: NDArray[np.uint8],
+    second: float,
+    *,
+    extra_line: str | None = None,
+) -> NDArray[np.uint8]:
     # A separate caption band preserves every pixel of the evidence image.
+    band_height = 24 if extra_line is None else 44
     output = cv2.copyMakeBorder(
-        frame, 24, 0, 0, max(0, 180 - frame.shape[1]), cv2.BORDER_CONSTANT, value=(0, 0, 0)
+        frame, band_height, 0, 0, max(0, 180 - frame.shape[1]), cv2.BORDER_CONSTANT, value=(0, 0, 0)
     )
     cv2.putText(
         output,
@@ -275,4 +386,15 @@ def _with_time_caption(frame: NDArray[np.uint8], second: float) -> NDArray[np.ui
         1,
         cv2.LINE_AA,
     )
+    if extra_line is not None:
+        cv2.putText(
+            output,
+            extra_line,
+            (4, 37),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.45,
+            (0, 200, 255),
+            1,
+            cv2.LINE_AA,
+        )
     return cast(NDArray[np.uint8], output)

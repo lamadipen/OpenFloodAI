@@ -23,7 +23,7 @@ def create_tiny_video(path: Path, *, frame_count: int = 2) -> None:
         writer.release()
 
 
-def write_site_config(path: Path) -> None:
+def write_site_config(path: Path, *, confirmed_reference: dict[str, object] | None = None) -> None:
     config = {
         "site_id": "site-demo-01",
         "camera_id": "camera-demo-01",
@@ -38,6 +38,8 @@ def write_site_config(path: Path) -> None:
         },
         "privacy_notes": "Broad public location only.",
     }
+    if confirmed_reference is not None:
+        config["confirmed_reference"] = confirmed_reference
     path.write_text(json.dumps(config), encoding="utf-8")
 
 
@@ -97,3 +99,120 @@ def test_local_video_review_creates_outputs_from_local_video_and_config(tmp_path
     assert Path(result.operator_notes_path).exists()
     assert len(result.review_image_paths) == 6
     assert all(Path(path).exists() for path in result.review_image_paths)
+
+
+def test_local_video_review_burns_confirmed_reference_into_overlay_images(
+    tmp_path: Path,
+) -> None:
+    video_path = tmp_path / "sample.avi"
+    create_tiny_video(video_path, frame_count=3)
+
+    plain_config_path = tmp_path / "plain-site-config.json"
+    write_site_config(plain_config_path)
+    plain_result = run_local_video_review(
+        video_path=video_path,
+        config_path=plain_config_path,
+        output_dir=tmp_path / "plain-review",
+    )
+
+    confirmed_config_path = tmp_path / "confirmed-site-config.json"
+    write_site_config(
+        confirmed_config_path,
+        confirmed_reference={
+            "status": "confirmed",
+            "region": {"x": 0, "y": 60, "width": 50, "height": 20},
+            "video_id": "sample",
+            "video_time_seconds": 1,
+            "site_id": "site-demo-01",
+            "camera_id": "camera-demo-01",
+            "normal_condition": True,
+            "notes": "",
+            "markers": [],
+            "confirmed_at": "2026-01-01T00:00:00Z",
+            "invalidated_at": None,
+            "invalidation_reason": None,
+        },
+    )
+    confirmed_result = run_local_video_review(
+        video_path=video_path,
+        config_path=confirmed_config_path,
+        output_dir=tmp_path / "confirmed-review",
+    )
+
+    plain_overlay = next(
+        path for path in plain_result.review_image_paths if path.endswith("-baseline-overlay.png")
+    )
+    confirmed_overlay = next(
+        path
+        for path in confirmed_result.review_image_paths
+        if path.endswith("-baseline-overlay.png")
+    )
+
+    plain_image = cv2.imread(plain_overlay)
+    confirmed_image = cv2.imread(confirmed_overlay)
+    assert plain_image is not None
+    assert confirmed_image is not None
+    assert not np.array_equal(plain_image, confirmed_image)
+
+
+def test_local_video_review_flags_unusable_evidence_in_overlay_caption(tmp_path: Path) -> None:
+    video_path = tmp_path / "sample.avi"
+    create_tiny_video(video_path, frame_count=3)
+
+    confirmed_config_path = tmp_path / "confirmed-site-config.json"
+    write_site_config(
+        confirmed_config_path,
+        confirmed_reference={
+            "status": "confirmed",
+            "region": {"x": 0, "y": 60, "width": 50, "height": 20},
+            "video_id": "sample",
+            "video_time_seconds": 1,
+            "site_id": "site-demo-01",
+            "camera_id": "camera-demo-01",
+            "normal_condition": True,
+            "notes": "",
+            "markers": [],
+            "confirmed_at": "2026-01-01T00:00:00Z",
+            "invalidated_at": None,
+            "invalidation_reason": None,
+        },
+    )
+
+    baseline_result = run_local_video_review(
+        video_path=video_path,
+        config_path=confirmed_config_path,
+        output_dir=tmp_path / "baseline-review",
+    )
+    records = read_jsonl_records(Path(baseline_result.records_path))
+    window = next(r for r in records if r["record_type"] == "evidence_window_output")
+    bounds = window["time_window_seconds"]
+
+    labels = [
+        {
+            "video_id": "sample",
+            "time_window_seconds": bounds,
+            "human_label": "cannot_judge",
+            "riverbank_visible": "no",
+        }
+    ]
+    flagged_result = run_local_video_review(
+        video_path=video_path,
+        config_path=confirmed_config_path,
+        output_dir=tmp_path / "flagged-review",
+        labels=labels,
+    )
+
+    baseline_overlay = next(
+        path
+        for path in baseline_result.review_image_paths
+        if path.endswith("-baseline-overlay.png")
+    )
+    flagged_overlay = next(
+        path for path in flagged_result.review_image_paths if path.endswith("-baseline-overlay.png")
+    )
+
+    baseline_image = cv2.imread(baseline_overlay)
+    flagged_image = cv2.imread(flagged_overlay)
+    assert baseline_image is not None
+    assert flagged_image is not None
+    assert flagged_image.shape[0] > baseline_image.shape[0]

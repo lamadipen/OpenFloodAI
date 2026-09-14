@@ -16,7 +16,13 @@ from openfloodai.contracts.local_store import JsonObject
 from openfloodai.ingestion.evidence_sampling import SamplingSettings
 from openfloodai.pipeline.local_poc import read_selected_frames, run_local_region_poc_pipeline
 from openfloodai.replay import render_summary_markdown, summarize_jsonl_records
-from openfloodai.review import build_operator_note, generate_biggest_change_review_images
+from openfloodai.review import (
+    build_operator_note,
+    compute_failure_reason,
+    find_matching_label,
+    generate_biggest_change_review_images,
+    is_normal_baseline_confirmed,
+)
 
 DemoFrame = NDArray[np.uint8]
 
@@ -70,6 +76,7 @@ def run_local_video_review(
     sampling: SamplingSettings | None = None,
     records_output_path: Path | None = None,
     review_images_output_dir: Path | None = None,
+    labels: list[JsonObject] | None = None,
 ) -> LocalPocSmokeResult:
     """Run the local POC review workflow for a real local video file."""
 
@@ -98,6 +105,17 @@ def run_local_video_review(
     site_config = load_site_config(config_path)
     if site_config.reference_region is None:
         raise LocalPocSmokeError("Local POC smoke workflow requires a reference_region")
+
+    confirmed_reference = site_config.confirmed_reference
+    confirmed_reference_status = (
+        {
+            "status": confirmed_reference.status,
+            "normal_condition": confirmed_reference.normal_condition,
+        }
+        if confirmed_reference is not None
+        else None
+    )
+    confirmed_reference_trusted = is_normal_baseline_confirmed(confirmed_reference_status)
 
     replay_summary = summarize_jsonl_records(records_path)
     summary_path.write_text(render_summary_markdown(replay_summary), encoding="utf-8")
@@ -145,10 +163,27 @@ def run_local_video_review(
             int(str(signal["changed_frame_index"])),
         )
         frames = read_selected_frames(video_path, [before, after])
+        evidence_usability_note = None
+        if confirmed_reference_trusted and labels and isinstance(bounds, list) and len(bounds) == 2:
+            matched_label = find_matching_label(
+                labels,
+                video_id=video_path.stem,
+                time_window_seconds=(float(str(bounds[0])), float(str(bounds[1]))),
+            )
+            if matched_label is not None:
+                # The reference is already trusted, so this can only be a
+                # per-sample quality reason, never "baseline not confirmed".
+                failure_reason = compute_failure_reason(matched_label, confirmed_reference_status)
+                if failure_reason is not None:
+                    evidence_usability_note = (
+                        f"Reference evidence not usable: {failure_reason.replace('_', ' ')}."
+                    )
         image_set = generate_biggest_change_review_images(
             [frames[before], frames[after]],
             review_images_dir,
             reference_region=site_config.reference_region,
+            confirmed_reference=confirmed_reference,
+            evidence_usability_note=evidence_usability_note,
             prefix=_window_image_prefix(image_prefix, bounds, index, len(windows)),
             frame_times=(
                 float(str(signal["comparison_start_seconds"])),

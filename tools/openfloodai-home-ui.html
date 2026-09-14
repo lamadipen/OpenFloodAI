@@ -1179,6 +1179,34 @@
         </div>
       </section>
 
+      <section id="watchViewerPanel" class="form-panel" style="display: none;">
+        <h2 style="margin-top: 0;">Watch</h2>
+        <p class="meta" style="margin-top: 0;">
+          Watch a video with the watched area and confirmed reference drawn on top. This is a
+          view only; it never changes the video file.
+        </p>
+        <div style="display: grid; gap: 16px;">
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Site</label>
+            <select id="watchSiteSelect" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Video *</label>
+            <select id="watchVideoSelect" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
+          </div>
+          <div>
+            <div id="watchVideoWrap" style="position: relative; max-width: 100%; display: none;">
+              <video id="watchVideoPreview" controls preload="metadata" style="display: none; width: 100%; background: #182b35;"></video>
+              <canvas id="watchOverlayCanvas" aria-label="Watched rectangle and confirmed reference overlay" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"></canvas>
+            </div>
+            <div class="meta" id="watchStatus" role="status" style="margin-top: 6px;">Choose a video to watch.</div>
+          </div>
+          <div>
+            <button type="button" id="cancelWatchViewer" style="background: transparent; color: var(--muted); border-color: var(--line);">Close</button>
+          </div>
+        </div>
+      </section>
+
       <section id="labelFormPanel" class="form-panel" style="display: none;">
         <h2 style="margin-top: 0;">Add Human Label Record</h2>
         <p class="meta" style="margin-top: 0;">
@@ -1355,6 +1383,14 @@
       const invalidationReasonSelect = document.querySelector("#invalidationReasonSelect");
       const invalidationNotesInput = document.querySelector("#invalidationNotesInput");
       const invalidateReferenceButton = document.querySelector("#invalidateReferenceButton");
+      const watchViewerPanel = document.querySelector("#watchViewerPanel");
+      const watchSiteSelect = document.querySelector("#watchSiteSelect");
+      const watchVideoSelect = document.querySelector("#watchVideoSelect");
+      const watchVideoWrap = document.querySelector("#watchVideoWrap");
+      const watchVideoPreview = document.querySelector("#watchVideoPreview");
+      const watchOverlayCanvas = document.querySelector("#watchOverlayCanvas");
+      const watchStatus = document.querySelector("#watchStatus");
+      const cancelWatchViewer = document.querySelector("#cancelWatchViewer");
       const labelFormPanel = document.querySelector("#labelFormPanel");
       const labelForm = document.querySelector("#labelForm");
       const cancelLabel = document.querySelector("#cancelLabel");
@@ -1420,6 +1456,12 @@
         emptyText: "Choose a video to begin.",
         onChange: () => renderConfirmedReferenceMarkersList(),
       });
+      const watchOverlayViewer = createReadOnlyOverlayViewer({
+        video: watchVideoPreview,
+        wrap: watchVideoWrap,
+        canvas: watchOverlayCanvas,
+        status: watchStatus,
+      });
       let defaultHumanLabelOptions = [
         "water_rising",
         "water_falling",
@@ -1478,6 +1520,7 @@
         }
         fillWatchedAreaSites(sites);
         fillConfirmedReferenceSites(sites);
+        fillWatchSites(sites);
       }
 
       function fillWatchedAreaSites(sites) {
@@ -1627,6 +1670,68 @@
       function updateInvalidateVisibility(existingRecord) {
         const canInvalidate = Boolean(existingRecord) && existingRecord.status !== "invalid";
         invalidateReferenceSection.style.display = canInvalidate ? "block" : "none";
+      }
+
+      function fillWatchSites(sites) {
+        const current = watchSiteSelect.value;
+        watchSiteSelect.innerHTML = "";
+        for (const site of sites) {
+          const option = document.createElement("option");
+          option.value = site.site_name;
+          option.textContent = site.site_name;
+          watchSiteSelect.append(option);
+        }
+        if (!sites.length) {
+          const option = document.createElement("option");
+          option.value = "";
+          option.textContent = "Create a site first";
+          watchSiteSelect.append(option);
+        }
+        if ([...watchSiteSelect.options].some((option) => option.value === current)) {
+          watchSiteSelect.value = current;
+        }
+        fillWatchVideos();
+      }
+
+      function fillWatchVideos() {
+        const site = latestSites.find((entry) => entry.site_name === watchSiteSelect.value);
+        const videoIds = (site && site.video_ids) || [];
+        watchVideoSelect.innerHTML = "";
+        watchOverlayViewer.reset();
+        if (!videoIds.length) {
+          const option = document.createElement("option");
+          option.value = "";
+          option.textContent = "Add a video to this site first";
+          watchVideoSelect.append(option);
+          return;
+        }
+        const chooseOption = document.createElement("option");
+        chooseOption.value = "";
+        chooseOption.textContent = "Choose a video";
+        watchVideoSelect.append(chooseOption);
+        for (const videoId of videoIds) {
+          const option = document.createElement("option");
+          option.value = videoId;
+          option.textContent = videoId;
+          watchVideoSelect.append(option);
+        }
+      }
+
+      function showWatchVideo() {
+        const folderName = watchSiteSelect.value;
+        const videoId = watchVideoSelect.value;
+        if (!folderName || !videoId) {
+          watchOverlayViewer.reset();
+          return;
+        }
+        const site = latestSites.find((entry) => entry.site_name === folderName);
+        const watchedRegion = site && site.reference_region ? site.reference_region : null;
+        // A confirmed reference is a site/camera baseline, not tied to one video:
+        // show it on any video from this site, and let the trust check below
+        // decide whether it is safe to draw.
+        const confirmedReference = (site && site.confirmed_reference) || null;
+        const query = new URLSearchParams({ folder_name: folderName, video_id: videoId });
+        watchOverlayViewer.show(`/api/site-video?${query}`, { watchedRegion, confirmedReference });
       }
 
       function renderConfirmedReferenceMarkersList() {
@@ -2462,6 +2567,109 @@
         };
       }
 
+      // Read-only overlay viewer: draws the watched rectangle, confirmed
+      // reference, and markers on a canvas over a playing <video>. It never
+      // edits anything and never reads pixels back out of the video, so it
+      // cannot modify the underlying video file.
+      function createReadOnlyOverlayViewer({ video, wrap, canvas, status }) {
+        const context = canvas.getContext("2d");
+        let watchedRegion = null;
+        let confirmedReference = null;
+
+        function toPixels(percentRect) {
+          return {
+            x: (percentRect.x / 100) * canvas.width,
+            y: (percentRect.y / 100) * canvas.height,
+            width: (percentRect.width / 100) * canvas.width,
+            height: (percentRect.height / 100) * canvas.height,
+          };
+        }
+
+        function isConfirmedReferenceTrusted(reference) {
+          // Mirrors openfloodai.review.sample_quality.is_normal_baseline_confirmed:
+          // status alone is not enough, normal_condition must also be true.
+          return Boolean(reference) && reference.status === "confirmed" && reference.normal_condition === true;
+        }
+
+        function draw() {
+          if (!video.videoWidth) {
+            return;
+          }
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          context.clearRect(0, 0, canvas.width, canvas.height);
+
+          if (watchedRegion) {
+            const box = toPixels(watchedRegion);
+            context.save();
+            context.strokeStyle = "#000000";
+            context.lineWidth = 5;
+            context.strokeRect(box.x, box.y, box.width, box.height);
+            context.strokeStyle = "#ffff00";
+            context.lineWidth = 2;
+            context.strokeRect(box.x, box.y, box.width, box.height);
+            context.restore();
+          }
+
+          if (isConfirmedReferenceTrusted(confirmedReference)) {
+            const box = toPixels(confirmedReference.region);
+            context.save();
+            context.strokeStyle = "#000000";
+            context.lineWidth = 5;
+            context.strokeRect(box.x, box.y, box.width, box.height);
+            context.strokeStyle = "#1d4ed8";
+            context.lineWidth = 3;
+            context.strokeRect(box.x, box.y, box.width, box.height);
+            context.restore();
+
+            for (const marker of confirmedReference.markers || []) {
+              const markerBox = toPixels(marker.region);
+              context.save();
+              context.fillStyle = "rgba(217, 119, 6, 0.2)";
+              context.strokeStyle = "#d97706";
+              context.lineWidth = 2;
+              context.fillRect(markerBox.x, markerBox.y, markerBox.width, markerBox.height);
+              context.strokeRect(markerBox.x, markerBox.y, markerBox.width, markerBox.height);
+              context.fillStyle = "#a96b08";
+              context.font = "12px system-ui, sans-serif";
+              context.fillText(marker.label, markerBox.x + 2, Math.max(12, markerBox.y - 4));
+              context.restore();
+            }
+            status.textContent = `Reference confirmed from video ${confirmedReference.video_id} at ${confirmedReference.video_time_seconds}s.`;
+          } else if (confirmedReference) {
+            status.textContent = "Reference exists but is not confirmed.";
+          } else {
+            status.textContent = "No confirmed reference yet.";
+          }
+        }
+
+        function show(source, { watchedRegion: region = null, confirmedReference: reference = null } = {}) {
+          watchedRegion = region;
+          confirmedReference = reference;
+          wrap.style.display = "block";
+          video.style.display = "block";
+          canvas.style.display = "block";
+          video.src = source;
+        }
+
+        function reset() {
+          watchedRegion = null;
+          confirmedReference = null;
+          wrap.style.display = "none";
+          video.style.display = "none";
+          canvas.style.display = "none";
+          status.textContent = "Choose a video to watch.";
+          video.removeAttribute("src");
+          video.load();
+        }
+
+        video.addEventListener("loadedmetadata", draw);
+        video.addEventListener("timeupdate", draw);
+        video.addEventListener("play", draw);
+
+        return { show, reset };
+      }
+
       function resetVideoPreview() {
         videoRegionSelector.reset();
       }
@@ -2476,6 +2684,8 @@
         watchedAreaFormPanel.style.display = "none";
         confirmedReferenceFormPanel.style.display = "none";
         pendingMarkerControls.style.display = "none";
+        watchViewerPanel.style.display = "none";
+        watchOverlayViewer.reset();
         labelFormPanel.style.display = "none";
         createSiteButton.style.display = "inline-block";
         addLabelButton.style.display = "inline-block";
@@ -3012,6 +3222,7 @@
               <button type="button" onclick="openVideoFormForSite('${escapeHtml(site.site_name)}')" style="font-size: 13px; min-height: 34px; padding: 6px 12px;">+ Add Video</button>
               <button type="button" onclick="openLabelFormForSite('${escapeHtml(site.site_name)}')" style="font-size: 13px; min-height: 34px; padding: 6px 12px; background: var(--accent-strong); border-color: var(--accent-strong);">+ Add Label</button>
               <button type="button" onclick="openConfirmedReferenceFormForSite('${escapeHtml(site.site_name)}')" style="font-size: 13px; min-height: 34px; padding: 6px 12px;" ${site.reference_region ? "" : "disabled"}>Confirmed Reference</button>
+              <button type="button" onclick="openWatchViewerForSite('${escapeHtml(site.site_name)}')" style="font-size: 13px; min-height: 34px; padding: 6px 12px;" ${site.video_count > 0 ? "" : "disabled"}>Watch</button>
               <a class="site-action-link" href="/site-details.html?site=${encodeURIComponent(site.site_name)}">Details View</a>
             </div>
           </article>
@@ -3141,6 +3352,14 @@
         fillConfirmedReferenceVideos();
         confirmedReferenceFormPanel.style.display = "block";
         revealPanel(confirmedReferenceFormPanel);
+      };
+
+      window.openWatchViewerForSite = function (siteName) {
+        hideForms();
+        watchSiteSelect.value = siteName;
+        fillWatchVideos();
+        watchViewerPanel.style.display = "block";
+        revealPanel(watchViewerPanel);
       };
 
       function revealPanel(panel) {
@@ -3634,6 +3853,13 @@
 
       cancelConfirmedReference.addEventListener("click", () => {
         confirmedReferenceSelector.reset();
+        hideForms();
+      });
+
+      watchSiteSelect.addEventListener("change", fillWatchVideos);
+      watchVideoSelect.addEventListener("change", showWatchVideo);
+      cancelWatchViewer.addEventListener("click", () => {
+        watchOverlayViewer.reset();
         hideForms();
       });
 

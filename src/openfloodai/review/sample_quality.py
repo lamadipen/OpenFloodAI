@@ -47,6 +47,29 @@ FRIENDLY_FAILURE_REASONS: dict[str, str] = {
 }
 
 
+def find_matching_label(
+    labels: Iterable[Mapping[str, object]],
+    *,
+    video_id: str,
+    time_window_seconds: tuple[float, float],
+) -> Mapping[str, object] | None:
+    """Return the label record for this exact video and time window, if any."""
+
+    for label in labels:
+        if label.get("video_id") != video_id:
+            continue
+        window = label.get("time_window_seconds")
+        if not isinstance(window, list) or len(window) != 2:
+            continue
+        try:
+            start, end = float(window[0]), float(window[1])
+        except (TypeError, ValueError):
+            continue
+        if (start, end) == time_window_seconds:
+            return label
+    return None
+
+
 def is_normal_baseline_confirmed(confirmed_reference: Mapping[str, Any] | None) -> bool:
     """Return whether the site has a confirmed, normal-condition OF-082 reference.
 
