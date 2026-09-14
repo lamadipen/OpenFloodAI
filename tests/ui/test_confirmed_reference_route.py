@@ -87,6 +87,36 @@ def test_confirmed_reference_is_saved_as_draft(tmp_path: Path) -> None:
     assert saved["camera_id"] == "camera-demo-01"
 
 
+def test_confirmed_reference_defaults_origin_to_manual(tmp_path: Path) -> None:
+    site_dir = make_site(tmp_path / "example-site")
+
+    with serve_home_ui(tmp_path) as base_url:
+        status, payload = post(
+            base_url, "/api/set-confirmed-reference", confirmed_reference_request()
+        )
+
+    assert status == 200
+    assert payload["success"] is True
+    saved = read_config(site_dir)["confirmed_reference"]
+    assert saved["origin"] == "manual"
+
+
+def test_confirmed_reference_saves_machine_suggested_origin(tmp_path: Path) -> None:
+    site_dir = make_site(tmp_path / "example-site")
+
+    with serve_home_ui(tmp_path) as base_url:
+        status, payload = post(
+            base_url,
+            "/api/set-confirmed-reference",
+            confirmed_reference_request(origin="machine_suggested"),
+        )
+
+    assert status == 200
+    assert payload["success"] is True
+    saved = read_config(site_dir)["confirmed_reference"]
+    assert saved["origin"] == "machine_suggested"
+
+
 def test_confirmed_reference_confirmed_status_sets_confirmed_at(tmp_path: Path) -> None:
     site_dir = make_site(tmp_path / "example-site")
 

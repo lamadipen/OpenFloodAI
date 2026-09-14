@@ -539,6 +539,7 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             site_config = load_site_config(config_path)
             payload = {
                 "status": str(data.get("status", "")).strip(),
+                "origin": str(data.get("origin", "manual")).strip() or "manual",
                 "region": _parse_reference_region(data.get("region")),
                 "video_id": video_id,
                 "video_time_seconds": data.get("video_time_seconds"),
