@@ -57,3 +57,19 @@ test("a Watch button opens the viewer for a site with at least one video", () =>
   assert.ok(buttonLine.includes("site.video_count > 0"));
   assert.ok(buttonLine.includes("disabled"));
 });
+
+test("the confirmed reference is shown on any video from the site, not just the one it was drawn from", () => {
+  const source = grabFunction("showWatchVideo");
+  assert.ok(
+    !source.includes("confirmed_reference.video_id === videoId"),
+    "should not gate the site's confirmed reference on the selected video's id"
+  );
+  assert.match(source, /confirmedReference = \(site && site\.confirmed_reference\)/);
+});
+
+test("the viewer names the video/time the confirmed reference was drawn from", () => {
+  const source = grabFunction("createReadOnlyOverlayViewer");
+  assert.ok(source.includes("Reference confirmed from video"));
+  assert.ok(source.includes("confirmedReference.video_id"));
+  assert.ok(source.includes("confirmedReference.video_time_seconds"));
+});

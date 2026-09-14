@@ -199,6 +199,35 @@ def test_not_confirmed_reference_draws_nothing_extra(
     )
 
 
+def test_evidence_usability_note_adds_a_taller_caption_band(tmp_path: Path) -> None:
+    baseline_frame = np.zeros((10, 10), dtype=np.uint8)
+    changed_frame = np.full((10, 10), 180, dtype=np.uint8)
+
+    without_note = generate_biggest_change_review_images(
+        [baseline_frame, changed_frame],
+        tmp_path / "without",
+        reference_region=REFERENCE_REGION,
+        confirmed_reference=CONFIRMED_REFERENCE_DICT,
+        frame_times=(0.0, 10.0),
+    )
+    with_note = generate_biggest_change_review_images(
+        [baseline_frame, changed_frame],
+        tmp_path / "with",
+        reference_region=REFERENCE_REGION,
+        confirmed_reference=CONFIRMED_REFERENCE_DICT,
+        evidence_usability_note="Reference evidence not usable: camera moved.",
+        frame_times=(0.0, 10.0),
+    )
+
+    without_overlay = load_image(without_note.overlay_image_paths[0])
+    with_overlay = load_image(with_note.overlay_image_paths[0])
+    without_plain = load_image(without_note.baseline_image_path)
+    with_plain = load_image(with_note.baseline_image_path)
+
+    assert with_overlay.shape[0] > without_overlay.shape[0]
+    assert with_plain.shape == without_plain.shape
+
+
 def test_biggest_change_uses_reference_region_when_provided(tmp_path: Path) -> None:
     baseline_frame = np.zeros((10, 10), dtype=np.uint8)
     outside_region_change_frame = np.zeros((10, 10), dtype=np.uint8)

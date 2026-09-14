@@ -1726,10 +1726,10 @@
         }
         const site = latestSites.find((entry) => entry.site_name === folderName);
         const watchedRegion = site && site.reference_region ? site.reference_region : null;
-        const confirmedReference =
-          site && site.confirmed_reference && site.confirmed_reference.video_id === videoId
-            ? site.confirmed_reference
-            : null;
+        // A confirmed reference is a site/camera baseline, not tied to one video:
+        // show it on any video from this site, and let the trust check below
+        // decide whether it is safe to draw.
+        const confirmedReference = (site && site.confirmed_reference) || null;
         const query = new URLSearchParams({ folder_name: folderName, video_id: videoId });
         watchOverlayViewer.show(`/api/site-video?${query}`, { watchedRegion, confirmedReference });
       }
@@ -2635,7 +2635,7 @@
               context.fillText(marker.label, markerBox.x + 2, Math.max(12, markerBox.y - 4));
               context.restore();
             }
-            status.textContent = "";
+            status.textContent = `Reference confirmed from video ${confirmedReference.video_id} at ${confirmedReference.video_time_seconds}s.`;
           } else if (confirmedReference) {
             status.textContent = "Reference exists but is not confirmed.";
           } else {

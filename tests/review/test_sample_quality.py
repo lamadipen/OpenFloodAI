@@ -5,6 +5,7 @@ import pytest
 from openfloodai.review import (
     ALLOWED_FAILURE_REASONS,
     compute_failure_reason,
+    find_matching_label,
     friendly_failure_reason,
     is_baseline_ready,
     is_normal_baseline_confirmed,
@@ -154,3 +155,41 @@ def test_friendly_failure_reason_covers_all_codes() -> None:
 
 def test_friendly_failure_reason_handles_none() -> None:
     assert friendly_failure_reason(None) == "No reference-quality issue was recorded."
+
+
+def test_find_matching_label_matches_video_and_window() -> None:
+    labels = [
+        {"video_id": "rising-001", "time_window_seconds": [0, 30], "human_label": "water_rising"},
+        {"video_id": "rising-001", "time_window_seconds": [30, 60], "human_label": "cannot_judge"},
+        {"video_id": "other-001", "time_window_seconds": [0, 30], "human_label": "no_clear_change"},
+    ]
+
+    match = find_matching_label(labels, video_id="rising-001", time_window_seconds=(30.0, 60.0))
+
+    assert match is not None
+    assert match["human_label"] == "cannot_judge"
+
+
+def test_find_matching_label_returns_none_when_no_exact_match() -> None:
+    labels = [
+        {"video_id": "rising-001", "time_window_seconds": [0, 30], "human_label": "water_rising"}
+    ]
+
+    assert (
+        find_matching_label(labels, video_id="rising-001", time_window_seconds=(5.0, 25.0)) is None
+    )
+    assert (
+        find_matching_label(labels, video_id="other-001", time_window_seconds=(0.0, 30.0)) is None
+    )
+
+
+def test_find_matching_label_ignores_malformed_windows() -> None:
+    labels: list[dict[str, object]] = [
+        {"video_id": "rising-001", "time_window_seconds": "not-a-list"},
+        {"video_id": "rising-001", "time_window_seconds": [0]},
+        {"video_id": "rising-001"},
+    ]
+
+    assert (
+        find_matching_label(labels, video_id="rising-001", time_window_seconds=(0.0, 30.0)) is None
+    )

@@ -78,6 +78,7 @@ def generate_biggest_change_review_images(
     *,
     reference_region: ReferenceRegionInput | None = None,
     confirmed_reference: ConfirmedReferenceInput | None = None,
+    evidence_usability_note: str | None = None,
     prefix: str = "review",
     frame_times: tuple[float, float] | None = None,
 ) -> ReviewImageSet:
@@ -125,8 +126,12 @@ def generate_biggest_change_review_images(
                 changed_overlay_frame, confirmed_reference
             )
         if frame_times is not None:
-            baseline_overlay_frame = _with_time_caption(baseline_overlay_frame, frame_times[0])
-            changed_overlay_frame = _with_time_caption(changed_overlay_frame, frame_times[1])
+            baseline_overlay_frame = _with_time_caption(
+                baseline_overlay_frame, frame_times[0], extra_line=evidence_usability_note
+            )
+            changed_overlay_frame = _with_time_caption(
+                changed_overlay_frame, frame_times[1], extra_line=evidence_usability_note
+            )
         comparison_overlay_frame = np.hstack([baseline_overlay_frame, changed_overlay_frame])
         baseline_overlay_path = output_dir / f"{prefix}-baseline-overlay.png"
         changed_overlay_path = output_dir / f"{prefix}-changed-overlay.png"
@@ -360,10 +365,16 @@ def _write_image(path: Path, frame: NDArray[np.uint8]) -> None:
         raise ReviewImageError(f"Could not write review image: {path}")
 
 
-def _with_time_caption(frame: NDArray[np.uint8], second: float) -> NDArray[np.uint8]:
+def _with_time_caption(
+    frame: NDArray[np.uint8],
+    second: float,
+    *,
+    extra_line: str | None = None,
+) -> NDArray[np.uint8]:
     # A separate caption band preserves every pixel of the evidence image.
+    band_height = 24 if extra_line is None else 44
     output = cv2.copyMakeBorder(
-        frame, 24, 0, 0, max(0, 180 - frame.shape[1]), cv2.BORDER_CONSTANT, value=(0, 0, 0)
+        frame, band_height, 0, 0, max(0, 180 - frame.shape[1]), cv2.BORDER_CONSTANT, value=(0, 0, 0)
     )
     cv2.putText(
         output,
@@ -375,4 +386,15 @@ def _with_time_caption(frame: NDArray[np.uint8], second: float) -> NDArray[np.ui
         1,
         cv2.LINE_AA,
     )
+    if extra_line is not None:
+        cv2.putText(
+            output,
+            extra_line,
+            (4, 37),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.45,
+            (0, 200, 255),
+            1,
+            cv2.LINE_AA,
+        )
     return cast(NDArray[np.uint8], output)
