@@ -140,6 +140,15 @@ tied to the existing watched area. The system could suggest a bank outline for
 the person to correct, with manual selection available. A pillar or another
 stable marker can provide an extra reference when available.
 
+As of Issue #167 (OF-086), a first version of the suggestion exists: a simple
+client-side gradient heuristic (the row with the strongest brightness jump
+inside the watched area — not segmentation or a trained model) proposes a
+draft band, clearly marked unconfirmed, which the person can accept, adjust,
+redraw, or ignore; only the confirmed result is ever trusted (see `origin` in
+[data-contracts.md](data-contracts.md#confirmed-riverbank-reference-issue-163)).
+Evaluating suggestion quality against approved field footage remains separate
+future work, not covered by this initial heuristic.
+
 The video player could then show:
 
 | Overlay | Meaning | Does it change? |

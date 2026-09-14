@@ -132,6 +132,7 @@ def test_confirmed_reference_overlay_accepts_dataclass_input(tmp_path: Path) -> 
     changed_frame = np.full((100, 100), 180, dtype=np.uint8)
     confirmed_reference = ConfirmedReference(
         status="confirmed",
+        origin="manual",
         region=ReferenceRegion(x=60, y=60, width=20, height=20),
         video_id="river-002",
         video_time_seconds=3,

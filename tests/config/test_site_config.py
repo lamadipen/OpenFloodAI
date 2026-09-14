@@ -240,6 +240,53 @@ def test_write_confirmed_reference_rejects_invalid_status_value(tmp_path: Path) 
         write_confirmed_reference(config_path, confirmed_reference_payload(status="invalid"))
 
 
+def test_write_confirmed_reference_defaults_to_manual_origin(tmp_path: Path) -> None:
+    config_path = site_with_watched_area(tmp_path)
+
+    saved = write_confirmed_reference(config_path, confirmed_reference_payload())
+
+    assert saved.origin == "manual"
+
+
+def test_write_confirmed_reference_accepts_machine_suggested_origin(tmp_path: Path) -> None:
+    config_path = site_with_watched_area(tmp_path)
+
+    saved = write_confirmed_reference(
+        config_path, confirmed_reference_payload(origin="machine_suggested")
+    )
+
+    assert saved.origin == "machine_suggested"
+    config = load_site_config(config_path)
+    assert config.confirmed_reference is not None
+    assert config.confirmed_reference.origin == "machine_suggested"
+
+
+def test_write_confirmed_reference_rejects_invalid_origin(tmp_path: Path) -> None:
+    config_path = site_with_watched_area(tmp_path)
+
+    with pytest.raises(SiteConfigError, match="origin"):
+        write_confirmed_reference(config_path, confirmed_reference_payload(origin="ml_model"))
+
+
+def test_load_confirmed_reference_without_origin_defaults_to_manual(tmp_path: Path) -> None:
+    # Models a real record saved before OF-086 introduced `origin` — it must
+    # keep loading rather than failing on a field it predates.
+    config_path = site_with_watched_area(tmp_path)
+    raw_config = json.loads(config_path.read_text(encoding="utf-8"))
+    raw_confirmed_reference = confirmed_reference_payload()
+    raw_confirmed_reference.update(
+        {"confirmed_at": None, "invalidated_at": None, "invalidation_reason": None}
+    )
+    assert "origin" not in raw_confirmed_reference
+    raw_config["confirmed_reference"] = raw_confirmed_reference
+    config_path.write_text(json.dumps(raw_config), encoding="utf-8")
+
+    config = load_site_config(config_path)
+
+    assert config.confirmed_reference is not None
+    assert config.confirmed_reference.origin == "manual"
+
+
 def test_invalidate_confirmed_reference_sets_status_and_reason(tmp_path: Path) -> None:
     config_path = site_with_watched_area(tmp_path)
     write_confirmed_reference(config_path, confirmed_reference_payload(status="confirmed"))
@@ -267,6 +314,21 @@ def test_invalidate_confirmed_reference_rejects_bad_reason(tmp_path: Path) -> No
 
     with pytest.raises(SiteConfigError, match="Invalidation reason"):
         invalidate_confirmed_reference(config_path, "not_a_real_reason")
+
+
+def test_invalidate_confirmed_reference_preserves_origin(tmp_path: Path) -> None:
+    config_path = site_with_watched_area(tmp_path)
+    write_confirmed_reference(
+        config_path,
+        confirmed_reference_payload(status="confirmed", origin="machine_suggested"),
+    )
+
+    invalidated = invalidate_confirmed_reference(config_path, "camera_moved")
+
+    assert invalidated.origin == "machine_suggested"
+    config = load_site_config(config_path)
+    assert config.confirmed_reference is not None
+    assert config.confirmed_reference.origin == "machine_suggested"
 
 
 def test_resaving_after_invalidation_creates_a_fresh_record(tmp_path: Path) -> None:

@@ -26,6 +26,8 @@ OPTIONAL_FIELDS = {
 ALLOWED_FIELDS = REQUIRED_FIELDS | OPTIONAL_FIELDS
 
 ALLOWED_CONFIRMED_REFERENCE_STATUSES = {"draft", "confirmed", "invalid"}
+ALLOWED_CONFIRMED_REFERENCE_ORIGINS = {"machine_suggested", "manual"}
+DEFAULT_CONFIRMED_REFERENCE_ORIGIN = "manual"
 ALLOWED_INVALIDATION_REASONS = {
     "camera_moved",
     "view_changed",
@@ -66,6 +68,7 @@ class ConfirmedReference:
     """
 
     status: str  # "draft" | "confirmed" | "invalid"
+    origin: str  # "machine_suggested" | "manual"
     region: ReferenceRegion
     video_id: str
     video_time_seconds: float
@@ -191,6 +194,7 @@ def invalidate_confirmed_reference(
 
     invalidated = ConfirmedReference(
         status="invalid",
+        origin=existing.origin,
         region=existing.region,
         video_id=existing.video_id,
         video_time_seconds=existing.video_time_seconds,
@@ -233,6 +237,7 @@ def _region_to_dict(region: ReferenceRegion) -> dict[str, float]:
 def _confirmed_reference_to_dict(value: ConfirmedReference) -> dict[str, Any]:
     return {
         "status": value.status,
+        "origin": value.origin,
         "region": _region_to_dict(value.region),
         "video_id": value.video_id,
         "video_time_seconds": value.video_time_seconds,
@@ -344,8 +349,13 @@ def _load_confirmed_reference(
         raise SiteConfigError("Confirmed reference must be a JSON object")
 
     record = dict[str, Any](value)
+    if "origin" not in record:
+        # Records saved before OF-086 have no origin — machine suggestions
+        # did not exist yet, so treat them as manually drawn.
+        record = {**record, "origin": DEFAULT_CONFIRMED_REFERENCE_ORIGIN}
     expected_fields = {
         "status",
+        "origin",
         "region",
         "video_id",
         "video_time_seconds",
@@ -373,6 +383,11 @@ def _load_confirmed_reference(
         joined = ", ".join(sorted(ALLOWED_CONFIRMED_REFERENCE_STATUSES))
         raise SiteConfigError(f"Confirmed reference field 'status' must be one of: {joined}")
 
+    origin = record["origin"]
+    if origin not in ALLOWED_CONFIRMED_REFERENCE_ORIGINS:
+        joined = ", ".join(sorted(ALLOWED_CONFIRMED_REFERENCE_ORIGINS))
+        raise SiteConfigError(f"Confirmed reference field 'origin' must be one of: {joined}")
+
     if parent_region is None:
         raise SiteConfigError("Confirmed reference requires the site to have a watched area")
 
@@ -398,6 +413,7 @@ def _load_confirmed_reference(
 
     return ConfirmedReference(
         status=status,
+        origin=origin,
         region=region,
         video_id=_load_required_text(record, "video_id"),
         video_time_seconds=_load_confirmed_reference_time(record["video_time_seconds"]),

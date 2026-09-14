@@ -1013,8 +1013,14 @@ inside the site's own `reference_region`. Only the current state is kept, the
 same as `reference_region` itself — reconfirming or invalidating overwrites
 it rather than appending to a history.
 
-- `status`: `draft` (machine-suggested or unconfirmed), `confirmed` (a human
-  confirmed it), or `invalid` (no longer trustworthy).
+- `status`: `draft` (unconfirmed), `confirmed` (a human confirmed it), or
+  `invalid` (no longer trustworthy).
+- `origin`: `machine_suggested` (the rectangle started from the client-side
+  suggestion heuristic, before any human correction) or `manual` (drawn
+  entirely by hand). Independent of `status` — a machine suggestion can be
+  edited and then confirmed, but `origin` still records how it started, so
+  suggestion usefulness can be measured later (Issue #167 / OF-086). Records
+  saved before this field existed are treated as `manual`.
 - `region`: the confirmed riverbank rectangle, in the same percentage-of-frame
   shape as `reference_region`.
 - `video_id` and `video_time_seconds`: which video and moment the reference

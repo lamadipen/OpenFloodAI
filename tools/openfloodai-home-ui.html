@@ -926,6 +926,9 @@
             <div class="meta" id="setupVideoRegionStatus" role="status" style="margin-top: 6px;">Choose a video to select the watched area.</div>
 
             <div id="setupConfirmedReferenceSection" style="display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line);">
+              <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 12px;">
+                <button type="button" id="setupSuggestReferenceButton" style="font-size: 13px; min-height: 34px; padding: 6px 12px;">Suggest Reference</button>
+              </div>
               <label style="display: block; font-weight: 700; margin-bottom: 4px;">Stable extra markers (optional)</label>
               <div class="meta">Bridge pillars, rocks, wall edges, or other stable visible features.</div>
               <div style="display: flex; gap: 8px; align-items: center; margin-top: 6px;">
@@ -1124,6 +1127,9 @@
             <div class="meta">The dashed blue box is your watched area. Choose a frame, then drag inside it to mark the riverbank.</div>
             <video id="confirmedReferencePreview" controls preload="metadata" style="display: none; margin-top: 8px; max-width: 100%; width: 100%; background: #182b35;"></video>
             <canvas id="confirmedReferenceCanvas" class="video-region-canvas" width="800" height="450" aria-label="Confirm the riverbank reference inside the watched area" style="display: none;"></canvas>
+            <div style="display: flex; gap: 8px; align-items: center; margin-top: 8px;">
+              <button type="button" id="suggestReferenceButton" style="font-size: 13px; min-height: 34px; padding: 6px 12px;">Suggest Reference</button>
+            </div>
             <div class="meta" id="confirmedReferenceStatus" role="status" style="margin-top: 6px;">Choose a video to begin.</div>
           </div>
           <div>
@@ -1326,6 +1332,7 @@
       const setupPhaseWatchedAreaTab = document.querySelector("#setupPhaseWatchedAreaTab");
       const setupPhaseConfirmedReferenceTab = document.querySelector("#setupPhaseConfirmedReferenceTab");
       const setupConfirmedReferenceSection = document.querySelector("#setupConfirmedReferenceSection");
+      const setupSuggestReferenceButton = document.querySelector("#setupSuggestReferenceButton");
       const setupAddMarkerButton = document.querySelector("#setupAddMarkerButton");
       const setupPendingMarkerControls = document.querySelector("#setupPendingMarkerControls");
       const setupMarkerLabelInput = document.querySelector("#setupMarkerLabelInput");
@@ -1368,6 +1375,7 @@
       const confirmedReferencePreview = document.querySelector("#confirmedReferencePreview");
       const confirmedReferenceCanvas = document.querySelector("#confirmedReferenceCanvas");
       const confirmedReferenceStatus = document.querySelector("#confirmedReferenceStatus");
+      const suggestReferenceButton = document.querySelector("#suggestReferenceButton");
       const addMarkerButton = document.querySelector("#addMarkerButton");
       const pendingMarkerControls = document.querySelector("#pendingMarkerControls");
       const markerLabelInput = document.querySelector("#markerLabelInput");
@@ -1659,6 +1667,8 @@
                 region: existingRecord.region,
                 markers: existingRecord.markers || [],
                 videoTimeSeconds: existingRecord.video_time_seconds,
+                origin: existingRecord.origin,
+                status: existingRecord.status,
               }
             : null,
         });
@@ -1944,6 +1954,68 @@
         };
       }
 
+      // Suggests a draft riverbank/reference band inside the watched-area
+      // guide: the row with the strongest brightness jump from the row
+      // above it (the same gradient idea as the Python sharpness score in
+      // src/openfloodai/vision/simple_signals.py, applied per row instead
+      // of globally), entirely client-side against the already-paused
+      // frame. Never throws and never calls the network — a failed or
+      // degenerate guide must not block manual setup, so any problem (too
+      // small a guide, a flat/edge-less image, a tainted canvas read)
+      // returns null instead.
+      function suggestReferenceRegion(context, guidePixelRect) {
+        const MIN_GUIDE_WIDTH = 8;
+        const MIN_GUIDE_HEIGHT = 16;
+        const BAND_HEIGHT_FRACTION = 0.18;
+        const MIN_BAND_HEIGHT_PX = 24;
+        const MIN_RESULT_SIZE_PX = 4;
+        try {
+          const x = Math.max(0, Math.round(guidePixelRect.x));
+          const y = Math.max(0, Math.round(guidePixelRect.y));
+          const width = Math.round(guidePixelRect.width);
+          const height = Math.round(guidePixelRect.height);
+          if (width < MIN_GUIDE_WIDTH || height < MIN_GUIDE_HEIGHT) {
+            return null;
+          }
+          const { data } = context.getImageData(x, y, width, height);
+          const rowBrightness = new Array(height).fill(0);
+          for (let row = 0; row < height; row += 1) {
+            let sum = 0;
+            for (let col = 0; col < width; col += 1) {
+              const i = (row * width + col) * 4;
+              sum += (data[i] + data[i + 1] + data[i + 2]) / 3;
+            }
+            rowBrightness[row] = sum / width;
+          }
+          let bestRow = -1;
+          let bestJump = -1;
+          for (let row = 1; row < height; row += 1) {
+            const jump = Math.abs(rowBrightness[row] - rowBrightness[row - 1]);
+            if (jump > bestJump) {
+              bestJump = jump;
+              bestRow = row;
+            }
+          }
+          if (bestRow < 0 || bestJump <= 0) {
+            return null;
+          }
+          const bandHeight = Math.max(MIN_BAND_HEIGHT_PX, Math.round(height * BAND_HEIGHT_FRACTION));
+          const rawRect = {
+            x: guidePixelRect.x,
+            y: guidePixelRect.y + bestRow - bandHeight / 2,
+            width: guidePixelRect.width,
+            height: bandHeight,
+          };
+          const clamped = clampRectToBounds(rawRect, guidePixelRect);
+          if (clamped.width < MIN_RESULT_SIZE_PX || clamped.height < MIN_RESULT_SIZE_PX) {
+            return null;
+          }
+          return clamped;
+        } catch (error) {
+          return null;
+        }
+      }
+
       // One watched-area selector, shared by site setup, video intake, and step 3.
       function createRegionSelector({ video, canvas, input, status, emptyText }) {
         const context = canvas.getContext("2d");
@@ -2066,6 +2138,14 @@
         const context = canvas.getContext("2d");
         let guideRegion = null;
         let mainSelection = null;
+        let origin = "manual";
+        // The saved status of a loaded record, if any (null for a fresh,
+        // never-saved selection this session). Lets the suggested/dashed
+        // styling apply only while a suggestion is genuinely still
+        // unconfirmed — once a human has confirmed (or invalidated) it,
+        // it displays like any other trusted reference, even though its
+        // origin still remembers it started as a suggestion.
+        let recordStatus = null;
         let pendingMarker = null;
         let markers = [];
         let dragStart = null;
@@ -2114,6 +2194,8 @@
 
         function clearSelection() {
           mainSelection = null;
+          origin = "manual";
+          recordStatus = null;
         }
 
         function draw() {
@@ -2127,6 +2209,8 @@
 
           if (pendingExisting) {
             mainSelection = toPixels(pendingExisting.region);
+            origin = pendingExisting.origin || "manual";
+            recordStatus = pendingExisting.status || null;
             markers = (pendingExisting.markers || []).map((marker) => ({
               label: marker.label,
               pixelRect: toPixels(marker.region),
@@ -2153,12 +2237,41 @@
           }
 
           if (mainSelection) {
-            context.fillStyle = "rgba(8, 127, 91, 0.2)";
-            context.strokeStyle = "#087f5b";
+            // A suggestion only displays as unconfirmed while it genuinely
+            // is: a saved record with status "confirmed" or "invalid" has
+            // already had a human decision made about it, even if it
+            // started from a suggestion — it displays as trusted from then
+            // on, exactly like a manually drawn one.
+            const isPendingSuggestion =
+              origin === "machine_suggested" && recordStatus !== "confirmed" && recordStatus !== "invalid";
+            context.save();
+            if (isPendingSuggestion) {
+              context.setLineDash([8, 5]);
+              context.fillStyle = "rgba(124, 58, 237, 0.15)";
+              context.strokeStyle = "#7c3aed";
+            } else {
+              context.fillStyle = "rgba(8, 127, 91, 0.2)";
+              context.strokeStyle = "#087f5b";
+            }
             context.lineWidth = 3;
             context.fillRect(mainSelection.x, mainSelection.y, mainSelection.width, mainSelection.height);
             context.strokeRect(mainSelection.x, mainSelection.y, mainSelection.width, mainSelection.height);
-            status.textContent = `Selected at ${video.currentTime.toFixed(1)} seconds.`;
+            context.restore();
+            if (isPendingSuggestion) {
+              context.save();
+              context.fillStyle = "#5b21b6";
+              context.font = "bold 12px system-ui, sans-serif";
+              context.fillText(
+                "Suggested — unconfirmed",
+                mainSelection.x + 4,
+                Math.max(14, mainSelection.y - 6)
+              );
+              context.restore();
+              status.textContent =
+                "This is a machine suggestion — check it, adjust if needed, then confirm.";
+            } else {
+              status.textContent = `Selected at ${video.currentTime.toFixed(1)} seconds.`;
+            }
           }
           if (onChange) {
             onChange();
@@ -2167,6 +2280,7 @@
 
         function reset() {
           clearSelection();
+          recordStatus = null;
           pendingMarker = null;
           markers = [];
           guideRegion = null;
@@ -2266,6 +2380,30 @@
           reset,
           hasSelection: () => mainSelection !== null,
           region: () => (mainSelection ? toPercent(mainSelection) : null),
+          origin: () => origin,
+          canSuggestReference: () => Boolean(video.videoWidth && video.readyState >= 2 && guideRegion),
+          suggestReference: () => {
+            if (!guideRegion) {
+              return false;
+            }
+            // Redraw first so the canvas reflects wherever the video is
+            // currently paused — play/pause (not just seeking) can leave
+            // the canvas showing an older frame otherwise.
+            draw();
+            const suggestion = suggestReferenceRegion(context, toPixels(guideRegion));
+            if (!suggestion) {
+              return false;
+            }
+            mainSelection = suggestion;
+            origin = "machine_suggested";
+            // A fresh suggestion is always unconfirmed, even if it was
+            // computed while editing a record that was previously
+            // confirmed/invalidated — that old status no longer applies
+            // to this newly proposed rectangle.
+            recordStatus = null;
+            draw();
+            return true;
+          },
           startMarkerMode: () => {
             drawMode = "marker";
             status.textContent = "Drag on the video to draw the marker's area.";
@@ -2304,6 +2442,7 @@
         let phase = "watched_area";
         let watchedAreaSelection = null;
         let mainSelection = null;
+        let origin = "manual";
         let pendingMarker = null;
         let markers = [];
         let dragStart = null;
@@ -2391,12 +2530,34 @@
               drawMarkerRect(pendingMarker, "New marker");
             }
             if (mainSelection) {
-              context.fillStyle = "rgba(8, 127, 91, 0.2)";
-              context.strokeStyle = "#087f5b";
+              context.save();
+              if (origin === "machine_suggested") {
+                context.setLineDash([8, 5]);
+                context.fillStyle = "rgba(124, 58, 237, 0.15)";
+                context.strokeStyle = "#7c3aed";
+              } else {
+                context.fillStyle = "rgba(8, 127, 91, 0.2)";
+                context.strokeStyle = "#087f5b";
+              }
               context.lineWidth = 3;
               context.fillRect(mainSelection.x, mainSelection.y, mainSelection.width, mainSelection.height);
               context.strokeRect(mainSelection.x, mainSelection.y, mainSelection.width, mainSelection.height);
-              status.textContent = `Confirmed reference selected at ${video.currentTime.toFixed(1)} seconds.`;
+              context.restore();
+              if (origin === "machine_suggested") {
+                context.save();
+                context.fillStyle = "#5b21b6";
+                context.font = "bold 12px system-ui, sans-serif";
+                context.fillText(
+                  "Suggested — unconfirmed",
+                  mainSelection.x + 4,
+                  Math.max(14, mainSelection.y - 6)
+                );
+                context.restore();
+                status.textContent =
+                  "This is a machine suggestion — check it, adjust if needed, then confirm.";
+              } else {
+                status.textContent = `Confirmed reference selected at ${video.currentTime.toFixed(1)} seconds.`;
+              }
             }
           }
           if (onChange) {
@@ -2412,6 +2573,7 @@
         function reset() {
           clearSelection();
           mainSelection = null;
+          origin = "manual";
           pendingMarker = null;
           markers = [];
           dragStart = null;
@@ -2460,6 +2622,7 @@
             pendingMarker = null;
           } else {
             mainSelection = null;
+            origin = "manual";
           }
           draw();
         });
@@ -2498,6 +2661,7 @@
               status.textContent = "Drag a larger rectangle inside the watched area for the marker.";
             } else {
               mainSelection = null;
+              origin = "manual";
               status.textContent = "Drag a larger rectangle inside the watched area to mark the riverbank.";
             }
             draw();
@@ -2539,6 +2703,26 @@
           phase: () => phase,
           hasConfirmedReferenceSelection: () => mainSelection !== null,
           confirmedReferenceRegion: () => (mainSelection ? toPercent(mainSelection) : null),
+          origin: () => origin,
+          canSuggestReference: () =>
+            Boolean(video.videoWidth && video.readyState >= 2 && watchedAreaSelection),
+          suggestReference: () => {
+            if (!watchedAreaSelection) {
+              return false;
+            }
+            // Redraw first so the canvas reflects wherever the video is
+            // currently paused — play/pause (not just seeking) can leave
+            // the canvas showing an older frame otherwise.
+            draw();
+            const suggestion = suggestReferenceRegion(context, watchedAreaSelection);
+            if (!suggestion) {
+              return false;
+            }
+            mainSelection = suggestion;
+            origin = "machine_suggested";
+            draw();
+            return true;
+          },
           startMarkerMode: () => {
             markerMode = true;
             status.textContent = "Drag on the video to draw the marker's area.";
@@ -3747,6 +3931,16 @@
         setSetupPhaseUI("confirmed_reference");
       });
 
+      setupSuggestReferenceButton.addEventListener("click", () => {
+        if (!setupVideoRegionSelector.canSuggestReference()) {
+          alert("Choose a video and pause on a frame first.");
+          return;
+        }
+        if (!setupVideoRegionSelector.suggestReference()) {
+          alert("Could not suggest a reference from this frame. Draw one manually.");
+        }
+      });
+
       setupAddMarkerButton.addEventListener("click", () => {
         setupVideoRegionSelector.startMarkerMode();
         setupPendingMarkerControls.style.display = "flex";
@@ -3820,6 +4014,16 @@
       confirmedReferenceSiteSelect.addEventListener("change", fillConfirmedReferenceVideos);
       confirmedReferenceVideoSelect.addEventListener("change", showConfirmedReferenceVideo);
 
+      suggestReferenceButton.addEventListener("click", () => {
+        if (!confirmedReferenceSelector.canSuggestReference()) {
+          alert("Choose a video and pause on a frame first.");
+          return;
+        }
+        if (!confirmedReferenceSelector.suggestReference()) {
+          alert("Could not suggest a reference from this frame. Draw one manually.");
+        }
+      });
+
       addMarkerButton.addEventListener("click", () => {
         if (!confirmedReferenceSelector.hasSelection()) {
           alert("Draw the confirmed reference rectangle first.");
@@ -3878,6 +4082,7 @@
               video_time_seconds: confirmedReferencePreview.currentTime,
               region: confirmedReferenceSelector.region(),
               markers: confirmedReferenceSelector.markers(),
+              origin: confirmedReferenceSelector.origin(),
               normal_condition: normalConditionCheckbox.checked,
               notes: confirmedReferenceNotesInput.value,
               status,
@@ -3985,6 +4190,7 @@
               video_time_seconds: setupVideoPreview.currentTime,
               region: setupVideoRegionSelector.confirmedReferenceRegion(),
               markers: setupVideoRegionSelector.markers(),
+              origin: setupVideoRegionSelector.origin(),
               normal_condition: setupNormalConditionCheckbox.checked,
               notes: setupConfirmedReferenceNotesInput.value,
               status: setupConfirmedReferenceStatusSelect.value,
