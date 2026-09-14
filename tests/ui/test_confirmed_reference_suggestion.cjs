@@ -120,6 +120,20 @@ test("showConfirmedReferenceVideo passes the saved record's status to the select
   assert.match(script, /videoTimeSeconds: existingRecord\.video_time_seconds,\s*origin: existingRecord\.origin,\s*status: existingRecord\.status,/);
 });
 
+test("a new suggestion clears any stale recordStatus from a previously loaded record", () => {
+  const confirmedSelector = grabBlock("createConfirmedReferenceSelector");
+  const method = grabSuggestReferenceMethod(confirmedSelector);
+  assert.ok(
+    method.includes("recordStatus = null;"),
+    "suggestReference() must reset recordStatus so a fresh suggestion never inherits an old confirmed/invalid status"
+  );
+  // clearSelection() (run on every fresh manual drag) must also reset it.
+  assert.match(
+    confirmedSelector,
+    /function clearSelection\(\) \{\s*mainSelection = null;\s*origin = "manual";\s*recordStatus = null;/
+  );
+});
+
 test("a fresh manual drag resets origin back to manual", () => {
   const confirmedSelector = grabBlock("createConfirmedReferenceSelector");
   const setupSelector = grabBlock("createSiteSetupSelector");

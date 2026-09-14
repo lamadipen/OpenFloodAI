@@ -2195,6 +2195,7 @@
         function clearSelection() {
           mainSelection = null;
           origin = "manual";
+          recordStatus = null;
         }
 
         function draw() {
@@ -2395,6 +2396,11 @@
             }
             mainSelection = suggestion;
             origin = "machine_suggested";
+            // A fresh suggestion is always unconfirmed, even if it was
+            // computed while editing a record that was previously
+            // confirmed/invalidated — that old status no longer applies
+            // to this newly proposed rectangle.
+            recordStatus = null;
             draw();
             return true;
           },
