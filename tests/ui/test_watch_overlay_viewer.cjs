@@ -43,10 +43,11 @@ test("the overlay viewer never modifies the video: only reads from the existing 
   assert.ok(!html.includes('"/api/watch'), "no new watch-specific API route should exist");
 });
 
-test("unavailable-guide text is present for the not-confirmed and no-guide cases", () => {
+test("status text covers the no-guide, confirmed, and unconfirmed cases", () => {
   const source = grabFunction("createReadOnlyOverlayViewer");
   assert.ok(source.includes("No normal waterline guide yet."));
-  assert.ok(source.includes("exist but none are confirmed"));
+  assert.ok(source.includes("confirmed normal waterline guide(s) shown"));
+  assert.ok(source.includes("unconfirmed normal waterline guide(s) shown"));
 });
 
 test("a Watch button opens the viewer for a site with at least one video", () => {
@@ -67,9 +68,17 @@ test("normal waterline guides are shown on any video from the site, not gated on
   assert.match(source, /normalWaterlineGuides = \(site && site\.normal_waterline_guides\)/);
 });
 
-test("the viewer draws each trusted guide as a connected polyline", () => {
+test("the viewer draws every non-invalidated guide as a connected polyline, invalid ones excluded", () => {
   const source = grabFunction("createReadOnlyOverlayViewer");
   assert.ok(source.includes("trustedGuides"));
+  assert.ok(source.includes("unconfirmedGuides"));
+  assert.match(source, /guide\.status !== "invalid"/);
   assert.ok(source.includes("moveTo"));
   assert.ok(source.includes("lineTo"));
+});
+
+test("unconfirmed guides are drawn dashed and amber, confirmed guides solid and blue", () => {
+  const source = grabFunction("createReadOnlyOverlayViewer");
+  assert.match(source, /strokeStyle: "#d97706"[\s\S]*?dashed: true/);
+  assert.match(source, /strokeStyle: "#1d4ed8"[\s\S]*?dashed: false/);
 });

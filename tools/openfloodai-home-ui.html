@@ -1126,8 +1126,9 @@
       <section id="watchViewerPanel" class="form-panel" style="display: none;">
         <h2 style="margin-top: 0;">Watch</h2>
         <p class="meta" style="margin-top: 0;">
-          Watch a video with the watched area and any confirmed normal waterline guides drawn
-          on top. This is a view only; it never changes the video file.
+          Watch a video with the watched area and every normal waterline guide drawn on top
+          (solid blue if confirmed, dashed amber if not). This is a view only; it never
+          changes the video file.
         </p>
         <div style="display: grid; gap: 16px;">
           <div>
@@ -2390,10 +2391,13 @@
         };
       }
 
-      // Read-only overlay viewer: draws the watched rectangle and any
-      // confirmed normal-waterline guides on a canvas over a playing
-      // <video>. It never edits anything and never reads pixels back out
-      // of the video, so it cannot modify the underlying video file.
+      // Read-only overlay viewer: draws the watched rectangle and every
+      // non-invalidated normal-waterline guide on a canvas over a playing
+      // <video> — confirmed guides solid blue, unconfirmed ones dashed
+      // amber, so a just-drawn line is visible right away without being
+      // mistaken for a trusted baseline. It never edits anything and never
+      // reads pixels back out of the video, so it cannot modify the
+      // underlying video file.
       function createReadOnlyOverlayViewer({ video, wrap, canvas, status }) {
         const context = canvas.getContext("2d");
         let watchedRegion = null;
@@ -2421,6 +2425,25 @@
           return Boolean(guide) && guide.status === "confirmed" && guide.normal_condition === true;
         }
 
+        function drawGuideLine(points, { outlineWidth, strokeStyle, strokeWidth, dashed }) {
+          context.save();
+          if (dashed) {
+            context.setLineDash([8, 5]);
+          }
+          context.strokeStyle = "#000000";
+          context.lineWidth = outlineWidth;
+          context.beginPath();
+          context.moveTo(points[0].x, points[0].y);
+          for (const point of points.slice(1)) {
+            context.lineTo(point.x, point.y);
+          }
+          context.stroke();
+          context.strokeStyle = strokeStyle;
+          context.lineWidth = strokeWidth;
+          context.stroke();
+          context.restore();
+        }
+
         function draw() {
           if (!video.videoWidth) {
             return;
@@ -2441,31 +2464,46 @@
             context.restore();
           }
 
-          const trustedGuides = normalWaterlineGuides.filter(isGuideTrusted);
+          // Every guide that hasn't been explicitly invalidated is shown —
+          // confirmed guides solid blue, unconfirmed (draft, or confirmed
+          // but not from normal-condition footage) dashed amber — so a
+          // just-created line is visible right away. Only a truly trusted
+          // (solid blue) line should ever be read as a confirmed baseline.
+          const visibleGuides = normalWaterlineGuides.filter((guide) => guide.status !== "invalid");
+          const trustedGuides = visibleGuides.filter(isGuideTrusted);
+          const unconfirmedGuides = visibleGuides.filter((guide) => !isGuideTrusted(guide));
+
+          for (const guide of unconfirmedGuides) {
+            const points = (guide.points || []).map(toPixelsPoint);
+            if (points.length < 2) {
+              continue;
+            }
+            drawGuideLine(points, {
+              outlineWidth: 4,
+              strokeStyle: "#d97706",
+              strokeWidth: 2,
+              dashed: true,
+            });
+          }
           for (const guide of trustedGuides) {
             const points = (guide.points || []).map(toPixelsPoint);
             if (points.length < 2) {
               continue;
             }
-            context.save();
-            context.strokeStyle = "#000000";
-            context.lineWidth = 5;
-            context.beginPath();
-            context.moveTo(points[0].x, points[0].y);
-            for (const point of points.slice(1)) {
-              context.lineTo(point.x, point.y);
-            }
-            context.stroke();
-            context.strokeStyle = "#1d4ed8";
-            context.lineWidth = 3;
-            context.stroke();
-            context.restore();
+            drawGuideLine(points, {
+              outlineWidth: 5,
+              strokeStyle: "#1d4ed8",
+              strokeWidth: 3,
+              dashed: false,
+            });
           }
 
-          if (trustedGuides.length > 0) {
+          if (trustedGuides.length > 0 && unconfirmedGuides.length > 0) {
+            status.textContent = `${trustedGuides.length} confirmed, ${unconfirmedGuides.length} unconfirmed normal waterline guide(s) shown.`;
+          } else if (trustedGuides.length > 0) {
             status.textContent = `${trustedGuides.length} confirmed normal waterline guide(s) shown.`;
-          } else if (normalWaterlineGuides.length > 0) {
-            status.textContent = "Normal waterline guide(s) exist but none are confirmed.";
+          } else if (unconfirmedGuides.length > 0) {
+            status.textContent = `${unconfirmedGuides.length} unconfirmed normal waterline guide(s) shown (dashed).`;
           } else {
             status.textContent = "No normal waterline guide yet.";
           }
