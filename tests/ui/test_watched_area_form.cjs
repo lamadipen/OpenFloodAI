@@ -37,19 +37,20 @@ function grab(name) {
   return match[0];
 }
 
-test("one region selector is shared instead of copied per form", () => {
+test("one region selector is shared across every watched-area form, including Create Site", () => {
   assert.equal(script.match(/function createRegionSelector\(/g).length, 1);
   for (const gone of ["drawSetupVideoFrame", "setupVideoCanvasPoint", "videoRegionToPercent"]) {
     assert.ok(!script.includes(gone), `${gone} should be gone`);
   }
-  for (const id of ["videoRegionSelector", "watchedAreaSelector"]) {
+  for (const id of ["videoRegionSelector", "watchedAreaSelector", "setupVideoRegionSelector"]) {
     assert.ok(script.includes(`const ${id} = createRegionSelector({`), `${id} missing`);
   }
-  // The Create Site form needs a richer two-phase selector (watched area,
-  // then an optional normal-waterline-guide polyline inside it), so it
-  // intentionally uses a different, single, shared factory instead.
-  assert.equal(script.match(/function createSiteSetupSelector\(/g).length, 1);
-  assert.ok(script.includes("const setupVideoRegionSelector = createSiteSetupSelector({"));
+  // The Create Site form used to need a richer two-phase selector (watched
+  // area, then an optional normal-waterline-guide polyline inside it), but
+  // that guide-drawing phase was removed as clutter — normal waterline
+  // guides are now only drawn from the dedicated panel, after the site
+  // exists. So Create Site is back to the plain shared factory too.
+  assert.ok(!script.includes("function createSiteSetupSelector("));
 });
 
 test("the watched area step opens its own form, not video intake", () => {

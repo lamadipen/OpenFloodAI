@@ -180,28 +180,6 @@
         transform: translateY(-1px);
       }
 
-      .setup-phase-tab {
-        background: #fff;
-        border: 1px solid var(--line);
-        color: var(--muted);
-        font-size: 13px;
-        font-weight: 700;
-        min-height: 34px;
-        padding: 6px 12px;
-      }
-
-      .setup-phase-tab.is-active {
-        background: var(--accent-strong);
-        border-color: var(--accent-strong);
-        color: #fff;
-      }
-
-      .setup-phase-tab:disabled {
-        cursor: not-allowed;
-        opacity: 0.5;
-        transform: none;
-      }
-
       .site-action-link {
         align-items: center;
         background: var(--accent-strong);
@@ -950,37 +928,11 @@
           </div>
           <div style="grid-column: span 2;">
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Watched area *</label>
-            <div style="display: flex; gap: 8px; margin-bottom: 8px;">
-              <button type="button" id="setupPhaseWatchedAreaTab" class="setup-phase-tab is-active">1. Watched Area</button>
-              <button type="button" id="setupPhaseNormalWaterlineGuideTab" class="setup-phase-tab" disabled>2. Normal Waterline Guide (optional)</button>
-            </div>
+            <div class="meta">Choose a frame with the video controls, then drag around the river area to watch.</div>
             <video id="setupVideoPreview" controls preload="metadata" style="display: none; margin-top: 8px; max-width: 100%; width: 100%; background: #182b35;"></video>
             <canvas id="setupVideoRegionCanvas" class="video-region-canvas" width="800" height="450" aria-label="Select watched area from first video" style="display: none;"></canvas>
             <input type="hidden" name="reference_region" id="setupReferenceRegionInput">
             <div class="meta" id="setupVideoRegionStatus" role="status" style="margin-top: 6px;">Choose a video to select the watched area.</div>
-
-            <div id="setupNormalWaterlineGuideSection" style="display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line);">
-              <div class="meta">Click points along the visible normal water edge, following its curve.</div>
-              <div style="display: flex; gap: 8px; align-items: center; margin-top: 8px;">
-                <button type="button" id="setupUndoGuidePointButton" style="font-size: 13px; min-height: 34px; padding: 6px 12px; background: transparent; color: var(--muted); border-color: var(--line);">Undo Last Point</button>
-                <button type="button" id="setupClearGuidePointsButton" style="font-size: 13px; min-height: 34px; padding: 6px 12px; background: transparent; color: var(--muted); border-color: var(--line);">Clear Points</button>
-              </div>
-              <label style="display: flex; align-items: center; gap: 8px; font-weight: 700; margin-top: 12px;">
-                <input type="checkbox" id="setupNormalConditionCheckbox">
-                Regular river view (usual water level, not flooding or unusually low)
-              </label>
-              <div style="margin-top: 12px;">
-                <label style="display: block; font-weight: 700; margin-bottom: 4px;">Normal waterline guide notes</label>
-                <textarea id="setupNormalWaterlineGuideNotesInput" rows="2" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;" placeholder="e.g. Clear view of the left bank."></textarea>
-              </div>
-              <div style="margin-top: 12px;">
-                <label style="display: block; font-weight: 700; margin-bottom: 4px;">Save the normal waterline guide as</label>
-                <select id="setupNormalWaterlineGuideStatusSelect" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
-                  <option value="draft">Draft (needs confirmation later)</option>
-                  <option value="confirmed">Confirmed now</option>
-                </select>
-              </div>
-            </div>
           </div>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Site Name *</label>
@@ -1315,14 +1267,6 @@
       const setupVideoRegionCanvas = document.querySelector("#setupVideoRegionCanvas");
       const setupReferenceRegionInput = document.querySelector("#setupReferenceRegionInput");
       const setupVideoRegionStatus = document.querySelector("#setupVideoRegionStatus");
-      const setupPhaseWatchedAreaTab = document.querySelector("#setupPhaseWatchedAreaTab");
-      const setupPhaseNormalWaterlineGuideTab = document.querySelector("#setupPhaseNormalWaterlineGuideTab");
-      const setupNormalWaterlineGuideSection = document.querySelector("#setupNormalWaterlineGuideSection");
-      const setupUndoGuidePointButton = document.querySelector("#setupUndoGuidePointButton");
-      const setupClearGuidePointsButton = document.querySelector("#setupClearGuidePointsButton");
-      const setupNormalConditionCheckbox = document.querySelector("#setupNormalConditionCheckbox");
-      const setupNormalWaterlineGuideNotesInput = document.querySelector("#setupNormalWaterlineGuideNotesInput");
-      const setupNormalWaterlineGuideStatusSelect = document.querySelector("#setupNormalWaterlineGuideStatusSelect");
       const setupPurposeSelect = document.querySelector("#setupPurposeSelect");
       const setupHardCaseTypeSelect = document.querySelector("#setupHardCaseTypeSelect");
       setupSiteNameInput.addEventListener("input", () => {
@@ -1403,15 +1347,12 @@
       const requestedSiteName = new URLSearchParams(window.location.search).get("site");
       let latestSites = [];
       let openWorkflowForm = null;
-      const setupVideoRegionSelector = createSiteSetupSelector({
+      const setupVideoRegionSelector = createRegionSelector({
         video: setupVideoPreview,
         canvas: setupVideoRegionCanvas,
         input: setupReferenceRegionInput,
         status: setupVideoRegionStatus,
         emptyText: "Choose a video to select the watched area.",
-        onChange: () => {
-          setupPhaseNormalWaterlineGuideTab.disabled = !setupVideoRegionSelector.canStartNormalWaterlineGuide();
-        },
       });
       const videoRegionSelector = createRegionSelector({
         video: videoPreview,
@@ -2449,245 +2390,6 @@
         };
       }
 
-      // Two-phase selector for the Create Site form: phase 1 draws the broad
-      // watched area (kept in `input` for the multipart form submit, same as
-      // the original single-rectangle selector); phase 2 (optional) freezes
-      // that rectangle as a guide and lets the user click points to trace a
-      // normal-waterline guide inside it, on the same canvas. There is no
-      // machine suggestion here — manual drawing is limited to the watched
-      // area and this one guide.
-      function createSiteSetupSelector({ video, canvas, input, status, emptyText, onChange }) {
-        const context = canvas.getContext("2d");
-        let phase = "watched_area";
-        let watchedAreaSelection = null;
-        let guidePoints = [];
-        let dragStart = null;
-        let objectUrl = null;
-
-        function canvasPoint(event) {
-          const bounds = canvas.getBoundingClientRect();
-          return {
-            x: Math.max(0, Math.min(canvas.width, ((event.clientX - bounds.left) * canvas.width) / bounds.width)),
-            y: Math.max(0, Math.min(canvas.height, ((event.clientY - bounds.top) * canvas.height) / bounds.height)),
-          };
-        }
-
-        function toPercent(rect) {
-          return {
-            x: Number(((rect.x / canvas.width) * 100).toFixed(6)),
-            y: Number(((rect.y / canvas.height) * 100).toFixed(6)),
-            width: Number(((rect.width / canvas.width) * 100).toFixed(6)),
-            height: Number(((rect.height / canvas.height) * 100).toFixed(6)),
-          };
-        }
-
-        function toPercentPoint(point) {
-          return {
-            x: Number(((point.x / canvas.width) * 100).toFixed(6)),
-            y: Number(((point.y / canvas.height) * 100).toFixed(6)),
-          };
-        }
-
-        function statusForGuidePoints() {
-          if (guidePoints.length === 0) {
-            return "Click inside the dashed watched area to start tracing the normal waterline (optional).";
-          }
-          if (guidePoints.length === 1) {
-            return "1 point added. Click to add another point along the waterline.";
-          }
-          return `${guidePoints.length} points added. Keep clicking to follow the curve, or save when done.`;
-        }
-
-        function draw() {
-          if (!video.videoWidth || video.readyState < 2) {
-            return;
-          }
-          const scale = Math.min(1, 800 / video.videoWidth);
-          canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
-          canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
-          context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-          if (watchedAreaSelection) {
-            if (phase === "watched_area") {
-              context.fillStyle = "rgba(8, 127, 91, 0.2)";
-              context.strokeStyle = "#087f5b";
-              context.lineWidth = 3;
-              context.fillRect(
-                watchedAreaSelection.x,
-                watchedAreaSelection.y,
-                watchedAreaSelection.width,
-                watchedAreaSelection.height
-              );
-              context.strokeRect(
-                watchedAreaSelection.x,
-                watchedAreaSelection.y,
-                watchedAreaSelection.width,
-                watchedAreaSelection.height
-              );
-              input.value = JSON.stringify(toPercent(watchedAreaSelection));
-              status.textContent = `Watched area selected at ${video.currentTime.toFixed(1)} seconds.`;
-            } else {
-              context.save();
-              context.setLineDash([6, 4]);
-              context.strokeStyle = "#0d4d7d";
-              context.lineWidth = 2;
-              context.strokeRect(
-                watchedAreaSelection.x,
-                watchedAreaSelection.y,
-                watchedAreaSelection.width,
-                watchedAreaSelection.height
-              );
-              context.restore();
-            }
-          }
-
-          if (phase === "normal_waterline_guide" && guidePoints.length > 0) {
-            context.save();
-            context.strokeStyle = "#087f5b";
-            context.lineWidth = 3;
-            context.beginPath();
-            context.moveTo(guidePoints[0].x, guidePoints[0].y);
-            for (const point of guidePoints.slice(1)) {
-              context.lineTo(point.x, point.y);
-            }
-            context.stroke();
-            context.fillStyle = "#087f5b";
-            for (const point of guidePoints) {
-              context.beginPath();
-              context.arc(point.x, point.y, 5, 0, Math.PI * 2);
-              context.fill();
-            }
-            context.restore();
-          }
-          if (phase === "normal_waterline_guide") {
-            status.textContent = statusForGuidePoints();
-          }
-          if (onChange) {
-            onChange();
-          }
-        }
-
-        function clearSelection() {
-          watchedAreaSelection = null;
-          input.value = "";
-        }
-
-        function reset() {
-          clearSelection();
-          guidePoints = [];
-          dragStart = null;
-          phase = "watched_area";
-          canvas.style.display = "none";
-          video.style.display = "none";
-          status.textContent = emptyText;
-          if (objectUrl) {
-            URL.revokeObjectURL(objectUrl);
-            objectUrl = null;
-          }
-          video.removeAttribute("src");
-          video.load();
-          if (onChange) {
-            onChange();
-          }
-        }
-
-        function show(source, { revokeWhenDone = false } = {}) {
-          reset();
-          objectUrl = revokeWhenDone ? source : null;
-          video.src = source;
-          video.style.display = "block";
-          canvas.style.display = "block";
-          status.textContent = "Move to a frame, pause it, then drag to select the watched area.";
-        }
-
-        video.addEventListener("loadedmetadata", () => {
-          video.currentTime = 0;
-          draw();
-        });
-        video.addEventListener("seeked", draw);
-
-        canvas.addEventListener("pointerdown", (event) => {
-          if (!video.videoWidth || phase !== "watched_area") {
-            return;
-          }
-          video.pause();
-          canvas.setPointerCapture(event.pointerId);
-          dragStart = canvasPoint(event);
-          clearSelection();
-          draw();
-        });
-
-        canvas.addEventListener("pointermove", (event) => {
-          if (!dragStart) {
-            return;
-          }
-          watchedAreaSelection = normalizedVideoRect(dragStart, canvasPoint(event));
-          draw();
-        });
-        canvas.addEventListener("pointerup", (event) => {
-          if (!dragStart) {
-            return;
-          }
-          const rect = normalizedVideoRect(dragStart, canvasPoint(event));
-          dragStart = null;
-          if (rect.width < 4 || rect.height < 4) {
-            clearSelection();
-            status.textContent = "Drag a larger rectangle around the watched area.";
-            draw();
-            return;
-          }
-          watchedAreaSelection = rect;
-          draw();
-        });
-
-        canvas.addEventListener("click", (event) => {
-          if (!video.videoWidth || phase !== "normal_waterline_guide") {
-            return;
-          }
-          video.pause();
-          const point = canvasPoint(event);
-          if (watchedAreaSelection && !pointInsideRect(point, watchedAreaSelection)) {
-            status.textContent = "Click inside the dashed watched area to add a point.";
-            return;
-          }
-          guidePoints.push(point);
-          draw();
-        });
-
-        return {
-          show,
-          reset,
-          hasSelection: () => watchedAreaSelection !== null,
-          region: () => (watchedAreaSelection ? toPercent(watchedAreaSelection) : null),
-          canStartNormalWaterlineGuide: () => watchedAreaSelection !== null,
-          goToWatchedAreaPhase: () => {
-            phase = "watched_area";
-            status.textContent = watchedAreaSelection
-              ? `Watched area selected at ${video.currentTime.toFixed(1)} seconds.`
-              : "Move to a frame, pause it, then drag to select the watched area.";
-            draw();
-          },
-          goToNormalWaterlineGuidePhase: () => {
-            if (!watchedAreaSelection) {
-              return;
-            }
-            phase = "normal_waterline_guide";
-            draw();
-          },
-          phase: () => phase,
-          hasGuidePoints: () => guidePoints.length >= 2,
-          guidePoints: () => guidePoints.map(toPercentPoint),
-          undoLastGuidePoint: () => {
-            guidePoints.pop();
-            draw();
-          },
-          clearGuidePoints: () => {
-            guidePoints = [];
-            draw();
-          },
-        };
-      }
-
       // Read-only overlay viewer: draws the watched rectangle and any
       // confirmed normal-waterline guides on a canvas over a playing
       // <video>. It never edits anything and never reads pixels back out
@@ -3434,7 +3136,6 @@
         hideForms();
         setupForm.style.display = "block";
         createSiteButton.style.display = "none";
-        setSetupPhaseUI("watched_area");
       });
 
       addLabelButton.addEventListener("click", () => {
@@ -3838,39 +3539,8 @@
         if (file) {
           fillSiteFieldsFromVideo(file.name);
           setupVideoRegionSelector.show(URL.createObjectURL(file), { revokeWhenDone: true });
-          setSetupPhaseUI("watched_area");
         }
       });
-
-      function setSetupPhaseUI(phase) {
-        setupPhaseWatchedAreaTab.classList.toggle("is-active", phase === "watched_area");
-        setupPhaseNormalWaterlineGuideTab.classList.toggle("is-active", phase === "normal_waterline_guide");
-        setupPhaseNormalWaterlineGuideTab.disabled = !setupVideoRegionSelector.canStartNormalWaterlineGuide();
-        setupNormalWaterlineGuideSection.style.display = phase === "normal_waterline_guide" ? "block" : "none";
-      }
-
-      setupPhaseWatchedAreaTab.addEventListener("click", () => {
-        setupVideoRegionSelector.goToWatchedAreaPhase();
-        setSetupPhaseUI("watched_area");
-      });
-
-      setupPhaseNormalWaterlineGuideTab.addEventListener("click", () => {
-        if (!setupVideoRegionSelector.canStartNormalWaterlineGuide()) {
-          alert("Select the watched area first.");
-          return;
-        }
-        setupVideoRegionSelector.goToNormalWaterlineGuidePhase();
-        setSetupPhaseUI("normal_waterline_guide");
-      });
-
-      setupUndoGuidePointButton.addEventListener("click", () => {
-        setupVideoRegionSelector.undoLastGuidePoint();
-      });
-
-      setupClearGuidePointsButton.addEventListener("click", () => {
-        setupVideoRegionSelector.clearGuidePoints();
-      });
-
 
       cancelVideo.addEventListener("click", () => {
         videoForm.reset();
@@ -4037,14 +3707,7 @@
 
           const result = await response.json();
           if (response.ok) {
-            let message = result.message;
-            if (setupVideoRegionSelector.hasGuidePoints()) {
-              const guideResult = await saveNormalWaterlineGuideFromSetup();
-              message += guideResult.success
-                ? ` ${guideResult.message}`
-                : ` Normal waterline guide was not saved: ${guideResult.message}`;
-            }
-            alert(message);
+            alert(result.message);
             siteForm.reset();
             setupVideoRegionSelector.reset();
             hideForms();
@@ -4056,30 +3719,6 @@
           alert(`Failed to create site: ${error.message}`);
         }
       });
-
-      async function saveNormalWaterlineGuideFromSetup() {
-        try {
-          const response = await fetch("/api/set-normal-waterline-guide", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              folder_name: setupFolderNameInput.value,
-              video_id: setupVideoIdInput.value,
-              video_time_seconds: setupVideoPreview.currentTime,
-              id: "normal_waterline_guide",
-              label: "normal waterline guide",
-              points: setupVideoRegionSelector.guidePoints(),
-              normal_condition: setupNormalConditionCheckbox.checked,
-              notes: setupNormalWaterlineGuideNotesInput.value,
-              status: setupNormalWaterlineGuideStatusSelect.value,
-            }),
-          });
-          const result = await response.json();
-          return { success: response.ok, message: result.message };
-        } catch (error) {
-          return { success: false, message: error.message };
-        }
-      }
 
       videoForm.addEventListener("submit", async (e) => {
         e.preventDefault();

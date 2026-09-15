@@ -7,7 +7,7 @@ const vm = require("node:vm");
 const html = fs.readFileSync(path.join(__dirname, "../../tools/openfloodai-home-ui.html"), "utf8");
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 const standalonePanel = html.split('<section id="normalWaterlineGuideFormPanel"')[1].split("</section>")[0];
-const setupSection = html.split('<div id="setupNormalWaterlineGuideSection"')[1];
+const setupForm = html.split('<section id="setupForm"')[1].split("</section>")[0];
 
 function grabFunction(name) {
   const match = script.match(new RegExp(`      (?:async )?function ${name}\\([\\s\\S]*?\\n      \\}`));
@@ -39,13 +39,19 @@ test("no Suggest Reference button or machine-suggestion code exists anywhere in 
   assert.ok(!script.includes("machine_suggested"));
 });
 
-test("both forms have the click-to-add-point controls and no marker or dropdown UI", () => {
-  for (const panel of [standalonePanel, setupSection]) {
-    assert.ok(/Undo Last Point/.test(panel));
-    assert.ok(!/Add Marker/.test(panel));
-  }
+test("the standalone form has the click-to-add-point controls and no marker or dropdown UI", () => {
+  assert.ok(/Undo Last Point/.test(standalonePanel));
+  assert.ok(!/Add Marker/.test(standalonePanel));
   assert.match(standalonePanel, /Clear Active Line's Points/);
   assert.ok(!/normalWaterlineGuideExistingSelect/.test(standalonePanel), "the Guide dropdown should be gone");
+});
+
+test("the Create Site setup form has no normal-waterline-guide UI at all — only the watched area", () => {
+  assert.ok(!/Normal Waterline Guide/i.test(setupForm), "guide drawing should not appear in site setup");
+  assert.ok(!/Undo Last Point/.test(setupForm));
+  assert.ok(!/normalWaterlineGuide/i.test(setupForm));
+  assert.ok(!script.includes("function createSiteSetupSelector("));
+  assert.ok(!script.includes("saveNormalWaterlineGuideFromSetup"));
 });
 
 test("the standalone form has an explicit affordance to add another line", () => {
