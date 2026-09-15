@@ -137,7 +137,7 @@ def test_riverbank_status_when_no_record_matched() -> None:
         ({"camera_stable": "no"}, CONFIRMED, "camera does not appear stable"),
         ({"water_boundary_visible": "no"}, CONFIRMED, "water boundary is not clear enough"),
         ({"visibility_condition": "fog"}, CONFIRMED, "Visibility conditions"),
-        ({}, DRAFT, "does not yet have a confirmed normal-condition"),
+        ({}, DRAFT, "does not yet have a confirmed normal waterline guide"),
     ],
 )
 def test_usable_reason_covers_each_failure_code(

@@ -620,6 +620,12 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
                 status_code=400,
             )
             return
+        if not all(isinstance(entry, dict) for entry in raw_guides):
+            self._send_json(
+                {"success": False, "message": "Each guide must be a JSON object."},
+                status_code=400,
+            )
+            return
 
         try:
             config_path = _find_site_config(site_dir)
@@ -641,7 +647,6 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
                     ),
                 }
                 for entry in raw_guides
-                if isinstance(entry, dict)
             ]
             guides = write_normal_waterline_guides(config_path, payloads)
         except SiteConfigError as error:

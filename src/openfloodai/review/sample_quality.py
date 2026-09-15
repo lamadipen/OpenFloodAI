@@ -42,7 +42,7 @@ FRIENDLY_FAILURE_REASONS: dict[str, str] = {
         "Visibility conditions (dark, glare, rain, fog, or blur) limit this sample."
     ),
     FAILURE_BASELINE_NOT_CONFIRMED: (
-        "The site does not yet have a confirmed normal-condition riverbank reference."
+        "The site does not yet have a confirmed normal waterline guide."
     ),
 }
 

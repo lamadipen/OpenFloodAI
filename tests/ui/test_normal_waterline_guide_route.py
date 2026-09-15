@@ -268,6 +268,39 @@ def test_set_normal_waterline_guides_requires_at_least_one_guide(tmp_path: Path)
     assert payload["success"] is False
 
 
+def test_set_normal_waterline_guides_rejects_a_malformed_row_instead_of_dropping_it(
+    tmp_path: Path,
+) -> None:
+    site_dir = make_site(tmp_path / "example-site")
+
+    with serve_home_ui(tmp_path) as base_url:
+        status, payload = post(
+            base_url,
+            "/api/set-normal-waterline-guides",
+            normal_waterline_guides_bulk_request(
+                guides=[
+                    {
+                        "id": "left_bank_normal_waterline",
+                        "label": "left bank normal waterline",
+                        "points": [{"x": 10, "y": 55}, {"x": 20, "y": 60}],
+                        "video_time_seconds": 4.5,
+                        "normal_condition": True,
+                        "notes": "",
+                        "status": "confirmed",
+                    },
+                    "not-a-guide-object",
+                ]
+            ),
+        )
+
+    assert status == 400
+    assert payload["success"] is False
+    assert "must be a JSON object" in payload["message"]
+    # The well-formed row must not have been silently saved either — a
+    # malformed row rejects the whole batch rather than partially applying it.
+    assert "normal_waterline_guides" not in read_config(site_dir)
+
+
 def test_set_normal_waterline_guides_supports_invalid_status_with_reason(tmp_path: Path) -> None:
     site_dir = make_site(tmp_path / "example-site")
 
