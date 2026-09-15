@@ -1005,40 +1005,57 @@ measurements as zero change.
 See [the design decision](windowed-video-evidence.md) for defaults and limitations.
 
 
-## Confirmed Riverbank Reference (Issue #163)
+## Normal Waterline Guide (Issue #174)
 
-This record is stored on the site config alongside `reference_region`, tied to
-it rather than replacing it: `region` and every marker's `region` must fit
-inside the site's own `reference_region`. Only the current state is kept, the
-same as `reference_region` itself — reconfirming or invalidating overwrites
-it rather than appending to a history.
+Replaces the earlier rectangle-shaped "confirmed riverbank reference"
+(Issue #163) and its machine-suggestion heuristic (Issue #167 / OF-086),
+which this project concluded created more confusion and low-quality data
+points than it solved: a rectangle over-includes area on a curved riverbank,
+and a suggested horizontal band cannot approximate a real curve. The
+replacement rule is simple and applies project-wide:
 
+> A human draws the trusted normal baseline waterline. The machine only
+> ever draws current observations (an estimated water mask, current
+> waterline, or covered area) — never a suggestion for the baseline itself.
+
+A site can have zero, one, or more `normal_waterline_guides`, stored as a
+list on the site config alongside `reference_region`. One line is used when
+only one riverbank is visible; two when both are. Each guide's `points` must
+fit inside the site's own `reference_region`. Only the current state of each
+guide is kept, the same as `reference_region` itself — reconfirming or
+invalidating a guide overwrites it in place (matched by `id`) rather than
+appending to a history.
+
+- `id`: a stable identifier for this guide, unique within the site, used to
+  upsert (`write_normal_waterline_guide`) and invalidate
+  (`invalidate_normal_waterline_guide`) it without disturbing other guides.
+- `label`: a short human-readable name (for example "left bank normal
+  waterline").
+- `points`: an ordered list of at least two `{x, y}` percentage-of-frame
+  points (the same coordinate space as `reference_region`) tracing the
+  visible normal water edge as a polyline, so it can follow a real curve
+  instead of being limited to a straight edge.
 - `status`: `draft` (unconfirmed), `confirmed` (a human confirmed it), or
   `invalid` (no longer trustworthy).
-- `origin`: `machine_suggested` (the rectangle started from the client-side
-  suggestion heuristic, before any human correction) or `manual` (drawn
-  entirely by hand). Independent of `status` — a machine suggestion can be
-  edited and then confirmed, but `origin` still records how it started, so
-  suggestion usefulness can be measured later (Issue #167 / OF-086). Records
-  saved before this field existed are treated as `manual`.
-- `region`: the confirmed riverbank rectangle, in the same percentage-of-frame
-  shape as `reference_region`.
-- `video_id` and `video_time_seconds`: which video and moment the reference
-  was drawn from.
+- `video_id` and `video_time_seconds`: which video and moment the guide was
+  traced from.
 - `site_id` and `camera_id`: duplicated from the parent config onto the
   record itself for self-contained provenance, matching this project's other
   evidence records (for example the run-export receipt).
 - `normal_condition`: whether the source footage was normal-condition, per
   the [ML readiness plan](../product/ml-readiness.md).
 - `notes`: free text.
-- `markers`: a list of `{label, region}` stable extra references (bridge
-  pillars, rocks, wall edges), each also constrained to fit inside the site's
-  watched area.
 - `confirmed_at`, `invalidated_at`, `invalidation_reason`: server-set
   timestamps and reason (one of `camera_moved`, `view_changed`,
   `bank_changed`, `visibility_unreliable`, `other`); never client-supplied.
 
-Confirming a reference is not required before running validation — see the
+There is no `origin` field and no machine-suggestion path: manual drawing in
+this project is limited to the watched area and this guide. Any future
+machine-estimated waterline or water mask is a separate, read-only
+current-observation record, never a draft for a human to accept as the
+baseline.
+
+Confirming a guide is not required before running validation — see the
 [ML readiness plan](../product/ml-readiness.md) for why a visible riverbank
 is the agreed first reference, and
 [windowed video evidence](windowed-video-evidence.md#proposed-video-overlays)
@@ -1059,11 +1076,12 @@ labeled time window already is the natural unit of "one reviewed sample":
   `blur`, `obstruction`.
 
 `normal_baseline_confirmed` is not stored on the record. It is derived at
-read time as `True` iff the site's
-[Confirmed Riverbank Reference](#confirmed-riverbank-reference-issue-163)
-has both `status == "confirmed"` **and** `normal_condition == True` — a
-confirmed reference drawn from non-normal-condition footage is not a
-trustworthy baseline. This is the explicit link between OF-082 and OF-083.
+read time as `True` iff **any** of the site's
+[Normal Waterline Guides](#normal-waterline-guide-issue-174) has both
+`status == "confirmed"` **and** `normal_condition == True` — a guide drawn
+from non-normal-condition footage is not a trustworthy baseline, but only
+one confirmed guide is needed (matching "one line if only one bank is
+visible"). This is the explicit link between OF-082 and OF-083.
 
 `failure_reason` is also derived, never reviewer-supplied, from a fixed
 priority order over the fields above (see
@@ -1082,17 +1100,18 @@ reviewer explicitly answered `"yes"` (not `"unsure"`) for both
 `practice_only` — never rejected, just not counted toward the trusted
 baseline. Validation reports (`render_site_validation_report`) and each
 site's scorecard summarize `baseline_ready` vs `practice_only` counts per
-site, cross-referenced against the site's confirmed reference — see the
+site, cross-referenced against the site's normal waterline guides — see the
 [ML readiness plan](../product/ml-readiness.md).
 
-**Report presentation (Issue #165 / OF-084).** `render_site_validation_report`
-now presents this data per comparison, rather than only aggregating it: a
-`## Confirmed Reference` section once per report naming the site's confirmed
-video/time (or a plain "No confirmed reference yet." line when absent), and
-per comparison window, whether that window's reference evidence was usable
-(via `compute_failure_reason`/`friendly_failure_reason`). The report is
-honest about a real limitation: the pipeline has no signal for whether water
+**Report presentation (Issue #165 / OF-084, updated for #174).**
+`render_site_validation_report` presents this data per comparison, rather
+than only aggregating it: a `## Normal Waterline Guides` section once per
+report summarizing how many guides are saved/confirmed (or a plain "No
+normal waterline guide yet." line when absent), and per comparison window,
+whether that window's reference evidence was usable (via
+`compute_failure_reason`/`friendly_failure_reason`). The report is honest
+about a real limitation: the pipeline has no signal for whether water
 covers more or less of the reference area, only whether a change was seen at
 all, so a `water_change_seen` result says a change was seen without claiming
 a direction. See `openfloodai.validation.result_explanation.
-explain_confirmed_reference` and `explain_riverbank_evidence`.
+explain_normal_waterline_guides` and `explain_riverbank_evidence`.

@@ -3,19 +3,21 @@ from pathlib import Path
 import pytest
 
 from openfloodai.validation.result_explanation import (
-    explain_confirmed_reference,
+    explain_normal_waterline_guides,
     explain_result,
     explain_riverbank_evidence,
     read_result_explanations,
 )
 
-CONFIRMED = {
-    "status": "confirmed",
-    "video_id": "rising-001",
-    "video_time_seconds": 5,
-    "normal_condition": True,
-}
-DRAFT = {"status": "draft", "normal_condition": True}
+CONFIRMED = [
+    {
+        "status": "confirmed",
+        "video_id": "rising-001",
+        "video_time_seconds": 5,
+        "normal_condition": True,
+    }
+]
+DRAFT = [{"status": "draft", "normal_condition": True}]
 
 
 def test_machine_finding_is_preserved_when_human_label_is_missing() -> None:
@@ -71,38 +73,36 @@ def test_missing_report_has_no_invented_results(tmp_path: Path) -> None:
     assert read_result_explanations(tmp_path / "missing.md") == []
 
 
-def test_confirmed_reference_present_names_video_and_time() -> None:
-    explanation = explain_confirmed_reference(CONFIRMED)
+def test_normal_waterline_guides_present_and_confirmed() -> None:
+    explanation = explain_normal_waterline_guides(CONFIRMED)
 
     assert explanation["available"] == "yes"
-    assert "rising-001" in explanation["summary"]
-    assert "5" in explanation["summary"]
+    assert "1 of 1" in explanation["summary"]
 
 
-def test_confirmed_reference_absent_is_plain() -> None:
-    explanation = explain_confirmed_reference(None)
+def test_normal_waterline_guides_absent_is_plain() -> None:
+    explanation = explain_normal_waterline_guides(None)
 
     assert explanation["available"] == "no"
-    assert explanation["summary"].startswith("No confirmed reference yet.")
+    assert explanation["summary"].startswith("No normal waterline guide yet.")
 
 
 @pytest.mark.parametrize(
-    "not_confirmed_reference",
+    "not_confirmed_guides",
     [
         DRAFT,
-        {"status": "invalid", "normal_condition": True},
-        {"status": "confirmed", "normal_condition": False},
-        {"status": "confirmed"},
+        [{"status": "invalid", "normal_condition": True}],
+        [{"status": "confirmed", "normal_condition": False}],
+        [{"status": "confirmed"}],
     ],
 )
-def test_confirmed_reference_exists_but_not_confirmed_is_flagged(
-    not_confirmed_reference: dict[str, object],
+def test_normal_waterline_guides_exist_but_not_confirmed_is_flagged(
+    not_confirmed_guides: list[dict[str, object]],
 ) -> None:
-    explanation = explain_confirmed_reference(not_confirmed_reference)
+    explanation = explain_normal_waterline_guides(not_confirmed_guides)
 
     assert explanation["available"] == "no"
-    assert explanation["summary"].startswith("Reference exists but is not confirmed.")
-    assert "confirmed normal-condition reference" not in explanation["summary"]
+    assert "none are yet a confirmed normal-condition baseline" in explanation["summary"]
 
 
 @pytest.mark.parametrize(
@@ -130,20 +130,22 @@ def test_riverbank_status_when_no_record_matched() -> None:
 
 
 @pytest.mark.parametrize(
-    ("label_record", "confirmed_reference", "expected_snippet"),
+    ("label_record", "normal_waterline_guides", "expected_snippet"),
     [
         ({"riverbank_visible": "no"}, CONFIRMED, "riverbank or stable reference is not visible"),
         ({"visibility_condition": "obstruction"}, CONFIRMED, "blocking the camera's view"),
         ({"camera_stable": "no"}, CONFIRMED, "camera does not appear stable"),
         ({"water_boundary_visible": "no"}, CONFIRMED, "water boundary is not clear enough"),
         ({"visibility_condition": "fog"}, CONFIRMED, "Visibility conditions"),
-        ({}, DRAFT, "does not yet have a confirmed normal-condition"),
+        ({}, DRAFT, "does not yet have a confirmed normal waterline guide"),
     ],
 )
 def test_usable_reason_covers_each_failure_code(
-    label_record: dict[str, str], confirmed_reference: dict[str, object], expected_snippet: str
+    label_record: dict[str, str],
+    normal_waterline_guides: list[dict[str, object]],
+    expected_snippet: str,
 ) -> None:
-    evidence = explain_riverbank_evidence(label_record, confirmed_reference, "no_clear_change")
+    evidence = explain_riverbank_evidence(label_record, normal_waterline_guides, "no_clear_change")
 
     assert "not usable for comparison" in evidence["usable_reason"]
     assert expected_snippet in evidence["usable_reason"]

@@ -136,7 +136,7 @@ class ValidationSiteStatus:
     manifest_issues: list[str]
     reference_region_found: bool
     reference_region: dict[str, Any] | None
-    confirmed_reference: dict[str, Any] | None
+    normal_waterline_guides: list[dict[str, Any]]
     outputs_found: bool
     report_count: int
     latest_report_path: str | None
@@ -339,20 +339,19 @@ class ValidationSiteStatus:
             ]
 
         if not self.reference_region_found:
-            confirmed_reference_actions = [
+            normal_waterline_guide_actions = [
                 WorkflowAction(label="Set watched area first", action_id="set_watched_area")
             ]
         else:
-            confirmed_reference_actions = [
-                WorkflowAction(label="Set confirmed reference", action_id="set_confirmed_reference")
+            normal_waterline_guide_actions = [
+                WorkflowAction(
+                    label="Set normal waterline guide", action_id="set_normal_waterline_guide"
+                )
             ]
-            if (
-                self.confirmed_reference is not None
-                and self.confirmed_reference.get("status") != "invalid"
-            ):
-                confirmed_reference_actions.append(
+            if any(guide.get("status") != "invalid" for guide in self.normal_waterline_guides):
+                normal_waterline_guide_actions.append(
                     WorkflowAction(
-                        label="Invalidate reference", action_id="invalidate_confirmed_reference"
+                        label="Invalidate guide", action_id="invalidate_normal_waterline_guide"
                     )
                 )
 
@@ -399,15 +398,14 @@ class ValidationSiteStatus:
             ),
             WorkflowStep(
                 number=4,
-                key="confirmed_reference",
-                title="Confirmed reference",
-                status=_confirmed_reference_step_status(self.confirmed_reference),
+                key="normal_waterline_guide",
+                title="Normal waterline guide",
+                status=_normal_waterline_guide_step_status(self.normal_waterline_guides),
                 meaning=(
-                    "Confirm the visible riverbank inside your watched area. Machine "
-                    "suggestions are drafts until you confirm them. This is not required "
-                    "before running validation."
+                    "Trace the normal water edge inside your watched area, following its "
+                    "real curve. This is not required before running validation."
                 ),
-                actions=confirmed_reference_actions,
+                actions=normal_waterline_guide_actions,
                 required_for_validation=False,
             ),
             WorkflowStep(
@@ -549,7 +547,7 @@ def read_validation_site_status(site_dir: Path) -> ValidationSiteStatus:
         manifest_issues=manifest_issues,
         reference_region_found=_has_reference_region(config_paths),
         reference_region=_read_reference_region(config_paths),
-        confirmed_reference=_read_confirmed_reference(config_paths),
+        normal_waterline_guides=_read_normal_waterline_guides(config_paths),
         outputs_found=bool(report_paths),
         report_count=len(report_paths),
         latest_report_path=str(latest_report_path) if latest_report_path else None,
@@ -597,8 +595,8 @@ def _read_reference_region(config_paths: list[Path]) -> dict[str, Any] | None:
     return None
 
 
-def _read_confirmed_reference(config_paths: list[Path]) -> dict[str, Any] | None:
-    """Return the site's confirmed riverbank reference record, if any, for display."""
+def _read_normal_waterline_guides(config_paths: list[Path]) -> list[dict[str, Any]]:
+    """Return the site's normal waterline guides, if any, for display."""
 
     for config_path in config_paths:
         try:
@@ -607,10 +605,10 @@ def _read_confirmed_reference(config_paths: list[Path]) -> dict[str, Any] | None
             continue
         if not isinstance(config, dict):
             continue
-        confirmed_reference = config.get("confirmed_reference")
-        if isinstance(confirmed_reference, dict):
-            return confirmed_reference
-    return None
+        guides = config.get("normal_waterline_guides")
+        if isinstance(guides, list):
+            return [guide for guide in guides if isinstance(guide, dict)]
+    return []
 
 
 def _find_video_paths(site_dir: Path) -> list[Path]:
@@ -679,10 +677,10 @@ def _manifest_actions(manifest_status: str) -> list[WorkflowAction]:
     return [WorkflowAction(label="Add video to update manifest", action_id="add_video")]
 
 
-def _confirmed_reference_step_status(confirmed_reference: dict[str, Any] | None) -> str:
-    if confirmed_reference is None:
+def _normal_waterline_guide_step_status(normal_waterline_guides: list[dict[str, Any]]) -> str:
+    if not normal_waterline_guides:
         return WORKFLOW_STEP_MISSING
-    if confirmed_reference.get("status") == "confirmed":
+    if any(guide.get("status") == "confirmed" for guide in normal_waterline_guides):
         return WORKFLOW_STEP_COMPLETE
     return WORKFLOW_STEP_NEEDS_REVIEW
 

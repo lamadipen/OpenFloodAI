@@ -32,8 +32,8 @@ test("the overlay viewer is read-only: no drag/drop listeners, tracks live playb
 
 test("the overlay viewer's trust check mirrors is_normal_baseline_confirmed", () => {
   const source = grabFunction("createReadOnlyOverlayViewer");
-  assert.ok(source.includes('reference.status === "confirmed"'));
-  assert.ok(source.includes("reference.normal_condition === true"));
+  assert.ok(source.includes('guide.status === "confirmed"'));
+  assert.ok(source.includes("guide.normal_condition === true"));
 });
 
 test("the overlay viewer never modifies the video: only reads from the existing site-video route", () => {
@@ -43,10 +43,11 @@ test("the overlay viewer never modifies the video: only reads from the existing 
   assert.ok(!html.includes('"/api/watch'), "no new watch-specific API route should exist");
 });
 
-test("unavailable-reference text matches the report's exact wording", () => {
+test("status text covers the no-guide, confirmed, and unconfirmed cases", () => {
   const source = grabFunction("createReadOnlyOverlayViewer");
-  assert.ok(source.includes("No confirmed reference yet."));
-  assert.ok(source.includes("Reference exists but is not confirmed."));
+  assert.ok(source.includes("No normal waterline guide yet."));
+  assert.ok(source.includes("confirmed normal waterline guide(s) shown"));
+  assert.ok(source.includes("unconfirmed normal waterline guide(s) shown"));
 });
 
 test("a Watch button opens the viewer for a site with at least one video", () => {
@@ -58,18 +59,26 @@ test("a Watch button opens the viewer for a site with at least one video", () =>
   assert.ok(buttonLine.includes("disabled"));
 });
 
-test("the confirmed reference is shown on any video from the site, not just the one it was drawn from", () => {
+test("normal waterline guides are shown on any video from the site, not gated on the video id", () => {
   const source = grabFunction("showWatchVideo");
   assert.ok(
-    !source.includes("confirmed_reference.video_id === videoId"),
-    "should not gate the site's confirmed reference on the selected video's id"
+    !source.includes("normal_waterline_guides.video_id === videoId"),
+    "should not gate the site's normal waterline guides on the selected video's id"
   );
-  assert.match(source, /confirmedReference = \(site && site\.confirmed_reference\)/);
+  assert.match(source, /normalWaterlineGuides = \(site && site\.normal_waterline_guides\)/);
 });
 
-test("the viewer names the video/time the confirmed reference was drawn from", () => {
+test("the viewer draws every non-invalidated guide as a connected polyline, invalid ones excluded", () => {
   const source = grabFunction("createReadOnlyOverlayViewer");
-  assert.ok(source.includes("Reference confirmed from video"));
-  assert.ok(source.includes("confirmedReference.video_id"));
-  assert.ok(source.includes("confirmedReference.video_time_seconds"));
+  assert.ok(source.includes("trustedGuides"));
+  assert.ok(source.includes("unconfirmedGuides"));
+  assert.match(source, /guide\.status !== "invalid"/);
+  assert.ok(source.includes("moveTo"));
+  assert.ok(source.includes("lineTo"));
+});
+
+test("unconfirmed guides are drawn dashed and amber, confirmed guides solid and blue", () => {
+  const source = grabFunction("createReadOnlyOverlayViewer");
+  assert.match(source, /strokeStyle: "#d97706"[\s\S]*?dashed: true/);
+  assert.match(source, /strokeStyle: "#1d4ed8"[\s\S]*?dashed: false/);
 });

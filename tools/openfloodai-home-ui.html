@@ -130,7 +130,7 @@
       body[data-view="guided"] main > #setupForm,
       body[data-view="guided"] main > #videoFormPanel,
       body[data-view="guided"] main > #watchedAreaFormPanel,
-      body[data-view="guided"] main > #confirmedReferenceFormPanel,
+      body[data-view="guided"] main > #normalWaterlineGuideFormPanel,
       body[data-view="guided"] main > #labelFormPanel {
         display: none;
       }
@@ -178,28 +178,6 @@
         background: var(--accent);
         box-shadow: 0 8px 18px rgba(23, 105, 170, 0.22);
         transform: translateY(-1px);
-      }
-
-      .setup-phase-tab {
-        background: #fff;
-        border: 1px solid var(--line);
-        color: var(--muted);
-        font-size: 13px;
-        font-weight: 700;
-        min-height: 34px;
-        padding: 6px 12px;
-      }
-
-      .setup-phase-tab.is-active {
-        background: var(--accent-strong);
-        border-color: var(--accent-strong);
-        color: #fff;
-      }
-
-      .setup-phase-tab:disabled {
-        cursor: not-allowed;
-        opacity: 0.5;
-        transform: none;
       }
 
       .site-action-link {
@@ -765,6 +743,40 @@
         width: 100%;
       }
 
+      .guide-row {
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        display: grid;
+        gap: 8px;
+        padding: 12px;
+      }
+
+      .guide-row.is-active {
+        border-color: var(--ok);
+        box-shadow: 0 0 0 2px rgba(23, 108, 79, 0.18);
+      }
+
+      .guide-row-header {
+        align-items: center;
+        display: flex;
+        gap: 8px;
+      }
+
+      .guide-row-header input[type="text"] {
+        flex: 1;
+        min-width: 0;
+        padding: 8px;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+      }
+
+      .guide-row-fields {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      }
+
       @media (max-width: 640px) {
         header,
         main {
@@ -916,46 +928,11 @@
           </div>
           <div style="grid-column: span 2;">
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Watched area *</label>
-            <div style="display: flex; gap: 8px; margin-bottom: 8px;">
-              <button type="button" id="setupPhaseWatchedAreaTab" class="setup-phase-tab is-active">1. Watched Area</button>
-              <button type="button" id="setupPhaseConfirmedReferenceTab" class="setup-phase-tab" disabled>2. Confirmed Reference (optional)</button>
-            </div>
+            <div class="meta">Choose a frame with the video controls, then drag around the river area to watch.</div>
             <video id="setupVideoPreview" controls preload="metadata" style="display: none; margin-top: 8px; max-width: 100%; width: 100%; background: #182b35;"></video>
             <canvas id="setupVideoRegionCanvas" class="video-region-canvas" width="800" height="450" aria-label="Select watched area from first video" style="display: none;"></canvas>
             <input type="hidden" name="reference_region" id="setupReferenceRegionInput">
             <div class="meta" id="setupVideoRegionStatus" role="status" style="margin-top: 6px;">Choose a video to select the watched area.</div>
-
-            <div id="setupConfirmedReferenceSection" style="display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line);">
-              <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 12px;">
-                <button type="button" id="setupSuggestReferenceButton" style="font-size: 13px; min-height: 34px; padding: 6px 12px;">Suggest Reference</button>
-              </div>
-              <label style="display: block; font-weight: 700; margin-bottom: 4px;">Stable extra markers (optional)</label>
-              <div class="meta">Bridge pillars, rocks, wall edges, or other stable visible features.</div>
-              <div style="display: flex; gap: 8px; align-items: center; margin-top: 6px;">
-                <button type="button" id="setupAddMarkerButton" style="font-size: 13px; min-height: 34px; padding: 6px 12px;">+ Add Marker</button>
-              </div>
-              <div id="setupPendingMarkerControls" style="display: none; gap: 8px; align-items: center; margin-top: 8px;">
-                <input type="text" id="setupMarkerLabelInput" placeholder="e.g. bridge pillar" style="flex: 1; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
-                <button type="button" id="setupConfirmMarkerButton" style="font-size: 13px; min-height: 34px; padding: 6px 12px; background: var(--ok); border-color: var(--ok);">Add</button>
-                <button type="button" id="setupCancelMarkerButton" style="font-size: 13px; min-height: 34px; padding: 6px 12px; background: transparent; color: var(--muted); border-color: var(--line);">Cancel</button>
-              </div>
-              <div id="setupConfirmedReferenceMarkersList" style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;"></div>
-              <label style="display: flex; align-items: center; gap: 8px; font-weight: 700; margin-top: 12px;">
-                <input type="checkbox" id="setupNormalConditionCheckbox">
-                Regular river view (usual water level, not flooding or unusually low)
-              </label>
-              <div style="margin-top: 12px;">
-                <label style="display: block; font-weight: 700; margin-bottom: 4px;">Confirmed reference notes</label>
-                <textarea id="setupConfirmedReferenceNotesInput" rows="2" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;" placeholder="e.g. Clear view of the bridge pillar."></textarea>
-              </div>
-              <div style="margin-top: 12px;">
-                <label style="display: block; font-weight: 700; margin-bottom: 4px;">Save the confirmed reference as</label>
-                <select id="setupConfirmedReferenceStatusSelect" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
-                  <option value="draft">Draft (needs confirmation later)</option>
-                  <option value="confirmed">Confirmed now</option>
-                </select>
-              </div>
-            </div>
           </div>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Site Name *</label>
@@ -1107,80 +1084,41 @@
         </form>
       </section>
 
-      <section id="confirmedReferenceFormPanel" class="form-panel" style="display: none;">
-        <h2 style="margin-top: 0;">Confirm Riverbank Reference</h2>
+      <section id="normalWaterlineGuideFormPanel" class="form-panel" style="display: none;">
+        <h2 style="margin-top: 0;">Normal Waterline Guide</h2>
         <p class="meta" style="margin-top: 0;">
-          Confirm the visible riverbank inside your watched area. Machine suggestions are
-          drafts until you confirm them. This uses a video already in this site.
+          Trace the visible normal water edge inside your watched area, following its real
+          curve. This is the trusted human baseline; the machine never suggests it. Draw one
+          line if only one bank is visible, or add more for each bank. This uses a video
+          already in this site.
         </p>
         <div style="display: grid; gap: 16px;">
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Site *</label>
-            <select id="confirmedReferenceSiteSelect" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
+            <select id="normalWaterlineGuideSiteSelect" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
           </div>
           <div>
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Video in this site *</label>
-            <select id="confirmedReferenceVideoSelect" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
+            <select id="normalWaterlineGuideVideoSelect" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
           </div>
           <div>
-            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Confirmed reference *</label>
-            <div class="meta">The dashed blue box is your watched area. Choose a frame, then drag inside it to mark the riverbank.</div>
-            <video id="confirmedReferencePreview" controls preload="metadata" style="display: none; margin-top: 8px; max-width: 100%; width: 100%; background: #182b35;"></video>
-            <canvas id="confirmedReferenceCanvas" class="video-region-canvas" width="800" height="450" aria-label="Confirm the riverbank reference inside the watched area" style="display: none;"></canvas>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Lines *</label>
+            <div class="meta">The dashed blue box is your watched area. The active line (highlighted below) receives new points; every other line stays visible in gray while you draw.</div>
+            <video id="normalWaterlineGuidePreview" controls preload="metadata" style="display: none; margin-top: 8px; max-width: 100%; width: 100%; background: #182b35;"></video>
+            <canvas id="normalWaterlineGuideCanvas" class="video-region-canvas" width="800" height="450" aria-label="Trace the normal waterline inside the watched area" style="display: none;"></canvas>
             <div style="display: flex; gap: 8px; align-items: center; margin-top: 8px;">
-              <button type="button" id="suggestReferenceButton" style="font-size: 13px; min-height: 34px; padding: 6px 12px;">Suggest Reference</button>
+              <button type="button" id="undoGuidePointButton" style="font-size: 13px; min-height: 34px; padding: 6px 12px; background: transparent; color: var(--muted); border-color: var(--line);">Undo Last Point</button>
+              <button type="button" id="clearGuidePointsButton" style="font-size: 13px; min-height: 34px; padding: 6px 12px; background: transparent; color: var(--muted); border-color: var(--line);">Clear Active Line's Points</button>
             </div>
-            <div class="meta" id="confirmedReferenceStatus" role="status" style="margin-top: 6px;">Choose a video to begin.</div>
+            <div class="meta" id="normalWaterlineGuideStatus" role="status" style="margin-top: 6px;">Choose a video to begin.</div>
           </div>
+          <div id="normalWaterlineGuideRows" style="display: grid; gap: 10px;"></div>
           <div>
-            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Stable extra markers (optional)</label>
-            <div class="meta">Bridge pillars, rocks, wall edges, or other stable visible features.</div>
-            <div style="display: flex; gap: 8px; align-items: center; margin-top: 6px;">
-              <button type="button" id="addMarkerButton" style="font-size: 13px; min-height: 34px; padding: 6px 12px;">+ Add Marker</button>
-            </div>
-            <div id="pendingMarkerControls" style="display: none; gap: 8px; align-items: center; margin-top: 8px;">
-              <input type="text" id="markerLabelInput" placeholder="e.g. bridge pillar" style="flex: 1; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
-              <button type="button" id="confirmMarkerButton" style="font-size: 13px; min-height: 34px; padding: 6px 12px; background: var(--ok); border-color: var(--ok);">Add</button>
-              <button type="button" id="cancelMarkerButton" style="font-size: 13px; min-height: 34px; padding: 6px 12px; background: transparent; color: var(--muted); border-color: var(--line);">Cancel</button>
-            </div>
-            <div id="confirmedReferenceMarkersList" style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;"></div>
-          </div>
-          <label style="display: flex; align-items: center; gap: 8px; font-weight: 700;">
-            <input type="checkbox" id="normalConditionCheckbox">
-            Regular river view (usual water level, not flooding or unusually low)
-          </label>
-          <div>
-            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Notes</label>
-            <textarea id="confirmedReferenceNotesInput" rows="3" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;" placeholder="e.g. Clear view of the bridge pillar."></textarea>
+            <button type="button" id="addAnotherGuideButton" style="font-size: 13px; min-height: 34px; padding: 6px 12px;">+ Add Another Line</button>
           </div>
           <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-            <button type="button" id="saveConfirmedReferenceDraftButton" style="background: var(--accent-strong); border-color: var(--accent-strong);">Save As Draft</button>
-            <button type="button" id="saveConfirmedReferenceConfirmedButton" style="background: var(--ok); border-color: var(--ok);">Save &amp; Confirm</button>
-            <button type="button" id="cancelConfirmedReference" style="background: transparent; color: var(--muted); border-color: var(--line);">Cancel</button>
-          </div>
-        </div>
-
-        <div id="invalidateReferenceSection" style="display: none; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line);">
-          <h3 style="margin-top: 0;">Invalidate This Reference</h3>
-          <p class="meta" style="margin-top: 0;">Use this if the camera moved, the view changed, the bank changed, or visibility is no longer reliable.</p>
-          <div style="display: grid; gap: 12px; max-width: 420px;">
-            <div>
-              <label style="display: block; font-weight: 700; margin-bottom: 4px;">Reason *</label>
-              <select id="invalidationReasonSelect" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
-                <option value="camera_moved">Camera moved</option>
-                <option value="view_changed">View changed</option>
-                <option value="bank_changed">Bank changed</option>
-                <option value="visibility_unreliable">Visibility no longer reliable</option>
-                <option value="other">Other</option>
-              </select>
-            </div>
-            <div>
-              <label style="display: block; font-weight: 700; margin-bottom: 4px;">Notes</label>
-              <input type="text" id="invalidationNotesInput" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
-            </div>
-            <div>
-              <button type="button" id="invalidateReferenceButton" style="background: var(--missing); border-color: var(--missing); color: #fff;">Invalidate Reference</button>
-            </div>
+            <button type="button" id="saveAllNormalWaterlineGuidesButton" style="background: var(--ok); border-color: var(--ok);">Save All</button>
+            <button type="button" id="cancelNormalWaterlineGuide" style="background: transparent; color: var(--muted); border-color: var(--line);">Cancel</button>
           </div>
         </div>
       </section>
@@ -1188,8 +1126,9 @@
       <section id="watchViewerPanel" class="form-panel" style="display: none;">
         <h2 style="margin-top: 0;">Watch</h2>
         <p class="meta" style="margin-top: 0;">
-          Watch a video with the watched area and confirmed reference drawn on top. This is a
-          view only; it never changes the video file.
+          Watch a video with the watched area and every normal waterline guide drawn on top
+          (solid blue if confirmed, dashed amber if not). This is a view only; it never
+          changes the video file.
         </p>
         <div style="display: grid; gap: 16px;">
           <div>
@@ -1203,7 +1142,7 @@
           <div>
             <div id="watchVideoWrap" style="position: relative; max-width: 100%; display: none;">
               <video id="watchVideoPreview" controls preload="metadata" style="display: none; width: 100%; background: #182b35;"></video>
-              <canvas id="watchOverlayCanvas" aria-label="Watched rectangle and confirmed reference overlay" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"></canvas>
+              <canvas id="watchOverlayCanvas" aria-label="Watched rectangle and normal waterline guide overlay" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"></canvas>
             </div>
             <div class="meta" id="watchStatus" role="status" style="margin-top: 6px;">Choose a video to watch.</div>
           </div>
@@ -1329,19 +1268,6 @@
       const setupVideoRegionCanvas = document.querySelector("#setupVideoRegionCanvas");
       const setupReferenceRegionInput = document.querySelector("#setupReferenceRegionInput");
       const setupVideoRegionStatus = document.querySelector("#setupVideoRegionStatus");
-      const setupPhaseWatchedAreaTab = document.querySelector("#setupPhaseWatchedAreaTab");
-      const setupPhaseConfirmedReferenceTab = document.querySelector("#setupPhaseConfirmedReferenceTab");
-      const setupConfirmedReferenceSection = document.querySelector("#setupConfirmedReferenceSection");
-      const setupSuggestReferenceButton = document.querySelector("#setupSuggestReferenceButton");
-      const setupAddMarkerButton = document.querySelector("#setupAddMarkerButton");
-      const setupPendingMarkerControls = document.querySelector("#setupPendingMarkerControls");
-      const setupMarkerLabelInput = document.querySelector("#setupMarkerLabelInput");
-      const setupConfirmMarkerButton = document.querySelector("#setupConfirmMarkerButton");
-      const setupCancelMarkerButton = document.querySelector("#setupCancelMarkerButton");
-      const setupConfirmedReferenceMarkersList = document.querySelector("#setupConfirmedReferenceMarkersList");
-      const setupNormalConditionCheckbox = document.querySelector("#setupNormalConditionCheckbox");
-      const setupConfirmedReferenceNotesInput = document.querySelector("#setupConfirmedReferenceNotesInput");
-      const setupConfirmedReferenceStatusSelect = document.querySelector("#setupConfirmedReferenceStatusSelect");
       const setupPurposeSelect = document.querySelector("#setupPurposeSelect");
       const setupHardCaseTypeSelect = document.querySelector("#setupHardCaseTypeSelect");
       setupSiteNameInput.addEventListener("input", () => {
@@ -1369,28 +1295,18 @@
       const watchedAreaCanvas = document.querySelector("#watchedAreaCanvas");
       const watchedAreaRegionInput = document.querySelector("#watchedAreaRegionInput");
       const watchedAreaStatus = document.querySelector("#watchedAreaStatus");
-      const confirmedReferenceFormPanel = document.querySelector("#confirmedReferenceFormPanel");
-      const confirmedReferenceSiteSelect = document.querySelector("#confirmedReferenceSiteSelect");
-      const confirmedReferenceVideoSelect = document.querySelector("#confirmedReferenceVideoSelect");
-      const confirmedReferencePreview = document.querySelector("#confirmedReferencePreview");
-      const confirmedReferenceCanvas = document.querySelector("#confirmedReferenceCanvas");
-      const confirmedReferenceStatus = document.querySelector("#confirmedReferenceStatus");
-      const suggestReferenceButton = document.querySelector("#suggestReferenceButton");
-      const addMarkerButton = document.querySelector("#addMarkerButton");
-      const pendingMarkerControls = document.querySelector("#pendingMarkerControls");
-      const markerLabelInput = document.querySelector("#markerLabelInput");
-      const confirmMarkerButton = document.querySelector("#confirmMarkerButton");
-      const cancelMarkerButton = document.querySelector("#cancelMarkerButton");
-      const confirmedReferenceMarkersList = document.querySelector("#confirmedReferenceMarkersList");
-      const normalConditionCheckbox = document.querySelector("#normalConditionCheckbox");
-      const confirmedReferenceNotesInput = document.querySelector("#confirmedReferenceNotesInput");
-      const saveConfirmedReferenceDraftButton = document.querySelector("#saveConfirmedReferenceDraftButton");
-      const saveConfirmedReferenceConfirmedButton = document.querySelector("#saveConfirmedReferenceConfirmedButton");
-      const cancelConfirmedReference = document.querySelector("#cancelConfirmedReference");
-      const invalidateReferenceSection = document.querySelector("#invalidateReferenceSection");
-      const invalidationReasonSelect = document.querySelector("#invalidationReasonSelect");
-      const invalidationNotesInput = document.querySelector("#invalidationNotesInput");
-      const invalidateReferenceButton = document.querySelector("#invalidateReferenceButton");
+      const normalWaterlineGuideFormPanel = document.querySelector("#normalWaterlineGuideFormPanel");
+      const normalWaterlineGuideSiteSelect = document.querySelector("#normalWaterlineGuideSiteSelect");
+      const normalWaterlineGuideVideoSelect = document.querySelector("#normalWaterlineGuideVideoSelect");
+      const addAnotherGuideButton = document.querySelector("#addAnotherGuideButton");
+      const normalWaterlineGuidePreview = document.querySelector("#normalWaterlineGuidePreview");
+      const normalWaterlineGuideCanvas = document.querySelector("#normalWaterlineGuideCanvas");
+      const normalWaterlineGuideStatus = document.querySelector("#normalWaterlineGuideStatus");
+      const normalWaterlineGuideRows = document.querySelector("#normalWaterlineGuideRows");
+      const undoGuidePointButton = document.querySelector("#undoGuidePointButton");
+      const clearGuidePointsButton = document.querySelector("#clearGuidePointsButton");
+      const saveAllNormalWaterlineGuidesButton = document.querySelector("#saveAllNormalWaterlineGuidesButton");
+      const cancelNormalWaterlineGuide = document.querySelector("#cancelNormalWaterlineGuide");
       const watchViewerPanel = document.querySelector("#watchViewerPanel");
       const watchSiteSelect = document.querySelector("#watchSiteSelect");
       const watchVideoSelect = document.querySelector("#watchVideoSelect");
@@ -1432,16 +1348,12 @@
       const requestedSiteName = new URLSearchParams(window.location.search).get("site");
       let latestSites = [];
       let openWorkflowForm = null;
-      const setupVideoRegionSelector = createSiteSetupSelector({
+      const setupVideoRegionSelector = createRegionSelector({
         video: setupVideoPreview,
         canvas: setupVideoRegionCanvas,
         input: setupReferenceRegionInput,
         status: setupVideoRegionStatus,
         emptyText: "Choose a video to select the watched area.",
-        onChange: () => {
-          renderSetupMarkersList();
-          setupPhaseConfirmedReferenceTab.disabled = !setupVideoRegionSelector.canStartConfirmedReference();
-        },
       });
       const videoRegionSelector = createRegionSelector({
         video: videoPreview,
@@ -1457,12 +1369,13 @@
         status: watchedAreaStatus,
         emptyText: "Choose a video to begin.",
       });
-      const confirmedReferenceSelector = createConfirmedReferenceSelector({
-        video: confirmedReferencePreview,
-        canvas: confirmedReferenceCanvas,
-        status: confirmedReferenceStatus,
+      const normalWaterlineGuideEditor = createNormalWaterlineGuidesEditor({
+        video: normalWaterlineGuidePreview,
+        canvas: normalWaterlineGuideCanvas,
+        status: normalWaterlineGuideStatus,
+        rowsContainer: normalWaterlineGuideRows,
         emptyText: "Choose a video to begin.",
-        onChange: () => renderConfirmedReferenceMarkersList(),
+        onDeleteExisting: (guideId) => deleteSavedNormalWaterlineGuide(guideId),
       });
       const watchOverlayViewer = createReadOnlyOverlayViewer({
         video: watchVideoPreview,
@@ -1527,7 +1440,7 @@
           labelSiteSelect.value = currentLabelSite;
         }
         fillWatchedAreaSites(sites);
-        fillConfirmedReferenceSites(sites);
+        fillNormalWaterlineGuideSites(sites);
         fillWatchSites(sites);
       }
 
@@ -1588,98 +1501,85 @@
         watchedAreaSelector.show(`/api/site-video?${query}`);
       }
 
-      function fillConfirmedReferenceSites(sites) {
-        const current = confirmedReferenceSiteSelect.value;
-        confirmedReferenceSiteSelect.innerHTML = "";
+      function fillNormalWaterlineGuideSites(sites) {
+        const current = normalWaterlineGuideSiteSelect.value;
+        normalWaterlineGuideSiteSelect.innerHTML = "";
         for (const site of sites) {
           const option = document.createElement("option");
           option.value = site.site_name;
           option.textContent = site.site_name;
-          confirmedReferenceSiteSelect.append(option);
+          normalWaterlineGuideSiteSelect.append(option);
         }
         if (!sites.length) {
           const option = document.createElement("option");
           option.value = "";
           option.textContent = "Create a site first";
-          confirmedReferenceSiteSelect.append(option);
+          normalWaterlineGuideSiteSelect.append(option);
         }
-        if ([...confirmedReferenceSiteSelect.options].some((option) => option.value === current)) {
-          confirmedReferenceSiteSelect.value = current;
+        if ([...normalWaterlineGuideSiteSelect.options].some((option) => option.value === current)) {
+          normalWaterlineGuideSiteSelect.value = current;
         }
-        fillConfirmedReferenceVideos();
+        fillNormalWaterlineGuideVideos();
       }
 
-      function fillConfirmedReferenceVideos() {
+      // Rebuilds the video dropdown for the currently selected site, but —
+      // since this also runs every time loadSites() refreshes the whole
+      // page (for example right after a Save All) — only resets the editor
+      // when the selected video actually changes. Otherwise a save would
+      // immediately wipe the very lines it just persisted.
+      function fillNormalWaterlineGuideVideos() {
         const site = latestSites.find(
-          (entry) => entry.site_name === confirmedReferenceSiteSelect.value
+          (entry) => entry.site_name === normalWaterlineGuideSiteSelect.value
         );
         const videoIds = (site && site.video_ids) || [];
-        confirmedReferenceVideoSelect.innerHTML = "";
-        confirmedReferenceSelector.reset();
-        updateInvalidateVisibility(null);
+        const previousVideoId = normalWaterlineGuideVideoSelect.value;
+        normalWaterlineGuideVideoSelect.innerHTML = "";
         if (!videoIds.length) {
           const option = document.createElement("option");
           option.value = "";
           option.textContent = "Add a video to this site first";
-          confirmedReferenceVideoSelect.append(option);
-          confirmedReferenceStatus.textContent = "This site has no video yet. Add a video first.";
+          normalWaterlineGuideVideoSelect.append(option);
+          normalWaterlineGuideStatus.textContent = "This site has no video yet. Add a video first.";
+          if (previousVideoId) {
+            normalWaterlineGuideEditor.reset();
+          }
           return;
         }
         const chooseOption = document.createElement("option");
         chooseOption.value = "";
         chooseOption.textContent = "Choose a video";
-        confirmedReferenceVideoSelect.append(chooseOption);
+        normalWaterlineGuideVideoSelect.append(chooseOption);
         for (const videoId of videoIds) {
           const option = document.createElement("option");
           option.value = videoId;
           option.textContent = videoId;
-          confirmedReferenceVideoSelect.append(option);
+          normalWaterlineGuideVideoSelect.append(option);
+        }
+        if (videoIds.includes(previousVideoId)) {
+          normalWaterlineGuideVideoSelect.value = previousVideoId;
         }
         if (site && !site.reference_region) {
-          confirmedReferenceStatus.textContent = "Set the watched area for this site first.";
+          normalWaterlineGuideStatus.textContent = "Set the watched area for this site first.";
         }
-        const existingVideoId = site && site.confirmed_reference && site.confirmed_reference.video_id;
-        if (existingVideoId && videoIds.includes(existingVideoId)) {
-          confirmedReferenceVideoSelect.value = existingVideoId;
-          showConfirmedReferenceVideo();
+        if (normalWaterlineGuideVideoSelect.value !== previousVideoId) {
+          showGuidesForSelectedVideo();
         }
       }
 
-      function showConfirmedReferenceVideo() {
-        const folderName = confirmedReferenceSiteSelect.value;
-        const videoId = confirmedReferenceVideoSelect.value;
+      function showGuidesForSelectedVideo() {
+        const folderName = normalWaterlineGuideSiteSelect.value;
+        const videoId = normalWaterlineGuideVideoSelect.value;
         if (!folderName || !videoId) {
-          confirmedReferenceSelector.reset();
-          updateInvalidateVisibility(null);
+          normalWaterlineGuideEditor.reset();
           return;
         }
         const site = latestSites.find((entry) => entry.site_name === folderName);
         const guideRegion = site && site.reference_region ? site.reference_region : null;
-        const existingRecord =
-          site && site.confirmed_reference && site.confirmed_reference.video_id === videoId
-            ? site.confirmed_reference
-            : null;
+        const existingGuides = ((site && site.normal_waterline_guides) || []).filter(
+          (guide) => guide.video_id === videoId
+        );
         const query = new URLSearchParams({ folder_name: folderName, video_id: videoId });
-        confirmedReferenceSelector.show(`/api/site-video?${query}`, {
-          guideRegion,
-          existing: existingRecord
-            ? {
-                region: existingRecord.region,
-                markers: existingRecord.markers || [],
-                videoTimeSeconds: existingRecord.video_time_seconds,
-                origin: existingRecord.origin,
-                status: existingRecord.status,
-              }
-            : null,
-        });
-        normalConditionCheckbox.checked = existingRecord ? Boolean(existingRecord.normal_condition) : false;
-        confirmedReferenceNotesInput.value = existingRecord ? existingRecord.notes || "" : "";
-        updateInvalidateVisibility(existingRecord);
-      }
-
-      function updateInvalidateVisibility(existingRecord) {
-        const canInvalidate = Boolean(existingRecord) && existingRecord.status !== "invalid";
-        invalidateReferenceSection.style.display = canInvalidate ? "block" : "none";
+        normalWaterlineGuideEditor.show(`/api/site-video?${query}`, { guideRegion, existingGuides });
       }
 
       function fillWatchSites(sites) {
@@ -1736,55 +1636,13 @@
         }
         const site = latestSites.find((entry) => entry.site_name === folderName);
         const watchedRegion = site && site.reference_region ? site.reference_region : null;
-        // A confirmed reference is a site/camera baseline, not tied to one video:
-        // show it on any video from this site, and let the trust check below
-        // decide whether it is safe to draw.
-        const confirmedReference = (site && site.confirmed_reference) || null;
+        // Normal waterline guides are a site/camera baseline, not tied to
+        // one video: show them on any video from this site, and let the
+        // trust check inside the viewer decide whether it is safe to draw.
+        const normalWaterlineGuides = (site && site.normal_waterline_guides) || [];
         const query = new URLSearchParams({ folder_name: folderName, video_id: videoId });
-        watchOverlayViewer.show(`/api/site-video?${query}`, { watchedRegion, confirmedReference });
+        watchOverlayViewer.show(`/api/site-video?${query}`, { watchedRegion, normalWaterlineGuides });
       }
-
-      function renderConfirmedReferenceMarkersList() {
-        const markers = confirmedReferenceSelector.markers();
-        confirmedReferenceMarkersList.innerHTML = markers.length
-          ? markers
-              .map(
-                (marker, index) => `
-                  <div style="display: flex; align-items: center; gap: 8px;">
-                    <span class="badge" style="background: var(--surface-yellow); color: #a96b08;">${escapeHtml(marker.label)}</span>
-                    <button type="button" onclick="removeConfirmedReferenceMarker(${index})" style="font-size: 12px; min-height: 28px; padding: 4px 10px; background: transparent; color: var(--muted); border-color: var(--line);">Remove</button>
-                  </div>
-                `
-              )
-              .join("")
-          : '<div class="meta">No markers added yet.</div>';
-      }
-
-      window.removeConfirmedReferenceMarker = function (index) {
-        confirmedReferenceSelector.removeMarker(index);
-        renderConfirmedReferenceMarkersList();
-      };
-
-      function renderSetupMarkersList() {
-        const markers = setupVideoRegionSelector.markers();
-        setupConfirmedReferenceMarkersList.innerHTML = markers.length
-          ? markers
-              .map(
-                (marker, index) => `
-                  <div style="display: flex; align-items: center; gap: 8px;">
-                    <span class="badge" style="background: var(--surface-yellow); color: #a96b08;">${escapeHtml(marker.label)}</span>
-                    <button type="button" onclick="removeSetupMarker(${index})" style="font-size: 12px; min-height: 28px; padding: 4px 10px; background: transparent; color: var(--muted); border-color: var(--line);">Remove</button>
-                  </div>
-                `
-              )
-              .join("")
-          : '<div class="meta">No markers added yet.</div>';
-      }
-
-      window.removeSetupMarker = function (index) {
-        setupVideoRegionSelector.removeMarker(index);
-        renderSetupMarkersList();
-      };
 
       const tristateDisplayLabels = {
         yes: "Yes",
@@ -1939,81 +1797,17 @@
         };
       }
 
-      // Keeps a drawn rectangle from extending past a bounding rectangle
-      // (both in the same pixel space), so a confirmed-reference or marker
-      // rectangle can never be drawn outside its watched-area guide in the
-      // first place, instead of only failing when saved.
-      function clampRectToBounds(rect, bounds) {
-        const x = Math.min(Math.max(rect.x, bounds.x), bounds.x + bounds.width);
-        const y = Math.min(Math.max(rect.y, bounds.y), bounds.y + bounds.height);
-        return {
-          x,
-          y,
-          width: Math.max(0, Math.min(rect.x + rect.width, bounds.x + bounds.width) - x),
-          height: Math.max(0, Math.min(rect.y + rect.height, bounds.y + bounds.height) - y),
-        };
-      }
-
-      // Suggests a draft riverbank/reference band inside the watched-area
-      // guide: the row with the strongest brightness jump from the row
-      // above it (the same gradient idea as the Python sharpness score in
-      // src/openfloodai/vision/simple_signals.py, applied per row instead
-      // of globally), entirely client-side against the already-paused
-      // frame. Never throws and never calls the network — a failed or
-      // degenerate guide must not block manual setup, so any problem (too
-      // small a guide, a flat/edge-less image, a tainted canvas read)
-      // returns null instead.
-      function suggestReferenceRegion(context, guidePixelRect) {
-        const MIN_GUIDE_WIDTH = 8;
-        const MIN_GUIDE_HEIGHT = 16;
-        const BAND_HEIGHT_FRACTION = 0.18;
-        const MIN_BAND_HEIGHT_PX = 24;
-        const MIN_RESULT_SIZE_PX = 4;
-        try {
-          const x = Math.max(0, Math.round(guidePixelRect.x));
-          const y = Math.max(0, Math.round(guidePixelRect.y));
-          const width = Math.round(guidePixelRect.width);
-          const height = Math.round(guidePixelRect.height);
-          if (width < MIN_GUIDE_WIDTH || height < MIN_GUIDE_HEIGHT) {
-            return null;
-          }
-          const { data } = context.getImageData(x, y, width, height);
-          const rowBrightness = new Array(height).fill(0);
-          for (let row = 0; row < height; row += 1) {
-            let sum = 0;
-            for (let col = 0; col < width; col += 1) {
-              const i = (row * width + col) * 4;
-              sum += (data[i] + data[i + 1] + data[i + 2]) / 3;
-            }
-            rowBrightness[row] = sum / width;
-          }
-          let bestRow = -1;
-          let bestJump = -1;
-          for (let row = 1; row < height; row += 1) {
-            const jump = Math.abs(rowBrightness[row] - rowBrightness[row - 1]);
-            if (jump > bestJump) {
-              bestJump = jump;
-              bestRow = row;
-            }
-          }
-          if (bestRow < 0 || bestJump <= 0) {
-            return null;
-          }
-          const bandHeight = Math.max(MIN_BAND_HEIGHT_PX, Math.round(height * BAND_HEIGHT_FRACTION));
-          const rawRect = {
-            x: guidePixelRect.x,
-            y: guidePixelRect.y + bestRow - bandHeight / 2,
-            width: guidePixelRect.width,
-            height: bandHeight,
-          };
-          const clamped = clampRectToBounds(rawRect, guidePixelRect);
-          if (clamped.width < MIN_RESULT_SIZE_PX || clamped.height < MIN_RESULT_SIZE_PX) {
-            return null;
-          }
-          return clamped;
-        } catch (error) {
-          return null;
-        }
+      // Whether a clicked point (pixel space) falls inside a bounding
+      // rectangle (also pixel space) — used to reject a normal-waterline
+      // guide point drawn outside its watched-area guide, instead of only
+      // failing when saved.
+      function pointInsideRect(point, rect) {
+        return (
+          point.x >= rect.x &&
+          point.x <= rect.x + rect.width &&
+          point.y >= rect.y &&
+          point.y <= rect.y + rect.height
+        );
       }
 
       // One watched-area selector, shared by site setup, video intake, and step 3.
@@ -2132,26 +1926,40 @@
         };
       }
 
-      // Draws a fixed guide rectangle (the site's watched area) plus one draggable
-      // confirmed-reference rectangle and a set of named marker rectangles.
-      function createConfirmedReferenceSelector({ video, canvas, status, emptyText, onChange }) {
+      function generateGuideId() {
+        return `line-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+      }
+
+      const INVALIDATION_REASON_OPTIONS = [
+        ["camera_moved", "Camera moved"],
+        ["view_changed", "View changed"],
+        ["bank_changed", "Bank changed"],
+        ["visibility_unreliable", "Visibility no longer reliable"],
+        ["other", "Other"],
+      ];
+
+      // Multi-line editor for tracing normal-waterline guides inside a
+      // site's watched area. Every line stays visible at once (the active
+      // one highlighted in green, every other one in gray) so switching to
+      // draw a new line never hides what was already traced. Each line has
+      // its own label/status/notes row below the canvas, and can be
+      // deleted outright. Manual drawing is limited to the watched area and
+      // these lines — there is no machine suggestion for the trusted
+      // baseline; the machine only ever draws its own current-observation
+      // overlays elsewhere, never this one.
+      function createNormalWaterlineGuidesEditor({
+        video,
+        canvas,
+        status,
+        rowsContainer,
+        emptyText,
+        onDeleteExisting,
+      }) {
         const context = canvas.getContext("2d");
         let guideRegion = null;
-        let mainSelection = null;
-        let origin = "manual";
-        // The saved status of a loaded record, if any (null for a fresh,
-        // never-saved selection this session). Lets the suggested/dashed
-        // styling apply only while a suggestion is genuinely still
-        // unconfirmed — once a human has confirmed (or invalidated) it,
-        // it displays like any other trusted reference, even though its
-        // origin still remembers it started as a suggestion.
-        let recordStatus = null;
-        let pendingMarker = null;
-        let markers = [];
-        let dragStart = null;
-        let drawMode = "main";
+        let rows = [];
+        let activeUid = null;
         let objectUrl = null;
-        let pendingExisting = null;
 
         function canvasPoint(event) {
           const bounds = canvas.getBoundingClientRect();
@@ -2161,16 +1969,21 @@
           };
         }
 
-        function toPercent(rect) {
+        function toPercentPoint(point) {
           return {
-            x: Number(((rect.x / canvas.width) * 100).toFixed(6)),
-            y: Number(((rect.y / canvas.height) * 100).toFixed(6)),
-            width: Number(((rect.width / canvas.width) * 100).toFixed(6)),
-            height: Number(((rect.height / canvas.height) * 100).toFixed(6)),
+            x: Number(((point.x / canvas.width) * 100).toFixed(6)),
+            y: Number(((point.y / canvas.height) * 100).toFixed(6)),
           };
         }
 
-        function toPixels(percentRect) {
+        function toPixelsPoint(percentPoint) {
+          return {
+            x: (percentPoint.x / 100) * canvas.width,
+            y: (percentPoint.y / 100) * canvas.height,
+          };
+        }
+
+        function toPixelsRect(percentRect) {
           return {
             x: (percentRect.x / 100) * canvas.width,
             y: (percentRect.y / 100) * canvas.height,
@@ -2179,23 +1992,25 @@
           };
         }
 
-        function drawMarkerRect(rect, label) {
-          context.save();
-          context.fillStyle = "rgba(217, 119, 6, 0.2)";
-          context.strokeStyle = "#d97706";
-          context.lineWidth = 2;
-          context.fillRect(rect.x, rect.y, rect.width, rect.height);
-          context.strokeRect(rect.x, rect.y, rect.width, rect.height);
-          context.fillStyle = "#a96b08";
-          context.font = "12px system-ui, sans-serif";
-          context.fillText(label, rect.x + 2, Math.max(12, rect.y - 4));
-          context.restore();
+        function activeRow() {
+          return rows.find((row) => row.uid === activeUid) || null;
         }
 
-        function clearSelection() {
-          mainSelection = null;
-          origin = "manual";
-          recordStatus = null;
+        function statusText() {
+          const active = activeRow();
+          if (!rows.length) {
+            return 'Click "+ Add Another Line" to start tracing the normal waterline.';
+          }
+          if (!active) {
+            return "Choose a line below to draw, or add another.";
+          }
+          if (active.points.length === 0) {
+            return "Click inside the dashed watched area to start tracing this line.";
+          }
+          if (active.points.length === 1) {
+            return "1 point added. Click to add another point along the waterline.";
+          }
+          return `${active.points.length} points added to this line. Keep clicking to follow the curve, or save when done.`;
         }
 
         function draw() {
@@ -2207,20 +2022,8 @@
           canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
           context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-          if (pendingExisting) {
-            mainSelection = toPixels(pendingExisting.region);
-            origin = pendingExisting.origin || "manual";
-            recordStatus = pendingExisting.status || null;
-            markers = (pendingExisting.markers || []).map((marker) => ({
-              label: marker.label,
-              pixelRect: toPixels(marker.region),
-              region: marker.region,
-            }));
-            pendingExisting = null;
-          }
-
           if (guideRegion) {
-            const guide = toPixels(guideRegion);
+            const guide = toPixelsRect(guideRegion);
             context.save();
             context.setLineDash([6, 4]);
             context.strokeStyle = "#0d4d7d";
@@ -2229,64 +2032,232 @@
             context.restore();
           }
 
-          for (const marker of markers) {
-            drawMarkerRect(marker.pixelRect, marker.label);
-          }
-          if (pendingMarker) {
-            drawMarkerRect(pendingMarker, "New marker");
+          for (const row of rows) {
+            if (row.points.length === 0) {
+              continue;
+            }
+            const isActive = row.uid === activeUid;
+            const pixelPoints = row.points.map(toPixelsPoint);
+            context.save();
+            context.strokeStyle = isActive ? "#087f5b" : "#94a3b8";
+            context.lineWidth = isActive ? 3 : 2;
+            context.beginPath();
+            context.moveTo(pixelPoints[0].x, pixelPoints[0].y);
+            for (const point of pixelPoints.slice(1)) {
+              context.lineTo(point.x, point.y);
+            }
+            context.stroke();
+            context.fillStyle = isActive ? "#087f5b" : "#94a3b8";
+            for (const point of pixelPoints) {
+              context.beginPath();
+              context.arc(point.x, point.y, isActive ? 5 : 4, 0, Math.PI * 2);
+              context.fill();
+            }
+            context.restore();
           }
 
-          if (mainSelection) {
-            // A suggestion only displays as unconfirmed while it genuinely
-            // is: a saved record with status "confirmed" or "invalid" has
-            // already had a human decision made about it, even if it
-            // started from a suggestion — it displays as trusted from then
-            // on, exactly like a manually drawn one.
-            const isPendingSuggestion =
-              origin === "machine_suggested" && recordStatus !== "confirmed" && recordStatus !== "invalid";
-            context.save();
-            if (isPendingSuggestion) {
-              context.setLineDash([8, 5]);
-              context.fillStyle = "rgba(124, 58, 237, 0.15)";
-              context.strokeStyle = "#7c3aed";
-            } else {
-              context.fillStyle = "rgba(8, 127, 91, 0.2)";
-              context.strokeStyle = "#087f5b";
-            }
-            context.lineWidth = 3;
-            context.fillRect(mainSelection.x, mainSelection.y, mainSelection.width, mainSelection.height);
-            context.strokeRect(mainSelection.x, mainSelection.y, mainSelection.width, mainSelection.height);
-            context.restore();
-            if (isPendingSuggestion) {
-              context.save();
-              context.fillStyle = "#5b21b6";
-              context.font = "bold 12px system-ui, sans-serif";
-              context.fillText(
-                "Suggested — unconfirmed",
-                mainSelection.x + 4,
-                Math.max(14, mainSelection.y - 6)
-              );
-              context.restore();
-              status.textContent =
-                "This is a machine suggestion — check it, adjust if needed, then confirm.";
-            } else {
-              status.textContent = `Selected at ${video.currentTime.toFixed(1)} seconds.`;
-            }
-          }
-          if (onChange) {
-            onChange();
+          status.textContent = statusText();
+        }
+
+        function updatePointCount(row) {
+          if (row.fields) {
+            row.fields.pointCount.textContent = `${row.points.length} point(s) traced.`;
           }
         }
 
+        function styleSelect(element) {
+          element.style.width = "100%";
+          element.style.padding = "8px";
+          element.style.border = "1px solid var(--line)";
+          element.style.borderRadius = "4px";
+        }
+
+        function styleFieldLabel(element, text) {
+          element.style.display = "block";
+          element.style.fontWeight = "700";
+          element.style.marginBottom = "4px";
+          element.textContent = text;
+        }
+
+        // Sets which line is active (receiving new canvas clicks) by
+        // toggling classes/text on the ALREADY-BUILT row elements — it
+        // never rebuilds a row's DOM, so nothing the user has typed into
+        // any row's label/status/notes is ever discarded just from
+        // switching which line you're drawing.
+        function setActiveRow(uid) {
+          activeUid = uid;
+          for (const row of rows) {
+            const isActive = row.uid === uid;
+            if (row.el) {
+              row.el.classList.toggle("is-active", isActive);
+            }
+            if (row.fields) {
+              row.fields.drawButton.textContent = isActive ? "Editing…" : "Draw";
+            }
+          }
+          draw();
+        }
+
+        // Builds one row's DOM once, at creation time only. After this, the
+        // row's fields (row.fields.*) are the single source of truth for
+        // its label/status/notes/etc. — collectForSave() reads them live,
+        // and no later render ever replaces this element or its inputs.
+        function buildRowElement(row, initial) {
+          const wrapper = document.createElement("div");
+          wrapper.className = "guide-row";
+
+          const header = document.createElement("div");
+          header.className = "guide-row-header";
+
+          const labelInput = document.createElement("input");
+          labelInput.type = "text";
+          labelInput.placeholder = "e.g. left bank normal waterline";
+          labelInput.value = initial.label;
+
+          const drawButton = document.createElement("button");
+          drawButton.type = "button";
+          drawButton.style.fontSize = "13px";
+          drawButton.style.minHeight = "34px";
+          drawButton.style.padding = "6px 12px";
+          drawButton.style.whiteSpace = "nowrap";
+          drawButton.textContent = "Draw";
+          drawButton.addEventListener("click", () => setActiveRow(row.uid));
+
+          const deleteButton = document.createElement("button");
+          deleteButton.type = "button";
+          deleteButton.style.fontSize = "13px";
+          deleteButton.style.minHeight = "34px";
+          deleteButton.style.padding = "6px 12px";
+          deleteButton.style.background = "transparent";
+          deleteButton.style.color = "var(--missing)";
+          deleteButton.style.borderColor = "var(--missing)";
+          deleteButton.style.whiteSpace = "nowrap";
+          deleteButton.textContent = "Delete";
+          deleteButton.addEventListener("click", async () => {
+            const name = labelInput.value.trim() || "this line";
+            if (!confirm(`Delete "${name}"? This removes it permanently and cannot be undone.`)) {
+              return;
+            }
+            if (row.existingOnServer) {
+              deleteButton.disabled = true;
+              deleteButton.textContent = "Deleting…";
+              const result = await onDeleteExisting(row.id);
+              if (!result.success) {
+                alert(`Could not delete: ${result.message}`);
+                deleteButton.disabled = false;
+                deleteButton.textContent = "Delete";
+                return;
+              }
+            }
+            rows = rows.filter((entry) => entry.uid !== row.uid);
+            wrapper.remove();
+            if (activeUid === row.uid) {
+              setActiveRow(rows.length ? rows[rows.length - 1].uid : null);
+            } else {
+              draw();
+            }
+          });
+
+          header.append(labelInput, drawButton, deleteButton);
+
+          const fields = document.createElement("div");
+          fields.className = "guide-row-fields";
+
+          const statusField = document.createElement("div");
+          const statusLabel = document.createElement("label");
+          styleFieldLabel(statusLabel, "Status");
+          const statusSelect = document.createElement("select");
+          styleSelect(statusSelect);
+          for (const [value, text] of [["draft", "Draft"], ["confirmed", "Confirmed"], ["invalid", "Invalid"]]) {
+            const option = document.createElement("option");
+            option.value = value;
+            option.textContent = text;
+            statusSelect.append(option);
+          }
+          statusSelect.value = initial.status;
+          statusField.append(statusLabel, statusSelect);
+
+          const reasonField = document.createElement("div");
+          reasonField.style.display = initial.status === "invalid" ? "block" : "none";
+          const reasonLabel = document.createElement("label");
+          styleFieldLabel(reasonLabel, "Invalid reason");
+          const reasonSelect = document.createElement("select");
+          styleSelect(reasonSelect);
+          for (const [value, text] of INVALIDATION_REASON_OPTIONS) {
+            const option = document.createElement("option");
+            option.value = value;
+            option.textContent = text;
+            reasonSelect.append(option);
+          }
+          reasonSelect.value = initial.invalidationReason || "camera_moved";
+          reasonField.append(reasonLabel, reasonSelect);
+
+          statusSelect.addEventListener("change", () => {
+            reasonField.style.display = statusSelect.value === "invalid" ? "block" : "none";
+          });
+
+          const normalConditionLabel = document.createElement("label");
+          normalConditionLabel.style.display = "flex";
+          normalConditionLabel.style.alignItems = "center";
+          normalConditionLabel.style.gap = "8px";
+          normalConditionLabel.style.fontWeight = "700";
+          const normalConditionCheckbox = document.createElement("input");
+          normalConditionCheckbox.type = "checkbox";
+          normalConditionCheckbox.checked = initial.normalCondition;
+          normalConditionLabel.append(normalConditionCheckbox, document.createTextNode("Regular river view"));
+
+          const pointCount = document.createElement("div");
+          pointCount.className = "meta";
+          pointCount.textContent = `${row.points.length} point(s) traced.`;
+
+          fields.append(statusField, reasonField, normalConditionLabel, pointCount);
+
+          const notesLabel = document.createElement("label");
+          styleFieldLabel(notesLabel, "Notes");
+          const notesInput = document.createElement("textarea");
+          notesInput.rows = 2;
+          notesInput.style.width = "100%";
+          notesInput.style.padding = "8px";
+          notesInput.style.border = "1px solid var(--line)";
+          notesInput.style.borderRadius = "4px";
+          notesInput.placeholder = "e.g. Clear view of this bank.";
+          notesInput.value = initial.notes;
+
+          wrapper.append(header, fields, notesLabel, notesInput);
+
+          row.el = wrapper;
+          row.fields = {
+            label: labelInput,
+            drawButton,
+            status: statusSelect,
+            invalidationReason: reasonSelect,
+            normalCondition: normalConditionCheckbox,
+            notes: notesInput,
+            pointCount,
+          };
+
+          return wrapper;
+        }
+
+        function addRow(initial) {
+          const row = {
+            uid: generateGuideId(),
+            id: initial.id,
+            existingOnServer: initial.existingOnServer,
+            points: initial.points,
+            videoTimeSeconds: initial.videoTimeSeconds,
+            el: null,
+            fields: null,
+          };
+          rows.push(row);
+          rowsContainer.append(buildRowElement(row, initial));
+          return row;
+        }
+
         function reset() {
-          clearSelection();
-          recordStatus = null;
-          pendingMarker = null;
-          markers = [];
+          rows = [];
+          activeUid = null;
           guideRegion = null;
-          pendingExisting = null;
-          dragStart = null;
-          drawMode = "main";
           canvas.style.display = "none";
           video.style.display = "none";
           status.textContent = emptyText;
@@ -2296,310 +2267,32 @@
           }
           video.removeAttribute("src");
           video.load();
-          if (onChange) {
-            onChange();
-          }
+          rowsContainer.innerHTML = "";
         }
 
-        function show(source, { revokeWhenDone = false, guideRegion: initialGuide = null, existing = null } = {}) {
+        function show(source, { revokeWhenDone = false, guideRegion: initialGuide = null, existingGuides = [] } = {}) {
           reset();
           guideRegion = initialGuide;
-          pendingExisting = existing;
+          for (const guide of existingGuides) {
+            addRow({
+              id: guide.id,
+              existingOnServer: true,
+              points: (guide.points || []).slice(),
+              videoTimeSeconds: guide.video_time_seconds || 0,
+              label: guide.label || "",
+              status: guide.status || "draft",
+              invalidationReason: guide.invalidation_reason || null,
+              normalCondition: Boolean(guide.normal_condition),
+              notes: guide.notes || "",
+            });
+          }
           objectUrl = revokeWhenDone ? source : null;
           video.src = source;
           video.style.display = "block";
           canvas.style.display = "block";
-          status.textContent =
-            "Move to a frame, pause it, then drag inside the watched area to mark the riverbank.";
-        }
-
-        video.addEventListener("loadedmetadata", () => {
-          video.currentTime = pendingExisting && pendingExisting.videoTimeSeconds ? pendingExisting.videoTimeSeconds : 0;
-          draw();
-        });
-        video.addEventListener("seeked", draw);
-
-        canvas.addEventListener("pointerdown", (event) => {
-          if (!video.videoWidth) {
-            status.textContent = "Choose a video first.";
-            return;
-          }
-          video.pause();
-          canvas.setPointerCapture(event.pointerId);
-          dragStart = canvasPoint(event);
-          if (drawMode === "main") {
-            clearSelection();
-          } else {
-            pendingMarker = null;
-          }
-          draw();
-        });
-        function clampToGuide(rect) {
-          return guideRegion ? clampRectToBounds(rect, toPixels(guideRegion)) : rect;
-        }
-
-        canvas.addEventListener("pointermove", (event) => {
-          if (!dragStart) {
-            return;
-          }
-          const rect = clampToGuide(normalizedVideoRect(dragStart, canvasPoint(event)));
-          if (drawMode === "main") {
-            mainSelection = rect;
-          } else {
-            pendingMarker = rect;
-          }
-          draw();
-        });
-        canvas.addEventListener("pointerup", (event) => {
-          if (!dragStart) {
-            return;
-          }
-          const rect = clampToGuide(normalizedVideoRect(dragStart, canvasPoint(event)));
-          dragStart = null;
-          if (rect.width < 4 || rect.height < 4) {
-            if (drawMode === "main") {
-              clearSelection();
-              status.textContent = "Drag a larger rectangle inside the watched area to mark the riverbank.";
-            } else {
-              pendingMarker = null;
-              status.textContent = "Drag a larger rectangle inside the watched area for the marker.";
-            }
-            draw();
-            return;
-          }
-          if (drawMode === "main") {
-            mainSelection = rect;
-          } else {
-            pendingMarker = rect;
-          }
-          draw();
-        });
-
-        return {
-          show,
-          reset,
-          hasSelection: () => mainSelection !== null,
-          region: () => (mainSelection ? toPercent(mainSelection) : null),
-          origin: () => origin,
-          canSuggestReference: () => Boolean(video.videoWidth && video.readyState >= 2 && guideRegion),
-          suggestReference: () => {
-            if (!guideRegion) {
-              return false;
-            }
-            // Redraw first so the canvas reflects wherever the video is
-            // currently paused — play/pause (not just seeking) can leave
-            // the canvas showing an older frame otherwise.
-            draw();
-            const suggestion = suggestReferenceRegion(context, toPixels(guideRegion));
-            if (!suggestion) {
-              return false;
-            }
-            mainSelection = suggestion;
-            origin = "machine_suggested";
-            // A fresh suggestion is always unconfirmed, even if it was
-            // computed while editing a record that was previously
-            // confirmed/invalidated — that old status no longer applies
-            // to this newly proposed rectangle.
-            recordStatus = null;
-            draw();
-            return true;
-          },
-          startMarkerMode: () => {
-            drawMode = "marker";
-            status.textContent = "Drag on the video to draw the marker's area.";
-          },
-          hasPendingMarker: () => pendingMarker !== null,
-          commitPendingMarker: (label) => {
-            if (!pendingMarker) {
-              return false;
-            }
-            markers.push({ label, pixelRect: pendingMarker, region: toPercent(pendingMarker) });
-            pendingMarker = null;
-            drawMode = "main";
-            draw();
-            return true;
-          },
-          cancelPendingMarker: () => {
-            pendingMarker = null;
-            drawMode = "main";
-            draw();
-          },
-          removeMarker: (index) => {
-            markers.splice(index, 1);
-            draw();
-          },
-          markers: () => markers.map((marker) => ({ label: marker.label, region: marker.region })),
-        };
-      }
-
-      // Two-phase selector for the Create Site form: phase 1 draws the broad
-      // watched area (kept in `input` for the multipart form submit, same as
-      // the original single-rectangle selector); phase 2 (optional) freezes
-      // that rectangle as a guide and draws the smaller confirmed-reference
-      // rectangle plus named markers inside it, on the same canvas.
-      function createSiteSetupSelector({ video, canvas, input, status, emptyText, onChange }) {
-        const context = canvas.getContext("2d");
-        let phase = "watched_area";
-        let watchedAreaSelection = null;
-        let mainSelection = null;
-        let origin = "manual";
-        let pendingMarker = null;
-        let markers = [];
-        let dragStart = null;
-        let markerMode = false;
-        let objectUrl = null;
-
-        function canvasPoint(event) {
-          const bounds = canvas.getBoundingClientRect();
-          return {
-            x: Math.max(0, Math.min(canvas.width, ((event.clientX - bounds.left) * canvas.width) / bounds.width)),
-            y: Math.max(0, Math.min(canvas.height, ((event.clientY - bounds.top) * canvas.height) / bounds.height)),
-          };
-        }
-
-        function toPercent(rect) {
-          return {
-            x: Number(((rect.x / canvas.width) * 100).toFixed(6)),
-            y: Number(((rect.y / canvas.height) * 100).toFixed(6)),
-            width: Number(((rect.width / canvas.width) * 100).toFixed(6)),
-            height: Number(((rect.height / canvas.height) * 100).toFixed(6)),
-          };
-        }
-
-        function drawMarkerRect(rect, label) {
-          context.save();
-          context.fillStyle = "rgba(217, 119, 6, 0.2)";
-          context.strokeStyle = "#d97706";
-          context.lineWidth = 2;
-          context.fillRect(rect.x, rect.y, rect.width, rect.height);
-          context.strokeRect(rect.x, rect.y, rect.width, rect.height);
-          context.fillStyle = "#a96b08";
-          context.font = "12px system-ui, sans-serif";
-          context.fillText(label, rect.x + 2, Math.max(12, rect.y - 4));
-          context.restore();
-        }
-
-        function draw() {
-          if (!video.videoWidth || video.readyState < 2) {
-            return;
-          }
-          const scale = Math.min(1, 800 / video.videoWidth);
-          canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
-          canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
-          context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-          if (watchedAreaSelection) {
-            if (phase === "watched_area") {
-              context.fillStyle = "rgba(8, 127, 91, 0.2)";
-              context.strokeStyle = "#087f5b";
-              context.lineWidth = 3;
-              context.fillRect(
-                watchedAreaSelection.x,
-                watchedAreaSelection.y,
-                watchedAreaSelection.width,
-                watchedAreaSelection.height
-              );
-              context.strokeRect(
-                watchedAreaSelection.x,
-                watchedAreaSelection.y,
-                watchedAreaSelection.width,
-                watchedAreaSelection.height
-              );
-              input.value = JSON.stringify(toPercent(watchedAreaSelection));
-              status.textContent = `Watched area selected at ${video.currentTime.toFixed(1)} seconds.`;
-            } else {
-              context.save();
-              context.setLineDash([6, 4]);
-              context.strokeStyle = "#0d4d7d";
-              context.lineWidth = 2;
-              context.strokeRect(
-                watchedAreaSelection.x,
-                watchedAreaSelection.y,
-                watchedAreaSelection.width,
-                watchedAreaSelection.height
-              );
-              context.restore();
-            }
-          }
-
-          if (phase === "confirmed_reference") {
-            for (const marker of markers) {
-              drawMarkerRect(marker.pixelRect, marker.label);
-            }
-            if (pendingMarker) {
-              drawMarkerRect(pendingMarker, "New marker");
-            }
-            if (mainSelection) {
-              context.save();
-              if (origin === "machine_suggested") {
-                context.setLineDash([8, 5]);
-                context.fillStyle = "rgba(124, 58, 237, 0.15)";
-                context.strokeStyle = "#7c3aed";
-              } else {
-                context.fillStyle = "rgba(8, 127, 91, 0.2)";
-                context.strokeStyle = "#087f5b";
-              }
-              context.lineWidth = 3;
-              context.fillRect(mainSelection.x, mainSelection.y, mainSelection.width, mainSelection.height);
-              context.strokeRect(mainSelection.x, mainSelection.y, mainSelection.width, mainSelection.height);
-              context.restore();
-              if (origin === "machine_suggested") {
-                context.save();
-                context.fillStyle = "#5b21b6";
-                context.font = "bold 12px system-ui, sans-serif";
-                context.fillText(
-                  "Suggested — unconfirmed",
-                  mainSelection.x + 4,
-                  Math.max(14, mainSelection.y - 6)
-                );
-                context.restore();
-                status.textContent =
-                  "This is a machine suggestion — check it, adjust if needed, then confirm.";
-              } else {
-                status.textContent = `Confirmed reference selected at ${video.currentTime.toFixed(1)} seconds.`;
-              }
-            }
-          }
-          if (onChange) {
-            onChange();
-          }
-        }
-
-        function clearSelection() {
-          watchedAreaSelection = null;
-          input.value = "";
-        }
-
-        function reset() {
-          clearSelection();
-          mainSelection = null;
-          origin = "manual";
-          pendingMarker = null;
-          markers = [];
-          dragStart = null;
-          markerMode = false;
-          phase = "watched_area";
-          canvas.style.display = "none";
-          video.style.display = "none";
-          status.textContent = emptyText;
-          if (objectUrl) {
-            URL.revokeObjectURL(objectUrl);
-            objectUrl = null;
-          }
-          video.removeAttribute("src");
-          video.load();
-          if (onChange) {
-            onChange();
-          }
-        }
-
-        function show(source, { revokeWhenDone = false } = {}) {
-          reset();
-          objectUrl = revokeWhenDone ? source : null;
-          video.src = source;
-          video.style.display = "block";
-          canvas.style.display = "block";
-          status.textContent = "Move to a frame, pause it, then drag to select the watched area.";
+          status.textContent = rows.length
+            ? "Move to a frame, pause it, then choose a line below to edit, or add another."
+            : emptyText;
         }
 
         video.addEventListener("loadedmetadata", () => {
@@ -2608,159 +2301,109 @@
         });
         video.addEventListener("seeked", draw);
 
-        canvas.addEventListener("pointerdown", (event) => {
+        canvas.addEventListener("click", (event) => {
           if (!video.videoWidth) {
             status.textContent = "Choose a video first.";
             return;
           }
+          const active = activeRow();
+          if (!active) {
+            status.textContent = 'Choose a line below (or click "+ Add Another Line") before clicking the video.';
+            return;
+          }
           video.pause();
-          canvas.setPointerCapture(event.pointerId);
-          dragStart = canvasPoint(event);
-          if (phase === "watched_area") {
-            clearSelection();
-          } else if (markerMode) {
-            pendingMarker = null;
-          } else {
-            mainSelection = null;
-            origin = "manual";
-          }
-          draw();
-        });
-        function clampToWatchedArea(rect) {
-          return phase !== "watched_area" && watchedAreaSelection
-            ? clampRectToBounds(rect, watchedAreaSelection)
-            : rect;
-        }
-
-        canvas.addEventListener("pointermove", (event) => {
-          if (!dragStart) {
+          const point = toPercentPoint(canvasPoint(event));
+          if (guideRegion && !pointInsideRect(point, guideRegion)) {
+            status.textContent = "Click inside the dashed watched area to add a point.";
             return;
           }
-          const rect = clampToWatchedArea(normalizedVideoRect(dragStart, canvasPoint(event)));
-          if (phase === "watched_area") {
-            watchedAreaSelection = rect;
-          } else if (markerMode) {
-            pendingMarker = rect;
-          } else {
-            mainSelection = rect;
-          }
+          active.points.push(point);
           draw();
-        });
-        canvas.addEventListener("pointerup", (event) => {
-          if (!dragStart) {
-            return;
-          }
-          const rect = clampToWatchedArea(normalizedVideoRect(dragStart, canvasPoint(event)));
-          dragStart = null;
-          if (rect.width < 4 || rect.height < 4) {
-            if (phase === "watched_area") {
-              clearSelection();
-              status.textContent = "Drag a larger rectangle around the watched area.";
-            } else if (markerMode) {
-              pendingMarker = null;
-              status.textContent = "Drag a larger rectangle inside the watched area for the marker.";
-            } else {
-              mainSelection = null;
-              origin = "manual";
-              status.textContent = "Drag a larger rectangle inside the watched area to mark the riverbank.";
-            }
-            draw();
-            return;
-          }
-          if (phase === "watched_area") {
-            watchedAreaSelection = rect;
-          } else if (markerMode) {
-            pendingMarker = rect;
-          } else {
-            mainSelection = rect;
-          }
-          draw();
+          updatePointCount(active);
         });
 
         return {
           show,
           reset,
-          hasSelection: () => watchedAreaSelection !== null,
-          region: () => (watchedAreaSelection ? toPercent(watchedAreaSelection) : null),
-          canStartConfirmedReference: () => watchedAreaSelection !== null,
-          goToWatchedAreaPhase: () => {
-            phase = "watched_area";
-            markerMode = false;
-            status.textContent = watchedAreaSelection
-              ? `Watched area selected at ${video.currentTime.toFixed(1)} seconds.`
-              : "Move to a frame, pause it, then drag to select the watched area.";
-            draw();
+          addLine: () => {
+            const row = addRow({
+              id: generateGuideId(),
+              existingOnServer: false,
+              points: [],
+              videoTimeSeconds: video.currentTime || 0,
+              label: "",
+              status: "draft",
+              invalidationReason: null,
+              normalCondition: false,
+              notes: "",
+            });
+            setActiveRow(row.uid);
           },
-          goToConfirmedReferencePhase: () => {
-            if (!watchedAreaSelection) {
-              return;
+          undoLastPoint: () => {
+            const active = activeRow();
+            if (active && active.points.length) {
+              active.points.pop();
+              draw();
+              updatePointCount(active);
             }
-            phase = "confirmed_reference";
-            markerMode = false;
-            status.textContent = "Drag inside the dashed watched area to mark the riverbank (optional).";
-            draw();
           },
-          phase: () => phase,
-          hasConfirmedReferenceSelection: () => mainSelection !== null,
-          confirmedReferenceRegion: () => (mainSelection ? toPercent(mainSelection) : null),
-          origin: () => origin,
-          canSuggestReference: () =>
-            Boolean(video.videoWidth && video.readyState >= 2 && watchedAreaSelection),
-          suggestReference: () => {
-            if (!watchedAreaSelection) {
-              return false;
+          clearActiveLinePoints: () => {
+            const active = activeRow();
+            if (active) {
+              active.points = [];
+              draw();
+              updatePointCount(active);
             }
-            // Redraw first so the canvas reflects wherever the video is
-            // currently paused — play/pause (not just seeking) can leave
-            // the canvas showing an older frame otherwise.
-            draw();
-            const suggestion = suggestReferenceRegion(context, watchedAreaSelection);
-            if (!suggestion) {
-              return false;
+          },
+          hasRows: () => rows.length > 0,
+          collectForSave: () => {
+            for (const row of rows) {
+              const label = row.fields.label.value.trim();
+              if (!label) {
+                return { error: "Every line needs a label before saving." };
+              }
+              if (row.points.length < 2) {
+                return { error: `"${label}" needs at least 2 points before saving.` };
+              }
             }
-            mainSelection = suggestion;
-            origin = "machine_suggested";
-            draw();
-            return true;
+            return {
+              guides: rows.map((row) => {
+                const rowStatus = row.fields.status.value;
+                return {
+                  id: row.id,
+                  label: row.fields.label.value.trim(),
+                  points: row.points,
+                  status: rowStatus,
+                  invalidation_reason:
+                    rowStatus === "invalid" ? row.fields.invalidationReason.value : null,
+                  normal_condition: row.fields.normalCondition.checked,
+                  notes: row.fields.notes.value,
+                  video_time_seconds: video.currentTime || row.videoTimeSeconds || 0,
+                };
+              }),
+            };
           },
-          startMarkerMode: () => {
-            markerMode = true;
-            status.textContent = "Drag on the video to draw the marker's area.";
-          },
-          hasPendingMarker: () => pendingMarker !== null,
-          commitPendingMarker: (label) => {
-            if (!pendingMarker) {
-              return false;
+          markAllExistingOnServer: () => {
+            for (const row of rows) {
+              row.existingOnServer = true;
             }
-            markers.push({ label, pixelRect: pendingMarker, region: toPercent(pendingMarker) });
-            pendingMarker = null;
-            markerMode = false;
-            draw();
-            return true;
           },
-          cancelPendingMarker: () => {
-            pendingMarker = null;
-            markerMode = false;
-            draw();
-          },
-          removeMarker: (index) => {
-            markers.splice(index, 1);
-            draw();
-          },
-          markers: () => markers.map((marker) => ({ label: marker.label, region: marker.region })),
         };
       }
 
-      // Read-only overlay viewer: draws the watched rectangle, confirmed
-      // reference, and markers on a canvas over a playing <video>. It never
-      // edits anything and never reads pixels back out of the video, so it
-      // cannot modify the underlying video file.
+      // Read-only overlay viewer: draws the watched rectangle and every
+      // non-invalidated normal-waterline guide on a canvas over a playing
+      // <video> — confirmed guides solid blue, unconfirmed ones dashed
+      // amber, so a just-drawn line is visible right away without being
+      // mistaken for a trusted baseline. It never edits anything and never
+      // reads pixels back out of the video, so it cannot modify the
+      // underlying video file.
       function createReadOnlyOverlayViewer({ video, wrap, canvas, status }) {
         const context = canvas.getContext("2d");
         let watchedRegion = null;
-        let confirmedReference = null;
+        let normalWaterlineGuides = [];
 
-        function toPixels(percentRect) {
+        function toPixelsRect(percentRect) {
           return {
             x: (percentRect.x / 100) * canvas.width,
             y: (percentRect.y / 100) * canvas.height,
@@ -2769,10 +2412,36 @@
           };
         }
 
-        function isConfirmedReferenceTrusted(reference) {
+        function toPixelsPoint(percentPoint) {
+          return {
+            x: (percentPoint.x / 100) * canvas.width,
+            y: (percentPoint.y / 100) * canvas.height,
+          };
+        }
+
+        function isGuideTrusted(guide) {
           // Mirrors openfloodai.review.sample_quality.is_normal_baseline_confirmed:
           // status alone is not enough, normal_condition must also be true.
-          return Boolean(reference) && reference.status === "confirmed" && reference.normal_condition === true;
+          return Boolean(guide) && guide.status === "confirmed" && guide.normal_condition === true;
+        }
+
+        function drawGuideLine(points, { outlineWidth, strokeStyle, strokeWidth, dashed }) {
+          context.save();
+          if (dashed) {
+            context.setLineDash([8, 5]);
+          }
+          context.strokeStyle = "#000000";
+          context.lineWidth = outlineWidth;
+          context.beginPath();
+          context.moveTo(points[0].x, points[0].y);
+          for (const point of points.slice(1)) {
+            context.lineTo(point.x, point.y);
+          }
+          context.stroke();
+          context.strokeStyle = strokeStyle;
+          context.lineWidth = strokeWidth;
+          context.stroke();
+          context.restore();
         }
 
         function draw() {
@@ -2784,7 +2453,7 @@
           context.clearRect(0, 0, canvas.width, canvas.height);
 
           if (watchedRegion) {
-            const box = toPixels(watchedRegion);
+            const box = toPixelsRect(watchedRegion);
             context.save();
             context.strokeStyle = "#000000";
             context.lineWidth = 5;
@@ -2795,41 +2464,54 @@
             context.restore();
           }
 
-          if (isConfirmedReferenceTrusted(confirmedReference)) {
-            const box = toPixels(confirmedReference.region);
-            context.save();
-            context.strokeStyle = "#000000";
-            context.lineWidth = 5;
-            context.strokeRect(box.x, box.y, box.width, box.height);
-            context.strokeStyle = "#1d4ed8";
-            context.lineWidth = 3;
-            context.strokeRect(box.x, box.y, box.width, box.height);
-            context.restore();
+          // Every guide that hasn't been explicitly invalidated is shown —
+          // confirmed guides solid blue, unconfirmed (draft, or confirmed
+          // but not from normal-condition footage) dashed amber — so a
+          // just-created line is visible right away. Only a truly trusted
+          // (solid blue) line should ever be read as a confirmed baseline.
+          const visibleGuides = normalWaterlineGuides.filter((guide) => guide.status !== "invalid");
+          const trustedGuides = visibleGuides.filter(isGuideTrusted);
+          const unconfirmedGuides = visibleGuides.filter((guide) => !isGuideTrusted(guide));
 
-            for (const marker of confirmedReference.markers || []) {
-              const markerBox = toPixels(marker.region);
-              context.save();
-              context.fillStyle = "rgba(217, 119, 6, 0.2)";
-              context.strokeStyle = "#d97706";
-              context.lineWidth = 2;
-              context.fillRect(markerBox.x, markerBox.y, markerBox.width, markerBox.height);
-              context.strokeRect(markerBox.x, markerBox.y, markerBox.width, markerBox.height);
-              context.fillStyle = "#a96b08";
-              context.font = "12px system-ui, sans-serif";
-              context.fillText(marker.label, markerBox.x + 2, Math.max(12, markerBox.y - 4));
-              context.restore();
+          for (const guide of unconfirmedGuides) {
+            const points = (guide.points || []).map(toPixelsPoint);
+            if (points.length < 2) {
+              continue;
             }
-            status.textContent = `Reference confirmed from video ${confirmedReference.video_id} at ${confirmedReference.video_time_seconds}s.`;
-          } else if (confirmedReference) {
-            status.textContent = "Reference exists but is not confirmed.";
+            drawGuideLine(points, {
+              outlineWidth: 4,
+              strokeStyle: "#d97706",
+              strokeWidth: 2,
+              dashed: true,
+            });
+          }
+          for (const guide of trustedGuides) {
+            const points = (guide.points || []).map(toPixelsPoint);
+            if (points.length < 2) {
+              continue;
+            }
+            drawGuideLine(points, {
+              outlineWidth: 5,
+              strokeStyle: "#1d4ed8",
+              strokeWidth: 3,
+              dashed: false,
+            });
+          }
+
+          if (trustedGuides.length > 0 && unconfirmedGuides.length > 0) {
+            status.textContent = `${trustedGuides.length} confirmed, ${unconfirmedGuides.length} unconfirmed normal waterline guide(s) shown.`;
+          } else if (trustedGuides.length > 0) {
+            status.textContent = `${trustedGuides.length} confirmed normal waterline guide(s) shown.`;
+          } else if (unconfirmedGuides.length > 0) {
+            status.textContent = `${unconfirmedGuides.length} unconfirmed normal waterline guide(s) shown (dashed).`;
           } else {
-            status.textContent = "No confirmed reference yet.";
+            status.textContent = "No normal waterline guide yet.";
           }
         }
 
-        function show(source, { watchedRegion: region = null, confirmedReference: reference = null } = {}) {
+        function show(source, { watchedRegion: region = null, normalWaterlineGuides: guides = [] } = {}) {
           watchedRegion = region;
-          confirmedReference = reference;
+          normalWaterlineGuides = guides || [];
           wrap.style.display = "block";
           video.style.display = "block";
           canvas.style.display = "block";
@@ -2838,7 +2520,7 @@
 
         function reset() {
           watchedRegion = null;
-          confirmedReference = null;
+          normalWaterlineGuides = [];
           wrap.style.display = "none";
           video.style.display = "none";
           canvas.style.display = "none";
@@ -2866,8 +2548,7 @@
         setupForm.style.display = "none";
         videoFormPanel.style.display = "none";
         watchedAreaFormPanel.style.display = "none";
-        confirmedReferenceFormPanel.style.display = "none";
-        pendingMarkerControls.style.display = "none";
+        normalWaterlineGuideFormPanel.style.display = "none";
         watchViewerPanel.style.display = "none";
         watchOverlayViewer.reset();
         labelFormPanel.style.display = "none";
@@ -2896,38 +2577,30 @@
         return count === 1 ? `1 ${singular}` : `${count} ${plural}`;
       }
 
-      const invalidationReasonLabels = {
-        camera_moved: "camera moved",
-        view_changed: "view changed",
-        bank_changed: "bank changed",
-        visibility_unreliable: "visibility no longer reliable",
-        other: "other reason",
-      };
-
-      function confirmedReferenceStatusText(site) {
-        const reference = site.confirmed_reference;
-        if (!reference) {
+      function normalWaterlineGuideStatusText(site) {
+        const guides = site.normal_waterline_guides || [];
+        if (!guides.length) {
           return "Not set";
         }
-        if (reference.status === "confirmed") {
-          return "Confirmed";
+        const confirmedCount = guides.filter((guide) => guide.status === "confirmed").length;
+        if (confirmedCount > 0) {
+          return `Confirmed (${confirmedCount} of ${guides.length})`;
         }
-        if (reference.status === "invalid") {
-          const reason = invalidationReasonLabels[reference.invalidation_reason] || "invalidated";
-          return `Invalid (${reason})`;
+        if (guides.every((guide) => guide.status === "invalid")) {
+          return "Invalid";
         }
         return "Draft (needs confirmation)";
       }
 
-      function confirmedReferenceStatusClass(site) {
-        const reference = site.confirmed_reference;
-        if (!reference) {
+      function normalWaterlineGuideStatusClass(site) {
+        const guides = site.normal_waterline_guides || [];
+        if (!guides.length) {
           return "warn";
         }
-        if (reference.status === "confirmed") {
+        if (guides.some((guide) => guide.status === "confirmed")) {
           return "ok";
         }
-        if (reference.status === "invalid") {
+        if (guides.every((guide) => guide.status === "invalid")) {
           return "missing";
         }
         return "warn";
@@ -3389,7 +3062,7 @@
               ${row("Human comparison", humanComparisonText, site.ready_for_human_comparison ? "ok" : "warn")}
               ${row("Config", `${yesNo(site.config_found)} (${site.config_count})`, classForFound(site.config_found))}
               ${row("Videos", countText(site.video_count, "video", "videos"), site.video_count > 0 ? "ok" : "missing")}
-              ${row("Confirmed reference", confirmedReferenceStatusText(site), confirmedReferenceStatusClass(site))}
+              ${row("Normal waterline guide", normalWaterlineGuideStatusText(site), normalWaterlineGuideStatusClass(site))}
               ${row("Labels", `${yesNo(site.labels_found)} (${site.label_count})`, classForFound(site.labels_found))}
               ${row("Manifest", site.manifest_status || yesNo(site.manifest_found), classForFound(site.manifest_status === "Found"))}
               ${row("Videos tracked", countText(site.manifest_tracked_video_count || 0, "video", "videos"), site.manifest_status === "Found" ? "ok" : "warn")}
@@ -3401,11 +3074,11 @@
               ${reviewImagesControls(site)}
             </div>
             ${renderNextSteps(site)}
-            <div style="padding: 0 18px 14px; display: flex; gap: 8px;">
+            <div style="padding: 0 18px 14px; display: flex; gap: 8px; flex-wrap: wrap;">
               <button type="button" onclick="runValidationForSite('${escapeHtml(site.site_name)}', this)" ${site.ready_for_validation ? "" : "disabled"}>Run Validation</button>
               <button type="button" onclick="openVideoFormForSite('${escapeHtml(site.site_name)}')" style="font-size: 13px; min-height: 34px; padding: 6px 12px;">+ Add Video</button>
               <button type="button" onclick="openLabelFormForSite('${escapeHtml(site.site_name)}')" style="font-size: 13px; min-height: 34px; padding: 6px 12px; background: var(--accent-strong); border-color: var(--accent-strong);">+ Add Label</button>
-              <button type="button" onclick="openConfirmedReferenceFormForSite('${escapeHtml(site.site_name)}')" style="font-size: 13px; min-height: 34px; padding: 6px 12px;" ${site.reference_region ? "" : "disabled"}>Confirmed Reference</button>
+              <button type="button" onclick="openNormalWaterlineGuideFormForSite('${escapeHtml(site.site_name)}')" style="font-size: 13px; min-height: 34px; padding: 6px 12px;" ${site.reference_region ? "" : "disabled"}>Normal Waterline Guide</button>
               <button type="button" onclick="openWatchViewerForSite('${escapeHtml(site.site_name)}')" style="font-size: 13px; min-height: 34px; padding: 6px 12px;" ${site.video_count > 0 ? "" : "disabled"}>Watch</button>
               <a class="site-action-link" href="/site-details.html?site=${encodeURIComponent(site.site_name)}">Details View</a>
             </div>
@@ -3501,7 +3174,6 @@
         hideForms();
         setupForm.style.display = "block";
         createSiteButton.style.display = "none";
-        setSetupPhaseUI("watched_area");
       });
 
       addLabelButton.addEventListener("click", () => {
@@ -3530,12 +3202,12 @@
         revealPanel(videoFormPanel);
       };
 
-      window.openConfirmedReferenceFormForSite = function (siteName) {
+      window.openNormalWaterlineGuideFormForSite = function (siteName) {
         hideForms();
-        confirmedReferenceSiteSelect.value = siteName;
-        fillConfirmedReferenceVideos();
-        confirmedReferenceFormPanel.style.display = "block";
-        revealPanel(confirmedReferenceFormPanel);
+        normalWaterlineGuideSiteSelect.value = siteName;
+        fillNormalWaterlineGuideVideos();
+        normalWaterlineGuideFormPanel.style.display = "block";
+        revealPanel(normalWaterlineGuideFormPanel);
       };
 
       window.openWatchViewerForSite = function (siteName) {
@@ -3572,8 +3244,8 @@
         if (actionId === "set_watched_area") {
           return watchedAreaFormPanel;
         }
-        if (actionId === "set_confirmed_reference" || actionId === "invalidate_confirmed_reference") {
-          return confirmedReferenceFormPanel;
+        if (actionId === "set_normal_waterline_guide" || actionId === "invalidate_normal_waterline_guide") {
+          return normalWaterlineGuideFormPanel;
         }
         if (actionId === "select_label") {
           return labelListPanel;
@@ -3715,12 +3387,12 @@
           fillWatchedAreaVideos();
         }
         if (
-          (actionId === "set_confirmed_reference" || actionId === "invalidate_confirmed_reference") &&
-          confirmedReferenceSiteSelect &&
+          (actionId === "set_normal_waterline_guide" || actionId === "invalidate_normal_waterline_guide") &&
+          normalWaterlineGuideSiteSelect &&
           siteName
         ) {
-          confirmedReferenceSiteSelect.value = siteName;
-          fillConfirmedReferenceVideos();
+          normalWaterlineGuideSiteSelect.value = siteName;
+          fillNormalWaterlineGuideVideos();
         }
         if (actionId === "add_label" && labelSiteSelect && siteName) {
           labelSiteSelect.value = siteName;
@@ -3905,69 +3577,8 @@
         if (file) {
           fillSiteFieldsFromVideo(file.name);
           setupVideoRegionSelector.show(URL.createObjectURL(file), { revokeWhenDone: true });
-          setSetupPhaseUI("watched_area");
         }
       });
-
-      function setSetupPhaseUI(phase) {
-        setupPhaseWatchedAreaTab.classList.toggle("is-active", phase === "watched_area");
-        setupPhaseConfirmedReferenceTab.classList.toggle("is-active", phase === "confirmed_reference");
-        setupPhaseConfirmedReferenceTab.disabled = !setupVideoRegionSelector.canStartConfirmedReference();
-        setupConfirmedReferenceSection.style.display = phase === "confirmed_reference" ? "block" : "none";
-        setupPendingMarkerControls.style.display = "none";
-      }
-
-      setupPhaseWatchedAreaTab.addEventListener("click", () => {
-        setupVideoRegionSelector.goToWatchedAreaPhase();
-        setSetupPhaseUI("watched_area");
-      });
-
-      setupPhaseConfirmedReferenceTab.addEventListener("click", () => {
-        if (!setupVideoRegionSelector.canStartConfirmedReference()) {
-          alert("Select the watched area first.");
-          return;
-        }
-        setupVideoRegionSelector.goToConfirmedReferencePhase();
-        setSetupPhaseUI("confirmed_reference");
-      });
-
-      setupSuggestReferenceButton.addEventListener("click", () => {
-        if (!setupVideoRegionSelector.canSuggestReference()) {
-          alert("Choose a video and pause on a frame first.");
-          return;
-        }
-        if (!setupVideoRegionSelector.suggestReference()) {
-          alert("Could not suggest a reference from this frame. Draw one manually.");
-        }
-      });
-
-      setupAddMarkerButton.addEventListener("click", () => {
-        setupVideoRegionSelector.startMarkerMode();
-        setupPendingMarkerControls.style.display = "flex";
-        setupMarkerLabelInput.value = "";
-        setupMarkerLabelInput.focus();
-      });
-
-      setupConfirmMarkerButton.addEventListener("click", () => {
-        const label = setupMarkerLabelInput.value.trim();
-        if (!label) {
-          alert('Enter a short label for this marker, such as "bridge pillar".');
-          return;
-        }
-        if (!setupVideoRegionSelector.hasPendingMarker()) {
-          alert("Drag on the video to draw the marker's area first.");
-          return;
-        }
-        setupVideoRegionSelector.commitPendingMarker(label);
-        setupPendingMarkerControls.style.display = "none";
-        renderSetupMarkersList();
-      });
-
-      setupCancelMarkerButton.addEventListener("click", () => {
-        setupVideoRegionSelector.cancelPendingMarker();
-        setupPendingMarkerControls.style.display = "none";
-      });
-
 
       cancelVideo.addEventListener("click", () => {
         videoForm.reset();
@@ -4011,52 +3622,27 @@
         }
       });
 
-      confirmedReferenceSiteSelect.addEventListener("change", fillConfirmedReferenceVideos);
-      confirmedReferenceVideoSelect.addEventListener("change", showConfirmedReferenceVideo);
+      normalWaterlineGuideSiteSelect.addEventListener("change", fillNormalWaterlineGuideVideos);
+      normalWaterlineGuideVideoSelect.addEventListener("change", showGuidesForSelectedVideo);
 
-      suggestReferenceButton.addEventListener("click", () => {
-        if (!confirmedReferenceSelector.canSuggestReference()) {
-          alert("Choose a video and pause on a frame first.");
+      addAnotherGuideButton.addEventListener("click", () => {
+        if (!normalWaterlineGuideVideoSelect.value) {
+          alert("Choose a video first.");
           return;
         }
-        if (!confirmedReferenceSelector.suggestReference()) {
-          alert("Could not suggest a reference from this frame. Draw one manually.");
-        }
+        normalWaterlineGuideEditor.addLine();
       });
 
-      addMarkerButton.addEventListener("click", () => {
-        if (!confirmedReferenceSelector.hasSelection()) {
-          alert("Draw the confirmed reference rectangle first.");
-          return;
-        }
-        confirmedReferenceSelector.startMarkerMode();
-        pendingMarkerControls.style.display = "flex";
-        markerLabelInput.value = "";
-        markerLabelInput.focus();
+      undoGuidePointButton.addEventListener("click", () => {
+        normalWaterlineGuideEditor.undoLastPoint();
       });
 
-      confirmMarkerButton.addEventListener("click", () => {
-        const label = markerLabelInput.value.trim();
-        if (!label) {
-          alert('Enter a short label for this marker, such as "bridge pillar".');
-          return;
-        }
-        if (!confirmedReferenceSelector.hasPendingMarker()) {
-          alert("Drag on the video to draw the marker's area first.");
-          return;
-        }
-        confirmedReferenceSelector.commitPendingMarker(label);
-        pendingMarkerControls.style.display = "none";
-        renderConfirmedReferenceMarkersList();
+      clearGuidePointsButton.addEventListener("click", () => {
+        normalWaterlineGuideEditor.clearActiveLinePoints();
       });
 
-      cancelMarkerButton.addEventListener("click", () => {
-        confirmedReferenceSelector.cancelPendingMarker();
-        pendingMarkerControls.style.display = "none";
-      });
-
-      cancelConfirmedReference.addEventListener("click", () => {
-        confirmedReferenceSelector.reset();
+      cancelNormalWaterlineGuide.addEventListener("click", () => {
+        normalWaterlineGuideEditor.reset();
         hideForms();
       });
 
@@ -4067,62 +3653,62 @@
         hideForms();
       });
 
-      async function submitConfirmedReference(status) {
-        if (!confirmedReferenceSelector.hasSelection()) {
-          alert("Drag a rectangle inside the watched area to mark the confirmed reference first.");
-          return;
-        }
+      async function deleteSavedNormalWaterlineGuide(guideId) {
         try {
-          const response = await fetch("/api/set-confirmed-reference", {
+          const response = await fetch("/api/delete-normal-waterline-guide", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              folder_name: confirmedReferenceSiteSelect.value,
-              video_id: confirmedReferenceVideoSelect.value,
-              video_time_seconds: confirmedReferencePreview.currentTime,
-              region: confirmedReferenceSelector.region(),
-              markers: confirmedReferenceSelector.markers(),
-              origin: confirmedReferenceSelector.origin(),
-              normal_condition: normalConditionCheckbox.checked,
-              notes: confirmedReferenceNotesInput.value,
-              status,
+              folder_name: normalWaterlineGuideSiteSelect.value,
+              guide_id: guideId,
             }),
           });
           const result = await response.json();
-          alert(response.ok ? result.message : `Error: ${result.message}`);
           if (response.ok) {
-            confirmedReferenceSelector.reset();
-            hideForms();
             loadSites();
           }
+          return { success: response.ok, message: result.message };
         } catch (error) {
-          alert(`Failed to save the confirmed reference: ${error.message}`);
+          return { success: false, message: error.message };
         }
       }
 
-      saveConfirmedReferenceDraftButton.addEventListener("click", () => submitConfirmedReference("draft"));
-      saveConfirmedReferenceConfirmedButton.addEventListener("click", () => submitConfirmedReference("confirmed"));
-
-      invalidateReferenceButton.addEventListener("click", async () => {
+      saveAllNormalWaterlineGuidesButton.addEventListener("click", async () => {
+        const folderName = normalWaterlineGuideSiteSelect.value;
+        const videoId = normalWaterlineGuideVideoSelect.value;
+        if (!folderName || !videoId) {
+          alert("Choose a site and video first.");
+          return;
+        }
+        if (!normalWaterlineGuideEditor.hasRows()) {
+          alert('Click "+ Add Another Line" and trace at least one line before saving.');
+          return;
+        }
+        const collected = normalWaterlineGuideEditor.collectForSave();
+        if (collected.error) {
+          alert(collected.error);
+          return;
+        }
         try {
-          const response = await fetch("/api/invalidate-confirmed-reference", {
+          const response = await fetch("/api/set-normal-waterline-guides", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              folder_name: confirmedReferenceSiteSelect.value,
-              invalidation_reason: invalidationReasonSelect.value,
-              notes: invalidationNotesInput.value,
+              folder_name: folderName,
+              video_id: videoId,
+              guides: collected.guides,
             }),
           });
           const result = await response.json();
-          alert(response.ok ? result.message : `Error: ${result.message}`);
           if (response.ok) {
-            confirmedReferenceSelector.reset();
-            hideForms();
+            normalWaterlineGuideEditor.markAllExistingOnServer();
+            normalWaterlineGuideStatus.textContent = result.message;
             loadSites();
+          } else {
+            alert(`Error: ${result.message}`);
           }
         } catch (error) {
-          alert(`Failed to invalidate the reference: ${error.message}`);
+          alert(`Failed to save the normal waterline guides: ${error.message}`);
         }
       });
 
@@ -4159,14 +3745,7 @@
 
           const result = await response.json();
           if (response.ok) {
-            let message = result.message;
-            if (setupVideoRegionSelector.hasConfirmedReferenceSelection()) {
-              const referenceResult = await saveConfirmedReferenceFromSetup();
-              message += referenceResult.success
-                ? ` ${referenceResult.message}`
-                : ` Confirmed reference was not saved: ${referenceResult.message}`;
-            }
-            alert(message);
+            alert(result.message);
             siteForm.reset();
             setupVideoRegionSelector.reset();
             hideForms();
@@ -4178,30 +3757,6 @@
           alert(`Failed to create site: ${error.message}`);
         }
       });
-
-      async function saveConfirmedReferenceFromSetup() {
-        try {
-          const response = await fetch("/api/set-confirmed-reference", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              folder_name: setupFolderNameInput.value,
-              video_id: setupVideoIdInput.value,
-              video_time_seconds: setupVideoPreview.currentTime,
-              region: setupVideoRegionSelector.confirmedReferenceRegion(),
-              markers: setupVideoRegionSelector.markers(),
-              origin: setupVideoRegionSelector.origin(),
-              normal_condition: setupNormalConditionCheckbox.checked,
-              notes: setupConfirmedReferenceNotesInput.value,
-              status: setupConfirmedReferenceStatusSelect.value,
-            }),
-          });
-          const result = await response.json();
-          return { success: response.ok, message: result.message };
-        } catch (error) {
-          return { success: false, message: error.message };
-        }
-      }
 
       videoForm.addEventListener("submit", async (e) => {
         e.preventDefault();

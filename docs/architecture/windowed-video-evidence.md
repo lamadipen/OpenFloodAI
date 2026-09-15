@@ -114,19 +114,30 @@ comparisons as a fallback.
 
 Status: supporting direction agreed in the [ML readiness plan](../product/ml-readiness.md)
 for issue #108; detailed implementation remains proposed. The sampling and review
-images described above already exist. The confirmed-reference *record* described
-just below is now implemented (issue #163) — see
-[Confirmed Riverbank Reference](data-contracts.md#confirmed-riverbank-reference-issue-163)
-for its exact shape. Drawing that record — the watched rectangle, the confirmed
-"blue bank outline," and its named markers (row 1 of the table below) — is now
-implemented two ways (issue #166): burned into saved review-image overlay PNGs
-(`generate_biggest_change_review_images`), and drawn live over a playing video
-in the Home UI's read-only "Watch" viewer. Both only draw the confirmed shape
-when it is truly confirmed (status `confirmed` and normal-condition footage),
-matching OF-083's `is_normal_baseline_confirmed` rule. The remaining rows —
-the dashed baseline water line, the yellow estimated boundary, and the shaded
-covered-bank area — have no underlying detection anywhere in the system and
-remain future work; nothing draws placeholder geometry for them today.
+images described above already exist. The trusted-baseline *record* described
+just below is now implemented as a hand-traced polyline (issue #174) — see
+[Normal Waterline Guide](data-contracts.md#normal-waterline-guide-issue-174)
+for its exact shape. This replaced an earlier rectangle-shaped "confirmed
+reference" record (issue #163) plus a client-side suggestion heuristic
+(issue #167 / OF-086): a rectangle and a suggested horizontal band cannot
+follow a real, curved riverbank, and the suggestion feature added confusing
+state (was a saved rectangle a suggestion or a human decision?) without
+producing a usable baseline shape. The project's rule going forward:
+
+> A human draws the trusted normal baseline waterline. The machine only
+> ever draws current observations — never a suggestion for the baseline.
+
+Drawing the guide — the watched rectangle plus each confirmed
+normal-waterline polyline (row 1 of the table below) — is implemented two
+ways (issue #166, updated for #174): burned into saved review-image overlay
+PNGs (`generate_biggest_change_review_images`), and drawn live over a
+playing video in the Home UI's read-only "Watch" viewer. Both only draw a
+guide when it is truly confirmed (status `confirmed` and normal-condition
+footage), matching OF-083's `is_normal_baseline_confirmed` rule. The
+remaining rows — the yellow estimated boundary and the shaded covered-bank
+area — have no underlying detection anywhere in the system and remain
+future work, entirely separate from the human-drawn baseline; nothing draws
+placeholder geometry for them today.
 
 The main goal remains reviewing water conditions and changes over time, following
 the [labeling guide](../research/labeling-guide.md). Riverbank selection and
@@ -134,33 +145,25 @@ segmentation would help people and the machine see supporting evidence.
 
 ### What The User Would See
 
-A person selects a clear view recorded during normal conditions and confirms the
-visible riverbank, saved as a [confirmed reference record](data-contracts.md#confirmed-riverbank-reference-issue-163)
-tied to the existing watched area. The system could suggest a bank outline for
-the person to correct, with manual selection available. A pillar or another
-stable marker can provide an extra reference when available.
-
-As of Issue #167 (OF-086), a first version of the suggestion exists: a simple
-client-side gradient heuristic (the row with the strongest brightness jump
-inside the watched area — not segmentation or a trained model) proposes a
-draft band, clearly marked unconfirmed, which the person can accept, adjust,
-redraw, or ignore; only the confirmed result is ever trusted (see `origin` in
-[data-contracts.md](data-contracts.md#confirmed-riverbank-reference-issue-163)).
-Evaluating suggestion quality against approved field footage remains separate
-future work, not covered by this initial heuristic.
+A person selects a clear view recorded during normal conditions and traces
+the visible normal water edge as a curved polyline, saved as a
+[normal waterline guide](data-contracts.md#normal-waterline-guide-issue-174)
+tied to the existing watched area. One guide is used when only one bank is
+visible, two when both are. This is the only manual drawing tool besides the
+watched area itself — the machine never suggests a starting shape for it,
+so there is no draft-vs-human-decision ambiguity to track.
 
 The video player could then show:
 
 | Overlay | Meaning | Does it change? |
 | --- | --- | --- |
-| Blue bank outline | The riverbank confirmed in the normal reference view | Stays fixed to the same bank |
-| Dashed baseline line | The water boundary in the normal reference, if visible | Stays fixed |
+| Blue waterline guide | The normal water edge confirmed from normal-condition footage, traced as a curve | Stays fixed to the same bank |
 | Yellow estimated boundary | Where the machine estimates the water boundary at the displayed observation time | Updates when usable evidence is available |
 | Shaded bank area | Part of the baseline bank estimated to be covered by water now | Updates with the observation |
 | Text and time | The machine observation, its time window, and any visibility problem | Updates with the result |
 
 Colours are illustrative; text and line styles should also explain each overlay.
-The selected bank outline is a reference, not proof that the machine found water.
+The traced waterline guide is a reference, not proof that the machine found water.
 The first usable frame in a current validation window is also not automatically
 a confirmed normal-condition baseline.
 

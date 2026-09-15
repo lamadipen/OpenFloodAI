@@ -25,7 +25,7 @@ from openfloodai.review import (
 )
 from openfloodai.validation.input_snapshot import capture_run_inputs, finish_input_snapshot
 from openfloodai.validation.result_explanation import (
-    explain_confirmed_reference,
+    explain_normal_waterline_guides,
     explain_result,
     explain_riverbank_evidence,
 )
@@ -136,7 +136,7 @@ class SiteValidationReport:
     scorecard: ValidationScorecard
     run_id: str = ""
     run_dir: str = ""
-    confirmed_reference: dict[str, Any] | None = None
+    normal_waterline_guides: list[dict[str, Any]] = field(default_factory=list)
     label_lookup: dict[tuple[str, tuple[float, float]], JsonObject] = field(default_factory=dict)
 
 
@@ -208,14 +208,14 @@ def run_site_validation(
                 )
             )
 
-        confirmed_reference = _read_confirmed_reference(selected_config_path)
+        normal_waterline_guides = _read_normal_waterline_guides(selected_config_path)
         report_path = run_dir / "validation-report.md"
         report = _build_report(
             site_dir=site_dir,
             output_path=report_path,
             results=sorted(results, key=lambda result: result.video_id),
             labels=labels,
-            confirmed_reference=confirmed_reference,
+            normal_waterline_guides=normal_waterline_guides,
         )
         report = replace(report, run_id=run_id, run_dir=str(run_dir))
         report_path.write_text(render_site_validation_report(report), encoding="utf-8")
@@ -234,8 +234,8 @@ def render_site_validation_report(report: SiteValidationReport) -> str:
         "",
         f"Validation Site: {report.site_name}",
         "",
-        "## Confirmed Reference",
-        f"- {explain_confirmed_reference(report.confirmed_reference)['summary']}",
+        "## Normal Waterline Guides",
+        f"- {explain_normal_waterline_guides(report.normal_waterline_guides)['summary']}",
         "",
         "## Counts",
         f"- Videos processed: {report.processed_count}",
@@ -270,7 +270,7 @@ def render_site_validation_report(report: SiteValidationReport) -> str:
         [
             f"- Baseline-ready samples: {report.scorecard.baseline_ready_count}",
             f"- Practice-only samples: {report.scorecard.practice_only_count}",
-            "- Meaning: Baseline-ready samples have a confirmed riverbank reference "
+            "- Meaning: Baseline-ready samples have a confirmed normal waterline guide "
             "and a clear view of both the reference and the water boundary. "
             "Practice-only samples are still useful for practicing the review "
             "process but are not yet trusted for real comparison.",
@@ -347,7 +347,7 @@ def render_site_validation_report(report: SiteValidationReport) -> str:
                 )
                 evidence = explain_riverbank_evidence(
                     label_record,
-                    report.confirmed_reference,
+                    report.normal_waterline_guides,
                     comparison.system_result,
                 )
                 lines.extend(
@@ -456,7 +456,7 @@ def _build_report(
     output_path: Path,
     results: list[SiteValidationResult],
     labels: list[JsonObject],
-    confirmed_reference: dict[str, Any] | None,
+    normal_waterline_guides: list[dict[str, Any]],
 ) -> SiteValidationReport:
     processed_count = sum(result.processed for result in results)
     failed_count = sum(not result.processed for result in results)
@@ -476,7 +476,7 @@ def _build_report(
         for result in results
         for comparison in result.comparisons
     )
-    quality_summary = summarize_sample_quality(labels, confirmed_reference)
+    quality_summary = summarize_sample_quality(labels, normal_waterline_guides)
     scorecard = ValidationScorecard(
         videos_reviewed=len(results),
         label_windows=label_window_count,
@@ -500,7 +500,7 @@ def _build_report(
         disagree_count=disagree_count,
         cannot_compare_count=cannot_compare_count,
         scorecard=scorecard,
-        confirmed_reference=confirmed_reference,
+        normal_waterline_guides=normal_waterline_guides,
         label_lookup=_index_labels_by_window(labels),
     )
 
@@ -613,17 +613,19 @@ def _find_config_path(site_dir: Path, *, required: bool) -> Path:
     return configs_dir / "site-config.json"
 
 
-def _read_confirmed_reference(config_path: Path) -> dict[str, Any] | None:
-    """Return the site's confirmed_reference dict, if any, for quality checks."""
+def _read_normal_waterline_guides(config_path: Path) -> list[dict[str, Any]]:
+    """Return the site's normal_waterline_guides list, if any, for quality checks."""
 
     try:
         config = json.loads(config_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return None
+        return []
     if not isinstance(config, dict):
-        return None
-    confirmed_reference = config.get("confirmed_reference")
-    return confirmed_reference if isinstance(confirmed_reference, dict) else None
+        return []
+    guides = config.get("normal_waterline_guides")
+    if not isinstance(guides, list):
+        return []
+    return [guide for guide in guides if isinstance(guide, dict)]
 
 
 def _load_site_labels(site_dir: Path) -> list[JsonObject]:

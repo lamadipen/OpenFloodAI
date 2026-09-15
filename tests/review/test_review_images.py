@@ -6,16 +6,17 @@ import cv2
 import numpy as np
 import pytest
 
-from openfloodai.config import ConfirmedReference, ConfirmedReferenceMarker, ReferenceRegion
+from openfloodai.config import NormalWaterlineGuide, ReferenceRegion, WaterlinePoint
 from openfloodai.review import ReviewImageError, generate_biggest_change_review_images
 
 REFERENCE_REGION = {"x": 0, "y": 50, "width": 100, "height": 50}
-CONFIRMED_REFERENCE_DICT = {
-    "status": "confirmed",
-    "normal_condition": True,
-    "region": {"x": 60, "y": 60, "width": 20, "height": 20},
-    "markers": [{"label": "pillar", "region": {"x": 10, "y": 60, "width": 10, "height": 10}}],
-}
+NORMAL_WATERLINE_GUIDES = [
+    {
+        "status": "confirmed",
+        "normal_condition": True,
+        "points": [{"x": 60, "y": 60}, {"x": 80, "y": 80}],
+    }
+]
 
 
 def load_image(path: str) -> np.ndarray:
@@ -106,10 +107,7 @@ def test_reference_region_overlay_handles_edge_region(tmp_path: Path) -> None:
     assert overlay_image[9, 9].tolist() == [0, 255, 255]
 
 
-def test_confirmed_reference_overlay_is_burned_when_truly_confirmed(tmp_path: Path) -> None:
-    # A larger frame than the 10x10 frames used elsewhere in this file: the
-    # marker's label text needs enough room that antialiased glyph pixels
-    # don't bleed into the box-corner pixels this test asserts on.
+def test_normal_waterline_guide_overlay_is_burned_when_truly_confirmed(tmp_path: Path) -> None:
     baseline_frame = np.zeros((100, 100), dtype=np.uint8)
     changed_frame = np.full((100, 100), 180, dtype=np.uint8)
 
@@ -117,34 +115,29 @@ def test_confirmed_reference_overlay_is_burned_when_truly_confirmed(tmp_path: Pa
         [baseline_frame, changed_frame],
         tmp_path,
         reference_region=REFERENCE_REGION,
-        confirmed_reference=CONFIRMED_REFERENCE_DICT,
+        normal_waterline_guides=NORMAL_WATERLINE_GUIDES,
     )
 
     overlay_image = load_image(result.overlay_image_paths[0])
 
     assert overlay_image[60, 60].tolist() == [216, 64, 29]
-    assert overlay_image[79, 79].tolist() == [216, 64, 29]
-    assert overlay_image[60, 10].tolist() == [6, 119, 217]
+    assert overlay_image[80, 80].tolist() == [216, 64, 29]
 
 
-def test_confirmed_reference_overlay_accepts_dataclass_input(tmp_path: Path) -> None:
+def test_normal_waterline_guide_overlay_accepts_dataclass_input(tmp_path: Path) -> None:
     baseline_frame = np.zeros((100, 100), dtype=np.uint8)
     changed_frame = np.full((100, 100), 180, dtype=np.uint8)
-    confirmed_reference = ConfirmedReference(
-        status="confirmed",
-        origin="manual",
-        region=ReferenceRegion(x=60, y=60, width=20, height=20),
+    guide = NormalWaterlineGuide(
+        id="left_bank_normal_waterline",
+        label="left bank normal waterline",
+        points=(WaterlinePoint(x=60, y=60), WaterlinePoint(x=80, y=80)),
         video_id="river-002",
         video_time_seconds=3,
         site_id="site-1",
         camera_id="camera-1",
+        status="confirmed",
         normal_condition=True,
         notes="",
-        markers=(
-            ConfirmedReferenceMarker(
-                label="pillar", region=ReferenceRegion(x=10, y=60, width=10, height=10)
-            ),
-        ),
         confirmed_at="2026-01-01T00:00:00Z",
         invalidated_at=None,
         invalidation_reason=None,
@@ -154,26 +147,26 @@ def test_confirmed_reference_overlay_accepts_dataclass_input(tmp_path: Path) -> 
         [baseline_frame, changed_frame],
         tmp_path,
         reference_region=REFERENCE_REGION,
-        confirmed_reference=confirmed_reference,
+        normal_waterline_guides=[guide],
     )
 
     overlay_image = load_image(result.overlay_image_paths[0])
 
     assert overlay_image[60, 60].tolist() == [216, 64, 29]
-    assert overlay_image[60, 10].tolist() == [6, 119, 217]
+    assert overlay_image[80, 80].tolist() == [216, 64, 29]
 
 
 @pytest.mark.parametrize(
-    "not_confirmed_reference",
+    "not_confirmed_guide",
     [
-        {**CONFIRMED_REFERENCE_DICT, "status": "draft"},
-        {**CONFIRMED_REFERENCE_DICT, "status": "invalid"},
-        {**CONFIRMED_REFERENCE_DICT, "normal_condition": False},
-        {**CONFIRMED_REFERENCE_DICT, "normal_condition": None},
+        {**NORMAL_WATERLINE_GUIDES[0], "status": "draft"},
+        {**NORMAL_WATERLINE_GUIDES[0], "status": "invalid"},
+        {**NORMAL_WATERLINE_GUIDES[0], "normal_condition": False},
+        {**NORMAL_WATERLINE_GUIDES[0], "normal_condition": None},
     ],
 )
-def test_not_confirmed_reference_draws_nothing_extra(
-    tmp_path: Path, not_confirmed_reference: dict[str, object]
+def test_not_confirmed_guide_draws_nothing_extra(
+    tmp_path: Path, not_confirmed_guide: dict[str, object]
 ) -> None:
     baseline_frame = np.zeros((10, 10), dtype=np.uint8)
     changed_frame = np.full((10, 10), 180, dtype=np.uint8)
@@ -183,20 +176,20 @@ def test_not_confirmed_reference_draws_nothing_extra(
         tmp_path / "without",
         reference_region=REFERENCE_REGION,
     )
-    with_reference = generate_biggest_change_review_images(
+    with_guide = generate_biggest_change_review_images(
         [baseline_frame, changed_frame],
         tmp_path / "with",
         reference_region=REFERENCE_REGION,
-        confirmed_reference=not_confirmed_reference,
+        normal_waterline_guides=[not_confirmed_guide],
     )
 
     assert np.array_equal(
         load_image(without.overlay_image_paths[0]),
-        load_image(with_reference.overlay_image_paths[0]),
+        load_image(with_guide.overlay_image_paths[0]),
     )
     assert np.array_equal(
         load_image(without.overlay_image_paths[1]),
-        load_image(with_reference.overlay_image_paths[1]),
+        load_image(with_guide.overlay_image_paths[1]),
     )
 
 
@@ -208,14 +201,14 @@ def test_evidence_usability_note_adds_a_taller_caption_band(tmp_path: Path) -> N
         [baseline_frame, changed_frame],
         tmp_path / "without",
         reference_region=REFERENCE_REGION,
-        confirmed_reference=CONFIRMED_REFERENCE_DICT,
+        normal_waterline_guides=NORMAL_WATERLINE_GUIDES,
         frame_times=(0.0, 10.0),
     )
     with_note = generate_biggest_change_review_images(
         [baseline_frame, changed_frame],
         tmp_path / "with",
         reference_region=REFERENCE_REGION,
-        confirmed_reference=CONFIRMED_REFERENCE_DICT,
+        normal_waterline_guides=NORMAL_WATERLINE_GUIDES,
         evidence_usability_note="Reference evidence not usable: camera moved.",
         frame_times=(0.0, 10.0),
     )

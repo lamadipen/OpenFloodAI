@@ -23,8 +23,10 @@ def create_tiny_video(path: Path, *, frame_count: int = 2) -> None:
         writer.release()
 
 
-def write_site_config(path: Path, *, confirmed_reference: dict[str, object] | None = None) -> None:
-    config = {
+def write_site_config(
+    path: Path, *, normal_waterline_guides: list[dict[str, object]] | None = None
+) -> None:
+    config: dict[str, object] = {
         "site_id": "site-demo-01",
         "camera_id": "camera-demo-01",
         "site_name": "Demo River Bridge",
@@ -38,8 +40,8 @@ def write_site_config(path: Path, *, confirmed_reference: dict[str, object] | No
         },
         "privacy_notes": "Broad public location only.",
     }
-    if confirmed_reference is not None:
-        config["confirmed_reference"] = confirmed_reference
+    if normal_waterline_guides is not None:
+        config["normal_waterline_guides"] = normal_waterline_guides
     path.write_text(json.dumps(config), encoding="utf-8")
 
 
@@ -101,7 +103,27 @@ def test_local_video_review_creates_outputs_from_local_video_and_config(tmp_path
     assert all(Path(path).exists() for path in result.review_image_paths)
 
 
-def test_local_video_review_burns_confirmed_reference_into_overlay_images(
+def _sample_guide(**overrides: object) -> dict[str, object]:
+    guide: dict[str, object] = {
+        "id": "left_bank_normal_waterline",
+        "label": "left bank normal waterline",
+        "points": [{"x": 0, "y": 60}, {"x": 50, "y": 80}],
+        "status": "confirmed",
+        "video_id": "sample",
+        "video_time_seconds": 1,
+        "site_id": "site-demo-01",
+        "camera_id": "camera-demo-01",
+        "normal_condition": True,
+        "notes": "",
+        "confirmed_at": "2026-01-01T00:00:00Z",
+        "invalidated_at": None,
+        "invalidation_reason": None,
+    }
+    guide.update(overrides)
+    return guide
+
+
+def test_local_video_review_burns_normal_waterline_guide_into_overlay_images(
     tmp_path: Path,
 ) -> None:
     video_path = tmp_path / "sample.avi"
@@ -118,20 +140,7 @@ def test_local_video_review_burns_confirmed_reference_into_overlay_images(
     confirmed_config_path = tmp_path / "confirmed-site-config.json"
     write_site_config(
         confirmed_config_path,
-        confirmed_reference={
-            "status": "confirmed",
-            "region": {"x": 0, "y": 60, "width": 50, "height": 20},
-            "video_id": "sample",
-            "video_time_seconds": 1,
-            "site_id": "site-demo-01",
-            "camera_id": "camera-demo-01",
-            "normal_condition": True,
-            "notes": "",
-            "markers": [],
-            "confirmed_at": "2026-01-01T00:00:00Z",
-            "invalidated_at": None,
-            "invalidation_reason": None,
-        },
+        normal_waterline_guides=[_sample_guide()],
     )
     confirmed_result = run_local_video_review(
         video_path=video_path,
@@ -162,20 +171,7 @@ def test_local_video_review_flags_unusable_evidence_in_overlay_caption(tmp_path:
     confirmed_config_path = tmp_path / "confirmed-site-config.json"
     write_site_config(
         confirmed_config_path,
-        confirmed_reference={
-            "status": "confirmed",
-            "region": {"x": 0, "y": 60, "width": 50, "height": 20},
-            "video_id": "sample",
-            "video_time_seconds": 1,
-            "site_id": "site-demo-01",
-            "camera_id": "camera-demo-01",
-            "normal_condition": True,
-            "notes": "",
-            "markers": [],
-            "confirmed_at": "2026-01-01T00:00:00Z",
-            "invalidated_at": None,
-            "invalidation_reason": None,
-        },
+        normal_waterline_guides=[_sample_guide()],
     )
 
     baseline_result = run_local_video_review(

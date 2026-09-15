@@ -1,6 +1,6 @@
 """Plain-language descriptions of saved machine and human comparison results."""
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -57,37 +57,40 @@ def explain_result(machine: str, human: str, result: str, note: str) -> dict[str
     }
 
 
-def explain_confirmed_reference(confirmed_reference: Mapping[str, Any] | None) -> dict[str, str]:
-    """Explain the site's confirmed normal-condition reference, or its absence."""
+def explain_normal_waterline_guides(
+    normal_waterline_guides: Sequence[Mapping[str, Any]] | None,
+) -> dict[str, str]:
+    """Explain the site's normal-waterline guides, or their absence."""
 
-    if confirmed_reference is None:
+    if not normal_waterline_guides:
         return {
             "available": "no",
             "summary": (
-                "No confirmed reference yet. This site does not yet have a confirmed "
-                "normal-condition riverbank reference; comparisons below rely only on "
-                "the machine's own before/after evidence for each video."
+                "No normal waterline guide yet. This site does not yet have a "
+                "confirmed normal-condition waterline guide; comparisons below rely "
+                "only on the machine's own before/after evidence for each video."
             ),
         }
-    if not is_normal_baseline_confirmed(confirmed_reference):
-        status = confirmed_reference.get("status", "unknown")
-        video_id = confirmed_reference.get("video_id", "unknown")
+    if not is_normal_baseline_confirmed(normal_waterline_guides):
         return {
             "available": "no",
             "summary": (
-                f"Reference exists but is not confirmed. A reference for video "
-                f"'{video_id}' is saved (status: {status}), but it is not yet a "
-                f"confirmed normal-condition baseline; comparisons below rely only on "
-                f"the machine's own before/after evidence for each video."
+                f"{len(normal_waterline_guides)} normal waterline guide(s) saved, but "
+                f"none are yet a confirmed normal-condition baseline; comparisons "
+                f"below rely only on the machine's own before/after evidence for each "
+                f"video."
             ),
         }
-    video_id = confirmed_reference.get("video_id", "unknown")
-    video_time_seconds = confirmed_reference.get("video_time_seconds", "unknown")
+    confirmed_count = sum(
+        1
+        for guide in normal_waterline_guides
+        if guide.get("status") == "confirmed" and guide.get("normal_condition") is True
+    )
     return {
         "available": "yes",
         "summary": (
-            f"The confirmed normal-condition reference for this site is video "
-            f"'{video_id}' at {video_time_seconds} seconds."
+            f"{confirmed_count} of {len(normal_waterline_guides)} normal waterline "
+            f"guide(s) for this site are a confirmed normal-condition baseline."
         ),
     }
 
@@ -110,7 +113,7 @@ _COVERAGE_DIRECTION_TEXT = {
 
 def explain_riverbank_evidence(
     label_record: Mapping[str, object] | None,
-    confirmed_reference: Mapping[str, Any] | None,
+    normal_waterline_guides: Sequence[Mapping[str, Any]] | None,
     system_result: str,
 ) -> dict[str, str]:
     """Explain riverbank/reference usability and coverage-direction honesty for one window."""
@@ -138,7 +141,7 @@ def explain_riverbank_evidence(
             riverbank_visible_key,
             "Riverbank/reference visibility was not recorded for this window.",
         )
-        failure_reason = compute_failure_reason(label_record, confirmed_reference)
+        failure_reason = compute_failure_reason(label_record, normal_waterline_guides)
         if failure_reason is None:
             usable_reason = "This window's reference evidence is usable for comparison."
         else:

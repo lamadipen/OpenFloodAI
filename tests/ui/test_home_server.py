@@ -229,7 +229,7 @@ def test_add_label_response_includes_quality_block(tmp_path: Path) -> None:
         site_dir / "configs" / "site-config.json",
         {
             "site_id": site_dir.name,
-            "confirmed_reference": {"status": "confirmed", "normal_condition": True},
+            "normal_waterline_guides": [{"status": "confirmed", "normal_condition": True}],
         },
     )
 
@@ -595,7 +595,7 @@ def test_sites_api_exposes_workflow_steps_for_the_home_ui(tmp_path: Path) -> Non
         "site_setup",
         "video_intake",
         "watched_area",
-        "confirmed_reference",
+        "normal_waterline_guide",
         "human_labels",
         "manifest",
         "run_validation",

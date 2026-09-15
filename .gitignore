@@ -75,6 +75,10 @@ models/*
 !models/.gitkeep
 # Local-only site runs
 data/sites/colorado-site/
+data/sites/nuwakot-river-01-1/
+data/sites/co_colorado_river_at_windy_gap_near_granby_720/
+data/sites/co_colorado_river_near_cameo_720/
+data/sites/ut_colorado_river_near_cisco_720/
 
 # Local-only project notes
 READMELOCAL.md
