@@ -76,5 +76,7 @@ models/*
 # Local-only site runs
 data/sites/colorado-site/
 
+data/sites/* 
+
 # Local-only project notes
 READMELOCAL.md
