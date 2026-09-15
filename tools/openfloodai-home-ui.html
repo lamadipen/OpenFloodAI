@@ -3036,7 +3036,7 @@
               ${reviewImagesControls(site)}
             </div>
             ${renderNextSteps(site)}
-            <div style="padding: 0 18px 14px; display: flex; gap: 8px;">
+            <div style="padding: 0 18px 14px; display: flex; gap: 8px; flex-wrap: wrap;">
               <button type="button" onclick="runValidationForSite('${escapeHtml(site.site_name)}', this)" ${site.ready_for_validation ? "" : "disabled"}>Run Validation</button>
               <button type="button" onclick="openVideoFormForSite('${escapeHtml(site.site_name)}')" style="font-size: 13px; min-height: 34px; padding: 6px 12px;">+ Add Video</button>
               <button type="button" onclick="openLabelFormForSite('${escapeHtml(site.site_name)}')" style="font-size: 13px; min-height: 34px; padding: 6px 12px; background: var(--accent-strong); border-color: var(--accent-strong);">+ Add Label</button>
