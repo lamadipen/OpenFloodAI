@@ -18,9 +18,11 @@ import cv2
 
 from openfloodai.config import (
     SiteConfigError,
-    invalidate_confirmed_reference,
+    delete_normal_waterline_guide,
+    invalidate_normal_waterline_guide,
     load_site_config,
-    write_confirmed_reference,
+    write_normal_waterline_guide,
+    write_normal_waterline_guides,
     write_reference_region,
 )
 from openfloodai.review import (
@@ -263,11 +265,17 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         if self.path == "/api/set-watched-area":
             self._handle_set_watched_area()
             return
-        if self.path == "/api/set-confirmed-reference":
-            self._handle_set_confirmed_reference()
+        if self.path == "/api/set-normal-waterline-guide":
+            self._handle_set_normal_waterline_guide()
             return
-        if self.path == "/api/invalidate-confirmed-reference":
-            self._handle_invalidate_confirmed_reference()
+        if self.path == "/api/invalidate-normal-waterline-guide":
+            self._handle_invalidate_normal_waterline_guide()
+            return
+        if self.path == "/api/set-normal-waterline-guides":
+            self._handle_set_normal_waterline_guides()
+            return
+        if self.path == "/api/delete-normal-waterline-guide":
+            self._handle_delete_normal_waterline_guide()
             return
         if self.path == "/api/delete-site":
             self._handle_delete_site()
@@ -500,8 +508,8 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             status_code=200,
         )
 
-    def _handle_set_confirmed_reference(self) -> None:
-        """Save a draft or confirmed riverbank reference inside a site's watched area."""
+    def _handle_set_normal_waterline_guide(self) -> None:
+        """Save a draft or confirmed normal-waterline guide inside a site's watched area."""
 
         data = self._read_json_body()
         if data is None:
@@ -528,7 +536,9 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             self._send_json(
                 {
                     "success": False,
-                    "message": ("Choose an existing video in this site before saving a reference."),
+                    "message": (
+                        "Choose an existing video in this site before saving a waterline guide."
+                    ),
                 },
                 status_code=400,
             )
@@ -538,18 +548,18 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             config_path = _find_site_config(site_dir)
             site_config = load_site_config(config_path)
             payload = {
+                "id": str(data.get("id", "")).strip(),
+                "label": str(data.get("label", "")).strip(),
+                "points": _parse_waterline_points(data.get("points")),
                 "status": str(data.get("status", "")).strip(),
-                "origin": str(data.get("origin", "manual")).strip() or "manual",
-                "region": _parse_reference_region(data.get("region")),
                 "video_id": video_id,
                 "video_time_seconds": data.get("video_time_seconds"),
                 "site_id": site_config.site_id,
                 "camera_id": site_config.camera_id,
                 "normal_condition": _as_bool(data.get("normal_condition"), default=False),
                 "notes": str(data.get("notes", "")).strip(),
-                "markers": data.get("markers", []),
             }
-            confirmed_reference = write_confirmed_reference(config_path, payload)
+            guide = write_normal_waterline_guide(config_path, payload)
         except SiteConfigError as error:
             self._send_json({"success": False, "message": str(error)}, status_code=400)
             return
@@ -558,17 +568,97 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             {
                 "success": True,
                 "message": (
-                    "Reference confirmed."
-                    if confirmed_reference.status == "confirmed"
-                    else "Reference saved as a draft."
+                    "Normal waterline guide confirmed."
+                    if guide.status == "confirmed"
+                    else "Normal waterline guide saved as a draft."
                 ),
                 "config_path": str(config_path),
             },
             status_code=200,
         )
 
-    def _handle_invalidate_confirmed_reference(self) -> None:
-        """Mark a site's existing confirmed reference as invalid."""
+    def _handle_set_normal_waterline_guides(self) -> None:
+        """Save every normal-waterline guide for one video in a single request."""
+
+        data = self._read_json_body()
+        if data is None:
+            return
+
+        folder_name = str(data.get("folder_name", "")).strip()
+        site_dir = (self.sites_dir / folder_name).resolve()
+        if not folder_name or site_dir.parent != self.sites_dir.resolve():
+            self._send_json(
+                {
+                    "success": False,
+                    "message": (
+                        "Invalid folder_name: site folder must stay inside the sites directory."
+                    ),
+                },
+                status_code=400,
+            )
+            return
+
+        video_id = str(data.get("video_id", "")).strip()
+        try:
+            self._resolve_site_video(folder_name, video_id)
+        except ValueError:
+            self._send_json(
+                {
+                    "success": False,
+                    "message": (
+                        "Choose an existing video in this site before saving waterline guides."
+                    ),
+                },
+                status_code=400,
+            )
+            return
+
+        raw_guides = data.get("guides")
+        if not isinstance(raw_guides, list) or not raw_guides:
+            self._send_json(
+                {"success": False, "message": "At least one guide is required."},
+                status_code=400,
+            )
+            return
+
+        try:
+            config_path = _find_site_config(site_dir)
+            site_config = load_site_config(config_path)
+            payloads = [
+                {
+                    "id": str(entry.get("id", "")).strip(),
+                    "label": str(entry.get("label", "")).strip(),
+                    "points": _parse_waterline_points(entry.get("points")),
+                    "status": str(entry.get("status", "")).strip(),
+                    "video_id": video_id,
+                    "video_time_seconds": entry.get("video_time_seconds"),
+                    "site_id": site_config.site_id,
+                    "camera_id": site_config.camera_id,
+                    "normal_condition": _as_bool(entry.get("normal_condition"), default=False),
+                    "notes": str(entry.get("notes", "")).strip(),
+                    "invalidation_reason": (
+                        str(entry.get("invalidation_reason", "")).strip() or None
+                    ),
+                }
+                for entry in raw_guides
+                if isinstance(entry, dict)
+            ]
+            guides = write_normal_waterline_guides(config_path, payloads)
+        except SiteConfigError as error:
+            self._send_json({"success": False, "message": str(error)}, status_code=400)
+            return
+
+        self._send_json(
+            {
+                "success": True,
+                "message": f"Saved {len(guides)} normal waterline guide(s).",
+                "config_path": str(config_path),
+            },
+            status_code=200,
+        )
+
+    def _handle_delete_normal_waterline_guide(self) -> None:
+        """Permanently remove one normal-waterline guide from a site's config."""
 
         data = self._read_json_body()
         if data is None:
@@ -590,8 +680,46 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
 
         try:
             config_path = _find_site_config(site_dir)
-            invalidated = invalidate_confirmed_reference(
+            delete_normal_waterline_guide(config_path, str(data.get("guide_id", "")).strip())
+        except SiteConfigError as error:
+            self._send_json({"success": False, "message": str(error)}, status_code=400)
+            return
+
+        self._send_json(
+            {
+                "success": True,
+                "message": "Normal waterline guide deleted.",
+                "config_path": str(config_path),
+            },
+            status_code=200,
+        )
+
+    def _handle_invalidate_normal_waterline_guide(self) -> None:
+        """Mark one of a site's normal-waterline guides as invalid."""
+
+        data = self._read_json_body()
+        if data is None:
+            return
+
+        folder_name = str(data.get("folder_name", "")).strip()
+        site_dir = (self.sites_dir / folder_name).resolve()
+        if not folder_name or site_dir.parent != self.sites_dir.resolve():
+            self._send_json(
+                {
+                    "success": False,
+                    "message": (
+                        "Invalid folder_name: site folder must stay inside the sites directory."
+                    ),
+                },
+                status_code=400,
+            )
+            return
+
+        try:
+            config_path = _find_site_config(site_dir)
+            invalidated = invalidate_normal_waterline_guide(
                 config_path,
+                str(data.get("guide_id", "")).strip(),
                 str(data.get("invalidation_reason", "")).strip(),
                 str(data.get("notes", "")).strip() or None,
             )
@@ -602,7 +730,7 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         self._send_json(
             {
                 "success": True,
-                "message": f"Reference marked invalid: {invalidated.invalidation_reason}.",
+                "message": f"Guide marked invalid: {invalidated.invalidation_reason}.",
                 "config_path": str(config_path),
             },
             status_code=200,
@@ -658,11 +786,11 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
 
         quality = None
         if result.created and result.record is not None:
-            confirmed_reference = _read_confirmed_reference_dict(site_dir)
-            reason = compute_failure_reason(result.record, confirmed_reference)
+            normal_waterline_guides = _read_normal_waterline_guides_list(site_dir)
+            reason = compute_failure_reason(result.record, normal_waterline_guides)
             quality = {
-                "normal_baseline_confirmed": is_normal_baseline_confirmed(confirmed_reference),
-                "baseline_ready": is_baseline_ready(result.record, confirmed_reference),
+                "normal_baseline_confirmed": is_normal_baseline_confirmed(normal_waterline_guides),
+                "baseline_ready": is_baseline_ready(result.record, normal_waterline_guides),
                 "failure_reason": reason,
                 "failure_reason_text": friendly_failure_reason(reason),
             }
@@ -1027,18 +1155,20 @@ def _find_site_config(site_dir: Path) -> Path:
     return config_paths[0]
 
 
-def _read_confirmed_reference_dict(site_dir: Path) -> dict[str, Any] | None:
-    """Return the site's confirmed_reference dict, if any, for quality checks."""
+def _read_normal_waterline_guides_list(site_dir: Path) -> list[dict[str, Any]]:
+    """Return the site's normal_waterline_guides list, if any, for quality checks."""
 
     try:
         config_path = _find_site_config(site_dir)
         config = json.loads(config_path.read_text(encoding="utf-8"))
     except (SiteConfigError, OSError, json.JSONDecodeError):
-        return None
+        return []
     if not isinstance(config, dict):
-        return None
-    confirmed_reference = config.get("confirmed_reference")
-    return confirmed_reference if isinstance(confirmed_reference, dict) else None
+        return []
+    guides = config.get("normal_waterline_guides")
+    if not isinstance(guides, list):
+        return []
+    return [guide for guide in guides if isinstance(guide, dict)]
 
 
 def _parse_reference_region(value: object) -> dict[str, object] | None:
@@ -1054,3 +1184,21 @@ def _parse_reference_region(value: object) -> dict[str, object] | None:
     if not isinstance(parsed, dict):
         raise SiteConfigError("reference_region must be a JSON object")
     return {str(key): item for key, item in parsed.items()}
+
+
+def _parse_waterline_points(value: object) -> list[dict[str, object]]:
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError as error:
+            raise SiteConfigError("points must be valid JSON") from error
+    else:
+        parsed = value
+    if not isinstance(parsed, list):
+        raise SiteConfigError("points must be a JSON list")
+    points: list[dict[str, object]] = []
+    for entry in parsed:
+        if not isinstance(entry, dict):
+            raise SiteConfigError("Each waterline point must be a JSON object")
+        points.append({str(key): item for key, item in entry.items()})
+    return points

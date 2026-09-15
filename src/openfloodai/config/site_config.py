@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -21,13 +21,11 @@ OPTIONAL_FIELDS = {
     "public_location",
     "reference_region",
     "privacy_notes",
-    "confirmed_reference",
+    "normal_waterline_guides",
 }
 ALLOWED_FIELDS = REQUIRED_FIELDS | OPTIONAL_FIELDS
 
-ALLOWED_CONFIRMED_REFERENCE_STATUSES = {"draft", "confirmed", "invalid"}
-ALLOWED_CONFIRMED_REFERENCE_ORIGINS = {"machine_suggested", "manual"}
-DEFAULT_CONFIRMED_REFERENCE_ORIGIN = "manual"
+ALLOWED_GUIDE_STATUSES = {"draft", "confirmed", "invalid"}
 ALLOWED_INVALIDATION_REASONS = {
     "camera_moved",
     "view_changed",
@@ -52,31 +50,33 @@ class ReferenceRegion:
 
 
 @dataclass(frozen=True)
-class ConfirmedReferenceMarker:
-    """A named, stable extra reference point inside a site's watched area."""
+class WaterlinePoint:
+    """One point along a normal-waterline guide, as a percentage of the frame."""
 
-    label: str
-    region: ReferenceRegion
+    x: float
+    y: float
 
 
 @dataclass(frozen=True)
-class ConfirmedReference:
-    """The confirmed riverbank/reference record inside a site's watched area.
+class NormalWaterlineGuide:
+    """A human-traced polyline marking the normal water edge/bank boundary.
 
     Tracks only the current state (like ``reference_region`` itself) rather
-    than a history of past confirmations or invalidations.
+    than a history of past confirmations or invalidations. Manual drawing
+    tools in this project are limited to this and the watched area — the
+    machine draws only current observations, never a suggested baseline.
     """
 
-    status: str  # "draft" | "confirmed" | "invalid"
-    origin: str  # "machine_suggested" | "manual"
-    region: ReferenceRegion
+    id: str
+    label: str
+    points: tuple[WaterlinePoint, ...]
     video_id: str
     video_time_seconds: float
     site_id: str
     camera_id: str
+    status: str  # "draft" | "confirmed" | "invalid"
     normal_condition: bool
     notes: str
-    markers: tuple[ConfirmedReferenceMarker, ...]
     confirmed_at: str | None
     invalidated_at: str | None
     invalidation_reason: str | None
@@ -93,7 +93,7 @@ class SiteCameraConfig:
     input_type: InputType
     reference_region: ReferenceRegion | None = None
     privacy_notes: str | None = None
-    confirmed_reference: ConfirmedReference | None = None
+    normal_waterline_guides: tuple[NormalWaterlineGuide, ...] = ()
 
 
 def load_site_config(config_path: Path) -> SiteCameraConfig:
@@ -113,6 +113,7 @@ def load_site_config(config_path: Path) -> SiteCameraConfig:
     _validate_fields(config)
 
     input_type = _load_input_type(config["input_type"])
+    reference_region = _load_reference_region(config.get("reference_region"))
 
     return SiteCameraConfig(
         site_id=_load_required_text(config, "site_id"),
@@ -120,11 +121,11 @@ def load_site_config(config_path: Path) -> SiteCameraConfig:
         site_name=_load_required_text(config, "site_name"),
         public_location=_load_optional_text(config.get("public_location"), "public_location"),
         input_type=input_type,
-        reference_region=_load_reference_region(config.get("reference_region")),
+        reference_region=reference_region,
         privacy_notes=_load_optional_text(config.get("privacy_notes"), "privacy_notes"),
-        confirmed_reference=_load_confirmed_reference(
-            config.get("confirmed_reference"),
-            parent_region=_load_reference_region(config.get("reference_region")),
+        normal_waterline_guides=_load_normal_waterline_guides(
+            config.get("normal_waterline_guides"),
+            parent_region=reference_region,
         ),
     )
 
@@ -141,44 +142,135 @@ def write_reference_region(config_path: Path, value: Mapping[str, object]) -> No
     config_path.write_text(json.dumps(raw_config, indent=2) + "\n", encoding="utf-8")
 
 
-def write_confirmed_reference(
+def write_normal_waterline_guide(
     config_path: Path, payload: Mapping[str, object]
-) -> ConfirmedReference:
-    """Save a draft or confirmed riverbank reference tied to the site's watched area.
+) -> NormalWaterlineGuide:
+    """Save a draft or confirmed normal-waterline guide, upserted by ``id``.
 
-    Re-reads the config file so the confirmed reference can be validated
-    against the site's *current* ``reference_region``, and rewrites only the
-    ``confirmed_reference`` key. ``confirmed_at`` is always server-set, never
-    taken from ``payload``.
+    Re-reads the config file so the guide can be validated against the
+    site's *current* ``reference_region``, and rewrites only the
+    ``normal_waterline_guides`` key. ``confirmed_at`` is always server-set,
+    never taken from ``payload``. A guide whose ``id`` matches an existing
+    saved guide replaces it in place; otherwise it is appended.
     """
 
     raw_config = _read_config_json(config_path)
     parent_region = _load_reference_region(raw_config.get("reference_region"))
     if parent_region is None:
-        raise SiteConfigError("Set the site's watched area before confirming a reference")
+        raise SiteConfigError("Set the site's watched area before saving a normal waterline guide")
 
     status = payload.get("status")
     if status not in {"draft", "confirmed"}:
-        raise SiteConfigError("Confirmed reference field 'status' must be 'draft' or 'confirmed'")
+        raise SiteConfigError(
+            "Normal waterline guide field 'status' must be 'draft' or 'confirmed'"
+        )
 
     candidate = dict(payload)
     candidate["confirmed_at"] = _now_iso() if status == "confirmed" else None
     candidate["invalidated_at"] = None
     candidate["invalidation_reason"] = None
 
-    confirmed_reference = _load_confirmed_reference(candidate, parent_region=parent_region)
-    if confirmed_reference is None:
-        raise SiteConfigError("Confirmed reference cannot be empty")
+    guide = _load_normal_waterline_guide(candidate, parent_region=parent_region)
 
-    raw_config["confirmed_reference"] = _confirmed_reference_to_dict(confirmed_reference)
+    existing_raw = raw_config.get("normal_waterline_guides")
+    existing_guides = list(existing_raw) if isinstance(existing_raw, list) else []
+    updated_guides = [
+        entry
+        for entry in existing_guides
+        if not (isinstance(entry, dict) and entry.get("id") == guide.id)
+    ]
+    updated_guides.append(_normal_waterline_guide_to_dict(guide))
+
+    raw_config["normal_waterline_guides"] = updated_guides
     config_path.write_text(json.dumps(raw_config, indent=2) + "\n", encoding="utf-8")
-    return confirmed_reference
+    return guide
 
 
-def invalidate_confirmed_reference(
-    config_path: Path, reason: str, notes: str | None = None
-) -> ConfirmedReference:
-    """Mark a site's existing confirmed reference as invalid, keeping its provenance."""
+def write_normal_waterline_guides(
+    config_path: Path, payloads: Sequence[Mapping[str, object]]
+) -> tuple[NormalWaterlineGuide, ...]:
+    """Save many normal-waterline guides in a single write, each upserted by id.
+
+    Unlike ``write_normal_waterline_guide``, each payload may use any status
+    (``draft``/``confirmed``/``invalid``) and an ``invalid`` payload must
+    carry its own ``invalidation_reason`` directly — this bulk save is how
+    the multi-line guide editor persists every line (new, edited, or
+    invalidated) in one request, so no line's status is set from outside
+    the payload the caller sent for it.
+    """
+
+    raw_config = _read_config_json(config_path)
+    parent_region = _load_reference_region(raw_config.get("reference_region"))
+    if parent_region is None:
+        raise SiteConfigError("Set the site's watched area before saving a normal waterline guide")
+
+    existing_raw = raw_config.get("normal_waterline_guides")
+    existing_guides_raw = [
+        entry
+        for entry in (existing_raw if isinstance(existing_raw, list) else [])
+        if isinstance(entry, dict)
+    ]
+    existing_confirmed_at_by_id = {
+        entry["id"]: entry.get("confirmed_at")
+        for entry in existing_guides_raw
+        if isinstance(entry.get("id"), str)
+    }
+
+    guides: list[NormalWaterlineGuide] = []
+    for payload in payloads:
+        status = payload.get("status")
+        if status not in ALLOWED_GUIDE_STATUSES:
+            joined = ", ".join(sorted(ALLOWED_GUIDE_STATUSES))
+            raise SiteConfigError(f"Normal waterline guide field 'status' must be one of: {joined}")
+
+        candidate = dict(payload)
+        guide_id = candidate.get("id")
+        existing_confirmed_at = (
+            existing_confirmed_at_by_id.get(guide_id) if isinstance(guide_id, str) else None
+        )
+        _stamp_guide_status_fields(candidate, status, existing_confirmed_at=existing_confirmed_at)
+        guides.append(_load_normal_waterline_guide(candidate, parent_region=parent_region))
+
+    seen_ids = [guide.id for guide in guides]
+    if len(set(seen_ids)) != len(seen_ids):
+        raise SiteConfigError("Duplicate normal waterline guide id in request")
+
+    saved_ids = set(seen_ids)
+    remaining = [entry for entry in existing_guides_raw if entry.get("id") not in saved_ids]
+    raw_config["normal_waterline_guides"] = remaining + [
+        _normal_waterline_guide_to_dict(guide) for guide in guides
+    ]
+    config_path.write_text(json.dumps(raw_config, indent=2) + "\n", encoding="utf-8")
+    return tuple(guides)
+
+
+def delete_normal_waterline_guide(config_path: Path, guide_id: str) -> None:
+    """Permanently remove one normal-waterline guide from a site's config.
+
+    Unlike ``invalidate_normal_waterline_guide``, this leaves no trace of
+    the guide — for a line the multi-line editor is told to delete outright,
+    not one that stays on record as no longer trustworthy.
+    """
+
+    raw_config = _read_config_json(config_path)
+    existing_raw = raw_config.get("normal_waterline_guides")
+    existing_guides = list(existing_raw) if isinstance(existing_raw, list) else []
+    remaining = [
+        entry
+        for entry in existing_guides
+        if not (isinstance(entry, dict) and entry.get("id") == guide_id)
+    ]
+    if len(remaining) == len(existing_guides):
+        raise SiteConfigError("There is no normal waterline guide with that id to delete")
+
+    raw_config["normal_waterline_guides"] = remaining
+    config_path.write_text(json.dumps(raw_config, indent=2) + "\n", encoding="utf-8")
+
+
+def invalidate_normal_waterline_guide(
+    config_path: Path, guide_id: str, reason: str, notes: str | None = None
+) -> NormalWaterlineGuide:
+    """Mark one of a site's normal-waterline guides as invalid, by id."""
 
     if reason not in ALLOWED_INVALIDATION_REASONS:
         joined = ", ".join(sorted(ALLOWED_INVALIDATION_REASONS))
@@ -186,29 +278,34 @@ def invalidate_confirmed_reference(
 
     raw_config = _read_config_json(config_path)
     parent_region = _load_reference_region(raw_config.get("reference_region"))
-    existing = _load_confirmed_reference(
-        raw_config.get("confirmed_reference"), parent_region=parent_region
+    guides = _load_normal_waterline_guides(
+        raw_config.get("normal_waterline_guides"), parent_region=parent_region
     )
+    existing = next((guide for guide in guides if guide.id == guide_id), None)
     if existing is None:
-        raise SiteConfigError("There is no confirmed reference to invalidate yet")
+        raise SiteConfigError("There is no normal waterline guide with that id to invalidate")
 
-    invalidated = ConfirmedReference(
-        status="invalid",
-        origin=existing.origin,
-        region=existing.region,
+    invalidated = NormalWaterlineGuide(
+        id=existing.id,
+        label=existing.label,
+        points=existing.points,
         video_id=existing.video_id,
         video_time_seconds=existing.video_time_seconds,
         site_id=existing.site_id,
         camera_id=existing.camera_id,
+        status="invalid",
         normal_condition=existing.normal_condition,
         notes=notes.strip() if isinstance(notes, str) and notes.strip() else existing.notes,
-        markers=existing.markers,
         confirmed_at=existing.confirmed_at,
         invalidated_at=_now_iso(),
         invalidation_reason=reason,
     )
 
-    raw_config["confirmed_reference"] = _confirmed_reference_to_dict(invalidated)
+    updated_guides = [
+        _normal_waterline_guide_to_dict(invalidated if guide.id == guide_id else guide)
+        for guide in guides
+    ]
+    raw_config["normal_waterline_guides"] = updated_guides
     config_path.write_text(json.dumps(raw_config, indent=2) + "\n", encoding="utf-8")
     return invalidated
 
@@ -230,25 +327,51 @@ def _now_iso() -> str:
     return datetime.now(tz=UTC).isoformat()
 
 
+def _stamp_guide_status_fields(
+    candidate: dict[str, Any], status: str, *, existing_confirmed_at: object
+) -> None:
+    """Set server-controlled timestamp/reason fields for a guide payload in place.
+
+    ``confirmed_at`` is preserved across a transition to ``invalid`` (the
+    guide was confirmed once; invalidating it does not erase that history),
+    but is never taken from the caller directly.
+    """
+
+    if status == "confirmed":
+        candidate["confirmed_at"] = _now_iso()
+        candidate["invalidated_at"] = None
+        candidate["invalidation_reason"] = None
+    elif status == "invalid":
+        candidate["confirmed_at"] = (
+            existing_confirmed_at if isinstance(existing_confirmed_at, str) else None
+        )
+        candidate["invalidated_at"] = _now_iso()
+    else:
+        candidate["confirmed_at"] = None
+        candidate["invalidated_at"] = None
+        candidate["invalidation_reason"] = None
+
+
 def _region_to_dict(region: ReferenceRegion) -> dict[str, float]:
     return {"x": region.x, "y": region.y, "width": region.width, "height": region.height}
 
 
-def _confirmed_reference_to_dict(value: ConfirmedReference) -> dict[str, Any]:
+def _point_to_dict(point: WaterlinePoint) -> dict[str, float]:
+    return {"x": point.x, "y": point.y}
+
+
+def _normal_waterline_guide_to_dict(value: NormalWaterlineGuide) -> dict[str, Any]:
     return {
-        "status": value.status,
-        "origin": value.origin,
-        "region": _region_to_dict(value.region),
+        "id": value.id,
+        "label": value.label,
+        "points": [_point_to_dict(point) for point in value.points],
         "video_id": value.video_id,
         "video_time_seconds": value.video_time_seconds,
         "site_id": value.site_id,
         "camera_id": value.camera_id,
+        "status": value.status,
         "normal_condition": value.normal_condition,
         "notes": value.notes,
-        "markers": [
-            {"label": marker.label, "region": _region_to_dict(marker.region)}
-            for marker in value.markers
-        ],
         "confirmed_at": value.confirmed_at,
         "invalidated_at": value.invalidated_at,
         "invalidation_reason": value.invalidation_reason,
@@ -330,40 +453,55 @@ def _load_region_number(value: object, field_name: str) -> float:
     return float(value)
 
 
-def _region_fits_inside(region: ReferenceRegion, parent: ReferenceRegion) -> bool:
+def _load_waterline_point(value: object) -> WaterlinePoint:
+    if not isinstance(value, dict):
+        raise SiteConfigError("Each normal waterline guide point must be a JSON object")
+
+    point = dict[str, Any](value)
+    expected_fields = {"x", "y"}
+    missing_fields = sorted(expected_fields - point.keys())
+    if missing_fields:
+        joined_fields = ", ".join(missing_fields)
+        raise SiteConfigError(f"Waterline point is missing required field(s): {joined_fields}")
+
+    extra_fields = sorted(point.keys() - expected_fields)
+    if extra_fields:
+        joined_fields = ", ".join(extra_fields)
+        raise SiteConfigError(f"Waterline point has unsupported field(s): {joined_fields}")
+
+    x = _load_region_number(point["x"], "x")
+    y = _load_region_number(point["y"], "y")
+    if x < 0 or x > 100 or y < 0 or y > 100:
+        raise SiteConfigError("Waterline point x and y must be within the 0-100 image area")
+
+    return WaterlinePoint(x=x, y=y)
+
+
+def _point_inside_region(point: WaterlinePoint, region: ReferenceRegion) -> bool:
     return (
-        region.x >= parent.x
-        and region.y >= parent.y
-        and region.x + region.width <= parent.x + parent.width
-        and region.y + region.height <= parent.y + parent.height
+        region.x <= point.x <= region.x + region.width
+        and region.y <= point.y <= region.y + region.height
     )
 
 
-def _load_confirmed_reference(
+def _load_normal_waterline_guide(
     value: object, *, parent_region: ReferenceRegion | None
-) -> ConfirmedReference | None:
-    if value is None:
-        return None
-
+) -> NormalWaterlineGuide:
     if not isinstance(value, dict):
-        raise SiteConfigError("Confirmed reference must be a JSON object")
+        raise SiteConfigError("Normal waterline guide must be a JSON object")
 
     record = dict[str, Any](value)
-    if "origin" not in record:
-        # Records saved before OF-086 have no origin — machine suggestions
-        # did not exist yet, so treat them as manually drawn.
-        record = {**record, "origin": DEFAULT_CONFIRMED_REFERENCE_ORIGIN}
     expected_fields = {
-        "status",
-        "origin",
-        "region",
+        "id",
+        "label",
+        "points",
         "video_id",
         "video_time_seconds",
         "site_id",
         "camera_id",
+        "status",
         "normal_condition",
         "notes",
-        "markers",
         "confirmed_at",
         "invalidated_at",
         "invalidation_reason",
@@ -371,112 +509,113 @@ def _load_confirmed_reference(
     missing_fields = sorted(expected_fields - record.keys())
     if missing_fields:
         joined_fields = ", ".join(missing_fields)
-        raise SiteConfigError(f"Confirmed reference is missing required field(s): {joined_fields}")
+        raise SiteConfigError(
+            f"Normal waterline guide is missing required field(s): {joined_fields}"
+        )
 
     extra_fields = sorted(record.keys() - expected_fields)
     if extra_fields:
         joined_fields = ", ".join(extra_fields)
-        raise SiteConfigError(f"Confirmed reference has unsupported field(s): {joined_fields}")
+        raise SiteConfigError(f"Normal waterline guide has unsupported field(s): {joined_fields}")
 
     status = record["status"]
-    if status not in ALLOWED_CONFIRMED_REFERENCE_STATUSES:
-        joined = ", ".join(sorted(ALLOWED_CONFIRMED_REFERENCE_STATUSES))
-        raise SiteConfigError(f"Confirmed reference field 'status' must be one of: {joined}")
-
-    origin = record["origin"]
-    if origin not in ALLOWED_CONFIRMED_REFERENCE_ORIGINS:
-        joined = ", ".join(sorted(ALLOWED_CONFIRMED_REFERENCE_ORIGINS))
-        raise SiteConfigError(f"Confirmed reference field 'origin' must be one of: {joined}")
+    if status not in ALLOWED_GUIDE_STATUSES:
+        joined = ", ".join(sorted(ALLOWED_GUIDE_STATUSES))
+        raise SiteConfigError(f"Normal waterline guide field 'status' must be one of: {joined}")
 
     if parent_region is None:
-        raise SiteConfigError("Confirmed reference requires the site to have a watched area")
+        raise SiteConfigError("Normal waterline guide requires the site to have a watched area")
 
-    region = _load_reference_region(record["region"])
-    if region is None:
-        raise SiteConfigError("Confirmed reference field 'region' cannot be empty")
-    if not _region_fits_inside(region, parent_region):
-        raise SiteConfigError("Confirmed reference must fit inside the site's watched area")
-
-    markers = _load_confirmed_reference_markers(record["markers"], parent_region=parent_region)
+    points = _load_guide_points(record["points"], parent_region=parent_region)
 
     invalidation_reason = record["invalidation_reason"]
     if status == "invalid":
         if invalidation_reason not in ALLOWED_INVALIDATION_REASONS:
             joined = ", ".join(sorted(ALLOWED_INVALIDATION_REASONS))
             raise SiteConfigError(
-                f"Confirmed reference field 'invalidation_reason' must be one of: {joined}"
+                f"Normal waterline guide field 'invalidation_reason' must be one of: {joined}"
             )
     elif invalidation_reason is not None:
         raise SiteConfigError(
-            "Confirmed reference field 'invalidation_reason' must be empty unless invalid"
+            "Normal waterline guide field 'invalidation_reason' must be empty unless invalid"
         )
 
-    return ConfirmedReference(
-        status=status,
-        origin=origin,
-        region=region,
+    return NormalWaterlineGuide(
+        id=_load_required_text(record, "id"),
+        label=_load_required_text(record, "label"),
+        points=points,
         video_id=_load_required_text(record, "video_id"),
-        video_time_seconds=_load_confirmed_reference_time(record["video_time_seconds"]),
+        video_time_seconds=_load_guide_time(record["video_time_seconds"]),
         site_id=_load_required_text(record, "site_id"),
         camera_id=_load_required_text(record, "camera_id"),
-        normal_condition=_load_confirmed_reference_bool(record["normal_condition"]),
-        notes=_load_confirmed_reference_notes(record["notes"]),
-        markers=markers,
+        status=status,
+        normal_condition=_load_guide_bool(record["normal_condition"]),
+        notes=_load_guide_notes(record["notes"]),
         confirmed_at=_load_optional_text(record["confirmed_at"], "confirmed_at"),
         invalidated_at=_load_optional_text(record["invalidated_at"], "invalidated_at"),
         invalidation_reason=invalidation_reason,
     )
 
 
-def _load_confirmed_reference_markers(
+def _load_guide_points(
     value: object, *, parent_region: ReferenceRegion
-) -> tuple[ConfirmedReferenceMarker, ...]:
+) -> tuple[WaterlinePoint, ...]:
     if not isinstance(value, list):
-        raise SiteConfigError("Confirmed reference field 'markers' must be a list")
+        raise SiteConfigError("Normal waterline guide field 'points' must be a list")
+    if len(value) < 2:
+        raise SiteConfigError("Normal waterline guide must have at least 2 points")
 
-    markers: list[ConfirmedReferenceMarker] = []
+    points: list[WaterlinePoint] = []
     for entry in value:
-        if not isinstance(entry, dict):
-            raise SiteConfigError("Each confirmed reference marker must be a JSON object")
+        point = _load_waterline_point(entry)
+        if not _point_inside_region(point, parent_region):
+            raise SiteConfigError(
+                "Every normal waterline guide point must fit inside the watched area"
+            )
+        points.append(point)
 
-        marker = dict[str, Any](entry)
-        expected_fields = {"label", "region"}
-        missing_fields = sorted(expected_fields - marker.keys())
-        if missing_fields:
-            joined_fields = ", ".join(missing_fields)
-            raise SiteConfigError(f"Marker is missing required field(s): {joined_fields}")
-        extra_fields = sorted(marker.keys() - expected_fields)
-        if extra_fields:
-            joined_fields = ", ".join(extra_fields)
-            raise SiteConfigError(f"Marker has unsupported field(s): {joined_fields}")
-
-        label = _load_required_text(marker, "label")
-        region = _load_reference_region(marker["region"])
-        if region is None:
-            raise SiteConfigError("Marker field 'region' cannot be empty")
-        if not _region_fits_inside(region, parent_region):
-            raise SiteConfigError(f"Marker '{label}' must fit inside the site's watched area")
-
-        markers.append(ConfirmedReferenceMarker(label=label, region=region))
-
-    return tuple(markers)
+    return tuple(points)
 
 
-def _load_confirmed_reference_time(value: object) -> float:
+def _load_normal_waterline_guides(
+    value: object, *, parent_region: ReferenceRegion | None
+) -> tuple[NormalWaterlineGuide, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise SiteConfigError("Site config field 'normal_waterline_guides' must be a list")
+
+    guides: list[NormalWaterlineGuide] = []
+    seen_ids: set[str] = set()
+    for entry in value:
+        guide = _load_normal_waterline_guide(entry, parent_region=parent_region)
+        if guide.id in seen_ids:
+            raise SiteConfigError(f"Duplicate normal waterline guide id: {guide.id}")
+        seen_ids.add(guide.id)
+        guides.append(guide)
+
+    return tuple(guides)
+
+
+def _load_guide_time(value: object) -> float:
     if isinstance(value, bool) or not isinstance(value, int | float):
-        raise SiteConfigError("Confirmed reference field 'video_time_seconds' must be a number")
+        raise SiteConfigError("Normal waterline guide field 'video_time_seconds' must be a number")
     if value < 0:
-        raise SiteConfigError("Confirmed reference field 'video_time_seconds' must be 0 or greater")
+        raise SiteConfigError(
+            "Normal waterline guide field 'video_time_seconds' must be 0 or greater"
+        )
     return float(value)
 
 
-def _load_confirmed_reference_bool(value: object) -> bool:
+def _load_guide_bool(value: object) -> bool:
     if not isinstance(value, bool):
-        raise SiteConfigError("Confirmed reference field 'normal_condition' must be true or false")
+        raise SiteConfigError(
+            "Normal waterline guide field 'normal_condition' must be true or false"
+        )
     return value
 
 
-def _load_confirmed_reference_notes(value: object) -> str:
+def _load_guide_notes(value: object) -> str:
     if not isinstance(value, str):
-        raise SiteConfigError("Confirmed reference field 'notes' must be a string")
+        raise SiteConfigError("Normal waterline guide field 'notes' must be a string")
     return value.strip()

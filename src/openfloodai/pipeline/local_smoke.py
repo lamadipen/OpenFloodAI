@@ -106,16 +106,12 @@ def run_local_video_review(
     if site_config.reference_region is None:
         raise LocalPocSmokeError("Local POC smoke workflow requires a reference_region")
 
-    confirmed_reference = site_config.confirmed_reference
-    confirmed_reference_status = (
-        {
-            "status": confirmed_reference.status,
-            "normal_condition": confirmed_reference.normal_condition,
-        }
-        if confirmed_reference is not None
-        else None
-    )
-    confirmed_reference_trusted = is_normal_baseline_confirmed(confirmed_reference_status)
+    normal_waterline_guides = site_config.normal_waterline_guides
+    normal_waterline_guide_statuses = [
+        {"status": guide.status, "normal_condition": guide.normal_condition}
+        for guide in normal_waterline_guides
+    ]
+    normal_baseline_trusted = is_normal_baseline_confirmed(normal_waterline_guide_statuses)
 
     replay_summary = summarize_jsonl_records(records_path)
     summary_path.write_text(render_summary_markdown(replay_summary), encoding="utf-8")
@@ -164,7 +160,7 @@ def run_local_video_review(
         )
         frames = read_selected_frames(video_path, [before, after])
         evidence_usability_note = None
-        if confirmed_reference_trusted and labels and isinstance(bounds, list) and len(bounds) == 2:
+        if normal_baseline_trusted and labels and isinstance(bounds, list) and len(bounds) == 2:
             matched_label = find_matching_label(
                 labels,
                 video_id=video_path.stem,
@@ -173,7 +169,9 @@ def run_local_video_review(
             if matched_label is not None:
                 # The reference is already trusted, so this can only be a
                 # per-sample quality reason, never "baseline not confirmed".
-                failure_reason = compute_failure_reason(matched_label, confirmed_reference_status)
+                failure_reason = compute_failure_reason(
+                    matched_label, normal_waterline_guide_statuses
+                )
                 if failure_reason is not None:
                     evidence_usability_note = (
                         f"Reference evidence not usable: {failure_reason.replace('_', ' ')}."
@@ -182,7 +180,7 @@ def run_local_video_review(
             [frames[before], frames[after]],
             review_images_dir,
             reference_region=site_config.reference_region,
-            confirmed_reference=confirmed_reference,
+            normal_waterline_guides=normal_waterline_guides,
             evidence_usability_note=evidence_usability_note,
             prefix=_window_image_prefix(image_prefix, bounds, index, len(windows)),
             frame_times=(

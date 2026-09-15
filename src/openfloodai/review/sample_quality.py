@@ -7,7 +7,7 @@ Validation Samples (Issue #164)" for the field contract this module derives from
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -70,25 +70,29 @@ def find_matching_label(
     return None
 
 
-def is_normal_baseline_confirmed(confirmed_reference: Mapping[str, Any] | None) -> bool:
-    """Return whether the site has a confirmed, normal-condition OF-082 reference.
+def is_normal_baseline_confirmed(
+    normal_waterline_guides: Sequence[Mapping[str, Any]] | None,
+) -> bool:
+    """Return whether the site has any confirmed, normal-condition guide.
 
-    Both conditions matter: a reference with status "confirmed" but
+    Both conditions matter per guide: a guide with status "confirmed" but
     normal_condition False was not drawn from normal-condition footage, so it
-    is not a trustworthy baseline to compare against.
+    is not a trustworthy baseline to compare against. One line is enough
+    when only one bank is visible — the guides don't all need to be
+    confirmed for the baseline to be usable.
     """
 
-    if confirmed_reference is None:
+    if not normal_waterline_guides:
         return False
-    return (
-        confirmed_reference.get("status") == "confirmed"
-        and confirmed_reference.get("normal_condition") is True
+    return any(
+        guide.get("status") == "confirmed" and guide.get("normal_condition") is True
+        for guide in normal_waterline_guides
     )
 
 
 def compute_failure_reason(
     record: Mapping[str, object],
-    confirmed_reference: Mapping[str, Any] | None,
+    normal_waterline_guides: Sequence[Mapping[str, Any]] | None,
 ) -> str | None:
     """Return why this sample cannot support riverbank comparison, or None.
 
@@ -108,7 +112,7 @@ def compute_failure_reason(
         return FAILURE_WATER_BOUNDARY_UNCLEAR
     if record.get("visibility_condition") in _POOR_VISIBILITY_CONDITIONS:
         return FAILURE_POOR_VISIBILITY
-    if not is_normal_baseline_confirmed(confirmed_reference):
+    if not is_normal_baseline_confirmed(normal_waterline_guides):
         return FAILURE_BASELINE_NOT_CONFIRMED
     return None
 
@@ -123,7 +127,7 @@ def friendly_failure_reason(reason: str | None) -> str:
 
 def is_baseline_ready(
     record: Mapping[str, object],
-    confirmed_reference: Mapping[str, Any] | None,
+    normal_waterline_guides: Sequence[Mapping[str, Any]] | None,
 ) -> bool:
     """Return whether this sample is trustworthy enough for real comparison.
 
@@ -139,7 +143,7 @@ def is_baseline_ready(
     not to require perfect conditions for every sample.
     """
 
-    if compute_failure_reason(record, confirmed_reference) is not None:
+    if compute_failure_reason(record, normal_waterline_guides) is not None:
         return False
     return (
         record.get("riverbank_visible") == "yes" and record.get("water_boundary_visible") == "yes"
@@ -158,7 +162,7 @@ class SampleQualitySummary:
 
 def summarize_sample_quality(
     records: Iterable[Mapping[str, object]],
-    confirmed_reference: Mapping[str, Any] | None,
+    normal_waterline_guides: Sequence[Mapping[str, Any]] | None,
 ) -> SampleQualitySummary:
     """Summarize baseline-ready vs practice-only counts across samples."""
 
@@ -167,10 +171,10 @@ def summarize_sample_quality(
     reason_counts: Counter[str] = Counter()
 
     for record in records:
-        if is_baseline_ready(record, confirmed_reference):
+        if is_baseline_ready(record, normal_waterline_guides):
             baseline_ready_count += 1
             continue
-        reason = compute_failure_reason(record, confirmed_reference)
+        reason = compute_failure_reason(record, normal_waterline_guides)
         if reason is not None:
             reason_counts[reason] += 1
 

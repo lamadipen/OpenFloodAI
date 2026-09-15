@@ -9,7 +9,7 @@ EXPECTED_STEP_KEYS = [
     "site_setup",
     "video_intake",
     "watched_area",
-    "confirmed_reference",
+    "normal_waterline_guide",
     "human_labels",
     "manifest",
     "run_validation",

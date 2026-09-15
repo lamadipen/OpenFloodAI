@@ -46,8 +46,8 @@ test("one region selector is shared instead of copied per form", () => {
     assert.ok(script.includes(`const ${id} = createRegionSelector({`), `${id} missing`);
   }
   // The Create Site form needs a richer two-phase selector (watched area,
-  // then an optional confirmed-reference rectangle + markers inside it), so
-  // it intentionally uses a different, single, shared factory instead.
+  // then an optional normal-waterline-guide polyline inside it), so it
+  // intentionally uses a different, single, shared factory instead.
   assert.equal(script.match(/function createSiteSetupSelector\(/g).length, 1);
   assert.ok(script.includes("const setupVideoRegionSelector = createSiteSetupSelector({"));
 });

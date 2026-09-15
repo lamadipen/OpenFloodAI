@@ -12,13 +12,13 @@ from openfloodai.review import (
     summarize_sample_quality,
 )
 
-CONFIRMED = {"status": "confirmed", "normal_condition": True}
-CONFIRMED_NOT_NORMAL = {"status": "confirmed", "normal_condition": False}
-DRAFT = {"status": "draft", "normal_condition": True}
+CONFIRMED = [{"status": "confirmed", "normal_condition": True}]
+CONFIRMED_NOT_NORMAL = [{"status": "confirmed", "normal_condition": False}]
+DRAFT = [{"status": "draft", "normal_condition": True}]
 
 
 @pytest.mark.parametrize(
-    ("record", "confirmed_reference", "expected_reason"),
+    ("record", "normal_waterline_guides", "expected_reason"),
     [
         ({"riverbank_visible": "no"}, CONFIRMED, "riverbank_not_visible"),
         ({"stable_marker_visible": "no"}, CONFIRMED, None),
@@ -35,10 +35,10 @@ DRAFT = {"status": "draft", "normal_condition": True}
 )
 def test_compute_failure_reason_priority_order(
     record: dict[str, str],
-    confirmed_reference: dict[str, str] | None,
+    normal_waterline_guides: list[dict[str, object]] | None,
     expected_reason: str | None,
 ) -> None:
-    assert compute_failure_reason(record, confirmed_reference) == expected_reason
+    assert compute_failure_reason(record, normal_waterline_guides) == expected_reason
 
 
 def test_compute_failure_reason_higher_priority_wins_over_lower() -> None:
@@ -59,21 +59,22 @@ def test_compute_failure_reason_ignores_unsure_and_missing() -> None:
 
 
 @pytest.mark.parametrize(
-    ("confirmed_reference", "expected"),
+    ("normal_waterline_guides", "expected"),
     [
         (CONFIRMED, True),
         (CONFIRMED_NOT_NORMAL, False),
-        ({"status": "confirmed"}, False),
+        ([{"status": "confirmed"}], False),
         (DRAFT, False),
-        ({"status": "invalid", "normal_condition": True}, False),
+        ([{"status": "invalid", "normal_condition": True}], False),
         (None, False),
-        ({}, False),
+        ([], False),
+        ([{}], False),
     ],
 )
 def test_is_normal_baseline_confirmed_reads_status(
-    confirmed_reference: dict[str, object] | None, expected: bool
+    normal_waterline_guides: list[dict[str, object]] | None, expected: bool
 ) -> None:
-    assert is_normal_baseline_confirmed(confirmed_reference) is expected
+    assert is_normal_baseline_confirmed(normal_waterline_guides) is expected
 
 
 def test_stable_marker_visible_is_optional_evidence_not_a_requirement() -> None:

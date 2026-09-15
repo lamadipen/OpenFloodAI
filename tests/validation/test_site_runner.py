@@ -258,17 +258,23 @@ def test_scorecard_reports_baseline_ready_and_practice_only_counts(tmp_path: Pat
         "input_type": "local_video",
         "reference_region": {"x": 0, "y": 0, "width": 100, "height": 100},
         "privacy_notes": "Synthetic test config only.",
-        "confirmed_reference": {
-            "status": "confirmed",
-            "region": {"x": 10, "y": 10, "width": 20, "height": 20},
-            "video_id": "rising-001",
-            "video_time_seconds": 5,
-            "site_id": "site-demo-01",
-            "camera_id": "camera-demo-01",
-            "normal_condition": True,
-            "notes": "",
-            "markers": [],
-        },
+        "normal_waterline_guides": [
+            {
+                "id": "left_bank_normal_waterline",
+                "label": "left bank normal waterline",
+                "points": [{"x": 10, "y": 10}, {"x": 30, "y": 30}],
+                "status": "confirmed",
+                "video_id": "rising-001",
+                "video_time_seconds": 5,
+                "site_id": "site-demo-01",
+                "camera_id": "camera-demo-01",
+                "normal_condition": True,
+                "notes": "",
+                "confirmed_at": None,
+                "invalidated_at": None,
+                "invalidation_reason": None,
+            }
+        ],
     }
     (site_dir / "configs" / "site-config.json").write_text(json.dumps(config), encoding="utf-8")
     (site_dir / "labels" / "labels.jsonl").write_text(
@@ -345,7 +351,7 @@ def test_render_site_validation_report_includes_baseline_ready_section(tmp_path:
     assert "- Reference-quality issues:" in rendered
 
 
-def test_rendered_report_shows_confirmed_reference_section_once(tmp_path: Path) -> None:
+def test_rendered_report_shows_normal_waterline_guides_section_once(tmp_path: Path) -> None:
     site_dir = tmp_path / "quality-site"
     (site_dir / "configs").mkdir(parents=True)
     (site_dir / "labels").mkdir(parents=True)
@@ -357,17 +363,23 @@ def test_rendered_report_shows_confirmed_reference_section_once(tmp_path: Path) 
         "input_type": "local_video",
         "reference_region": {"x": 0, "y": 0, "width": 100, "height": 100},
         "privacy_notes": "Synthetic test config only.",
-        "confirmed_reference": {
-            "status": "confirmed",
-            "region": {"x": 10, "y": 10, "width": 20, "height": 20},
-            "video_id": "rising-001",
-            "video_time_seconds": 5,
-            "site_id": "site-demo-01",
-            "camera_id": "camera-demo-01",
-            "normal_condition": True,
-            "notes": "",
-            "markers": [],
-        },
+        "normal_waterline_guides": [
+            {
+                "id": "left_bank_normal_waterline",
+                "label": "left bank normal waterline",
+                "points": [{"x": 10, "y": 10}, {"x": 30, "y": 30}],
+                "status": "confirmed",
+                "video_id": "rising-001",
+                "video_time_seconds": 5,
+                "site_id": "site-demo-01",
+                "camera_id": "camera-demo-01",
+                "normal_condition": True,
+                "notes": "",
+                "confirmed_at": None,
+                "invalidated_at": None,
+                "invalidation_reason": None,
+            }
+        ],
     }
     (site_dir / "configs" / "site-config.json").write_text(json.dumps(config), encoding="utf-8")
     (site_dir / "labels" / "labels.jsonl").write_text(
@@ -399,8 +411,8 @@ def test_rendered_report_shows_confirmed_reference_section_once(tmp_path: Path) 
     report = run_site_validation(site_dir)
     rendered = render_site_validation_report(report)
 
-    assert rendered.count("## Confirmed Reference") == 1
-    assert rendered.count("rising-001' at 5 seconds") == 1
+    assert rendered.count("## Normal Waterline Guides") == 1
+    assert rendered.count("1 of 1 normal waterline guide") == 1
     assert "Riverbank/reference visibility" in rendered
     assert "The riverbank/reference area was visible to the reviewer" in rendered
     assert "The riverbank/reference area was not visible to the reviewer" in rendered
@@ -408,7 +420,7 @@ def test_rendered_report_shows_confirmed_reference_section_once(tmp_path: Path) 
     assert "not usable for comparison: The riverbank or stable reference is not visible" in rendered
 
 
-def test_rendered_report_without_confirmed_reference_still_renders(tmp_path: Path) -> None:
+def test_rendered_report_without_normal_waterline_guides_still_renders(tmp_path: Path) -> None:
     site_dir = tmp_path / "unconfirmed-site"
     (site_dir / "configs").mkdir(parents=True)
     (site_dir / "labels").mkdir(parents=True)
@@ -430,8 +442,8 @@ def test_rendered_report_without_confirmed_reference_still_renders(tmp_path: Pat
     report = run_site_validation(site_dir)
     rendered = render_site_validation_report(report)
 
-    assert "## Confirmed Reference" in rendered
-    assert "No confirmed reference yet." in rendered
+    assert "## Normal Waterline Guides" in rendered
+    assert "No normal waterline guide yet." in rendered
     assert "not usable for comparison: The site does not yet have a confirmed" in rendered
 
 
