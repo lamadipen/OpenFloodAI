@@ -96,6 +96,48 @@ Simple example: instead of asking the model "is there a flood?", we can ask a sm
 
 Important boundary: OpenFloodAI should not copy private product details, claim the same capability, or send automatic public warnings without field validation.
 
+## Nepal Bhote Koshi 2026 Case Study
+
+The Government of Nepal's
+[Rasuwa-Bhote Koshi Flood Event assessment report](https://hydrology.gov.np/cm/files/Assessment%20Report%20II_Bhotekoshi%20Flood_2026_1789276630363.pdf)
+is a useful real-world example for OpenFloodAI.
+
+Key lessons for this project:
+
+- The event was assessed as a sudden outburst linked to an ice-rock avalanche or
+  landslide-dam process, not a normal rainfall flood.
+- Warning time was very short near the source, so slow manual-only review is not
+  enough for future operational systems.
+- Several hydrological stations stopped transmitting or were damaged, so camera
+  evidence can be valuable when gauges fail.
+- Nepal initiated CCTV-based real-time river monitoring at Timure after the
+  event, connected to 24-hour flood forecasting and warning services.
+- The report describes CCTV as a complement to gauges, rainfall, telemetry,
+  satellite/radar information, and field reports, not as a replacement for them.
+- Recorded CCTV footage can support flood travel-time analysis, debris movement
+  review, channel-change review, forecast verification, and future model
+  evaluation.
+
+Simple meaning: this supports OpenFloodAI's camera-first direction. Weather and
+forecast data remain useful cross-checks, but the core product should still
+focus on what the camera saw, what the machine detected, and what the human
+reviewer confirmed.
+
+Useful future label or metadata ideas from this report:
+
+- event type: rainfall flood, GLOF, landslide-dam outburst, debris flow, unknown
+  sudden flood
+- visual evidence: debris, logs, boulders, muddy surge, blockage, obstruction,
+  sudden water rise, camera view lost
+- supporting evidence: rainfall amount, nearby gauge reading, seismic signal,
+  official warning time, field report source
+- system state: gauge available, gauge failed, camera online, camera offline,
+  video usable, video unclear
+
+Important boundary: this case study supports research and validation planning.
+It does not prove OpenFloodAI can detect this class of event yet, and it does
+not authorize automatic public warnings.
+
 ## Open-Source Model Options
 
 ### General Segmentation Models
@@ -409,6 +451,7 @@ Do this before training a custom ML model.
 
 ## Sources
 
+- [Government of Nepal Assessment Report II: Rasuwa-Bhote Koshi Flood Event, 2026](https://hydrology.gov.np/cm/files/Assessment%20Report%20II_Bhotekoshi%20Flood_2026_1789276630363.pdf)
 - [Meta Segment Anything Model 2](https://github.com/facebookresearch/sam2)
 - [Ultralytics YOLO segmentation documentation](https://docs.ultralytics.com/tasks/segment/)
 - [FloodNet supervised dataset](https://github.com/BinaLab/FloodNet-Supervised_v1.0)

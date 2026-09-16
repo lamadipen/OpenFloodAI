@@ -14,6 +14,28 @@ use other information to double-check risk.
 We need understandable evidence, honest unclear results, privacy, and affordable
 local processing. A model score alone must not become a public warning.
 
+### Nepal Bhote Koshi 2026 Lesson
+
+The Government of Nepal's
+[Rasuwa-Bhote Koshi Flood Event assessment report](https://hydrology.gov.np/cm/files/Assessment%20Report%20II_Bhotekoshi%20Flood_2026_1789276630363.pdf)
+supports this camera-first direction. The report says the 26 August 2026 event
+was not a normal rainfall flood. It was assessed as a rapid outburst linked to
+an ice-rock avalanche or landslide-dam process, with very short warning time,
+damaged monitoring stations, and a new CCTV monitoring installation at Timure
+after the event.
+
+Simple meaning: rainfall, gauges, seismic signals, satellite data, and field
+reports are useful cross-checks, but they may not be enough by themselves for a
+sudden Himalayan flood. Direct visual evidence from a camera can help confirm
+what the river is actually doing, especially when a gauge fails or the event is
+not caused by local rain.
+
+For OpenFloodAI, this does not approve automatic public warnings. It does
+confirm that our dataset and validation work should preserve visual evidence of
+sudden water rise, debris, blockage, muddy surge, damaged or missing gauges, and
+short-warning events. Those examples can later help evaluate whether camera
+observations agree with human review and supporting external signals.
+
 ## Options Considered
 
 | Direction | Decision |
