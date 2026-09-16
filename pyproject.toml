@@ -17,6 +17,7 @@ dependencies = [
   "numpy>=2",
   "opencv-python-headless>=4.10",
   "platformdirs>=4.3",
+  "tzdata>=2024.1; platform_system == 'Windows'",
 ]
 
 [project.optional-dependencies]
@@ -41,6 +42,7 @@ packages = ["src/openfloodai"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "tools/openfloodai-home-ui.html" = "openfloodai/ui/static/openfloodai-home-ui.html"
+"tools/openfloodai-river-images.html" = "openfloodai/ui/static/openfloodai-river-images.html"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

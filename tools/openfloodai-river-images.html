@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Download River Images and Video · OpenFloodAI</title>
+    <style>
+      :root { color-scheme: light; font-family: system-ui, sans-serif; color: #18342f; background: #f2f6f3; }
+      body { max-width: 1040px; margin: auto; padding: 28px 20px; }
+      a { color: #12644f; }
+      h1 { margin-bottom: 12px; }
+      p { line-height: 1.6; }
+      form, .notice, article { background: white; border: 1px solid #ccd9d2; border-radius: 12px; padding: 22px; margin: 20px 0; }
+      .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px; }
+      label { display: block; font-weight: 650; }
+      input { box-sizing: border-box; width: 100%; padding: 11px; margin: 7px 0; border: 1px solid #7a9586; border-radius: 6px; font: inherit; }
+      small { display: block; line-height: 1.5; color: #425a50; }
+      button { background: #12644f; color: white; border: 0; border-radius: 7px; padding: 12px 18px; font: inherit; cursor: pointer; margin-top: 20px; }
+      button:disabled { opacity: .65; cursor: wait; }
+      :focus-visible { outline: 3px solid #cf8500; outline-offset: 3px; }
+      #results { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; }
+      article { margin: 0; overflow-wrap: anywhere; }
+      article img, video { width: 100%; border-radius: 6px; }
+      #videoResult, #createdVideoResult { overflow-wrap: anywhere; }
+      #outputDirectory { overflow-wrap: anywhere; }
+      .spinner { display: inline-block; width: 1em; height: 1em; border: 2px solid #a4b8af; border-top-color: #12644f; border-radius: 50%; animation: spin 1s linear infinite; margin-right: 8px; }
+      [hidden] { display: none !important; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <nav aria-label="Workspace navigation"><a href="/openfloodai-home-ui.html">← Back to Home</a></nav>
+      <h1>Download River Images and Video</h1>
+      <p>Save images for a chosen hour, or download a public USGS camera's latest time-lapse video.</p>
+    </header>
+    <main>
+      <p class="notice">This tool uses the internet only when you choose a download. It saves media on this computer. It does not upload your files, add videos to a site, run validation, or send warnings.</p>
+      <form id="downloadForm">
+        <label for="cameraUrl">USGS camera page URL</label>
+        <input id="cameraUrl" name="camera_url" type="url" required value="https://apps.usgs.gov/hivis/camera/CO_Colorado_River_near_Cameo" aria-describedby="cameraHelp">
+        <small id="cameraHelp">Use a camera page from apps.usgs.gov/hivis/camera/.</small>
+        <h2>Latest time-lapse video</h2>
+        <p>Download the latest available MP4 for the camera above. It uses recent camera images, not the date or hour below. Availability varies by camera; the exact capture period is not confirmed.</p>
+        <button id="videoDownloadButton" type="button">Download latest time-lapse video</button>
+        <div role="status" aria-live="polite" style="margin-top: 12px;">
+          <span id="videoSpinner" class="spinner" hidden aria-hidden="true"></span>
+          <span id="videoStatus"></span>
+        </div>
+        <section id="videoResult" aria-label="Latest time-lapse download" aria-busy="false"></section>
+        <h2>Images for a selected hour</h2>
+        <div class="fields" style="margin-top: 20px;">
+          <div><label for="localDate">Date at the camera</label><input id="localDate" type="date" required></div>
+          <div><label for="localTime">Hour at the camera</label><input id="localTime" type="time" step="3600" value="09:00" required></div>
+          <div>
+            <label for="timezone">Camera timezone (optional)</label>
+            <input id="timezone" name="timezone" placeholder="For example, America/Denver" aria-describedby="timezoneHelp">
+            <small id="timezoneHelp">Cameo defaults to America/Denver. For another camera, enter its IANA timezone if automatic lookup is unavailable. Your computer's timezone is not used.</small>
+          </div>
+        </div>
+        <p>We look for the first image in each 15-minute window: :00, :15, :30 and :45. The actual capture time may be later than the start of that window. Missing images are reported, not replaced with images from another hour.</p>
+        <button id="downloadButton" type="submit">Download images</button>
+      </form>
+      <div role="status" aria-live="polite">
+        <span id="downloadSpinner" class="spinner" hidden aria-hidden="true"></span>
+        <span id="downloadStatus">Choose a date and hour to start.</span>
+      </div>
+      <p id="outputDirectory"></p>
+      <section id="results" aria-label="Downloaded images" aria-busy="false"></section>
+      <section id="imageVideoActions" hidden aria-labelledby="imageVideoHeading">
+        <h2 id="imageVideoHeading">Make a test video from these images</h2>
+        <p>Each saved image appears for 5 seconds. No motion is added between images. At least two images are needed. Missing slots are skipped and recorded. This video is for workflow testing; playback time does not represent real elapsed time.</p>
+        <button id="createVideoButton" type="button">Make test video from these images</button>
+        <div role="status" aria-live="polite" style="margin-top: 12px;">
+          <span id="createVideoSpinner" class="spinner" hidden aria-hidden="true"></span>
+          <span id="createVideoStatus"></span>
+        </div>
+        <div id="createdVideoResult" aria-busy="false"></div>
+      </section>
+      <p>Keep downloaded media local unless you have checked permission to share it. Each folder includes download.json with the source and download details. Image capture times are recorded; the latest video's exact capture period is unknown. Time-lapse playback time is not real elapsed time. This media is research material, not proof of flood danger.</p>
+    </main>
+    <script>
+      const form = document.getElementById("downloadForm");
+      const button = document.getElementById("downloadButton");
+      const spinner = document.getElementById("downloadSpinner");
+      const status = document.getElementById("downloadStatus");
+      const results = document.getElementById("results");
+      const output = document.getElementById("outputDirectory");
+      const imageVideoActions = document.getElementById("imageVideoActions");
+      const createVideoButton = document.getElementById("createVideoButton");
+      const createVideoSpinner = document.getElementById("createVideoSpinner");
+      const createVideoStatus = document.getElementById("createVideoStatus");
+      const createdVideoResult = document.getElementById("createdVideoResult");
+      let imageBatch = null;
+      let makingVideo = false;
+      let downloading = false;
+
+      function addText(parent, tag, text) {
+        const element = document.createElement(tag);
+        element.textContent = text;
+        parent.appendChild(element);
+        return element;
+      }
+
+      function renderResults(payload) {
+        output.textContent = `Saved folder: ${payload.output_directory} · Camera timezone: ${payload.timezone}`;
+        for (const image of payload.images) {
+          const card = document.createElement("article");
+          addText(card, "h2", image.status === "downloaded" ? "Image saved" : image.status === "missing" ? "No image available" : "Download failed");
+          addText(card, "p", `Requested window starts: ${image.requested_utc} (UTC)`);
+          addText(card, "p", image.message);
+          if (image.status === "downloaded") {
+            addText(card, "p", `Actual capture: ${image.captured_utc} (UTC)`);
+            const url = `/api/river-image?${new URLSearchParams({batch_id: payload.batch_id, filename: image.filename})}`;
+            const link = document.createElement("a");
+            link.href = url;
+            link.target = "_blank";
+            link.rel = "noopener";
+            const preview = document.createElement("img");
+            preview.src = url;
+            preview.alt = `River image captured at ${image.captured_utc}. Open full-size image.`;
+            preview.loading = "lazy";
+            preview.addEventListener("error", () => {
+              preview.hidden = true;
+              addText(card, "p", "Preview unavailable. The downloaded file may have been moved or removed.");
+            });
+            link.appendChild(preview);
+            card.appendChild(link);
+            addText(card, "p", image.filename);
+          }
+          results.appendChild(card);
+        }
+        imageBatch = payload.batch_id;
+        imageVideoActions.hidden = false;
+        createVideoButton.disabled = payload.images.filter(image => image.status === "downloaded").length < 2;
+        createVideoStatus.textContent = createVideoButton.disabled ? "Download at least two images to make a test video." : "Ready to make a local test video.";
+      }
+
+      function addVideoPlayer(parent, payload) {
+        const url = `/api/river-video?${new URLSearchParams({batch_id: payload.batch_id, filename: payload.filename})}`;
+        const player = document.createElement("video");
+        player.controls = true;
+        player.preload = "metadata";
+        player.src = url;
+        player.setAttribute("aria-label", "Local river time-lapse video");
+        player.addEventListener("error", () => {
+          addText(parent, "p", "Playback unavailable in this browser. Use Save video to open the MP4 in a local player.");
+        });
+        parent.appendChild(player);
+        const link = addText(parent, "a", "Save video");
+        link.href = `${url}&download=1`;
+        link.download = payload.filename;
+      }
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (downloading || makingVideo) return;
+        downloading = true;
+        button.disabled = true;
+        spinner.hidden = false;
+        results.setAttribute("aria-busy", "true");
+        results.replaceChildren();
+        output.textContent = "";
+        imageBatch = null;
+        imageVideoActions.hidden = true;
+        createdVideoResult.replaceChildren();
+        status.textContent = "Downloading from USGS… Keep this page open. This may take a few minutes.";
+        try {
+          const response = await fetch("/api/download-river-images", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+              camera_url: document.getElementById("cameraUrl").value.trim(),
+              local_hour: `${document.getElementById("localDate").value} ${document.getElementById("localTime").value}`,
+              timezone: document.getElementById("timezone").value.trim(),
+            }),
+          });
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.message || "Download request failed.");
+          renderResults(payload);
+          status.textContent = payload.message;
+        } catch (error) {
+          status.textContent = `Could not complete the download: ${error.message}. If the server was updated, restart it and refresh this page.`;
+        } finally {
+          downloading = false;
+          button.disabled = false;
+          spinner.hidden = true;
+          results.setAttribute("aria-busy", "false");
+        }
+      });
+
+      const videoButton = document.getElementById("videoDownloadButton");
+      const videoSpinner = document.getElementById("videoSpinner");
+      const videoStatus = document.getElementById("videoStatus");
+      const videoResult = document.getElementById("videoResult");
+      let downloadingVideo = false;
+
+      videoButton.addEventListener("click", async () => {
+        const camera = document.getElementById("cameraUrl");
+        if (downloadingVideo || !camera.reportValidity()) return;
+        downloadingVideo = true;
+        videoButton.disabled = true;
+        videoSpinner.hidden = false;
+        videoResult.setAttribute("aria-busy", "true");
+        videoResult.replaceChildren();
+        videoStatus.textContent = "Downloading the latest time-lapse from USGS… Keep this page open.";
+        try {
+          const response = await fetch("/api/download-river-timelapse", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({camera_url: camera.value.trim()}),
+          });
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.message || "Video download failed.");
+          videoStatus.textContent = payload.message;
+          addText(videoResult, "p", `Saved folder: ${payload.output_directory}`);
+          addText(videoResult, "p", `Downloaded at: ${payload.downloaded_at_utc} (UTC). This is not the capture time.`);
+          addVideoPlayer(videoResult, payload);
+        } catch (error) {
+          videoStatus.textContent = `Could not download the latest video: ${error.message}. If the server was updated, restart it and refresh this page.`;
+        } finally {
+          downloadingVideo = false;
+          videoButton.disabled = false;
+          videoSpinner.hidden = true;
+          videoResult.setAttribute("aria-busy", "false");
+        }
+      });
+
+      createVideoButton.addEventListener("click", async () => {
+        if (makingVideo || downloading || !imageBatch || createVideoButton.disabled) return;
+        makingVideo = true;
+        createVideoButton.disabled = true;
+        button.disabled = true;
+        createVideoSpinner.hidden = false;
+        createdVideoResult.setAttribute("aria-busy", "true");
+        createdVideoResult.replaceChildren();
+        createVideoStatus.textContent = "Making a test video from the saved images…";
+        try {
+          const response = await fetch("/api/create-river-test-video", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({batch_id: imageBatch}),
+          });
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.message || "Could not make the test video.");
+          createVideoStatus.textContent = payload.message;
+          addText(createdVideoResult, "p", `${payload.source_image_count} images → ${payload.duration_seconds} seconds of test video. Saved folder: ${payload.output_directory}`);
+          addVideoPlayer(createdVideoResult, payload);
+          addText(createdVideoResult, "p", "Source capture times (also saved in download.json):");
+          for (const frame of payload.frames) {
+            const [start, end] = frame.playback_time_window_seconds;
+            addText(createdVideoResult, "p", `Video ${start}–${end}s: image captured at ${frame.captured_utc}`);
+          }
+          if (payload.skipped_slots.length) {
+            addText(createdVideoResult, "p", `${payload.skipped_slots.length} missing or failed image slots were skipped. This video has gaps in its source observations.`);
+          }
+          addText(createdVideoResult, "p", "Use Add Video in your site to import this MP4 for testing. Label windows use playback seconds. Keep download.json with the original generated video for its capture-time mapping.");
+        } catch (error) {
+          createVideoStatus.textContent = `Could not make the test video: ${error.message}`;
+        } finally {
+          makingVideo = false;
+          createVideoButton.disabled = false;
+          button.disabled = false;
+          createVideoSpinner.hidden = true;
+          createdVideoResult.setAttribute("aria-busy", "false");
+        }
+      });
+    </script>
+  </body>
+</html>

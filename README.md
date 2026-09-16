@@ -612,6 +612,18 @@ http://127.0.0.1:8765/openfloodai-home-ui.html
 
 The launcher is a thin command wrapper; reusable Home UI server code lives in `src/openfloodai/ui/home_server.py`. Tests and other Python modules import the handler from `openfloodai.ui.home_server`.
 
+Choose **Download River Images and Video** at the top of Home to open the public USGS archive
+downloader. Choose a camera, date, hour and camera timezone, then select **Download
+images**. The page shows saved images, actual capture times, missing images, and the
+local folder. **Download latest time-lapse video** saves the camera's recent MP4,
+independently of the selected image date/hour, with playback and a **Save video**
+link. After downloading at least two images, **Make test video from these images**
+creates a separate MP4 with five playback seconds per image and a capture-time map.
+Import it through your site's existing Add Video action for workflow testing.
+**Back to Home** returns to validation. Restart the server after
+updating Python code. See [Download river images](docs/learning/river-image-downloader.md)
+for timezone setup, storage, and command-line usage.
+
 Simple meaning: this page checks folders under `data/sites/` and shows whether each site has config, videos, labels, manifest, output reports, and a latest report.
 
 Use the **Guided workflow** or **Classic view** switch below the page heading to

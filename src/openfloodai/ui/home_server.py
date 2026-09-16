@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from email.parser import BytesParser
 from email.policy import HTTP
 from http.server import SimpleHTTPRequestHandler
+from importlib import resources
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlencode, urlsplit
@@ -24,6 +25,13 @@ from openfloodai.config import (
     write_normal_waterline_guide,
     write_normal_waterline_guides,
     write_reference_region,
+)
+from openfloodai.ingestion.image_video import create_image_test_video
+from openfloodai.ingestion.river_images import (
+    download_latest_timelapse,
+    download_river_images,
+    resolve_downloaded_image,
+    resolve_downloaded_video,
 )
 from openfloodai.review import (
     ALLOWED_CONFIDENCE_LEVELS,
@@ -68,6 +76,15 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         """Serve site-status JSON or the static local UI."""
 
         path = urlsplit(self.path).path
+        if path == "/river-images.html":
+            self._send_river_images_page()
+            return
+        if path == "/api/river-image":
+            self._send_river_image()
+            return
+        if path == "/api/river-video":
+            self._send_river_video()
+            return
         if path in {"/api/review-images", "/api/review-image"}:
             self._send_review_images(single_image=path == "/api/review-image")
             return
@@ -244,6 +261,15 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
     def do_POST(self) -> None:
         """Handle site setup and video intake requests."""
 
+        if self.path == "/api/download-river-images":
+            self._handle_download_river_images()
+            return
+        if self.path == "/api/download-river-timelapse":
+            self._handle_download_river_images(timelapse=True)
+            return
+        if self.path == "/api/create-river-test-video":
+            self._handle_download_river_images(create_video=True)
+            return
         if self.path == "/api/setup-site-with-video":
             self._handle_setup_site_with_video()
             return
@@ -287,6 +313,118 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
 
     def log_message(self, format: str, *args: Any) -> None:
         """Keep local UI output quiet."""
+
+    def _send_river_images_page(self) -> None:
+        source = self.ui_path.parent / "openfloodai-river-images.html"
+        if source.is_file():
+            self._send_file(source, content_type="text/html; charset=utf-8")
+            return
+        # Wheel and desktop builds carry the page as a package resource.
+        page = resources.files("openfloodai.ui") / "static" / "openfloodai-river-images.html"
+        if not page.is_file():
+            self.send_error(404, "River image page not found")
+            return
+        body = page.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _handle_download_river_images(
+        self, *, timelapse: bool = False, create_video: bool = False
+    ) -> None:
+        # Only the explicit JSON form action may initiate outbound archive requests.
+        origin = self.headers.get("Origin")
+        if origin and origin != f"http://{self.headers.get('Host')}":
+            self._send_json({"message": "Open this form from the local Home UI."}, status_code=403)
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = 0
+        if not 0 < length <= 4096 or self.headers.get_content_type() != "application/json":
+            self._send_json({"message": "Send a small JSON download request."}, status_code=400)
+            return
+        data = self._read_json_body()
+        if data is None:
+            return
+        try:
+            if create_video:
+                payload = create_image_test_video(
+                    root=self.sites_dir.resolve().parent / "river-images",
+                    source_batch_id=str(data.get("batch_id", "")),
+                )
+                self._send_json(payload, status_code=200)
+                return
+            if timelapse:
+                payload = download_latest_timelapse(
+                    camera_url=str(data.get("camera_url", "")),
+                    output_root=self.sites_dir.resolve().parent / "river-images",
+                )
+                self._send_json(payload, status_code=200)
+                return
+            result = download_river_images(
+                camera_url=str(data.get("camera_url", "")),
+                local_hour=str(data.get("local_hour", "")),
+                timezone_name=str(data.get("timezone", "")),
+                output_root=self.sites_dir.resolve().parent / "river-images",
+            )
+            # A completed batch may include missing/failed slots. Return all four outcomes.
+            self._send_json(result.to_dict(), status_code=200)
+        except ValueError as error:
+            self._send_json({"message": str(error)}, status_code=400)
+        except OSError:
+            self._send_json(
+                {"message": "Could not save the download. Check local disk space and permissions."},
+                status_code=500,
+            )
+
+    def _send_river_image(self) -> None:
+        query = parse_qs(urlsplit(self.path).query)
+        try:
+            path = resolve_downloaded_image(
+                self.sites_dir.resolve().parent / "river-images",
+                query.get("batch_id", [""])[0],
+                query.get("filename", [""])[0],
+            )
+            self._send_file(path, content_type="image/jpeg")
+        except (OSError, ValueError, KeyError, TypeError):
+            self.send_error(404, "Downloaded image not found")
+
+    def _send_river_video(self) -> None:
+        query = parse_qs(urlsplit(self.path).query)
+        try:
+            path = resolve_downloaded_video(
+                self.sites_dir.resolve().parent / "river-images",
+                query.get("batch_id", [""])[0],
+                query.get("filename", [""])[0],
+            )
+            size = path.stat().st_size
+            video = path.open("rb")
+        except (OSError, ValueError, KeyError, TypeError):
+            self.send_error(404, "Downloaded video not found")
+            return
+        with video:
+            start, end = _parse_byte_range(self.headers.get("Range"), size)
+            partial = (start, end) != (0, size - 1)
+            self.send_response(206 if partial else 200)
+            self.send_header("Content-Type", "video/mp4")
+            self.send_header("Content-Length", str(end - start + 1))
+            self.send_header("Accept-Ranges", "bytes")
+            if partial:
+                self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+            if query.get("download") == ["1"]:
+                self.send_header("Content-Disposition", f'attachment; filename="{path.name}"')
+            self.end_headers()
+            video.seek(start)
+            remaining = end - start + 1
+            while remaining > 0:
+                block = video.read(min(64 * 1024, remaining))
+                if not block:
+                    break
+                self.wfile.write(block)
+                remaining -= len(block)
 
     def _handle_setup_site(self) -> None:
         data = self._read_json_body()
@@ -1093,7 +1231,8 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             "visibility_condition_options": sorted(ALLOWED_VISIBILITY_CONDITIONS),
             "safety_note": (
                 "This local UI stays on this computer. It does not upload videos, "
-                "connect to cameras, send alerts, train ML, or publish warnings."
+                "send alerts, train ML, or publish warnings. The River Images and Video page can "
+                "download public USGS archive images and latest time-lapse videos on request."
             ),
         }
         body = json.dumps(payload, indent=2).encode("utf-8")
