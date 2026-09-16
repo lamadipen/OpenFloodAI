@@ -1,0 +1,1810 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Site Details · OpenFloodAI</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #eef3f6;
+        --panel: #ffffff;
+        --panel-2: #f7fafc;
+        --ink: #1f2933;
+        --muted: #667085;
+        --faint: #98a2b3;
+        --line: #e1e7ec;
+        --soft-line: #edf1f5;
+        --ok: #176c4f;
+        --ok-bg: #e8f6ef;
+        --warn: #9a5b13;
+        --warn-bg: #fff6df;
+        --missing: #9b1c31;
+        --missing-bg: #fff0f3;
+        --accent: #1769aa;
+        --accent-strong: #0d4d7d;
+        --accent-bg: #e9f4fb;
+        --shadow-sm: 0 2px 8px rgba(31, 41, 51, 0.06);
+        --shadow: 0 18px 45px rgba(31, 41, 51, 0.1);
+        --radius: 14px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+      }
+
+      body {
+        background:
+          linear-gradient(180deg, #ddebf2 0, rgba(238, 243, 246, 0) 340px),
+          var(--bg);
+        color: var(--ink);
+        font: 15px/1.55 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        min-height: 100vh;
+      }
+
+      a {
+        color: var(--accent);
+      }
+
+      [hidden] {
+        display: none !important;
+      }
+
+      button {
+        font: inherit;
+        cursor: pointer;
+      }
+
+      /* ---------- Top bar ---------- */
+
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        background: rgba(255, 255, 255, 0.92);
+        backdrop-filter: blur(6px);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .topbar-inner {
+        max-width: 1240px;
+        margin: 0 auto;
+        padding: 14px 24px;
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        flex-wrap: wrap;
+      }
+
+      .back-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--muted);
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 14px;
+        padding: 6px 10px;
+        border-radius: 8px;
+        white-space: nowrap;
+      }
+
+      .back-link:hover {
+        background: var(--panel-2);
+        color: var(--ink);
+      }
+
+      .brand {
+        font-weight: 800;
+        color: var(--accent-strong);
+        font-size: 15px;
+        letter-spacing: 0.02em;
+        white-space: nowrap;
+      }
+
+      .topbar-spacer {
+        flex: 1 1 auto;
+      }
+
+      .site-switcher {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .site-switcher label {
+        font-size: 12px;
+        color: var(--muted);
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      select,
+      input[type="text"],
+      input[type="number"] {
+        font: inherit;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 8px 10px;
+        background: var(--panel);
+        color: var(--ink);
+      }
+
+      #siteSwitcher {
+        min-width: 0;
+        max-width: 100%;
+        flex: 1 1 180px;
+      }
+
+      /* ---------- Layout ---------- */
+
+      main {
+        max-width: 1240px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+
+      .hero {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        padding: 26px 28px;
+        margin-bottom: 20px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 20px;
+        align-items: flex-start;
+        justify-content: space-between;
+      }
+
+      .hero-title {
+        min-width: 260px;
+      }
+
+      .hero-eyebrow {
+        color: var(--accent-strong);
+        font-size: 12px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin-bottom: 6px;
+      }
+
+      .hero h1 {
+        margin: 0 0 6px;
+        font-size: 28px;
+        font-weight: 800;
+        word-break: break-word;
+      }
+
+      .hero-path {
+        color: var(--faint);
+        font-size: 13px;
+        overflow-wrap: anywhere;
+      }
+
+      .hero-badges {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 12px;
+      }
+
+      .hero-stats {
+        display: flex;
+        gap: 22px;
+        flex-wrap: wrap;
+      }
+
+      .hero-stat {
+        text-align: center;
+        min-width: 80px;
+      }
+
+      .hero-stat-value {
+        font-size: 26px;
+        font-weight: 800;
+        color: var(--accent-strong);
+      }
+
+      .hero-stat-label {
+        font-size: 12px;
+        color: var(--muted);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+      }
+
+      /* ---------- Badges ---------- */
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 12px;
+        font-weight: 700;
+        padding: 4px 10px;
+        border-radius: 999px;
+        white-space: nowrap;
+      }
+
+      .badge.ok {
+        background: var(--ok-bg);
+        color: var(--ok);
+      }
+
+      .badge.warn {
+        background: var(--warn-bg);
+        color: var(--warn);
+      }
+
+      .badge.missing {
+        background: var(--missing-bg);
+        color: var(--missing);
+      }
+
+      .badge.neutral {
+        background: var(--accent-bg);
+        color: var(--accent-strong);
+      }
+
+      .badge.plain {
+        background: var(--panel-2);
+        color: var(--muted);
+      }
+
+      /* ---------- Tabs ---------- */
+
+      .tabs {
+        display: flex;
+        gap: 4px;
+        border-bottom: 1px solid var(--line);
+        margin-bottom: 22px;
+        overflow-x: auto;
+      }
+
+      .tab {
+        background: transparent;
+        border: 0;
+        padding: 12px 18px;
+        font-weight: 700;
+        color: var(--muted);
+        border-bottom: 3px solid transparent;
+        white-space: nowrap;
+      }
+
+      .tab:hover {
+        color: var(--ink);
+      }
+
+      .tab[aria-selected="true"] {
+        color: var(--accent-strong);
+        border-bottom-color: var(--accent-strong);
+      }
+
+      .tab-panel {
+        animation: fade-in 0.15s ease-out;
+      }
+
+      @keyframes fade-in {
+        from {
+          opacity: 0;
+          transform: translateY(4px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      /* ---------- Cards ---------- */
+
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-sm);
+        padding: 20px 22px;
+        margin-bottom: 18px;
+      }
+
+      .card-title {
+        font-size: 13px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+        margin: 0 0 14px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .card-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 18px;
+      }
+
+      .empty-state {
+        text-align: center;
+        padding: 34px 20px;
+        color: var(--muted);
+      }
+
+      .empty-state-icon {
+        font-size: 32px;
+        margin-bottom: 8px;
+      }
+
+      /* ---------- Key/value grid ---------- */
+
+      .kv-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 14px 22px;
+      }
+
+      .kv {
+        min-width: 0;
+      }
+
+      .kv-label {
+        font-size: 12px;
+        color: var(--muted);
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        margin-bottom: 3px;
+        overflow-wrap: anywhere;
+      }
+
+      .kv-value {
+        font-size: 14px;
+        overflow-wrap: anywhere;
+      }
+
+      /* ---------- Quick actions ---------- */
+
+      .quick-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        color: var(--ink);
+        border-radius: 9px;
+        padding: 9px 14px;
+        font-weight: 650;
+        font-size: 13.5px;
+        text-decoration: none;
+        transition: transform 0.05s ease-out, box-shadow 0.1s ease-out;
+      }
+
+      .btn:hover {
+        box-shadow: var(--shadow-sm);
+        transform: translateY(-1px);
+      }
+
+      .btn:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+        transform: none;
+        box-shadow: none;
+      }
+
+      .btn.primary {
+        background: var(--accent-strong);
+        border-color: var(--accent-strong);
+        color: #fff;
+      }
+
+      .btn.danger {
+        background: var(--missing-bg);
+        border-color: #f4c4cd;
+        color: var(--missing);
+      }
+
+      .btn.small {
+        padding: 6px 10px;
+        font-size: 12.5px;
+        border-radius: 7px;
+      }
+
+      /* ---------- Readiness checklist ---------- */
+
+      .readiness-checks {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 10px;
+      }
+
+      .readiness-check {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: var(--panel-2);
+        border-radius: 8px;
+        padding: 9px 12px;
+        font-size: 13px;
+      }
+
+      .readiness-check-label {
+        color: var(--muted);
+        font-weight: 600;
+      }
+
+      .readiness-check-value.ok {
+        color: var(--ok);
+        font-weight: 700;
+      }
+
+      .readiness-check-value.missing {
+        color: var(--missing);
+        font-weight: 700;
+      }
+
+      /* ---------- Videos ---------- */
+
+      .video-card {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+        background: var(--panel-2);
+      }
+
+      .video-card-head {
+        padding: 14px 16px 0;
+      }
+
+      .video-card-id {
+        font-weight: 800;
+        font-size: 15px;
+        overflow-wrap: anywhere;
+      }
+
+      .video-card-filename {
+        color: var(--faint);
+        font-size: 12px;
+        overflow-wrap: anywhere;
+      }
+
+      .video-card-body {
+        padding: 12px 16px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .chip {
+        font-size: 11.5px;
+        font-weight: 700;
+        padding: 3px 9px;
+        border-radius: 999px;
+        background: var(--accent-bg);
+        color: var(--accent-strong);
+      }
+
+      .video-note {
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .video-preview-wrap {
+        display: none;
+        margin-top: 6px;
+      }
+
+      .video-preview-wrap.open {
+        display: block;
+      }
+
+      .video-preview-wrap video {
+        width: 100%;
+        border-radius: 8px;
+        background: #182b35;
+      }
+
+      .video-card-meta {
+        font-size: 12px;
+        color: var(--faint);
+      }
+
+      /* ---------- Config visuals ---------- */
+
+      .region-preview {
+        width: 100%;
+        aspect-ratio: 16 / 9;
+        background: repeating-linear-gradient(
+            45deg,
+            #eef3f6 0 10px,
+            #e4ecf1 10px 20px
+          );
+        border-radius: 10px;
+        position: relative;
+        overflow: hidden;
+        border: 1px solid var(--line);
+      }
+
+      .region-preview svg {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+
+      .guide-card {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 14px 16px;
+        background: var(--panel-2);
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .guide-preview {
+        width: 130px;
+        height: 74px;
+        flex: 0 0 auto;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: #fff;
+      }
+
+      .guide-info {
+        flex: 1 1 220px;
+        min-width: 0;
+      }
+
+      /* ---------- Runs ---------- */
+
+      .compare-bar {
+        position: sticky;
+        bottom: 16px;
+        z-index: 15;
+        display: none;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        background: var(--accent-strong);
+        color: #fff;
+        border-radius: 12px;
+        padding: 12px 18px;
+        box-shadow: var(--shadow);
+        margin: 10px 0;
+      }
+
+      .compare-bar.visible {
+        display: flex;
+      }
+
+      .compare-bar .btn {
+        background: #fff;
+        color: var(--accent-strong);
+        border: 0;
+      }
+
+      .compare-bar .btn.ghost {
+        background: transparent;
+        color: #fff;
+        border: 1px solid rgba(255, 255, 255, 0.5);
+      }
+
+      .run-card {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        margin-bottom: 12px;
+        background: var(--panel);
+        overflow: hidden;
+      }
+
+      .run-card-head {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 14px 16px;
+        cursor: pointer;
+        flex-wrap: wrap;
+      }
+
+      .run-card-head:hover {
+        background: var(--panel-2);
+      }
+
+      .run-checkbox {
+        width: 18px;
+        height: 18px;
+        flex: 0 0 auto;
+      }
+
+      .run-head-main {
+        flex: 1 1 220px;
+        min-width: 0;
+      }
+
+      .run-id {
+        font-weight: 800;
+        font-size: 14px;
+        overflow-wrap: anywhere;
+      }
+
+      .run-time {
+        color: var(--faint);
+        font-size: 12.5px;
+      }
+
+      .run-counts {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .run-caret {
+        color: var(--faint);
+        transition: transform 0.15s ease-out;
+        font-size: 13px;
+      }
+
+      .run-card.open .run-caret {
+        transform: rotate(90deg);
+      }
+
+      .run-card-body {
+        display: none;
+        border-top: 1px solid var(--soft-line);
+        padding: 16px;
+      }
+
+      .run-card.open .run-card-body {
+        display: block;
+      }
+
+      .run-tabs {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 12px;
+        flex-wrap: wrap;
+      }
+
+      .run-tab {
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        padding: 6px 11px;
+        font-size: 12.5px;
+        font-weight: 700;
+        color: var(--muted);
+      }
+
+      .run-tab[aria-selected="true"] {
+        background: var(--accent-strong);
+        border-color: var(--accent-strong);
+        color: #fff;
+      }
+
+      .run-tab-panel {
+        display: none;
+      }
+
+      .run-tab-panel.active {
+        display: block;
+      }
+
+      .report-text {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        background: var(--panel-2);
+        border-radius: 8px;
+        padding: 14px;
+        font: 12.5px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+        max-height: 480px;
+        overflow: auto;
+      }
+
+      .image-gallery {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        gap: 12px;
+      }
+
+      .image-gallery figure {
+        margin: 0;
+      }
+
+      .image-gallery img {
+        width: 100%;
+        border-radius: 8px;
+        display: block;
+      }
+
+      .image-gallery figcaption {
+        font-size: 11px;
+        color: var(--faint);
+        overflow-wrap: anywhere;
+        margin-top: 4px;
+      }
+
+      /* ---------- Compare table ---------- */
+
+      .compare-table-wrap {
+        overflow-x: auto;
+      }
+
+      table.compare-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+
+      table.compare-table th,
+      table.compare-table td {
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--soft-line);
+        text-align: left;
+        white-space: nowrap;
+      }
+
+      table.compare-table th {
+        color: var(--muted);
+        font-weight: 700;
+        background: var(--panel-2);
+        position: sticky;
+        top: 0;
+      }
+
+      table.compare-table td.metric-label {
+        font-weight: 700;
+        color: var(--muted);
+        position: sticky;
+        left: 0;
+        background: var(--panel);
+      }
+
+      table.compare-table td.differs {
+        background: var(--warn-bg);
+      }
+
+      /* ---------- Misc ---------- */
+
+      .loading-line {
+        color: var(--muted);
+        font-size: 13px;
+        padding: 8px 0;
+      }
+
+      .status-line {
+        font-size: 13px;
+        color: var(--muted);
+        margin-top: 8px;
+      }
+
+      .status-line.error {
+        color: var(--missing);
+      }
+
+      .status-line.success {
+        color: var(--ok);
+      }
+
+      @media (max-width: 640px) {
+        .hero {
+          flex-direction: column;
+        }
+        .topbar-inner {
+          padding: 12px 16px;
+        }
+        .site-switcher {
+          flex: 1 1 100%;
+          min-width: 0;
+        }
+        main {
+          padding: 16px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="topbar">
+      <div class="topbar-inner">
+        <a class="back-link" href="/openfloodai-home-ui.html">&larr; All Sites</a>
+        <span class="brand">OpenFloodAI</span>
+        <div class="topbar-spacer"></div>
+        <div class="site-switcher">
+          <label for="siteSwitcher">Site</label>
+          <select id="siteSwitcher"></select>
+        </div>
+      </div>
+    </div>
+
+    <main>
+      <div id="loadError" class="card" hidden>
+        <div class="card-title">Could not load this site</div>
+        <p id="loadErrorText" class="status-line error"></p>
+      </div>
+
+      <div id="siteContent" hidden>
+        <section class="hero">
+          <div class="hero-title">
+            <div class="hero-eyebrow">Validation site</div>
+            <h1 id="siteName"></h1>
+            <div class="hero-path" id="sitePath"></div>
+            <div class="hero-badges" id="siteBadges"></div>
+          </div>
+          <div class="hero-stats" id="heroStats"></div>
+        </section>
+
+        <nav class="tabs" role="tablist" aria-label="Site sections">
+          <button class="tab" role="tab" data-tab="overview" aria-selected="true">Overview</button>
+          <button class="tab" role="tab" data-tab="videos" aria-selected="false">Videos</button>
+          <button class="tab" role="tab" data-tab="config" aria-selected="false">Config</button>
+          <button class="tab" role="tab" data-tab="runs" aria-selected="false">Runs</button>
+        </nav>
+
+        <section class="tab-panel" id="panel-overview" role="tabpanel"></section>
+        <section class="tab-panel" id="panel-videos" role="tabpanel" hidden></section>
+        <section class="tab-panel" id="panel-config" role="tabpanel" hidden></section>
+        <section class="tab-panel" id="panel-runs" role="tabpanel" hidden></section>
+      </div>
+    </main>
+
+    <script>
+      // ---------------------------------------------------------------
+      // Shared state and small helpers
+      // ---------------------------------------------------------------
+      let latestSites = [];
+      let currentSite = null;
+      let manifestByVideoId = {};
+      let siteConfig = null;
+      const runDetailCache = new Map();
+      const selectedRunIds = new Set();
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      function formatDateTime(value) {
+        if (!value) return "Unknown time";
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return String(value);
+        return date.toLocaleString(undefined, {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+      }
+
+      function fallback(value, text = "Not available") {
+        return value === undefined || value === null || value === "" ? text : value;
+      }
+
+      function runDirFromReportPath(reportPath) {
+        if (!reportPath) return null;
+        return reportPath.replace(/\/validation-report\.md$/, "");
+      }
+
+      // ---------------------------------------------------------------
+      // Bootstrap
+      // ---------------------------------------------------------------
+      const requestedSiteName = new URLSearchParams(window.location.search).get("site");
+      const siteSwitcher = document.getElementById("siteSwitcher");
+      const loadError = document.getElementById("loadError");
+      const loadErrorText = document.getElementById("loadErrorText");
+      const siteContent = document.getElementById("siteContent");
+
+      async function bootstrap() {
+        try {
+          const response = await fetch("/api/sites");
+          if (!response.ok) throw new Error(`Request failed: ${response.status}`);
+          const payload = await response.json();
+          latestSites = payload.sites || [];
+          if (!latestSites.length) {
+            showLoadError("No sites exist yet. Go back and create a site first.");
+            return;
+          }
+          fillSiteSwitcher();
+          const initial =
+            latestSites.find((site) => site.site_name === requestedSiteName) || latestSites[0];
+          siteSwitcher.value = initial.site_name;
+          await selectSite(initial.site_name);
+        } catch (error) {
+          showLoadError(`Could not load site data: ${error.message}`);
+        }
+      }
+
+      function showLoadError(message) {
+        loadError.hidden = false;
+        siteContent.hidden = true;
+        loadErrorText.textContent = message;
+      }
+
+      function fillSiteSwitcher() {
+        siteSwitcher.innerHTML = "";
+        for (const site of latestSites) {
+          const option = document.createElement("option");
+          option.value = site.site_name;
+          option.textContent = site.site_name;
+          siteSwitcher.append(option);
+        }
+      }
+
+      siteSwitcher.addEventListener("change", () => {
+        const params = new URLSearchParams(window.location.search);
+        params.set("site", siteSwitcher.value);
+        history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
+        selectSite(siteSwitcher.value);
+      });
+
+      async function selectSite(siteName) {
+        const site = latestSites.find((entry) => entry.site_name === siteName);
+        if (!site) {
+          showLoadError(`Site not found: ${siteName}`);
+          return;
+        }
+        currentSite = site;
+        selectedRunIds.clear();
+        runDetailCache.clear();
+        loadError.hidden = true;
+        siteContent.hidden = false;
+        renderHero(site);
+        renderOverviewTab(site);
+        renderVideosTab(site);
+        renderConfigTab(site);
+        renderRunsTab(site);
+        // Config and manifest are fetched lazily; both tabs render a loading
+        // state immediately above, then fill in once these resolve.
+        await Promise.all([loadSiteConfig(site), loadSiteManifest(site)]);
+        renderVideosTab(site);
+        renderConfigTab(site);
+      }
+
+      async function loadSiteConfig(site) {
+        siteConfig = null;
+        try {
+          const response = await fetch(
+            `/api/site-config?${new URLSearchParams({ folder_name: site.site_name })}`
+          );
+          if (!response.ok) return;
+          const payload = await response.json();
+          siteConfig = payload.config || null;
+        } catch (error) {
+          siteConfig = null;
+        }
+      }
+
+      async function loadSiteManifest(site) {
+        manifestByVideoId = {};
+        try {
+          const response = await fetch(
+            `/api/site-manifest?${new URLSearchParams({ folder_name: site.site_name })}`
+          );
+          if (!response.ok) return;
+          const payload = await response.json();
+          for (const record of payload.records || []) {
+            if (record && record.video_id) manifestByVideoId[record.video_id] = record;
+          }
+        } catch (error) {
+          manifestByVideoId = {};
+        }
+      }
+
+      // ---------------------------------------------------------------
+      // Tabs
+      // ---------------------------------------------------------------
+      for (const tab of document.querySelectorAll(".tab")) {
+        tab.addEventListener("click", () => {
+          for (const other of document.querySelectorAll(".tab")) {
+            other.setAttribute("aria-selected", String(other === tab));
+          }
+          for (const panel of document.querySelectorAll(".tab-panel")) {
+            panel.hidden = panel.id !== `panel-${tab.dataset.tab}`;
+          }
+        });
+      }
+
+      // ---------------------------------------------------------------
+      // Hero
+      // ---------------------------------------------------------------
+      function statusBadge(ok, okText, missingText) {
+        return ok
+          ? `<span class="badge ok">&check; ${escapeHtml(okText)}</span>`
+          : `<span class="badge missing">&times; ${escapeHtml(missingText)}</span>`;
+      }
+
+      function renderHero(site) {
+        document.getElementById("siteName").textContent = site.site_name;
+        document.getElementById("sitePath").textContent = site.site_path || "";
+        document.getElementById("siteBadges").innerHTML = [
+          statusBadge(site.ready_for_machine_review, "Machine ready", "Machine review not ready"),
+          statusBadge(site.ready_for_human_comparison, "Compare ready", "Comparison not ready"),
+        ].join("");
+        const scorecard = site.latest_scorecard || {};
+        document.getElementById("heroStats").innerHTML = [
+          ["Videos", site.video_count],
+          ["Labels", site.label_count],
+          ["Reports", site.report_count],
+          ["Latest agree", fallback(scorecard.agree, "&mdash;")],
+          ["Latest disagree", fallback(scorecard.disagree, "&mdash;")],
+        ]
+          .map(
+            ([label, value]) => `
+              <div class="hero-stat">
+                <div class="hero-stat-value">${value}</div>
+                <div class="hero-stat-label">${escapeHtml(label)}</div>
+              </div>
+            `
+          )
+          .join("");
+      }
+
+      // ---------------------------------------------------------------
+      // Overview tab
+      // ---------------------------------------------------------------
+      function renderOverviewTab(site) {
+        const panel = document.getElementById("panel-overview");
+        const readiness = site.validation_readiness || {};
+        const checks = (readiness.checks || [])
+          .map(
+            (check) => `
+              <div class="readiness-check">
+                <span class="readiness-check-label">${escapeHtml(check.label)}</span>
+                <span class="readiness-check-value ${check.ok ? "ok" : "missing"}">${escapeHtml(check.value)}</span>
+              </div>
+            `
+          )
+          .join("");
+
+        const scorecard = site.latest_scorecard;
+        const scorecardCard = scorecard
+          ? `
+            <div class="card">
+              <div class="card-title">Latest validation scorecard</div>
+              <div class="kv-grid">
+                ${kv("Videos tested", fallback(scorecard.videos_tested))}
+                ${kv("Videos with a human label", `${fallback(scorecard.videos_with_human_label, "0")} of ${fallback(scorecard.videos_tested, "0")}`)}
+                ${kv("Label windows", fallback(scorecard.label_windows))}
+                ${kv("Agree", fallback(scorecard.agree))}
+                ${kv("Disagree", fallback(scorecard.disagree))}
+                ${kv("Cannot compare", fallback(scorecard.cannot_compare))}
+                ${kv("Baseline-ready samples", fallback(scorecard.baseline_ready_samples))}
+                ${kv("Practice-only samples", fallback(scorecard.practice_only_samples))}
+              </div>
+              <p class="status-line">${escapeHtml(scorecard.summary || "")}</p>
+            </div>
+          `
+          : `
+            <div class="card">
+              <div class="card-title">Latest validation scorecard</div>
+              <div class="empty-state">
+                <div class="empty-state-icon">&#128202;</div>
+                No validation has been run yet for this site.
+              </div>
+            </div>
+          `;
+
+        const explanations = (site.latest_result_explanations || [])
+          .map(
+            (result) => `
+              <div class="kv" style="margin-bottom: 14px;">
+                <div class="kv-label">${escapeHtml(result.video_id)} &middot; ${escapeHtml(result.time_window === "missing" ? "no human time window" : result.time_window)}</div>
+                <div class="kv-value">${comparisonBadge(result.status)}</div>
+                <div class="video-note" style="margin-top: 6px;"><strong>Machine:</strong> ${escapeHtml(result.machine_observation)}</div>
+                <div class="video-note"><strong>Human:</strong> ${escapeHtml(result.human_observation)}</div>
+                <div class="video-note"><strong>Why:</strong> ${escapeHtml(result.reason)}</div>
+              </div>
+            `
+          )
+          .join("");
+
+        panel.innerHTML = `
+          <div class="card">
+            <div class="card-title">Quick actions</div>
+            <div class="quick-actions">
+              <button class="btn primary" id="runValidationButton" ${site.ready_for_validation ? "" : "disabled"}>&#9654; Run Validation</button>
+              <a class="btn" href="/openfloodai-home-ui.html?site=${encodeURIComponent(site.site_name)}&action=add_video">+ Add Video</a>
+              <a class="btn" href="/openfloodai-home-ui.html?site=${encodeURIComponent(site.site_name)}&action=add_label">+ Add Label</a>
+              <a class="btn" href="/openfloodai-home-ui.html?site=${encodeURIComponent(site.site_name)}&action=set_watched_area">Set Watched Area</a>
+              <a class="btn" href="/openfloodai-home-ui.html?site=${encodeURIComponent(site.site_name)}&action=set_normal_waterline_guide">Normal Waterline Guide</a>
+              <a class="btn" href="/openfloodai-home-ui.html?site=${encodeURIComponent(site.site_name)}&action=watch">Watch</a>
+              <button class="btn danger" id="deleteSiteButton">Delete Site</button>
+            </div>
+            <p class="status-line" id="overviewActionStatus"></p>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Readiness</div>
+            <p class="status-line">${escapeHtml(readiness.headline || "")}</p>
+            <div class="readiness-checks">${checks}</div>
+          </div>
+
+          ${scorecardCard}
+
+          ${
+            explanations
+              ? `<div class="card"><div class="card-title">Latest per-window results</div>${explanations}</div>`
+              : ""
+          }
+        `;
+
+        document.getElementById("runValidationButton").addEventListener("click", () =>
+          runValidation(site.site_name)
+        );
+        document.getElementById("deleteSiteButton").addEventListener("click", () =>
+          deleteSite(site.site_name)
+        );
+      }
+
+      function kv(label, value) {
+        return `
+          <div class="kv">
+            <div class="kv-label">${escapeHtml(label)}</div>
+            <div class="kv-value">${value === undefined || value === null ? "Not available" : escapeHtml(String(value))}</div>
+          </div>
+        `;
+      }
+
+      function comparisonBadge(status) {
+        const tags = {
+          agree: ["Agree", "ok"],
+          disagree: ["Disagree", "missing"],
+          cannot_compare: ["Cannot compare", "warn"],
+        };
+        const [label, cls] = Object.hasOwn(tags, status) ? tags[status] : ["Status unavailable", "plain"];
+        return `<span class="badge ${cls}">${escapeHtml(label)}</span>`;
+      }
+
+      async function runValidation(siteName) {
+        const button = document.getElementById("runValidationButton");
+        const status = document.getElementById("overviewActionStatus");
+        button.disabled = true;
+        status.className = "status-line";
+        status.textContent = "Running local validation… this can take a moment.";
+        try {
+          const response = await fetch("/api/run-validation", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ folder_name: siteName }),
+          });
+          const result = await response.json();
+          status.className = `status-line ${response.ok ? "success" : "error"}`;
+          status.textContent = result.message || (response.ok ? "Done." : "Validation failed.");
+          if (response.ok) {
+            await bootstrap();
+          }
+        } catch (error) {
+          status.className = "status-line error";
+          status.textContent = `Could not run validation: ${error.message}`;
+        } finally {
+          button.disabled = false;
+        }
+      }
+
+      async function deleteSite(siteName) {
+        const confirmed = confirm(
+          `Delete this site and all of its local videos, labels, manifests, outputs, and runs?\n\nSite: ${siteName}`
+        );
+        if (!confirmed) return;
+        const button = document.getElementById("deleteSiteButton");
+        const status = document.getElementById("overviewActionStatus");
+        button.disabled = true;
+        try {
+          const response = await fetch("/api/delete-site", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ folder_name: siteName }),
+          });
+          const result = await response.json();
+          if (!response.ok) {
+            status.className = "status-line error";
+            status.textContent = result.message || "Could not delete this site.";
+            button.disabled = false;
+            return;
+          }
+          window.location.href = "/openfloodai-home-ui.html";
+        } catch (error) {
+          status.className = "status-line error";
+          status.textContent = `Could not delete this site: ${error.message}`;
+          button.disabled = false;
+        }
+      }
+
+      // ---------------------------------------------------------------
+      // Videos tab
+      // ---------------------------------------------------------------
+      function renderVideosTab(site) {
+        const panel = document.getElementById("panel-videos");
+        const videoIds = site.video_ids || [];
+        if (!videoIds.length) {
+          panel.innerHTML = `
+            <div class="card">
+              <div class="empty-state">
+                <div class="empty-state-icon">&#127909;</div>
+                No videos have been added to this site yet.
+              </div>
+            </div>
+          `;
+          return;
+        }
+        const labeledVideoIds = new Set(site.labeled_video_ids || []);
+        const cards = videoIds
+          .map((videoId) => {
+            const manifestRow = manifestByVideoId[videoId] || {};
+            const hasLabel = labeledVideoIds.has(videoId);
+            const chips = [
+              manifestRow.purpose ? `<span class="chip">${escapeHtml(manifestRow.purpose)}</span>` : "",
+              manifestRow.split ? `<span class="chip">${escapeHtml(manifestRow.split)}</span>` : "",
+              manifestRow.hard_case_type
+                ? `<span class="chip">${escapeHtml(manifestRow.hard_case_type)}</span>`
+                : "",
+            ]
+              .filter(Boolean)
+              .join("");
+            return `
+              <div class="video-card" data-video-id="${escapeHtml(videoId)}">
+                <div class="video-card-head">
+                  <div class="video-card-id">${escapeHtml(videoId)}</div>
+                  <div class="video-card-filename">${escapeHtml(manifestRow.filename || "")}</div>
+                </div>
+                <div class="video-card-body">
+                  <div class="chip-row">
+                    <span class="badge ${hasLabel ? "ok" : "warn"}">${hasLabel ? "Has a label" : "No label yet"}</span>
+                    ${chips}
+                  </div>
+                  ${manifestRow.notes ? `<div class="video-note">${escapeHtml(manifestRow.notes)}</div>` : ""}
+                  <div class="video-card-meta" data-duration>Duration: loading&hellip;</div>
+                  <div>
+                    <button class="btn small" data-preview-toggle>Preview</button>
+                  </div>
+                  <div class="video-preview-wrap" data-preview-wrap></div>
+                </div>
+              </div>
+            `;
+          })
+          .join("");
+        panel.innerHTML = `
+          <div class="card">
+            <div class="card-title">Input videos <span class="badge neutral">${videoIds.length}</span></div>
+            <div class="card-grid">${cards}</div>
+          </div>
+        `;
+        for (const videoId of videoIds) {
+          loadVideoDuration(site.site_name, videoId);
+        }
+        for (const card of panel.querySelectorAll(".video-card")) {
+          const toggle = card.querySelector("[data-preview-toggle]");
+          toggle.addEventListener("click", () => toggleVideoPreview(card, site.site_name));
+        }
+      }
+
+      async function loadVideoDuration(siteName, videoId) {
+        const card = document.querySelector(`.video-card[data-video-id="${cssEscape(videoId)}"]`);
+        if (!card) return;
+        const meta = card.querySelector("[data-duration]");
+        try {
+          const response = await fetch(
+            `/api/video-duration?${new URLSearchParams({ folder_name: siteName, video_id: videoId })}`
+          );
+          const result = await response.json();
+          if (!response.ok || typeof result.duration_seconds !== "number") {
+            meta.textContent = "Duration: unavailable";
+            return;
+          }
+          meta.textContent = `Duration: ${result.duration_seconds.toFixed(1)}s`;
+        } catch (error) {
+          meta.textContent = "Duration: unavailable";
+        }
+      }
+
+      function cssEscape(value) {
+        return String(value).replace(/["\\]/g, "\\$&");
+      }
+
+      function toggleVideoPreview(card, siteName) {
+        const wrap = card.querySelector("[data-preview-wrap]");
+        const button = card.querySelector("[data-preview-toggle]");
+        const isOpen = wrap.classList.contains("open");
+        if (isOpen) {
+          wrap.classList.remove("open");
+          wrap.innerHTML = "";
+          button.textContent = "Preview";
+          return;
+        }
+        const videoId = card.dataset.videoId;
+        const query = new URLSearchParams({ folder_name: siteName, video_id: videoId });
+        wrap.innerHTML = `<video controls preload="metadata" src="/api/site-video?${query}"></video>`;
+        wrap.classList.add("open");
+        button.textContent = "Hide preview";
+      }
+
+      // ---------------------------------------------------------------
+      // Config tab
+      // ---------------------------------------------------------------
+      function regionSvg(region, guides) {
+        const box = region
+          ? `<rect x="${region.x}" y="${region.y}" width="${region.width}" height="${region.height}" fill="rgba(23,105,170,0.08)" stroke="#1769aa" stroke-width="1.4" vector-effect="non-scaling-stroke" />`
+          : "";
+        const lines = (guides || [])
+          .filter((guide) => guide.status !== "invalid")
+          .map((guide) => {
+            const trusted = guide.status === "confirmed" && guide.normal_condition === true;
+            const points = (guide.points || [])
+              .map((point) => `${point.x},${point.y}`)
+              .join(" ");
+            if (!points) return "";
+            return `<polyline points="${points}" fill="none" stroke="${trusted ? "#1d4ed8" : "#d97706"}" stroke-width="1.6" stroke-dasharray="${trusted ? "0" : "3,2"}" vector-effect="non-scaling-stroke" />`;
+          })
+          .join("");
+        return `
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+            <rect x="0" y="0" width="100" height="100" fill="#eef3f6" />
+            ${box}
+            ${lines}
+          </svg>
+        `;
+      }
+
+      function renderConfigTab(site) {
+        const panel = document.getElementById("panel-config");
+        const config = siteConfig;
+        const region = site.reference_region;
+        const guides = site.normal_waterline_guides || [];
+
+        const identityCard = config
+          ? `
+            <div class="card">
+              <div class="card-title">Site identity</div>
+              <div class="kv-grid">
+                ${kv("Site ID", config.site_id)}
+                ${kv("Camera ID", config.camera_id)}
+                ${kv("Site name", config.site_name)}
+                ${kv("Input type", config.input_type)}
+                ${kv("Privacy notes", config.privacy_notes)}
+              </div>
+            </div>
+          `
+          : `<div class="card"><div class="loading-line">Loading site config&hellip;</div></div>`;
+
+        const regionCard = `
+          <div class="card">
+            <div class="card-title">Watched area</div>
+            ${
+              region
+                ? `
+                  <div class="region-preview">${regionSvg(region, guides)}</div>
+                  <div class="kv-grid" style="margin-top: 14px;">
+                    ${kv("X", round(region.x))}
+                    ${kv("Y", round(region.y))}
+                    ${kv("Width", round(region.width))}
+                    ${kv("Height", round(region.height))}
+                  </div>
+                `
+                : `<div class="empty-state"><div class="empty-state-icon">&#128065;</div>No watched area is set yet.</div>`
+            }
+          </div>
+        `;
+
+        const guideCards = guides.length
+          ? guides
+              .map((guide) => {
+                const trusted = guide.status === "confirmed" && guide.normal_condition === true;
+                return `
+                  <div class="guide-card">
+                    <div class="guide-preview">${regionSvg(region, [guide])}</div>
+                    <div class="guide-info">
+                      <div class="kv-value" style="font-weight: 700;">${escapeHtml(guide.label || guide.id)}</div>
+                      <div class="chip-row" style="margin-top: 6px;">
+                        <span class="badge ${trusted ? "ok" : "warn"}">${trusted ? "Confirmed baseline" : escapeHtml(guide.status || "draft")}</span>
+                        ${guide.normal_condition === true ? '<span class="badge neutral">Normal condition</span>' : ""}
+                      </div>
+                      ${guide.confirmed_at ? `<div class="video-card-meta" style="margin-top: 6px;">Confirmed: ${escapeHtml(formatDateTime(guide.confirmed_at))}</div>` : ""}
+                    </div>
+                  </div>
+                `;
+              })
+              .join("")
+          : `<div class="empty-state"><div class="empty-state-icon">&#128444;&#65039;</div>No normal waterline guide yet.</div>`;
+
+        panel.innerHTML = `
+          <div class="card-grid">
+            ${identityCard}
+            ${regionCard}
+          </div>
+          <div class="card">
+            <div class="card-title">Normal waterline guides <span class="badge neutral">${guides.length}</span></div>
+            <div style="display: grid; gap: 12px;">${guideCards}</div>
+          </div>
+        `;
+      }
+
+      function round(value) {
+        return typeof value === "number" ? Math.round(value * 100) / 100 : value;
+      }
+
+      // ---------------------------------------------------------------
+      // Runs tab
+      // ---------------------------------------------------------------
+      function renderRunsTab(site) {
+        const panel = document.getElementById("panel-runs");
+        const history = site.report_history || [];
+        if (!history.length) {
+          panel.innerHTML = `
+            <div class="card">
+              <div class="empty-state">
+                <div class="empty-state-icon">&#128203;</div>
+                No validation runs exist yet for this site.
+              </div>
+            </div>
+          `;
+          return;
+        }
+        const cards = history
+          .map((run, index) => {
+            const counts = run.counts || {};
+            const canCompare = Boolean(run.run_id) && !run.legacy;
+            return `
+              <div class="run-card" data-run-index="${index}">
+                <div class="run-card-head" data-run-head>
+                  ${
+                    canCompare
+                      ? `<input type="checkbox" class="run-checkbox" data-run-checkbox data-run-id="${escapeHtml(run.run_id)}" />`
+                      : '<span style="width:18px;"></span>'
+                  }
+                  <div class="run-head-main">
+                    <div class="run-id">${index === 0 ? "&#11088; Latest &middot; " : ""}${escapeHtml(run.run_id || run.path || "Unknown run")}</div>
+                    <div class="run-time">${escapeHtml(formatDateTime(run.modified_time))} &middot; ${escapeHtml(run.status || "unknown")}${run.legacy ? " &middot; legacy" : ""}</div>
+                  </div>
+                  <div class="run-counts">
+                    <span class="badge ok">Agree ${fallback(counts.agree, 0)}</span>
+                    <span class="badge missing">Disagree ${fallback(counts.disagree, 0)}</span>
+                    <span class="badge warn">Cannot compare ${fallback(counts.cannot_compare, 0)}</span>
+                  </div>
+                  <span class="run-caret">&#9654;</span>
+                </div>
+                <div class="run-card-body" data-run-body>
+                  <div class="loading-line">Loading run details&hellip;</div>
+                </div>
+              </div>
+            `;
+          })
+          .join("");
+
+        panel.innerHTML = `
+          <div class="card" style="margin-bottom: 12px;">
+            <div class="card-title">Validation runs <span class="badge neutral">${history.length}</span></div>
+            <p class="status-line">Select two or more runs to compare them side by side. Click a run to see its full report, images, and exact inputs used.</p>
+          </div>
+          <div id="runCardList">${cards}</div>
+          <div class="compare-bar" id="compareBar">
+            <span id="compareBarText"></span>
+            <div style="display:flex; gap:8px;">
+              <button class="btn" id="compareRunsButton">Compare</button>
+              <button class="btn ghost" id="clearCompareButton">Clear</button>
+            </div>
+          </div>
+          <div class="card" id="compareResult" hidden></div>
+        `;
+
+        const runCardList = document.getElementById("runCardList");
+        runCardList.querySelectorAll("[data-run-head]").forEach((head) => {
+          head.addEventListener("click", (event) => {
+            if (event.target.closest("[data-run-checkbox]")) return;
+            const card = head.closest(".run-card");
+            const index = Number(card.dataset.runIndex);
+            const run = history[index];
+            const willOpen = !card.classList.contains("open");
+            card.classList.toggle("open");
+            if (willOpen) {
+              loadRunBody(card, site, run);
+            }
+          });
+        });
+        runCardList.querySelectorAll("[data-run-checkbox]").forEach((checkbox) => {
+          checkbox.addEventListener("click", (event) => event.stopPropagation());
+          checkbox.addEventListener("change", () => {
+            const runId = checkbox.dataset.runId;
+            if (checkbox.checked) selectedRunIds.add(runId);
+            else selectedRunIds.delete(runId);
+            updateCompareBar(site, history);
+          });
+        });
+        document.getElementById("compareRunsButton").addEventListener("click", () =>
+          renderCompareResult(site, history)
+        );
+        document.getElementById("clearCompareButton").addEventListener("click", () => {
+          selectedRunIds.clear();
+          runCardList.querySelectorAll("[data-run-checkbox]").forEach((box) => (box.checked = false));
+          updateCompareBar(site, history);
+          document.getElementById("compareResult").hidden = true;
+        });
+      }
+
+      function updateCompareBar(site, history) {
+        const bar = document.getElementById("compareBar");
+        const text = document.getElementById("compareBarText");
+        const button = document.getElementById("compareRunsButton");
+        if (selectedRunIds.size === 0) {
+          bar.classList.remove("visible");
+          return;
+        }
+        bar.classList.add("visible");
+        text.textContent = `${selectedRunIds.size} run${selectedRunIds.size === 1 ? "" : "s"} selected`;
+        button.disabled = selectedRunIds.size < 2;
+      }
+
+      async function fetchRunDetail(runDir) {
+        if (runDetailCache.has(runDir)) return runDetailCache.get(runDir);
+        const response = await fetch(`/api/run-detail?${new URLSearchParams({ run_dir: runDir })}`);
+        if (!response.ok) throw new Error(`Run detail request failed: ${response.status}`);
+        const payload = await response.json();
+        runDetailCache.set(runDir, payload);
+        return payload;
+      }
+
+      async function loadRunBody(card, site, run) {
+        const body = card.querySelector("[data-run-body]");
+        const runDir = runDirFromReportPath(run.path);
+        if (!runDir || run.legacy) {
+          body.innerHTML = `
+            <div class="report-text">${escapeHtml(run.path || "No report path available.")}</div>
+            <p class="status-line">This is an older run saved before detailed run folders existed, so only its report path and counts are available.</p>
+          `;
+          return;
+        }
+        try {
+          const detail = await fetchRunDetail(runDir);
+          renderRunBody(body, site, run, detail);
+        } catch (error) {
+          body.innerHTML = `<p class="status-line error">Could not load this run: ${escapeHtml(error.message)}</p>`;
+        }
+      }
+
+      function renderRunBody(body, site, run, detail) {
+        const scorecard = detail.scorecard || {};
+        const inputs = detail.inputs || null;
+        body.innerHTML = `
+          <div class="kv-grid" style="margin-bottom: 14px;">
+            ${kv("Videos tested", fallback(scorecard.videos_reviewed))}
+            ${kv("Videos with a human label", fallback(scorecard.videos_with_human_label))}
+            ${kv("Label windows", fallback(scorecard.label_windows))}
+            ${kv("Baseline-ready", fallback(scorecard.baseline_ready_count))}
+            ${kv("Practice-only", fallback(scorecard.practice_only_count))}
+          </div>
+          <div class="run-tabs">
+            <button class="run-tab" data-run-tab="report" aria-selected="true">Report</button>
+            <button class="run-tab" data-run-tab="images" aria-selected="false">Review images</button>
+            <button class="run-tab" data-run-tab="inputs" aria-selected="false">Inputs used</button>
+          </div>
+          <div class="run-tab-panel active" data-run-panel="report">
+            <div class="report-text">${escapeHtml(detail.report || "This report is empty.")}</div>
+          </div>
+          <div class="run-tab-panel" data-run-panel="images">
+            <div class="image-gallery" data-image-gallery>
+              <div class="loading-line">Loading review images&hellip;</div>
+            </div>
+          </div>
+          <div class="run-tab-panel" data-run-panel="inputs">
+            ${renderInputsSnapshot(inputs)}
+          </div>
+          <div style="margin-top: 14px; display: flex; gap: 8px; align-items: center;">
+            <label style="font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 6px;">
+              <input type="checkbox" data-include-raw-video /> Include raw video (only if approved to share)
+            </label>
+            <button class="btn small" data-export-run>Export this run</button>
+          </div>
+        `;
+        const tabs = body.querySelectorAll("[data-run-tab]");
+        tabs.forEach((tab) => {
+          tab.addEventListener("click", () => {
+            tabs.forEach((other) => other.setAttribute("aria-selected", String(other === tab)));
+            body.querySelectorAll("[data-run-panel]").forEach((panel) => {
+              panel.classList.toggle("active", panel.dataset.runPanel === tab.dataset.runTab);
+            });
+            if (tab.dataset.runTab === "images") {
+              loadRunImages(body, run);
+            }
+          });
+        });
+        body.querySelector("[data-export-run]").addEventListener("click", (event) => {
+          exportRun(site.site_name, run.run_id, body.querySelector("[data-include-raw-video]").checked, event.target);
+        });
+      }
+
+      function renderInputsSnapshot(inputs) {
+        if (!inputs) {
+          return '<p class="status-line">No input snapshot was saved for this run.</p>';
+        }
+        const videoRows = (inputs.videos || [])
+          .map(
+            (video) => `
+              <div class="kv" style="margin-bottom: 8px;">
+                <div class="kv-value">${escapeHtml(video.video_id)} &middot; ${escapeHtml(video.filename)} &middot; ${(video.size_bytes / 1024).toFixed(0)} KB</div>
+              </div>
+            `
+          )
+          .join("");
+        return `
+          <div class="kv-grid" style="margin-bottom: 14px;">
+            ${kv("Site ID (at run time)", inputs.receipt && inputs.receipt.site_id)}
+            ${kv("Camera ID (at run time)", inputs.receipt && inputs.receipt.camera_id)}
+            ${kv("Mode", inputs.receipt && inputs.receipt.mode)}
+            ${kv("Human labels used", inputs.labels ? inputs.labels.length : 0)}
+          </div>
+          <div class="kv-label" style="margin-bottom: 6px;">Videos used in this run</div>
+          ${videoRows || '<p class="status-line">No videos were recorded for this run.</p>'}
+          <details style="margin-top: 12px;">
+            <summary style="cursor: pointer; font-size: 12.5px; color: var(--muted); font-weight: 700;">Raw config snapshot used</summary>
+            <div class="report-text">${escapeHtml(JSON.stringify(inputs.config, null, 2))}</div>
+          </details>
+        `;
+      }
+
+      async function loadRunImages(body, run) {
+        const gallery = body.querySelector("[data-image-gallery]");
+        if (gallery.dataset.loaded) return;
+        if (!run.evidence_path) {
+          gallery.innerHTML = '<p class="status-line">No review images were saved for this run.</p>';
+          return;
+        }
+        try {
+          const response = await fetch(
+            `/api/review-images?${new URLSearchParams({ path: run.evidence_path })}`
+          );
+          if (!response.ok) throw new Error(`Request failed: ${response.status}`);
+          const result = await response.json();
+          gallery.dataset.loaded = "true";
+          if (!result.images.length) {
+            gallery.innerHTML = '<p class="status-line">No images were generated for this run.</p>';
+            return;
+          }
+          gallery.innerHTML = result.images
+            .map(
+              (entry) => `
+                <figure>
+                  <a href="${entry.url}" target="_blank" rel="noopener">
+                    <img src="${entry.url}" alt="${escapeHtml(entry.name)}" loading="lazy" />
+                  </a>
+                  <figcaption>${escapeHtml(entry.name)}</figcaption>
+                </figure>
+              `
+            )
+            .join("");
+        } catch (error) {
+          gallery.innerHTML = `<p class="status-line error">Could not load review images: ${escapeHtml(error.message)}</p>`;
+        }
+      }
+
+      async function exportRun(siteName, runId, includeRawVideo, button) {
+        const originalDisabled = button.disabled;
+        button.disabled = true;
+        try {
+          const query = new URLSearchParams({
+            folder_name: siteName,
+            run_id: runId,
+            include_raw_video: includeRawVideo ? "true" : "false",
+          });
+          const response = await fetch(`/api/export-run?${query}`);
+          const contentType = response.headers.get("Content-Type") || "";
+          if (!response.ok || !contentType.includes("application/zip")) {
+            const result = await response.json().catch(() => ({}));
+            throw new Error(result.message || `Request failed: ${response.status}`);
+          }
+          const disposition = response.headers.get("Content-Disposition") || "";
+          const nameMatch = disposition.match(/filename="([^"]+)"/);
+          const filename = nameMatch ? nameMatch[1] : "openfloodai-export.zip";
+          const blob = await response.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = blobUrl;
+          link.download = filename;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          URL.revokeObjectURL(blobUrl);
+        } catch (error) {
+          alert(`Export failed: ${error.message}`);
+        } finally {
+          button.disabled = originalDisabled;
+        }
+      }
+
+      // ---------------------------------------------------------------
+      // Compare runs
+      // ---------------------------------------------------------------
+      async function renderCompareResult(site, history) {
+        const container = document.getElementById("compareResult");
+        container.hidden = false;
+        container.innerHTML = '<div class="loading-line">Loading comparison&hellip;</div>';
+        const runs = history.filter((run) => run.run_id && selectedRunIds.has(run.run_id));
+        try {
+          const details = await Promise.all(
+            runs.map(async (run) => ({
+              run,
+              detail: await fetchRunDetail(runDirFromReportPath(run.path)),
+            }))
+          );
+          container.innerHTML = buildCompareTable(details);
+        } catch (error) {
+          container.innerHTML = `<p class="status-line error">Could not build comparison: ${escapeHtml(error.message)}</p>`;
+        }
+      }
+
+      function buildCompareTable(details) {
+        const metrics = [
+          ["Created", ({ run }) => formatDateTime(run.modified_time)],
+          ["Status", ({ run }) => fallback(run.status)],
+          ["Videos tested", ({ detail }) => fallback(detail.scorecard && detail.scorecard.videos_reviewed)],
+          [
+            "Videos with a human label",
+            ({ detail }) => fallback(detail.scorecard && detail.scorecard.videos_with_human_label),
+          ],
+          ["Label windows", ({ detail }) => fallback(detail.scorecard && detail.scorecard.label_windows)],
+          ["Agree", ({ detail }) => fallback(detail.scorecard && detail.scorecard.agree_count)],
+          ["Disagree", ({ detail }) => fallback(detail.scorecard && detail.scorecard.disagree_count)],
+          [
+            "Cannot compare",
+            ({ detail }) => fallback(detail.scorecard && detail.scorecard.cannot_compare_count),
+          ],
+          [
+            "Baseline-ready",
+            ({ detail }) => fallback(detail.scorecard && detail.scorecard.baseline_ready_count),
+          ],
+          [
+            "Practice-only",
+            ({ detail }) => fallback(detail.scorecard && detail.scorecard.practice_only_count),
+          ],
+        ];
+        const header = details
+          .map(({ run }) => `<th>${escapeHtml(run.run_id)}</th>`)
+          .join("");
+        const rows = metrics
+          .map(([label, getValue]) => {
+            const values = details.map((entry) => String(getValue(entry)));
+            const allSame = values.every((value) => value === values[0]);
+            const cells = values
+              .map((value) => `<td class="${allSame ? "" : "differs"}">${escapeHtml(value)}</td>`)
+              .join("");
+            return `<tr><td class="metric-label">${escapeHtml(label)}</td>${cells}</tr>`;
+          })
+          .join("");
+        return `
+          <div class="card-title">Comparing ${details.length} runs</div>
+          <div class="compare-table-wrap">
+            <table class="compare-table">
+              <thead><tr><th>Metric</th>${header}</tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        `;
+      }
+
+      bootstrap();
+    </script>
+  </body>
+</html>

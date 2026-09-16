@@ -40,6 +40,10 @@ a = Analysis(
             "openfloodai/ui/static",
         ),
         (
+            str(REPO_ROOT / "tools" / "openfloodai-site-details.html"),
+            "openfloodai/ui/static",
+        ),
+        (
             str(REPO_ROOT / "src" / "openfloodai" / "desktop" / "assets" / "tray_icon.png"),
             "openfloodai/desktop/assets",
         ),

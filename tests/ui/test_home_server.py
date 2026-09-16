@@ -147,7 +147,10 @@ def test_site_details_page_loads_from_its_local_route(tmp_path: Path) -> None:
 
     assert status == 200
     assert "text/html" in content_type
-    assert 'id="detailSiteSelect"' in body
+    # Serves the dedicated site-details page (tools/openfloodai-site-details.html),
+    # not the main dashboard file — see tests/ui/test_site_details_routes.py for
+    # the full coverage of that page's own routes and behavior.
+    assert 'id="siteSwitcher"' in body
 
 
 def test_home_ui_page_has_safety_note_container(tmp_path: Path) -> None:

@@ -26,6 +26,7 @@ from openfloodai.config import (
     write_normal_waterline_guides,
     write_reference_region,
 )
+from openfloodai.contracts import read_jsonl_records
 from openfloodai.ingestion.image_video import create_image_test_video
 from openfloodai.ingestion.live_camera import LiveCameraError, capture_live_clip
 from openfloodai.ingestion.live_camera_schedule import read_schedule, write_schedule
@@ -58,6 +59,7 @@ from openfloodai.validation import (
     run_site_validation,
     setup_validation_site,
 )
+from openfloodai.validation.input_snapshot import read_input_snapshot
 from openfloodai.validation.site_status import VIDEO_SUFFIXES
 
 VIDEO_CONTENT_TYPES = {
@@ -111,7 +113,19 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         if path == "/api/export-all":
             self._send_export_all()
             return
-        if path in {"/", "/openfloodai-home-ui.html", "/site-details.html"}:
+        if path == "/api/site-config":
+            self._send_site_config()
+            return
+        if path == "/api/site-manifest":
+            self._send_site_manifest()
+            return
+        if path == "/api/run-detail":
+            self._send_run_detail()
+            return
+        if path == "/site-details.html":
+            self._send_site_details_page()
+            return
+        if path in {"/", "/openfloodai-home-ui.html"}:
             self._send_file(self.ui_path, content_type="text/html; charset=utf-8")
             return
         self.send_error(404, "Not found")
@@ -207,6 +221,79 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             self._send_json({"report": candidate.read_text(encoding="utf-8")}, status_code=200)
         except (OSError, ValueError):
             self._send_json({"message": "Validation report not found."}, status_code=404)
+
+    def _resolve_site_dir(self, folder_name: str) -> Path:
+        """Return a site folder inside the configured sites directory, or raise ValueError."""
+
+        site_dir = (self.sites_dir / folder_name).resolve()
+        if not folder_name or site_dir.parent != self.sites_dir.resolve():
+            raise ValueError("Invalid folder_name")
+        return site_dir
+
+    def _send_site_config(self) -> None:
+        """Read the current site config file for the details page's Config tab."""
+
+        query = parse_qs(urlsplit(self.path).query)
+        try:
+            site_dir = self._resolve_site_dir(query.get("folder_name", [""])[0])
+            config_path = _find_site_config(site_dir)
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            self._send_json({"config": config, "config_path": str(config_path)}, status_code=200)
+        except (SiteConfigError, OSError, ValueError, json.JSONDecodeError):
+            self._send_json({"message": "Site config not found."}, status_code=404)
+
+    def _send_site_manifest(self) -> None:
+        """Read manifest rows for the details page's Videos tab."""
+
+        query = parse_qs(urlsplit(self.path).query)
+        try:
+            site_dir = self._resolve_site_dir(query.get("folder_name", [""])[0])
+            manifest_path = site_dir / "manifest.jsonl"
+            records = read_jsonl_records(manifest_path) if manifest_path.is_file() else []
+            self._send_json({"records": records}, status_code=200)
+        except (OSError, ValueError):
+            self._send_json({"message": "Manifest not found."}, status_code=404)
+
+    def _send_run_detail(self) -> None:
+        """Read one run's saved report, scorecard, metadata, and input snapshot."""
+
+        query = parse_qs(urlsplit(self.path).query)
+        try:
+            run_dir = Path(query.get("run_dir", [""])[0]).resolve()
+            relative = run_dir.relative_to(self.sites_dir.resolve())
+            if len(relative.parts) != 4 or relative.parts[1:3] != ("outputs", "runs"):
+                raise ValueError("Not a run folder")
+            if not run_dir.is_dir():
+                raise ValueError("Run folder not found")
+            payload: dict[str, Any] = {
+                "run_metadata": _read_json_if_present(run_dir / "run-metadata.json"),
+                "scorecard": _read_json_if_present(run_dir / "scorecard.json"),
+                "report": _read_text_if_present(run_dir / "validation-report.md"),
+            }
+            try:
+                payload["inputs"] = read_input_snapshot(run_dir)
+            except (OSError, ValueError, json.JSONDecodeError):
+                payload["inputs"] = None
+            self._send_json(payload, status_code=200)
+        except (OSError, ValueError):
+            self._send_json({"message": "Run not found."}, status_code=404)
+
+    def _send_site_details_page(self) -> None:
+        source = self.ui_path.parent / "openfloodai-site-details.html"
+        if source.is_file():
+            self._send_file(source, content_type="text/html; charset=utf-8")
+            return
+        # Wheel and desktop builds carry the page as a package resource.
+        page = resources.files("openfloodai.ui") / "static" / "openfloodai-site-details.html"
+        if not page.is_file():
+            self.send_error(404, "Site details page not found")
+            return
+        body = page.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def _send_review_images(self, *, single_image: bool) -> None:
         """Expose only generated review images inside the configured local sites."""
@@ -1360,6 +1447,24 @@ def _find_site_config(site_dir: Path) -> Path:
     if not config_paths:
         raise SiteConfigError(f"Site config was not found under {site_dir / 'configs'}")
     return config_paths[0]
+
+
+def _read_json_if_present(path: Path) -> Any | None:
+    if not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return None
+
+
+def _read_text_if_present(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
 
 
 def _read_normal_waterline_guides_list(site_dir: Path) -> list[dict[str, Any]]:
