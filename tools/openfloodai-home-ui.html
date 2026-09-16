@@ -1010,9 +1010,23 @@
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Local video file *</label>
             <input type="file" name="video_file" id="videoFileInput" accept=".avi,.mkv,.mov,.mp4,video/*" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px; background: #fff;">
           </div>
-          <div style="grid-column: span 2;">
+          <div id="videoExistingBaselineBlock" style="grid-column: span 2; display: none;">
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Watched area and normal waterline guide</label>
+            <div class="meta">
+              This site already has a watched area (and normal waterline guide, if any) set from an
+              earlier video. It applies automatically to this video too, so nothing more to choose here.
+              Check that the box and any lines below still land in the right place for this video.
+            </div>
+            <div id="videoExistingBaselineWrap" style="position: relative; max-width: 100%; margin-top: 8px; display: none;">
+              <video id="videoExistingBaselinePreview" controls preload="metadata" style="display: none; width: 100%; background: #182b35;"></video>
+              <canvas id="videoExistingBaselineCanvas" aria-label="Existing watched area and normal waterline guide preview" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"></canvas>
+            </div>
+            <div class="meta" id="videoExistingBaselineStatus" role="status" style="margin-top: 6px;">Choose a video file to preview.</div>
+            <button type="button" id="videoExistingBaselineChangeButton" style="font-size: 13px; min-height: 34px; padding: 6px 12px; margin-top: 8px; background: transparent; color: var(--muted); border-color: var(--line);">This doesn't fit this video — change the site's watched area</button>
+          </div>
+          <div id="videoNewRegionBlock" style="grid-column: span 2;">
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Watched area *</label>
-            <div class="meta">Choose a frame with the video controls, then drag around the river area to watch.</div>
+            <div class="meta">Choose a frame with the video controls, then drag around the river area to watch. This is the first video for this site, so it sets the watched area every later video here will reuse.</div>
             <video id="videoPreview" controls preload="metadata" style="display: none; margin-top: 8px; max-width: 100%; width: 100%; background: #182b35;"></video>
             <canvas id="videoRegionCanvas" class="video-region-canvas" width="800" height="450" aria-label="Select watched area from video frame" style="display: none;"></canvas>
             <input type="hidden" name="reference_region" id="referenceRegionInput">
@@ -1287,6 +1301,13 @@
       const videoRegionCanvas = document.querySelector("#videoRegionCanvas");
       const referenceRegionInput = document.querySelector("#referenceRegionInput");
       const videoRegionStatus = document.querySelector("#videoRegionStatus");
+      const videoExistingBaselineBlock = document.querySelector("#videoExistingBaselineBlock");
+      const videoNewRegionBlock = document.querySelector("#videoNewRegionBlock");
+      const videoExistingBaselineWrap = document.querySelector("#videoExistingBaselineWrap");
+      const videoExistingBaselinePreview = document.querySelector("#videoExistingBaselinePreview");
+      const videoExistingBaselineCanvas = document.querySelector("#videoExistingBaselineCanvas");
+      const videoExistingBaselineStatus = document.querySelector("#videoExistingBaselineStatus");
+      const videoExistingBaselineChangeButton = document.querySelector("#videoExistingBaselineChangeButton");
       const purposeSelect = document.querySelector("#purposeSelect");
       const hardCaseTypeSelect = document.querySelector("#hardCaseTypeSelect");
       const watchedAreaFormPanel = document.querySelector("#watchedAreaFormPanel");
@@ -1364,6 +1385,13 @@
         input: referenceRegionInput,
         status: videoRegionStatus,
         emptyText: "Choose a video to begin.",
+      });
+      const videoExistingBaselineViewer = createReadOnlyOverlayViewer({
+        video: videoExistingBaselinePreview,
+        wrap: videoExistingBaselineWrap,
+        canvas: videoExistingBaselineCanvas,
+        status: videoExistingBaselineStatus,
+        emptyText: "Choose a video file to preview.",
       });
       const watchedAreaSelector = createRegionSelector({
         video: watchedAreaPreview,
@@ -1445,6 +1473,7 @@
         fillWatchedAreaSites(sites);
         fillNormalWaterlineGuideSites(sites);
         fillWatchSites(sites);
+        updateVideoBaselineMode();
       }
 
       function fillWatchedAreaSites(sites) {
@@ -2401,7 +2430,8 @@
       // mistaken for a trusted baseline. It never edits anything and never
       // reads pixels back out of the video, so it cannot modify the
       // underlying video file.
-      function createReadOnlyOverlayViewer({ video, wrap, canvas, status }) {
+      function createReadOnlyOverlayViewer({ video, wrap, canvas, status, emptyText }) {
+        const resetText = emptyText || "Choose a video to watch.";
         const context = canvas.getContext("2d");
         let watchedRegion = null;
         let normalWaterlineGuides = [];
@@ -2527,7 +2557,7 @@
           wrap.style.display = "none";
           video.style.display = "none";
           canvas.style.display = "none";
-          status.textContent = "Choose a video to watch.";
+          status.textContent = resetText;
           video.removeAttribute("src");
           video.load();
         }
@@ -2539,8 +2569,50 @@
         return { show, reset };
       }
 
+      let videoFileObjectUrl = null;
+
+      function revokeVideoFileObjectUrl() {
+        if (videoFileObjectUrl) {
+          URL.revokeObjectURL(videoFileObjectUrl);
+          videoFileObjectUrl = null;
+        }
+      }
+
+      function siteHasExistingBaseline(folderName) {
+        const site = latestSites.find((entry) => entry.site_name === folderName);
+        return Boolean(site && site.reference_region);
+      }
+
+      function renderVideoFilePreview() {
+        if (!videoFileObjectUrl) {
+          videoRegionSelector.reset();
+          videoExistingBaselineViewer.reset();
+          return;
+        }
+        const site = latestSites.find((entry) => entry.site_name === videoSiteSelect.value);
+        if (site && site.reference_region) {
+          videoRegionSelector.reset();
+          videoExistingBaselineViewer.show(videoFileObjectUrl, {
+            watchedRegion: site.reference_region,
+            normalWaterlineGuides: site.normal_waterline_guides || [],
+          });
+        } else {
+          videoExistingBaselineViewer.reset();
+          videoRegionSelector.show(videoFileObjectUrl);
+        }
+      }
+
+      function updateVideoBaselineMode() {
+        const hasExisting = siteHasExistingBaseline(videoSiteSelect.value);
+        videoExistingBaselineBlock.style.display = hasExisting ? "block" : "none";
+        videoNewRegionBlock.style.display = hasExisting ? "none" : "block";
+        renderVideoFilePreview();
+      }
+
       function resetVideoPreview() {
+        revokeVideoFileObjectUrl();
         videoRegionSelector.reset();
+        videoExistingBaselineViewer.reset();
       }
 
       function hideForms() {
@@ -3201,8 +3273,17 @@
         videoForm.reset();
         resetVideoPreview();
         videoSiteSelect.value = siteName;
+        updateVideoBaselineMode();
         videoFormPanel.style.display = "block";
         revealPanel(videoFormPanel);
+      };
+
+      window.openWatchedAreaFormForSite = function (siteName) {
+        hideForms();
+        watchedAreaSiteSelect.value = siteName;
+        fillWatchedAreaVideos();
+        watchedAreaFormPanel.style.display = "block";
+        revealPanel(watchedAreaFormPanel);
       };
 
       window.openNormalWaterlineGuideFormForSite = function (siteName) {
@@ -3384,6 +3465,7 @@
         fillWorkflowList(actionId, siteName);
         if (actionId === "add_video" && videoSiteSelect && siteName) {
           videoSiteSelect.value = siteName;
+          updateVideoBaselineMode();
         }
         if (actionId === "set_watched_area" && watchedAreaSiteSelect && siteName) {
           watchedAreaSiteSelect.value = siteName;
@@ -3722,14 +3804,22 @@
 
       videoFileInput.addEventListener("change", () => {
         const file = videoFileInput.files[0];
+        revokeVideoFileObjectUrl();
         if (!file) {
-          resetVideoPreview();
+          renderVideoFilePreview();
           return;
         }
         if (!videoIdInput.value.trim()) {
           videoIdInput.value = fileStem(file.name);
         }
-        videoRegionSelector.show(URL.createObjectURL(file), { revokeWhenDone: true });
+        videoFileObjectUrl = URL.createObjectURL(file);
+        renderVideoFilePreview();
+      });
+
+      videoSiteSelect.addEventListener("change", updateVideoBaselineMode);
+
+      videoExistingBaselineChangeButton.addEventListener("click", () => {
+        window.openWatchedAreaFormForSite(videoSiteSelect.value);
       });
 
       siteForm.addEventListener("submit", async (e) => {
@@ -3763,7 +3853,8 @@
 
       videoForm.addEventListener("submit", async (e) => {
         e.preventDefault();
-        if (!videoRegionSelector.hasSelection()) {
+        const hasExistingBaseline = siteHasExistingBaseline(videoSiteSelect.value);
+        if (!hasExistingBaseline && !videoRegionSelector.hasSelection()) {
           alert("Select the watched area from a video frame before adding the video.");
           return;
         }

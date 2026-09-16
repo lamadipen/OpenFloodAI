@@ -18,13 +18,14 @@ test("site Add Video opens a fresh intake form for the requested site", () => {
     resetVideoPreview: () => events.push("preview-reset"),
     videoSiteSelect: select,
     videoFormPanel: panel,
+    updateVideoBaselineMode: () => events.push(`update-mode:${select.value}`),
     revealPanel: (value) => assert.equal(value, panel),
   });
   vm.runInContext(handler, context);
   context.window.openVideoFormForSite("river-site");
   assert.equal(select.value, "river-site");
   assert.equal(panel.style.display, "block");
-  assert.deepEqual(events, ["hide", "reset", "preview-reset"]);
+  assert.deepEqual(events, ["hide", "reset", "preview-reset", "update-mode:river-site"]);
   context.window.openVideoFormForSite("another-site");
   assert.equal(select.value, "another-site");
 });

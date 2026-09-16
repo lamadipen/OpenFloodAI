@@ -679,6 +679,17 @@ nothing is uploaded: the browser reads the file from this computer through the l
 server. If the site has no video yet, step 3 says `Add video first` and opens the video
 form instead, because the box is drawn on a real frame.
 
+The watched area (and normal waterline guide, if any) is one shared baseline per site,
+reused by every video you add to it — the same physical camera view is assumed for all
+of them. Because of that, **Add Video To Site** only asks you to draw a fresh box for
+the very first video in a site. Once a site already has a watched area, adding another
+video instead shows that saved box (and any waterline guide) overlaid on the new
+video's own frame so you can confirm it still lands in the right place, with a shortcut
+to **Set Watched Area** if it doesn't. If a video genuinely comes from a different
+camera or framing, put it in its own site rather than mixing it into one whose baseline
+was drawn for different footage — sharing one box across mismatched footage will apply
+it wrong to at least one of them.
+
 The Manifest step shows whether the manifest is `Found`, `Missing`, or `Incomplete`,
 along with the number of local videos it tracks. For a missing or incomplete manifest,
 choose **Create manifest from local videos** or **Repair manifest from local videos**.
