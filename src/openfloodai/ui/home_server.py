@@ -27,6 +27,8 @@ from openfloodai.config import (
     write_reference_region,
 )
 from openfloodai.ingestion.image_video import create_image_test_video
+from openfloodai.ingestion.live_camera import LiveCameraError, capture_live_clip
+from openfloodai.ingestion.live_camera_schedule import read_schedule, write_schedule
 from openfloodai.ingestion.river_images import (
     download_latest_timelapse,
     download_river_images,
@@ -84,6 +86,9 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             return
         if path == "/api/river-video":
             self._send_river_video()
+            return
+        if path == "/api/live-camera-schedule":
+            self._send_live_camera_schedule()
             return
         if path in {"/api/review-images", "/api/review-image"}:
             self._send_review_images(single_image=path == "/api/review-image")
@@ -270,6 +275,12 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         if self.path == "/api/create-river-test-video":
             self._handle_download_river_images(create_video=True)
             return
+        if self.path == "/api/download-live-camera-clip":
+            self._handle_download_live_camera_clip()
+            return
+        if self.path == "/api/set-live-camera-schedule":
+            self._handle_set_live_camera_schedule()
+            return
         if self.path == "/api/setup-site-with-video":
             self._handle_setup_site_with_video()
             return
@@ -331,28 +342,38 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _handle_download_river_images(
-        self, *, timelapse: bool = False, create_video: bool = False
-    ) -> None:
-        # Only the explicit JSON form action may initiate outbound archive requests.
+    def _reject_untrusted_json_post(self) -> dict[str, Any] | None:
+        """Guard a small local-only JSON POST; send an error response and return None if rejected.
+
+        Shared by every handler that may trigger outbound network requests or
+        background-job changes, so only the explicit JSON form action (never a
+        plain cross-origin form submission, which cannot set this content type)
+        can initiate them.
+        """
+
         origin = self.headers.get("Origin")
         if origin and origin != f"http://{self.headers.get('Host')}":
             self._send_json({"message": "Open this form from the local Home UI."}, status_code=403)
-            return
+            return None
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
             length = 0
         if not 0 < length <= 4096 or self.headers.get_content_type() != "application/json":
-            self._send_json({"message": "Send a small JSON download request."}, status_code=400)
-            return
-        data = self._read_json_body()
+            self._send_json({"message": "Send a small JSON request."}, status_code=400)
+            return None
+        return self._read_json_body()
+
+    def _handle_download_river_images(
+        self, *, timelapse: bool = False, create_video: bool = False
+    ) -> None:
+        data = self._reject_untrusted_json_post()
         if data is None:
             return
         try:
             if create_video:
                 payload = create_image_test_video(
-                    root=self.sites_dir.resolve().parent / "river-images",
+                    root=self._live_camera_root(),
                     source_batch_id=str(data.get("batch_id", "")),
                 )
                 self._send_json(payload, status_code=200)
@@ -360,7 +381,7 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             if timelapse:
                 payload = download_latest_timelapse(
                     camera_url=str(data.get("camera_url", "")),
-                    output_root=self.sites_dir.resolve().parent / "river-images",
+                    output_root=self._live_camera_root(),
                 )
                 self._send_json(payload, status_code=200)
                 return
@@ -368,7 +389,7 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
                 camera_url=str(data.get("camera_url", "")),
                 local_hour=str(data.get("local_hour", "")),
                 timezone_name=str(data.get("timezone", "")),
-                output_root=self.sites_dir.resolve().parent / "river-images",
+                output_root=self._live_camera_root(),
             )
             # A completed batch may include missing/failed slots. Return all four outcomes.
             self._send_json(result.to_dict(), status_code=200)
@@ -384,7 +405,7 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         query = parse_qs(urlsplit(self.path).query)
         try:
             path = resolve_downloaded_image(
-                self.sites_dir.resolve().parent / "river-images",
+                self._live_camera_root(),
                 query.get("batch_id", [""])[0],
                 query.get("filename", [""])[0],
             )
@@ -396,7 +417,7 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         query = parse_qs(urlsplit(self.path).query)
         try:
             path = resolve_downloaded_video(
-                self.sites_dir.resolve().parent / "river-images",
+                self._live_camera_root(),
                 query.get("batch_id", [""])[0],
                 query.get("filename", [""])[0],
             )
@@ -425,6 +446,46 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
                     break
                 self.wfile.write(block)
                 remaining -= len(block)
+
+    def _live_camera_root(self) -> Path:
+        return self.sites_dir.resolve().parent / "river-images"
+
+    def _handle_download_live_camera_clip(self) -> None:
+        data = self._reject_untrusted_json_post()
+        if data is None:
+            return
+        try:
+            payload = capture_live_clip(
+                stream_url=str(data.get("stream_url", "")),
+                output_root=self._live_camera_root(),
+                duration_seconds=data.get("duration_seconds", ""),
+            )
+            self._send_json(payload, status_code=200)
+        except LiveCameraError as error:
+            self._send_json({"message": str(error)}, status_code=400)
+        except OSError:
+            self._send_json(
+                {"message": "Could not save the clip. Check local disk space and permissions."},
+                status_code=500,
+            )
+
+    def _handle_set_live_camera_schedule(self) -> None:
+        data = self._reject_untrusted_json_post()
+        if data is None:
+            return
+        try:
+            schedule = write_schedule(self._live_camera_root(), data)
+            self._send_json(schedule, status_code=200)
+        except LiveCameraError as error:
+            self._send_json({"message": str(error)}, status_code=400)
+        except OSError:
+            self._send_json(
+                {"message": "Could not save the schedule. Check local disk space and permissions."},
+                status_code=500,
+            )
+
+    def _send_live_camera_schedule(self) -> None:
+        self._send_json(read_schedule(self._live_camera_root()), status_code=200)
 
     def _handle_setup_site(self) -> None:
         data = self._read_json_body()
@@ -1232,7 +1293,9 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             "safety_note": (
                 "This local UI stays on this computer. It does not upload videos, "
                 "send alerts, train ML, or publish warnings. The River Images and Video page can "
-                "download public USGS archive images and latest time-lapse videos on request."
+                "download public USGS archive images and latest time-lapse videos on request, "
+                "and can save clips from a live camera stream you provide, either on request or "
+                "on a background schedule you turn on there."
             ),
         }
         body = json.dumps(payload, indent=2).encode("utf-8")

@@ -4,6 +4,20 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
+// The page loads its live-camera schedule status on script load, independent
+// of whatever the test itself is exercising, so every fetch mock below must
+// answer this GET without counting it against the test's own call counter.
+function liveCameraScheduleResponse() {
+  return {
+    ok: true,
+    json: async () => ({
+      enabled: false, stream_url: "https://camera.example.com/stream.m3u8",
+      interval_minutes: 60, duration_seconds: 8,
+      last_run_utc: null, last_result: null, last_message: null,
+    }),
+  };
+}
+
 for (const fails of [false, true]) {
   test(`river image form clears busy state after ${fails ? "failure" : "partial success"}`, async () => {
     const html = fs.readFileSync(path.join(__dirname, "../../tools/openfloodai-river-images.html"), "utf8");
@@ -21,6 +35,9 @@ for (const fails of [false, true]) {
       "outputDirectory", "cameraUrl", "localDate", "localTime", "timezone",
       "videoDownloadButton", "videoSpinner", "videoStatus", "videoResult",
       "imageVideoActions", "createVideoButton", "createVideoSpinner", "createVideoStatus", "createdVideoResult",
+      "liveCameraForm", "liveCameraUrl", "liveCameraDuration", "liveCameraDownloadButton",
+      "liveCameraSpinner", "liveCameraStatus", "liveCameraResult", "liveCameraScheduleEnabled",
+      "liveCameraScheduleInterval", "liveCameraScheduleSaveButton", "liveCameraScheduleStatus",
     ].map(id => [id, element()]));
     elements.cameraUrl.value = "https://apps.usgs.gov/hivis/camera/test";
     elements.localDate.value = "2026-09-06";
@@ -33,6 +50,7 @@ for (const fails of [false, true]) {
       document: { getElementById: id => elements[id], createElement: element },
       URLSearchParams,
       fetch: async (url, options) => {
+        if (url === "/api/live-camera-schedule") return liveCameraScheduleResponse();
         calls++;
         assert.equal(url, "/api/download-river-images");
         assert.equal(JSON.parse(options.body).local_hour, "2026-09-06 09:00");
@@ -87,6 +105,7 @@ for (const fails of [false, true]) {
     const context = vm.createContext({
       document: {getElementById: get, createElement: element}, URLSearchParams,
       fetch: async (url, options) => {
+        if (url === "/api/live-camera-schedule") return liveCameraScheduleResponse();
         calls++;
         assert.equal(url, "/api/download-river-timelapse");
         assert.deepEqual(JSON.parse(options.body), {camera_url: get("cameraUrl").value});
@@ -140,6 +159,7 @@ for (const fails of [false, true]) {
     const context = vm.createContext({
       document: {getElementById: get, createElement: element}, URLSearchParams,
       fetch: async (url, options) => {
+        if (url === "/api/live-camera-schedule") return liveCameraScheduleResponse();
         calls++;
         assert.equal(url, "/api/create-river-test-video");
         assert.deepEqual(JSON.parse(options.body), {batch_id: "source-batch"});

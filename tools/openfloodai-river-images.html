@@ -78,6 +78,28 @@
         </div>
         <div id="createdVideoResult" aria-busy="false"></div>
       </section>
+      <form id="liveCameraForm">
+        <h2>Live camera clip</h2>
+        <p>Save a short clip from any HTTPS live camera stream (an .m3u8 link). Unlike the USGS archive above, this stream is not guaranteed to be reachable every time; a failed attempt does not save anything.</p>
+        <label for="liveCameraUrl">Live stream URL</label>
+        <input id="liveCameraUrl" type="url" required value="https://camera.damodarpokhrel.com.np/cam3/index.m3u8" aria-describedby="liveCameraUrlHelp">
+        <small id="liveCameraUrlHelp">Must be HTTPS. Used for both the manual download below and the scheduled background downloads.</small>
+        <label for="liveCameraDuration">Clip length (seconds)</label>
+        <input id="liveCameraDuration" type="number" min="2" max="30" step="1" value="8">
+        <button id="liveCameraDownloadButton" type="button">Download live camera clip now</button>
+        <div role="status" aria-live="polite" style="margin-top: 12px;">
+          <span id="liveCameraSpinner" class="spinner" hidden aria-hidden="true"></span>
+          <span id="liveCameraStatus"></span>
+        </div>
+        <div id="liveCameraResult" aria-busy="false"></div>
+        <h3>Automatic background downloads</h3>
+        <p>When enabled, this Home UI server tries a clip on the interval below for as long as the server keeps running, even if this page is closed. Each attempt is independent: a failed attempt is recorded but never retried until the next interval.</p>
+        <label for="liveCameraScheduleEnabled"><input id="liveCameraScheduleEnabled" type="checkbox" style="width: auto; display: inline-block;"> Enable scheduled downloads</label>
+        <label for="liveCameraScheduleInterval">Interval (minutes)</label>
+        <input id="liveCameraScheduleInterval" type="number" min="5" max="1440" step="1" value="60">
+        <button id="liveCameraScheduleSaveButton" type="button">Save schedule</button>
+        <p id="liveCameraScheduleStatus" role="status" aria-live="polite">Loading schedule status…</p>
+      </form>
       <p>Keep downloaded media local unless you have checked permission to share it. Each folder includes download.json with the source and download details. Image capture times are recorded; the latest video's exact capture period is unknown. Time-lapse playback time is not real elapsed time. This media is research material, not proof of flood danger.</p>
     </main>
     <script>
@@ -264,6 +286,107 @@
           button.disabled = false;
           createVideoSpinner.hidden = true;
           createdVideoResult.setAttribute("aria-busy", "false");
+        }
+      });
+
+      const liveCameraForm = document.getElementById("liveCameraForm");
+      liveCameraForm.addEventListener("submit", (event) => event.preventDefault());
+      const liveCameraUrl = document.getElementById("liveCameraUrl");
+      const liveCameraDuration = document.getElementById("liveCameraDuration");
+      const liveCameraDownloadButton = document.getElementById("liveCameraDownloadButton");
+      const liveCameraSpinner = document.getElementById("liveCameraSpinner");
+      const liveCameraStatus = document.getElementById("liveCameraStatus");
+      const liveCameraResult = document.getElementById("liveCameraResult");
+      const liveCameraScheduleEnabled = document.getElementById("liveCameraScheduleEnabled");
+      const liveCameraScheduleInterval = document.getElementById("liveCameraScheduleInterval");
+      const liveCameraScheduleSaveButton = document.getElementById("liveCameraScheduleSaveButton");
+      const liveCameraScheduleStatus = document.getElementById("liveCameraScheduleStatus");
+      let downloadingLiveCamera = false;
+      let savingLiveCameraSchedule = false;
+
+      function describeLiveCameraSchedule(schedule) {
+        if (!schedule.enabled) return "Scheduled downloads are off.";
+        const parts = [`Scheduled every ${schedule.interval_minutes} minutes.`];
+        if (schedule.last_run_utc) {
+          const outcome = schedule.last_result === "success" ? "Succeeded" : "Failed";
+          parts.push(`Last attempt ${schedule.last_run_utc} (UTC): ${outcome} — ${schedule.last_message}`);
+        } else {
+          parts.push("No attempt has run yet.");
+        }
+        return parts.join(" ");
+      }
+
+      async function loadLiveCameraSchedule() {
+        try {
+          const response = await fetch("/api/live-camera-schedule");
+          const schedule = await response.json();
+          liveCameraScheduleEnabled.checked = Boolean(schedule.enabled);
+          liveCameraScheduleInterval.value = schedule.interval_minutes;
+          liveCameraUrl.value = schedule.stream_url;
+          liveCameraDuration.value = schedule.duration_seconds;
+          liveCameraScheduleStatus.textContent = describeLiveCameraSchedule(schedule);
+        } catch (error) {
+          liveCameraScheduleStatus.textContent = `Could not load the schedule status: ${error.message}`;
+        }
+      }
+      loadLiveCameraSchedule();
+
+      liveCameraDownloadButton.addEventListener("click", async () => {
+        if (downloadingLiveCamera || !liveCameraUrl.reportValidity()) return;
+        downloadingLiveCamera = true;
+        liveCameraDownloadButton.disabled = true;
+        liveCameraSpinner.hidden = false;
+        liveCameraResult.setAttribute("aria-busy", "true");
+        liveCameraResult.replaceChildren();
+        liveCameraStatus.textContent = "Trying the live camera now… Keep this page open.";
+        try {
+          const response = await fetch("/api/download-live-camera-clip", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+              stream_url: liveCameraUrl.value.trim(),
+              duration_seconds: Number(liveCameraDuration.value),
+            }),
+          });
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.message || "Could not capture a clip.");
+          liveCameraStatus.textContent = payload.message;
+          addText(liveCameraResult, "p", `Saved folder: ${payload.output_directory}`);
+          addVideoPlayer(liveCameraResult, payload);
+        } catch (error) {
+          liveCameraStatus.textContent = `Could not capture a clip: ${error.message}`;
+        } finally {
+          downloadingLiveCamera = false;
+          liveCameraDownloadButton.disabled = false;
+          liveCameraSpinner.hidden = true;
+          liveCameraResult.setAttribute("aria-busy", "false");
+        }
+      });
+
+      liveCameraScheduleSaveButton.addEventListener("click", async () => {
+        if (savingLiveCameraSchedule || !liveCameraUrl.reportValidity()) return;
+        savingLiveCameraSchedule = true;
+        liveCameraScheduleSaveButton.disabled = true;
+        liveCameraScheduleStatus.textContent = "Saving schedule…";
+        try {
+          const response = await fetch("/api/set-live-camera-schedule", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+              enabled: liveCameraScheduleEnabled.checked,
+              stream_url: liveCameraUrl.value.trim(),
+              interval_minutes: Number(liveCameraScheduleInterval.value),
+              duration_seconds: Number(liveCameraDuration.value),
+            }),
+          });
+          const schedule = await response.json();
+          if (!response.ok) throw new Error(schedule.message || "Could not save the schedule.");
+          liveCameraScheduleStatus.textContent = describeLiveCameraSchedule(schedule);
+        } catch (error) {
+          liveCameraScheduleStatus.textContent = `Could not save the schedule: ${error.message}`;
+        } finally {
+          savingLiveCameraSchedule = false;
+          liveCameraScheduleSaveButton.disabled = false;
         }
       });
     </script>

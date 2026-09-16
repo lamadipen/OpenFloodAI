@@ -6,6 +6,7 @@ import argparse
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
+from openfloodai.ingestion.live_camera_schedule import ensure_scheduler_running
 from openfloodai.ui.home_server import OpenFloodAIHomeHandler
 
 
@@ -22,6 +23,7 @@ def main() -> None:
     handler = OpenFloodAIHomeHandler
     handler.sites_dir = args.sites_dir
     handler.ui_path = args.ui_path
+    ensure_scheduler_running(args.sites_dir.resolve().parent / "river-images")
 
     server = ThreadingHTTPServer((args.host, args.port), handler)
     url = f"http://{args.host}:{args.port}/openfloodai-home-ui.html"
