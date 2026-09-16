@@ -16,6 +16,7 @@ from pathlib import Path
 
 from PyInstaller.building.api import COLLECT, EXE, PYZ
 from PyInstaller.building.build_main import Analysis
+from PyInstaller.utils.hooks import collect_data_files
 
 SPEC_DIR = Path(SPECPATH)
 REPO_ROOT = SPEC_DIR.parent
@@ -35,10 +36,14 @@ a = Analysis(
             "openfloodai/ui/static",
         ),
         (
+            str(REPO_ROOT / "tools" / "openfloodai-river-images.html"),
+            "openfloodai/ui/static",
+        ),
+        (
             str(REPO_ROOT / "src" / "openfloodai" / "desktop" / "assets" / "tray_icon.png"),
             "openfloodai/desktop/assets",
         ),
-    ],
+    ] + (collect_data_files("tzdata") if IS_WIN else []),
     hiddenimports=["pystray._win32"] if IS_WIN else ["pystray._darwin"],
 )
 pyz = PYZ(a.pure)
