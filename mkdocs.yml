@@ -67,6 +67,7 @@ nav:
       - Learning Home: learning/index.md
       - Your First End-to-End Review: learning/end-to-end-workflow.md
       - Download River Images And Video: learning/river-image-downloader.md
+      - USGS Image-Sequence Workflow: learning/usgs-image-sequence-workflow.md
       - OpenFloodAI Pipeline Basics: learning/openfloodai-pipeline-learning.html
   - Packaging & Release:
       - Building The Desktop App: packaging.md

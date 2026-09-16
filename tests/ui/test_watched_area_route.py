@@ -307,3 +307,75 @@ def test_a_video_from_another_site_is_refused(tmp_path: Path) -> None:
     assert status == 400
     assert payload["success"] is False
     assert "reference_region" not in read_config(site_dir)
+
+
+def test_watched_area_can_be_saved_from_a_saved_image_sequence_still(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from openfloodai.ingestion import river_images as river
+
+    site_dir = make_site(tmp_path / "example-site")
+    slug = river.camera_slug(river.DEFAULT_CAMERA_URL)
+
+    def fetch(url: str, **kwargs: object) -> tuple[bytes, str]:
+        if "?" in url:
+            key = f"720/{slug}/{slug}___2026-09-01T09-00-00Z.jpg"
+            listing = (
+                '<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">'
+                f"<Contents><Key>{key}</Key><Size>10</Size></Contents></ListBucketResult>"
+            ).encode()
+            return listing, "application/xml"
+        return b"\xff\xd8\xff\xe0test-image\xff\xd9", "image/jpeg"
+
+    monkeypatch.setattr(river, "_fetch", fetch)
+    result = river.download_river_image_sequence(
+        camera_url=river.DEFAULT_CAMERA_URL,
+        start_date="2026-09-01",
+        end_date="2026-09-01",
+        timezone_name="UTC",
+        sampling_mode="all",
+        site_id="site-demo-01",
+        site_dir=site_dir,
+    )
+    filename = next(
+        record.filename for record in result.records if record.download_status == "downloaded"
+    )
+
+    with serve_home_ui(tmp_path) as base_url:
+        status, payload = post_watched_area(
+            base_url,
+            {
+                "folder_name": "example-site",
+                "sequence_id": result.sequence_id,
+                "image_filename": filename,
+                "reference_region": {"x": 1, "y": 2, "width": 3, "height": 4},
+            },
+        )
+
+    assert status == 200
+    assert payload["success"] is True
+    assert read_config(site_dir)["reference_region"] == {
+        "x": 1,
+        "y": 2,
+        "width": 3,
+        "height": 4,
+    }
+
+
+def test_watched_area_rejects_an_unknown_saved_image(tmp_path: Path) -> None:
+    site_dir = make_site(tmp_path / "example-site")
+
+    with serve_home_ui(tmp_path) as base_url:
+        status, payload = post_watched_area(
+            base_url,
+            {
+                "folder_name": "example-site",
+                "sequence_id": "usgs-camera-2026-09-01-2026-09-01",
+                "image_filename": "camera___2026-09-01T09-00-00Z.jpg",
+                "reference_region": {"x": 1, "y": 2, "width": 3, "height": 4},
+            },
+        )
+
+    assert status == 400
+    assert payload["success"] is False
+    assert "reference_region" not in read_config(site_dir)

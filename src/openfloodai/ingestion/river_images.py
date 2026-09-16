@@ -19,6 +19,8 @@ from uuid import uuid4
 from xml.etree import ElementTree
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from openfloodai.contracts import read_jsonl_records, write_jsonl_records
+
 DEFAULT_CAMERA_URL = "https://apps.usgs.gov/hivis/camera/CO_Colorado_River_near_Cameo"
 ARCHIVE_URL = "https://usgs-nims-images.s3.amazonaws.com/"
 CAMERA_API_URL = "https://api.waterdata.usgs.gov/nims/v0/cameras?enabled=true"
@@ -27,6 +29,16 @@ MAX_VIDEO_BYTES = 128 * 1024 * 1024
 MAX_VIDEO_SECONDS = 120
 MAX_METADATA_BYTES = 2 * 1024 * 1024
 REQUEST_TIMEOUT_SECONDS = 15
+
+ALLOWED_SEQUENCE_SAMPLING_MODES = {"one_per_day", "one_per_hour", "all"}
+MAX_SEQUENCE_CANDIDATES = 20_000
+MAX_SEQUENCE_LISTING_PAGES = 50
+_SEQUENCE_LISTING_PAGE_SIZE = 1000
+_SEQUENCE_DATE_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}")
+_SEQUENCE_ID_PATTERN = re.compile(
+    r"usgs-[A-Za-z0-9_-]{1,160}-\d{4}-\d{2}-\d{2}-\d{4}-\d{2}-\d{2}-"
+    r"(?:" + "|".join(sorted(ALLOWED_SEQUENCE_SAMPLING_MODES)) + ")"
+)
 
 
 class RiverImageError(ValueError):
@@ -342,3 +354,383 @@ def resolve_downloaded_video(root: Path, batch_id: str, filename: str) -> Path:
     ):
         raise RiverImageError("Downloaded video not found.")
     return video
+
+
+@dataclass(frozen=True)
+class ImageSequenceCandidate:
+    """One archived image discovered by listing the archive, before download."""
+
+    source_url: str
+    captured_utc: datetime
+    size_bytes: int
+
+
+def _sequence_bucket_key(moment: datetime, mode: str) -> tuple[int, ...]:
+    if mode == "one_per_day":
+        return (moment.year, moment.month, moment.day)
+    return (moment.year, moment.month, moment.day, moment.hour)
+
+
+def _expected_sequence_buckets(
+    start_utc: datetime, end_utc: datetime, zone: ZoneInfo, mode: str
+) -> list[tuple[int, ...]]:
+    step = timedelta(days=1) if mode == "one_per_day" else timedelta(hours=1)
+    current = start_utc.astimezone(zone).replace(minute=0, second=0, microsecond=0)
+    if mode == "one_per_day":
+        current = current.replace(hour=0)
+    end_local = end_utc.astimezone(zone)
+    buckets: list[tuple[int, ...]] = []
+    while current < end_local:
+        buckets.append(_sequence_bucket_key(current, mode))
+        current += step
+    return buckets
+
+
+def parse_sequence_date_range(
+    start_date: str, end_date: str, timezone_name: str
+) -> tuple[datetime, datetime]:
+    """Return a [start, end) UTC window covering whole local days."""
+
+    if not _SEQUENCE_DATE_PATTERN.fullmatch(start_date) or not _SEQUENCE_DATE_PATTERN.fullmatch(
+        end_date
+    ):
+        raise RiverImageError("Enter start and end dates as YYYY-MM-DD.")
+    try:
+        zone = ZoneInfo(timezone_name)
+        start_local = datetime.strptime(start_date, "%Y-%m-%d")
+        end_local = datetime.strptime(end_date, "%Y-%m-%d")
+    except (ValueError, ZoneInfoNotFoundError) as error:
+        raise RiverImageError("Check the start date, end date, and IANA timezone.") from error
+    if end_local < start_local:
+        raise RiverImageError("The end date must be on or after the start date.")
+    start_utc = start_local.replace(tzinfo=zone).astimezone(UTC)
+    end_utc = (end_local + timedelta(days=1)).replace(tzinfo=zone).astimezone(UTC)
+    return start_utc, end_utc
+
+
+def list_archive_images_between(
+    slug: str, start_utc: datetime, end_utc: datetime
+) -> list[ImageSequenceCandidate]:
+    """List archived images in [start_utc, end_utc) without downloading them."""
+
+    prefix = f"720/{slug}/{slug}___"
+    key_pattern = re.compile(re.escape(prefix) + r"(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z)\.jpg")
+    # S3 start-after is exclusive: omit .jpg so an exact timestamp match is still included.
+    start_after = prefix + start_utc.strftime("%Y-%m-%dT%H-%M-%SZ")
+    candidates: list[ImageSequenceCandidate] = []
+    continuation_token: str | None = None
+    for _ in range(MAX_SEQUENCE_LISTING_PAGES):
+        query: dict[str, str] = {
+            "list-type": "2",
+            "prefix": f"720/{slug}/",
+            "max-keys": str(_SEQUENCE_LISTING_PAGE_SIZE),
+        }
+        if continuation_token:
+            query["continuation-token"] = continuation_token
+        else:
+            query["start-after"] = start_after
+        data, _ = _fetch(f"{ARCHIVE_URL}?{urlencode(query)}", limit=MAX_METADATA_BYTES)
+        try:
+            root = ElementTree.fromstring(data)
+        except ElementTree.ParseError as error:
+            raise RiverImageError("The archive returned an unreadable image listing.") from error
+        reached_end = False
+        for contents in root.findall("{*}Contents"):
+            key = contents.findtext("{*}Key") or ""
+            match = key_pattern.fullmatch(key)
+            if not match:
+                continue
+            try:
+                captured = datetime.strptime(match.group(1), "%Y-%m-%dT%H-%M-%SZ").replace(
+                    tzinfo=UTC
+                )
+            except ValueError as error:
+                raise RiverImageError("The archive returned an invalid capture time.") from error
+            if captured >= end_utc:
+                reached_end = True
+                break
+            size_text = contents.findtext("{*}Size") or "0"
+            size_bytes = int(size_text) if size_text.isdigit() else 0
+            candidates.append(ImageSequenceCandidate(ARCHIVE_URL + key, captured, size_bytes))
+            if len(candidates) > MAX_SEQUENCE_CANDIDATES:
+                raise RiverImageError(
+                    "This date range has too many images to list. "
+                    "Narrow the date range or pick a sparser sampling mode."
+                )
+        if reached_end:
+            break
+        if root.findtext("{*}IsTruncated") != "true":
+            break
+        continuation_token = root.findtext("{*}NextContinuationToken")
+        if not continuation_token:
+            break
+    return candidates
+
+
+def sample_image_sequence_candidates(
+    candidates: list[ImageSequenceCandidate], mode: str, *, timezone_name: str = "UTC"
+) -> list[ImageSequenceCandidate]:
+    """Reduce a chronological candidate list to one per requested time bucket."""
+
+    if mode not in ALLOWED_SEQUENCE_SAMPLING_MODES:
+        allowed = ", ".join(sorted(ALLOWED_SEQUENCE_SAMPLING_MODES))
+        raise RiverImageError(f"Invalid sampling mode: use one of {allowed}.")
+    if mode == "all":
+        return list(candidates)
+    try:
+        zone = ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError as error:
+        raise RiverImageError("Enter a valid IANA timezone.") from error
+    seen_buckets: set[tuple[int, ...]] = set()
+    sampled: list[ImageSequenceCandidate] = []
+    for candidate in candidates:
+        bucket = _sequence_bucket_key(candidate.captured_utc.astimezone(zone), mode)
+        if bucket in seen_buckets:
+            continue
+        seen_buckets.add(bucket)
+        sampled.append(candidate)
+    return sampled
+
+
+@dataclass(frozen=True)
+class ImageSequencePreview:
+    """A no-download preview of what a sequence request would fetch."""
+
+    camera_id: str
+    timezone: str
+    candidate_count: int
+    sampled_count: int
+    earliest_captured_utc: str | None
+    latest_captured_utc: str | None
+    estimated_bytes: int
+    sampling_mode: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+def preview_river_image_sequence(
+    *,
+    camera_url: str,
+    start_date: str,
+    end_date: str,
+    timezone_name: str,
+    sampling_mode: str,
+) -> ImageSequencePreview:
+    """Report how many images a sequence request would fetch, without downloading."""
+
+    slug = camera_slug(camera_url)
+    zone_name = timezone_name.strip() or camera_timezone(slug)
+    start_utc, end_utc = parse_sequence_date_range(start_date.strip(), end_date.strip(), zone_name)
+    candidates = list_archive_images_between(slug, start_utc, end_utc)
+    sampled = sample_image_sequence_candidates(candidates, sampling_mode, timezone_name=zone_name)
+    return ImageSequencePreview(
+        camera_id=slug,
+        timezone=zone_name,
+        candidate_count=len(candidates),
+        sampled_count=len(sampled),
+        earliest_captured_utc=sampled[0].captured_utc.isoformat() if sampled else None,
+        latest_captured_utc=sampled[-1].captured_utc.isoformat() if sampled else None,
+        estimated_bytes=sum(candidate.size_bytes for candidate in sampled),
+        sampling_mode=sampling_mode,
+    )
+
+
+@dataclass(frozen=True)
+class ImageSequenceRecord:
+    """One row of a saved image sequence's manifest."""
+
+    site_id: str
+    camera_id: str
+    source_url: str
+    captured_at_utc: str
+    local_time: str
+    filename: str
+    file_size_bytes: int
+    download_status: str
+    source_system: str = "usgs_nims"
+
+
+@dataclass(frozen=True)
+class ImageSequenceDownloadResult:
+    """Result of downloading a sampled, date-ranged image sequence into a site."""
+
+    directory: Path
+    sequence_id: str
+    timezone: str
+    records: list[ImageSequenceRecord]
+
+    def to_dict(self) -> dict[str, Any]:
+        downloaded = sum(record.download_status == "downloaded" for record in self.records)
+        missing = sum(record.download_status == "missing" for record in self.records)
+        failed = sum(record.download_status == "failed" for record in self.records)
+        return {
+            "success": failed == 0,
+            "message": f"Downloaded {downloaded} image(s); {missing} missing; {failed} failed.",
+            "output_directory": str(self.directory),
+            "sequence_id": self.sequence_id,
+            "timezone": self.timezone,
+            "downloaded_count": downloaded,
+            "missing_count": missing,
+            "failed_count": failed,
+            "records": [asdict(record) for record in self.records],
+        }
+
+
+def download_river_image_sequence(
+    *,
+    camera_url: str,
+    start_date: str,
+    end_date: str,
+    timezone_name: str,
+    sampling_mode: str,
+    site_id: str,
+    site_dir: Path,
+    overwrite: bool = False,
+) -> ImageSequenceDownloadResult:
+    """Download a sampled, date-ranged image sequence into a site folder."""
+
+    slug = camera_slug(camera_url)
+    zone_name = timezone_name.strip() or camera_timezone(slug)
+    start = start_date.strip()
+    end = end_date.strip()
+    start_utc, end_utc = parse_sequence_date_range(start, end, zone_name)
+    candidates = list_archive_images_between(slug, start_utc, end_utc)
+    sampled = sample_image_sequence_candidates(candidates, sampling_mode, timezone_name=zone_name)
+    zone = ZoneInfo(zone_name)
+
+    sequence_id = f"usgs-{slug}-{start}-{end}-{sampling_mode}"
+    sequence_dir = (site_dir / "inputs" / "image-sequences" / sequence_id).resolve()
+    if sequence_dir.exists():
+        if not overwrite:
+            raise RiverImageError(
+                "An image sequence already exists for this camera and date range: "
+                f"{sequence_id}. Use overwrite to replace it."
+            )
+        shutil.rmtree(sequence_dir)
+    images_dir = sequence_dir / "images"
+    images_dir.mkdir(parents=True, exist_ok=False)
+
+    records: list[ImageSequenceRecord] = []
+    for candidate in sampled:
+        filename = candidate.source_url.rsplit("/", 1)[-1]
+        local_time = candidate.captured_utc.astimezone(zone).isoformat()
+        try:
+            data, content_type = _fetch(candidate.source_url, limit=MAX_IMAGE_BYTES)
+            if content_type != "image/jpeg" or not data.startswith(b"\xff\xd8\xff"):
+                raise RiverImageError("The archive did not return a JPEG image.")
+            (images_dir / filename).write_bytes(data)
+            records.append(
+                ImageSequenceRecord(
+                    site_id=site_id,
+                    camera_id=slug,
+                    source_url=candidate.source_url,
+                    captured_at_utc=candidate.captured_utc.isoformat(),
+                    local_time=local_time,
+                    filename=filename,
+                    file_size_bytes=len(data),
+                    download_status="downloaded",
+                )
+            )
+        except RiverImageError:
+            records.append(
+                ImageSequenceRecord(
+                    site_id=site_id,
+                    camera_id=slug,
+                    source_url=candidate.source_url,
+                    captured_at_utc=candidate.captured_utc.isoformat(),
+                    local_time=local_time,
+                    filename=filename,
+                    file_size_bytes=0,
+                    download_status="failed",
+                )
+            )
+
+    if sampling_mode != "all":
+        present_buckets = {
+            _sequence_bucket_key(candidate.captured_utc.astimezone(zone), sampling_mode)
+            for candidate in sampled
+        }
+        for bucket in _expected_sequence_buckets(start_utc, end_utc, zone, sampling_mode):
+            if bucket in present_buckets:
+                continue
+            if len(bucket) == 3:
+                bucket_start_local = datetime(bucket[0], bucket[1], bucket[2], tzinfo=zone)
+            else:
+                bucket_start_local = datetime(
+                    bucket[0], bucket[1], bucket[2], bucket[3], tzinfo=zone
+                )
+            records.append(
+                ImageSequenceRecord(
+                    site_id=site_id,
+                    camera_id=slug,
+                    source_url="",
+                    captured_at_utc=bucket_start_local.astimezone(UTC).isoformat(),
+                    local_time=bucket_start_local.isoformat(),
+                    filename="",
+                    file_size_bytes=0,
+                    download_status="missing",
+                )
+            )
+
+    records.sort(key=lambda record: record.captured_at_utc)
+    write_jsonl_records(
+        sequence_dir / "sequence-manifest.jsonl", [asdict(record) for record in records]
+    )
+
+    result = ImageSequenceDownloadResult(sequence_dir, sequence_id, zone_name, records)
+    summary = result.to_dict() | {
+        "camera_url": camera_url.strip(),
+        "requested_start_date": start,
+        "requested_end_date": end,
+        "downloaded_at_utc": datetime.now(UTC).isoformat(),
+    }
+    (sequence_dir / "download-summary.json").write_text(
+        json.dumps(summary, indent=2) + "\n", encoding="utf-8"
+    )
+    return result
+
+
+def resolve_sequence_image(site_dir: Path, sequence_id: str, filename: str) -> Path:
+    """Serve only JPEG files that belong to a saved image-sequence batch."""
+
+    if not _SEQUENCE_ID_PATTERN.fullmatch(sequence_id) or not re.fullmatch(
+        r"[A-Za-z0-9_-]+___\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z\.jpg", filename
+    ):
+        raise RiverImageError("Image not found.")
+    sequences_root = (site_dir / "inputs" / "image-sequences").resolve()
+    sequence_dir = sequences_root / sequence_id
+    candidate = sequence_dir / "images" / filename
+    if sequence_dir.is_symlink() or candidate.is_symlink() or not candidate.is_file():
+        raise RiverImageError("Image not found.")
+    candidate.resolve().relative_to(sequences_root)
+    try:
+        records = read_jsonl_records(sequence_dir / "sequence-manifest.jsonl")
+    except ValueError as error:
+        raise RiverImageError("Image not found.") from error
+    if not any(
+        record.get("filename") == filename and record.get("download_status") == "downloaded"
+        for record in records
+    ):
+        raise RiverImageError("Image not found.")
+    return candidate
+
+
+def list_site_image_sequences(site_dir: Path) -> list[dict[str, Any]]:
+    """Return saved download summaries for every image sequence under a site."""
+
+    sequences_dir = site_dir / "inputs" / "image-sequences"
+    if not sequences_dir.is_dir():
+        return []
+    summaries: list[dict[str, Any]] = []
+    for child in sorted(sequences_dir.iterdir()):
+        summary_path = child / "download-summary.json"
+        if not child.is_dir() or not summary_path.is_file():
+            continue
+        try:
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(summary, dict):
+            summaries.append(summary)
+    return summaries

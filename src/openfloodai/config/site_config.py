@@ -80,6 +80,11 @@ class NormalWaterlineGuide:
     confirmed_at: str | None
     invalidated_at: str | None
     invalidation_reason: str | None
+    # A guide's source is either a video (video_id + video_time_seconds) or a
+    # saved image-sequence still (image_sequence_id + image_filename) —
+    # exactly one, never both, never neither. See _load_normal_waterline_guide.
+    image_sequence_id: str = ""
+    image_filename: str = ""
 
 
 @dataclass(frozen=True)
@@ -375,6 +380,8 @@ def _normal_waterline_guide_to_dict(value: NormalWaterlineGuide) -> dict[str, An
         "confirmed_at": value.confirmed_at,
         "invalidated_at": value.invalidated_at,
         "invalidation_reason": value.invalidation_reason,
+        "image_sequence_id": value.image_sequence_id,
+        "image_filename": value.image_filename,
     }
 
 
@@ -491,7 +498,7 @@ def _load_normal_waterline_guide(
         raise SiteConfigError("Normal waterline guide must be a JSON object")
 
     record = dict[str, Any](value)
-    expected_fields = {
+    required_fields = {
         "id",
         "label",
         "points",
@@ -506,14 +513,15 @@ def _load_normal_waterline_guide(
         "invalidated_at",
         "invalidation_reason",
     }
-    missing_fields = sorted(expected_fields - record.keys())
+    optional_fields = {"image_sequence_id", "image_filename"}
+    missing_fields = sorted(required_fields - record.keys())
     if missing_fields:
         joined_fields = ", ".join(missing_fields)
         raise SiteConfigError(
             f"Normal waterline guide is missing required field(s): {joined_fields}"
         )
 
-    extra_fields = sorted(record.keys() - expected_fields)
+    extra_fields = sorted(record.keys() - required_fields - optional_fields)
     if extra_fields:
         joined_fields = ", ".join(extra_fields)
         raise SiteConfigError(f"Normal waterline guide has unsupported field(s): {joined_fields}")
@@ -540,12 +548,33 @@ def _load_normal_waterline_guide(
             "Normal waterline guide field 'invalidation_reason' must be empty unless invalid"
         )
 
+    video_id = _load_guide_text_allow_empty(record["video_id"], "video_id")
+    video_time_seconds = _load_guide_time(record["video_time_seconds"])
+    image_sequence_id = _load_guide_text_allow_empty(
+        record.get("image_sequence_id", ""), "image_sequence_id"
+    )
+    image_filename = _load_guide_text_allow_empty(
+        record.get("image_filename", ""), "image_filename"
+    )
+    if bool(image_sequence_id) != bool(image_filename):
+        raise SiteConfigError(
+            "Normal waterline guide fields 'image_sequence_id' and 'image_filename' "
+            "must both be set or both be empty"
+        )
+    has_video_source = bool(video_id)
+    has_image_source = bool(image_sequence_id)
+    if has_video_source == has_image_source:
+        raise SiteConfigError(
+            "Normal waterline guide must have exactly one source: "
+            "a video (video_id) or a saved image (image_sequence_id + image_filename)"
+        )
+
     return NormalWaterlineGuide(
         id=_load_required_text(record, "id"),
         label=_load_required_text(record, "label"),
         points=points,
-        video_id=_load_required_text(record, "video_id"),
-        video_time_seconds=_load_guide_time(record["video_time_seconds"]),
+        video_id=video_id,
+        video_time_seconds=video_time_seconds,
         site_id=_load_required_text(record, "site_id"),
         camera_id=_load_required_text(record, "camera_id"),
         status=status,
@@ -554,6 +583,8 @@ def _load_normal_waterline_guide(
         confirmed_at=_load_optional_text(record["confirmed_at"], "confirmed_at"),
         invalidated_at=_load_optional_text(record["invalidated_at"], "invalidated_at"),
         invalidation_reason=invalidation_reason,
+        image_sequence_id=image_sequence_id,
+        image_filename=image_filename,
     )
 
 
@@ -618,4 +649,10 @@ def _load_guide_bool(value: object) -> bool:
 def _load_guide_notes(value: object) -> str:
     if not isinstance(value, str):
         raise SiteConfigError("Normal waterline guide field 'notes' must be a string")
+    return value.strip()
+
+
+def _load_guide_text_allow_empty(value: object, field_name: str) -> str:
+    if not isinstance(value, str):
+        raise SiteConfigError(f"Normal waterline guide field '{field_name}' must be a string")
     return value.strip()

@@ -496,6 +496,27 @@
         gap: 6px;
       }
 
+      .image-sequence-thumb-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        gap: 10px;
+      }
+
+      .image-sequence-thumb {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .image-sequence-thumb img {
+        width: 100%;
+        aspect-ratio: 4 / 3;
+        object-fit: cover;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: var(--panel-2);
+      }
+
       .chip {
         font-size: 11.5px;
         font-weight: 700;
@@ -859,12 +880,14 @@
           <button class="tab" role="tab" data-tab="videos" aria-selected="false">Videos</button>
           <button class="tab" role="tab" data-tab="config" aria-selected="false">Config</button>
           <button class="tab" role="tab" data-tab="runs" aria-selected="false">Runs</button>
+          <button class="tab" role="tab" data-tab="image-sequences" aria-selected="false">Image sequences</button>
         </nav>
 
         <section class="tab-panel" id="panel-overview" role="tabpanel"></section>
         <section class="tab-panel" id="panel-videos" role="tabpanel" hidden></section>
         <section class="tab-panel" id="panel-config" role="tabpanel" hidden></section>
         <section class="tab-panel" id="panel-runs" role="tabpanel" hidden></section>
+        <section class="tab-panel" id="panel-image-sequences" role="tabpanel" hidden></section>
       </div>
     </main>
 
@@ -978,6 +1001,7 @@
         renderVideosTab(site);
         renderConfigTab(site);
         renderRunsTab(site);
+        renderImageSequencesTab(site);
         // Config and manifest are fetched lazily; both tabs render a loading
         // state immediately above, then fill in once these resolve.
         await Promise.all([loadSiteConfig(site), loadSiteManifest(site)]);
@@ -1018,15 +1042,24 @@
       // ---------------------------------------------------------------
       // Tabs
       // ---------------------------------------------------------------
+      function activateTab(tabName) {
+        const tab = document.querySelector(`.tab[data-tab="${tabName}"]`);
+        if (!tab) return;
+        for (const other of document.querySelectorAll(".tab")) {
+          other.setAttribute("aria-selected", String(other === tab));
+        }
+        for (const panel of document.querySelectorAll(".tab-panel")) {
+          panel.hidden = panel.id !== `panel-${tabName}`;
+        }
+      }
+
       for (const tab of document.querySelectorAll(".tab")) {
-        tab.addEventListener("click", () => {
-          for (const other of document.querySelectorAll(".tab")) {
-            other.setAttribute("aria-selected", String(other === tab));
-          }
-          for (const panel of document.querySelectorAll(".tab-panel")) {
-            panel.hidden = panel.id !== `panel-${tab.dataset.tab}`;
-          }
-        });
+        tab.addEventListener("click", () => activateTab(tab.dataset.tab));
+      }
+
+      const requestedTab = new URLSearchParams(window.location.search).get("tab");
+      if (requestedTab) {
+        activateTab(requestedTab);
       }
 
       // ---------------------------------------------------------------
@@ -1341,6 +1374,116 @@
         wrap.innerHTML = `<video controls preload="metadata" src="/api/site-video?${query}"></video>`;
         wrap.classList.add("open");
         button.textContent = "Hide preview";
+      }
+
+      // ---------------------------------------------------------------
+      // Image sequences tab
+      // ---------------------------------------------------------------
+      async function renderImageSequencesTab(site) {
+        const panel = document.getElementById("panel-image-sequences");
+        panel.innerHTML = `
+          <div class="card">
+            <div class="card-title">USGS image sequences</div>
+            <p class="status-line">Loading&hellip;</p>
+          </div>
+        `;
+        let sequences = [];
+        try {
+          const response = await fetch(
+            `/api/site-image-sequences?${new URLSearchParams({ folder_name: site.site_name })}`
+          );
+          if (response.ok) {
+            const payload = await response.json();
+            sequences = payload.sequences || [];
+          }
+        } catch (error) {
+          sequences = [];
+        }
+
+        if (!sequences.length) {
+          panel.innerHTML = `
+            <div class="card">
+              <div class="card-title">USGS image sequences</div>
+              <div class="empty-state">
+                <div class="empty-state-icon">&#128247;</div>
+                No image sequences have been downloaded for this site yet. Start one from
+                the Home UI's guided workflow.
+              </div>
+            </div>
+          `;
+          return;
+        }
+
+        const cards = sequences
+          .map((sequence) => renderImageSequenceCard(site.site_name, sequence))
+          .join("");
+        panel.innerHTML = `
+          <div class="card">
+            <div class="card-title">
+              USGS image sequences <span class="badge neutral">${sequences.length}</span>
+            </div>
+            <p class="status-line">
+              Timestamped observation images for future image validation. These do not
+              affect video intake, labels, the manifest, or Run validation.
+            </p>
+            <div class="card-grid">${cards}</div>
+          </div>
+        `;
+      }
+
+      function renderImageSequenceCard(siteName, sequence) {
+        const records = Array.isArray(sequence.records) ? sequence.records : [];
+        const downloaded = records.filter((record) => record.download_status === "downloaded");
+        const thumbnails = downloaded
+          .slice(0, 12)
+          .map((record) => {
+            const query = new URLSearchParams({
+              folder_name: siteName,
+              sequence_id: sequence.sequence_id,
+              filename: record.filename,
+            });
+            const watchedAreaQuery = new URLSearchParams({
+              site: siteName,
+              action: "set_watched_area",
+              image_sequence_id: sequence.sequence_id,
+              image_filename: record.filename,
+            });
+            const riverbankQuery = new URLSearchParams({
+              site: siteName,
+              action: "set_normal_waterline_guide",
+              image_sequence_id: sequence.sequence_id,
+              image_filename: record.filename,
+            });
+            return `
+              <div class="image-sequence-thumb">
+                <img src="/api/image-sequence-image?${query}" alt="${escapeHtml(record.captured_at_utc || record.filename)}" loading="lazy">
+                <div class="video-card-meta">${escapeHtml(formatDateTime(record.local_time || record.captured_at_utc))}</div>
+                <a class="btn small" href="/openfloodai-home-ui.html?${watchedAreaQuery}">Use as watched-area reference</a>
+                <a class="btn small" href="/openfloodai-home-ui.html?${riverbankQuery}">Use as riverbank reference</a>
+              </div>
+            `;
+          })
+          .join("");
+        return `
+          <div class="video-card">
+            <div class="video-card-head">
+              <div class="video-card-id">${escapeHtml(sequence.sequence_id || "")}</div>
+              <div class="video-card-filename">${escapeHtml(sequence.sampling_mode || "")}</div>
+            </div>
+            <div class="video-card-body">
+              <div class="chip-row">
+                <span class="badge ok">${sequence.downloaded_count || 0} downloaded</span>
+                ${sequence.missing_count ? `<span class="badge warn">${sequence.missing_count} missing</span>` : ""}
+                ${sequence.failed_count ? `<span class="badge missing">${sequence.failed_count} failed</span>` : ""}
+              </div>
+              <div class="video-card-meta">
+                ${escapeHtml(sequence.requested_start_date || "")} to
+                ${escapeHtml(sequence.requested_end_date || "")} (${escapeHtml(sequence.timezone || "UTC")})
+              </div>
+              <div class="image-sequence-thumb-grid">${thumbnails || "<p class=\"status-line\">No images downloaded yet.</p>"}</div>
+            </div>
+          </div>
+        `;
       }
 
       // ---------------------------------------------------------------

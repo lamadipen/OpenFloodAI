@@ -185,6 +185,64 @@ def test_write_normal_waterline_guide_stores_points(tmp_path: Path) -> None:
     )
 
 
+def test_write_normal_waterline_guide_accepts_an_image_sequence_source(tmp_path: Path) -> None:
+    config_path = site_with_watched_area(tmp_path)
+
+    saved = write_normal_waterline_guide(
+        config_path,
+        normal_waterline_guide_payload(
+            video_id="",
+            video_time_seconds=0,
+            image_sequence_id="usgs-camera-demo-01-2026-09-01-2026-09-01",
+            image_filename="camera-demo-01___2026-09-01T09-00-00Z.jpg",
+        ),
+    )
+
+    assert saved.video_id == ""
+    assert saved.image_sequence_id == "usgs-camera-demo-01-2026-09-01-2026-09-01"
+    assert saved.image_filename == "camera-demo-01___2026-09-01T09-00-00Z.jpg"
+    config = load_site_config(config_path)
+    assert config.normal_waterline_guides == (saved,)
+
+
+def test_write_normal_waterline_guide_rejects_both_video_and_image_source(tmp_path: Path) -> None:
+    config_path = site_with_watched_area(tmp_path)
+
+    with pytest.raises(SiteConfigError, match="exactly one source"):
+        write_normal_waterline_guide(
+            config_path,
+            normal_waterline_guide_payload(
+                image_sequence_id="usgs-camera-demo-01-2026-09-01-2026-09-01",
+                image_filename="camera-demo-01___2026-09-01T09-00-00Z.jpg",
+            ),
+        )
+
+
+def test_write_normal_waterline_guide_rejects_neither_video_nor_image_source(
+    tmp_path: Path,
+) -> None:
+    config_path = site_with_watched_area(tmp_path)
+
+    with pytest.raises(SiteConfigError, match="exactly one source"):
+        write_normal_waterline_guide(
+            config_path, normal_waterline_guide_payload(video_id="", video_time_seconds=0)
+        )
+
+
+def test_write_normal_waterline_guide_rejects_only_one_image_field(tmp_path: Path) -> None:
+    config_path = site_with_watched_area(tmp_path)
+
+    with pytest.raises(SiteConfigError, match="must both be set or both be empty"):
+        write_normal_waterline_guide(
+            config_path,
+            normal_waterline_guide_payload(
+                video_id="",
+                video_time_seconds=0,
+                image_sequence_id="usgs-camera-demo-01-2026-09-01-2026-09-01",
+            ),
+        )
+
+
 def test_write_normal_waterline_guide_requires_existing_watched_area(tmp_path: Path) -> None:
     payload = valid_config_payload()
     del payload["reference_region"]
