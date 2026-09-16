@@ -130,6 +130,7 @@ class ValidationSiteStatus:
     labels_found: bool
     label_count: int
     human_label_options: list[str]
+    labeled_video_ids: list[str]
     manifest_found: bool
     manifest_status: str
     manifest_tracked_video_count: int
@@ -524,6 +525,7 @@ def read_validation_site_status(site_dir: Path) -> ValidationSiteStatus:
     video_paths = _find_video_paths(site_dir)
     label_paths = _find_label_paths(site_dir)
     human_label_options = _find_human_label_options(label_paths)
+    labeled_video_ids = _find_labeled_video_ids(label_paths)
     manifest_status, manifest_tracked_video_count, manifest_issues = _read_manifest_status(
         site_dir / "manifest.jsonl", video_paths
     )
@@ -541,6 +543,7 @@ def read_validation_site_status(site_dir: Path) -> ValidationSiteStatus:
         labels_found=bool(label_paths),
         label_count=len(label_paths),
         human_label_options=human_label_options,
+        labeled_video_ids=labeled_video_ids,
         manifest_found=manifest_status == "Found",
         manifest_status=manifest_status,
         manifest_tracked_video_count=manifest_tracked_video_count,
@@ -685,6 +688,26 @@ def _normal_waterline_guide_step_status(normal_waterline_guides: list[dict[str, 
     return WORKFLOW_STEP_NEEDS_REVIEW
 
 
+def _find_labeled_video_ids(label_paths: list[Path]) -> list[str]:
+    """Return the distinct video IDs that already have at least one human label."""
+
+    video_ids: set[str] = set()
+    for label_path in label_paths:
+        try:
+            for line in label_path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                record = json.loads(line)
+                if not isinstance(record, dict):
+                    continue
+                video_id = record.get("video_id")
+                if isinstance(video_id, str) and video_id.strip():
+                    video_ids.add(video_id.strip())
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            continue
+    return sorted(video_ids)
+
+
 def _find_human_label_options(label_paths: list[Path]) -> list[str]:
     options: set[str] = set()
     for label_path in label_paths:
@@ -776,6 +799,7 @@ def _read_scorecard(report_path: Path | None) -> dict[str, Any] | None:
     fields: dict[str, Any] = {}
     patterns = (
         ("videos_tested", "Videos tested", int),
+        ("videos_with_human_label", "Videos with a human label", int),
         ("label_windows", "Label windows", int),
         ("agree", "Agree", int),
         ("disagree", "Disagree", int),

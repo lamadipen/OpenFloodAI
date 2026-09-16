@@ -63,6 +63,7 @@ def test_read_validation_site_status_reports_ready_site(tmp_path: Path) -> None:
     assert status.labels_found is True
     assert status.label_count == 1
     assert status.human_label_options == ["bridge_pillar_covered", "cannot_judge"]
+    assert status.labeled_video_ids == ["river-001"]
     assert status.manifest_found is True
     assert status.outputs_found is True
     assert status.report_count == 1
@@ -102,6 +103,7 @@ def test_read_validation_site_status_allows_machine_review_without_labels(
     assert status.ready_for_validation is True
     assert status.labels_found is False
     assert status.human_label_options == []
+    assert status.labeled_video_ids == []
     assert status.manifest_found is False
     assert (
         status.machine_review_explanation
@@ -220,3 +222,16 @@ def test_video_ids_are_sorted_unique_and_scoped_to_site(tmp_path: Path) -> None:
     (other / "inputs" / "videos" / "other-only.mp4").write_bytes(b"test")
 
     assert read_validation_site_status(site).video_ids == ["another", "river-001"]
+
+
+def test_labeled_video_ids_only_lists_videos_that_actually_have_a_label(
+    tmp_path: Path,
+) -> None:
+    site = make_site(tmp_path / "example-site")
+    (site / "inputs" / "videos" / "unlabeled-001.mp4").write_bytes(b"test")
+
+    status = read_validation_site_status(site)
+
+    assert status.video_ids == ["river-001", "unlabeled-001"]
+    assert status.labeled_video_ids == ["river-001"]
+    assert "unlabeled-001" not in status.labeled_video_ids

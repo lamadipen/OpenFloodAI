@@ -97,6 +97,7 @@ class ValidationScorecard:
     """Plain-language scorecard for one local validation report."""
 
     videos_reviewed: int
+    videos_with_human_label: int
     label_windows: int
     agree_count: int
     disagree_count: int
@@ -110,10 +111,16 @@ class ValidationScorecard:
     def summary(self) -> str:
         """Return a cautious summary for a non-technical reviewer."""
 
-        if self.label_windows == 0:
+        if self.videos_reviewed == 0:
             return "No labelled windows were available for comparison yet."
+        if self.label_windows == 0:
+            return (
+                f"{self.videos_with_human_label} of {self.videos_reviewed} video(s) have a "
+                "human label. No labelled windows were available for comparison yet."
+            )
         return (
-            f"Reviewed {self.videos_reviewed} video(s) and {self.label_windows} label window(s): "
+            f"Reviewed {self.videos_reviewed} video(s), {self.videos_with_human_label} of "
+            f"which have a human label, and {self.label_windows} label window(s): "
             f"{self.agree_count} agree, {self.disagree_count} disagree, and "
             f"{self.cannot_compare_count} cannot compare."
         )
@@ -247,6 +254,7 @@ def render_site_validation_report(report: SiteValidationReport) -> str:
         "",
         "## Validation Scorecard",
         f"- Videos tested: {report.scorecard.videos_reviewed}",
+        f"- Videos with a human label: {report.scorecard.videos_with_human_label}",
         f"- Label windows: {report.scorecard.label_windows}",
         f"- Agree: {report.scorecard.agree_count}",
         f"- Disagree: {report.scorecard.disagree_count}",
@@ -477,8 +485,10 @@ def _build_report(
         for comparison in result.comparisons
     )
     quality_summary = summarize_sample_quality(labels, normal_waterline_guides)
+    videos_with_human_label = sum(result.human_label != "missing" for result in results)
     scorecard = ValidationScorecard(
         videos_reviewed=len(results),
+        videos_with_human_label=videos_with_human_label,
         label_windows=label_window_count,
         agree_count=agree_count,
         disagree_count=disagree_count,

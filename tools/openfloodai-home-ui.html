@@ -1797,7 +1797,19 @@
         }
         const selectedSite = latestSites.find((site) => site.site_name === labelSiteSelect.value);
         const videoIds = selectedSite?.video_ids || [];
-        fillSelect(labelVideoSelect, videoIds, videoIds.length ? "Choose video ID" : "No local videos — enter ID below");
+        const labeledVideoIds = new Set(selectedSite?.labeled_video_ids || []);
+        const videoLabelDisplayLabels = Object.fromEntries(
+          videoIds.map((videoId) => [
+            videoId,
+            labeledVideoIds.has(videoId) ? `${videoId} (has a label)` : `${videoId} (no label yet)`,
+          ])
+        );
+        fillSelect(
+          labelVideoSelect,
+          videoIds,
+          videoIds.length ? "Choose video ID" : "No local videos — enter ID below",
+          videoLabelDisplayLabels
+        );
         fillSelect(labelValueSelect, labelsForSelectedSite(), "Choose human label", humanLabelDisplayLabels);
         updateLabelTimeDefaults();
       }
@@ -2863,10 +2875,15 @@
         const reviewText = reviewCount
           ? `Human review is still needed for ${reviewCount} item${reviewCount === 1 ? "" : "s"}.`
           : "Human review is not currently flagged.";
+        const labeledText =
+          scorecard.videos_tested === undefined || scorecard.videos_with_human_label === undefined
+            ? "Not available"
+            : `${scorecard.videos_with_human_label} of ${scorecard.videos_tested}`;
         return `
           <div class="detail-item detail-explanation">
             <div class="detail-label">Latest validation summary</div>
             <div class="detail-value">Videos tested: ${escapeHtml(scorecardValue(scorecard.videos_tested))}</div>
+            <div class="detail-value">Videos with a human label: ${escapeHtml(labeledText)}</div>
             <div class="detail-value">Label windows: ${escapeHtml(scorecardValue(scorecard.label_windows))}</div>
             <div class="detail-value">Agree: ${escapeHtml(scorecardValue(scorecard.agree))}</div>
             <div class="detail-value">Disagree: ${escapeHtml(scorecardValue(scorecard.disagree))}</div>
