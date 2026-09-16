@@ -119,6 +119,34 @@ test("runImageSequenceValidationForSite posts only to the image-sequence endpoin
   assert.ok(source.includes("runningImageSequenceValidations"));
 });
 
+test("runImageSequenceValidationForSite sends the user-chosen baseline_filename, not just the earliest image", () => {
+  const source = grab("runImageSequenceValidationForSite");
+  assert.ok(source.includes('card.querySelector("[data-baseline-select]")'));
+  assert.ok(source.includes("baseline_filename: baselineFilename"));
+});
+
+test("renderImageSequenceCard offers a baseline picker over the downloaded images", () => {
+  const context = runWithStubs(grab("renderImageSequenceCard"), {
+    escapeHtml: (value) => String(value),
+    formatDateTime: (value) => String(value),
+    URLSearchParams,
+  });
+  const html = context.renderImageSequenceCard("demo-site", {
+    sequence_id: "usgs-camera-2026-09-01-2026-09-01",
+    records: [
+      { filename: "a.jpg", download_status: "downloaded", captured_at_utc: "T1", local_time: "T1" },
+      { filename: "b.jpg", download_status: "downloaded", captured_at_utc: "T2", local_time: "T2" },
+      { filename: "c.jpg", download_status: "missing", captured_at_utc: "T3", local_time: "T3" },
+    ],
+  });
+
+  assert.match(html, /data-baseline-select/);
+  assert.match(html, /Auto \(earliest downloaded image\)/);
+  assert.match(html, /value="a\.jpg"/);
+  assert.match(html, /value="b\.jpg"/);
+  assert.doesNotMatch(html, /value="c\.jpg"/, "a missing image must not be offered as a baseline");
+});
+
 test("renderImageSequenceRunDetail renders review images and the report text", () => {
   const source = grab("renderImageSequenceRunDetail");
   const context = runWithStubs(source, {

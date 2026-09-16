@@ -1489,6 +1489,20 @@
                 ${escapeHtml(sequence.requested_end_date || "")} (${escapeHtml(sequence.timezone || "UTC")})
               </div>
               <div class="image-sequence-thumb-grid">${thumbnails || "<p class=\"status-line\">No images downloaded yet.</p>"}</div>
+              <div style="margin-top: 12px;">
+                <label style="display: block; font-weight: 700; margin-bottom: 4px; font-size: 12.5px;">
+                  Baseline image
+                </label>
+                <select data-baseline-select style="width: 100%; max-width: 320px; padding: 6px; border: 1px solid var(--line); border-radius: 4px;">
+                  <option value="">Auto (earliest downloaded image)</option>
+                  ${downloaded
+                    .map(
+                      (record) =>
+                        `<option value="${escapeHtml(record.filename)}">${escapeHtml(formatDateTime(record.local_time || record.captured_at_utc))} &mdash; ${escapeHtml(record.filename)}</option>`
+                    )
+                    .join("")}
+                </select>
+              </div>
               <div style="margin-top: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
                 <button type="button" class="btn small" data-run-image-sequence-validation>Run image-sequence validation</button>
                 <span class="status-line" data-image-sequence-run-status></span>
@@ -1519,11 +1533,17 @@
         button.disabled = true;
         button.setAttribute("aria-busy", "true");
         button.textContent = "Running…";
+        const baselineSelect = card.querySelector("[data-baseline-select]");
+        const baselineFilename = baselineSelect ? baselineSelect.value : "";
         try {
           const response = await fetch("/api/run-image-sequence-validation", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ folder_name: siteName, sequence_id: sequenceId }),
+            body: JSON.stringify({
+              folder_name: siteName,
+              sequence_id: sequenceId,
+              ...(baselineFilename ? { baseline_filename: baselineFilename } : {}),
+            }),
           });
           const result = await response.json();
           if (!response.ok || !result.success) {

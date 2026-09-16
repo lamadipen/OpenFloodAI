@@ -10,6 +10,7 @@ under `outputs/image-sequence-runs/<run_id>/`. It shares only data types
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shutil
@@ -25,7 +26,11 @@ import cv2
 from openfloodai.config import load_site_config, reference_region_to_dict
 from openfloodai.contracts import read_jsonl_records, write_jsonl_records
 from openfloodai.review.review_images import generate_biggest_change_review_images
-from openfloodai.vision.simple_signals import VisualSignalError, compare_region_signals
+from openfloodai.vision.simple_signals import (
+    VisualSignalError,
+    compare_region_signals,
+    extract_region_signals,
+)
 
 RESULT_POSSIBLE_WATER_LEVEL_CHANGE = "possible_water_level_change"
 RESULT_NO_WATER_LEVEL_CHANGE = "no_water_level_change"
@@ -128,6 +133,19 @@ def run_image_sequence_validation(
     if baseline_frame is None:
         raise ImageSequenceValidationError(
             f"Could not read the baseline image: {baseline_record['filename']}"
+        )
+    # Never silently trust the earliest downloaded image as a normal baseline
+    # without checking it's actually usable — a dark/near-black baseline
+    # would make every later comparison meaningless. Applies whether the
+    # baseline was chosen automatically or given explicitly.
+    baseline_signals = extract_region_signals(
+        baseline_frame, site_config.reference_region, site_config.site_id, site_config.camera_id
+    )
+    baseline_brightness = cast(float, baseline_signals["region_brightness_score"])
+    if baseline_brightness < _DARK_BRIGHTNESS_THRESHOLD:
+        raise ImageSequenceValidationError(
+            f"The baseline image ({baseline_record['filename']}) is too dark to use as a "
+            "normal baseline. Choose a different, clearer baseline image."
         )
 
     records: list[ImageSequenceRecord] = []
@@ -262,6 +280,7 @@ def run_image_sequence_validation(
     _write_inputs_used(
         run_dir=run_dir,
         manifest_path=manifest_path,
+        images_dir=images_dir,
         site_config=site_config,
         report=report,
     )
@@ -377,10 +396,19 @@ def _classify_comparison(evidence_state: str, brightness_score: float) -> tuple[
             RESULT_NO_WATER_LEVEL_CHANGE,
             "No meaningful change was detected in the watched area compared to the baseline image.",
         )
+    if evidence_state == "useful_water_level_evidence":
+        return (
+            RESULT_POSSIBLE_WATER_LEVEL_CHANGE,
+            "The watched area changed in a pattern consistent with a possible water-level "
+            "change. This is not proof of flooding.",
+        )
+    # An unrecognized signal must never be treated as a possible water-level
+    # change by default — if openfloodai.vision.simple_signals ever adds or
+    # renames a state, this falls back to the conservative "cannot judge"
+    # bucket instead of silently reporting a false positive.
     return (
-        RESULT_POSSIBLE_WATER_LEVEL_CHANGE,
-        "The watched area changed in a pattern consistent with a possible water-level "
-        "change. This is not proof of flooding.",
+        RESULT_CANNOT_JUDGE_WATER_LEVEL,
+        f"Unrecognized comparison signal ({evidence_state}); cannot judge safely.",
     )
 
 
@@ -493,6 +521,7 @@ def _write_inputs_used(
     *,
     run_dir: Path,
     manifest_path: Path,
+    images_dir: Path,
     site_config: Any,
     report: ImageSequenceValidationReport,
 ) -> None:
@@ -501,19 +530,37 @@ def _write_inputs_used(
     shutil.copyfile(manifest_path, root / "sequence-manifest.snapshot.jsonl")
     config_snapshot = {
         "reference_region": reference_region_to_dict(site_config.reference_region),
-        "normal_waterline_guides": [
-            {
-                "id": guide.id,
-                "label": guide.label,
-                "status": guide.status,
-                "normal_condition": guide.normal_condition,
-            }
-            for guide in site_config.normal_waterline_guides
-        ],
+        # Full guide records (points, source, timestamps, status, notes) —
+        # not just id/label/status — so a run proves the exact riverbank
+        # guide it used, not merely which guide id existed at the time.
+        "normal_waterline_guides": [asdict(guide) for guide in site_config.normal_waterline_guides],
     }
     (root / "site-config.snapshot.json").write_text(
         json.dumps(config_snapshot, indent=2) + "\n", encoding="utf-8"
     )
+
+    # A sha256 per processed image file, so a run proves exactly which image
+    # bytes it used even after the live image sequence is later replaced or
+    # re-downloaded under the same filenames.
+    hashed_filenames = [report.baseline_filename] + [
+        record.filename for record in report.records if record.download_status == "downloaded"
+    ]
+    images_used = []
+    for filename in hashed_filenames:
+        image_path = images_dir / filename
+        if not image_path.is_file():
+            continue
+        images_used.append(
+            {
+                "filename": filename,
+                "sha256": _sha256_of_file(image_path),
+                "size_bytes": image_path.stat().st_size,
+            }
+        )
+    (root / "images.snapshot.json").write_text(
+        json.dumps(images_used, indent=2) + "\n", encoding="utf-8"
+    )
+
     receipt = {
         "run_id": report.run_id,
         "sequence_id": report.sequence_id,
@@ -524,3 +571,11 @@ def _write_inputs_used(
         "status": "complete",
     }
     (root / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
+
+
+def _sha256_of_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from openfloodai.validation.image_sequence_runner import (
     RESULT_NO_WATER_LEVEL_CHANGE,
     RESULT_POSSIBLE_WATER_LEVEL_CHANGE,
     ImageSequenceValidationError,
+    _classify_comparison,
     list_image_sequence_runs,
     read_image_sequence_run_detail,
     resolve_image_sequence_run_image,
@@ -25,7 +27,12 @@ SEQUENCE_ID = "usgs-camera-demo-2026-09-01-2026-09-01-all"
 FULL_REGION: dict[str, object] = {"x": 0, "y": 0, "width": 100, "height": 100}
 
 
-def make_site(site_dir: Path, *, reference_region: dict[str, object] | None = FULL_REGION) -> None:
+def make_site(
+    site_dir: Path,
+    *,
+    reference_region: dict[str, object] | None = FULL_REGION,
+    normal_waterline_guides: list[dict[str, object]] | None = None,
+) -> None:
     (site_dir / "configs").mkdir(parents=True)
     config: dict[str, object] = {
         "site_id": "site-demo-01",
@@ -35,7 +42,27 @@ def make_site(site_dir: Path, *, reference_region: dict[str, object] | None = FU
     }
     if reference_region is not None:
         config["reference_region"] = reference_region
+    if normal_waterline_guides is not None:
+        config["normal_waterline_guides"] = normal_waterline_guides
     (site_dir / "configs" / "site.json").write_text(json.dumps(config), encoding="utf-8")
+
+
+def confirmed_guide_record(guide_id: str = "left-bank") -> dict[str, object]:
+    return {
+        "id": guide_id,
+        "label": "Left bank",
+        "points": [{"x": 10, "y": 10}, {"x": 20, "y": 20}],
+        "video_id": "video-001",
+        "video_time_seconds": 4.5,
+        "site_id": "site-demo-01",
+        "camera_id": "camera-demo-01",
+        "status": "confirmed",
+        "normal_condition": True,
+        "notes": "Clear view of the bank.",
+        "confirmed_at": "2026-08-01T00:00:00+00:00",
+        "invalidated_at": None,
+        "invalidation_reason": None,
+    }
 
 
 def write_frame(path: Path, value: int, *, bottom_third_value: int | None = None) -> None:
@@ -308,3 +335,110 @@ def test_resolve_image_sequence_run_image_rejects_traversal(tmp_path: Path) -> N
         resolve_image_sequence_run_image(site_dir, "../escape", filename)
     with pytest.raises(ImageSequenceValidationError):
         resolve_image_sequence_run_image(site_dir, report.run_id, "../../secret.png")
+
+
+def test_run_rejects_a_dark_automatically_selected_baseline(tmp_path: Path) -> None:
+    site_dir = tmp_path / "site"
+    make_site(site_dir)
+    sequence_dir = site_dir / "inputs" / "image-sequences" / SEQUENCE_ID
+    images_dir = sequence_dir / "images"
+    write_frame(images_dir / "dark-first.jpg", 3)
+    write_frame(images_dir / "b.jpg", 30)
+    write_manifest(
+        sequence_dir,
+        [
+            manifest_record("dark-first.jpg", "2026-09-01T00:00:00+00:00", "downloaded"),
+            manifest_record("b.jpg", "2026-09-01T01:00:00+00:00", "downloaded"),
+        ],
+    )
+
+    with pytest.raises(ImageSequenceValidationError, match="too dark"):
+        run_image_sequence_validation(site_dir, SEQUENCE_ID)
+
+
+def test_run_rejects_an_explicitly_chosen_dark_baseline(tmp_path: Path) -> None:
+    site_dir = tmp_path / "site"
+    make_site(site_dir)
+    sequence_dir = site_dir / "inputs" / "image-sequences" / SEQUENCE_ID
+    images_dir = sequence_dir / "images"
+    write_frame(images_dir / "a.jpg", 30)
+    write_frame(images_dir / "dark.jpg", 3)
+    write_manifest(
+        sequence_dir,
+        [
+            manifest_record("a.jpg", "2026-09-01T00:00:00+00:00", "downloaded"),
+            manifest_record("dark.jpg", "2026-09-01T01:00:00+00:00", "downloaded"),
+        ],
+    )
+
+    with pytest.raises(ImageSequenceValidationError, match="too dark"):
+        run_image_sequence_validation(site_dir, SEQUENCE_ID, baseline_filename="dark.jpg")
+
+
+def test_inputs_used_preserves_the_complete_riverbank_guide(tmp_path: Path) -> None:
+    site_dir = tmp_path / "site"
+    make_site(site_dir, normal_waterline_guides=[confirmed_guide_record()])
+    sequence_dir = site_dir / "inputs" / "image-sequences" / SEQUENCE_ID
+    images_dir = sequence_dir / "images"
+    write_frame(images_dir / "a.jpg", 30)
+    write_frame(images_dir / "b.jpg", 30)
+    write_manifest(
+        sequence_dir,
+        [
+            manifest_record("a.jpg", "2026-09-01T00:00:00+00:00", "downloaded"),
+            manifest_record("b.jpg", "2026-09-01T01:00:00+00:00", "downloaded"),
+        ],
+    )
+
+    report = run_image_sequence_validation(site_dir, SEQUENCE_ID)
+
+    snapshot = json.loads(
+        (report.run_dir / "inputs-used" / "site-config.snapshot.json").read_text()
+    )
+    saved_guides = snapshot["normal_waterline_guides"]
+    assert len(saved_guides) == 1
+    saved_guide = saved_guides[0]
+    assert saved_guide["id"] == "left-bank"
+    assert saved_guide["points"] == [{"x": 10, "y": 10}, {"x": 20, "y": 20}]
+    assert saved_guide["video_id"] == "video-001"
+    assert saved_guide["video_time_seconds"] == 4.5
+    assert saved_guide["status"] == "confirmed"
+    assert saved_guide["confirmed_at"] == "2026-08-01T00:00:00+00:00"
+    assert saved_guide["notes"] == "Clear view of the bank."
+
+
+def test_inputs_used_records_a_sha256_hash_per_processed_image(tmp_path: Path) -> None:
+    site_dir = tmp_path / "site"
+    make_site(site_dir)
+    sequence_dir = site_dir / "inputs" / "image-sequences" / SEQUENCE_ID
+    images_dir = sequence_dir / "images"
+    write_frame(images_dir / "a.jpg", 30)
+    write_frame(images_dir / "b.jpg", 30)
+    write_manifest(
+        sequence_dir,
+        [
+            manifest_record("a.jpg", "2026-09-01T00:00:00+00:00", "downloaded"),
+            manifest_record("b.jpg", "2026-09-01T01:00:00+00:00", "downloaded"),
+            manifest_record("missing.jpg", "2026-09-01T02:00:00+00:00", "missing"),
+        ],
+    )
+
+    report = run_image_sequence_validation(site_dir, SEQUENCE_ID)
+
+    images_used = json.loads((report.run_dir / "inputs-used" / "images.snapshot.json").read_text())
+    hashes_by_filename = {entry["filename"]: entry["sha256"] for entry in images_used}
+    assert set(hashes_by_filename) == {"a.jpg", "b.jpg"}
+
+    expected_hash = hashlib.sha256((images_dir / "b.jpg").read_bytes()).hexdigest()
+    assert hashes_by_filename["b.jpg"] == expected_hash
+
+
+def test_classify_comparison_falls_back_to_cannot_judge_for_an_unknown_state() -> None:
+    result, reason = _classify_comparison("some_future_state_not_yet_known", brightness_score=0.5)
+    assert result == RESULT_CANNOT_JUDGE_WATER_LEVEL
+    assert "some_future_state_not_yet_known" in reason
+
+
+def test_classify_comparison_still_maps_useful_evidence_to_possible_change() -> None:
+    result, _ = _classify_comparison("useful_water_level_evidence", brightness_score=0.5)
+    assert result == RESULT_POSSIBLE_WATER_LEVEL_CHANGE
