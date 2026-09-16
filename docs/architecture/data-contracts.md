@@ -1038,7 +1038,14 @@ appending to a history.
 - `status`: `draft` (unconfirmed), `confirmed` (a human confirmed it), or
   `invalid` (no longer trustworthy).
 - `video_id` and `video_time_seconds`: which video and moment the guide was
-  traced from.
+  traced from — **or**, since Issue #181's USGS image-sequence workflow,
+  `image_sequence_id` and `image_filename` naming a saved image instead. A
+  guide has exactly one source: either `video_id` is non-empty (the video
+  case; `video_time_seconds` is meaningful), or both `image_sequence_id` and
+  `image_filename` are set (the image case; `video_time_seconds` is written
+  as `0` and unused). Both video-only fields stay required keys on every
+  guide record for backward compatibility with saved configs predating this
+  change — a video-sourced guide simply leaves the two image fields empty.
 - `site_id` and `camera_id`: duplicated from the parent config onto the
   record itself for self-contained provenance, matching this project's other
   evidence records (for example the run-export receipt).

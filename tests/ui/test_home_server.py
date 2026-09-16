@@ -603,6 +603,7 @@ def test_sites_api_exposes_workflow_steps_for_the_home_ui(tmp_path: Path) -> Non
         "manifest",
         "run_validation",
         "review_results",
+        "image_sequence",
     ]
     for step in steps:
         assert step["status"] in {"complete", "missing", "needs_review"}

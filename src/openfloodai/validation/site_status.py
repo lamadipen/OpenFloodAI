@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from openfloodai.contracts import read_jsonl_records
+from openfloodai.ingestion.river_images import list_site_image_sequences
 from openfloodai.review import normalize_human_label, validate_manifest_record
 from openfloodai.validation.result_explanation import read_result_explanations
 
@@ -138,6 +139,7 @@ class ValidationSiteStatus:
     reference_region_found: bool
     reference_region: dict[str, Any] | None
     normal_waterline_guides: list[dict[str, Any]]
+    image_sequence_count: int
     outputs_found: bool
     report_count: int
     latest_report_path: str | None
@@ -470,6 +472,28 @@ class ValidationSiteStatus:
                 actions=[WorkflowAction(label="Review results", action_id="review_results")],
                 required_for_validation=False,
             ),
+            WorkflowStep(
+                number=9,
+                key="image_sequence",
+                title="USGS image sequence",
+                status=(
+                    WORKFLOW_STEP_COMPLETE
+                    if self.image_sequence_count > 0
+                    else WORKFLOW_STEP_MISSING
+                ),
+                meaning=(
+                    "Optional. Download a sampled, timestamped sequence of USGS still "
+                    "images for future image validation. This is separate from the "
+                    "video flow above and does not affect Run validation."
+                ),
+                actions=[
+                    WorkflowAction(label="Start image sequence", action_id="start_image_sequence"),
+                    WorkflowAction(
+                        label="Review image sequences", action_id="review_image_sequences"
+                    ),
+                ],
+                required_for_validation=False,
+            ),
         ]
 
     def to_dict(self) -> dict[str, Any]:
@@ -551,6 +575,7 @@ def read_validation_site_status(site_dir: Path) -> ValidationSiteStatus:
         reference_region_found=_has_reference_region(config_paths),
         reference_region=_read_reference_region(config_paths),
         normal_waterline_guides=_read_normal_waterline_guides(config_paths),
+        image_sequence_count=len(list_site_image_sequences(site_dir)),
         outputs_found=bool(report_paths),
         report_count=len(report_paths),
         latest_report_path=str(latest_report_path) if latest_report_path else None,

@@ -31,10 +31,15 @@ from openfloodai.ingestion.image_video import create_image_test_video
 from openfloodai.ingestion.live_camera import LiveCameraError, capture_live_clip
 from openfloodai.ingestion.live_camera_schedule import read_schedule, write_schedule
 from openfloodai.ingestion.river_images import (
+    RiverImageError,
     download_latest_timelapse,
+    download_river_image_sequence,
     download_river_images,
+    list_site_image_sequences,
+    preview_river_image_sequence,
     resolve_downloaded_image,
     resolve_downloaded_video,
+    resolve_sequence_image,
 )
 from openfloodai.review import (
     ALLOWED_CONFIDENCE_LEVELS,
@@ -121,6 +126,12 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             return
         if path == "/api/run-detail":
             self._send_run_detail()
+            return
+        if path == "/api/site-image-sequences":
+            self._send_site_image_sequences()
+            return
+        if path == "/api/image-sequence-image":
+            self._send_image_sequence_image()
             return
         if path == "/site-details.html":
             self._send_site_details_page()
@@ -253,6 +264,29 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             self._send_json({"records": records}, status_code=200)
         except (OSError, ValueError):
             self._send_json({"message": "Manifest not found."}, status_code=404)
+
+    def _send_site_image_sequences(self) -> None:
+        """List saved USGS image sequences for the details page's Image sequences tab."""
+
+        query = parse_qs(urlsplit(self.path).query)
+        try:
+            site_dir = self._resolve_site_dir(query.get("folder_name", [""])[0])
+            self._send_json({"sequences": list_site_image_sequences(site_dir)}, status_code=200)
+        except (OSError, ValueError):
+            self._send_json({"message": "Site not found."}, status_code=404)
+
+    def _send_image_sequence_image(self) -> None:
+        query = parse_qs(urlsplit(self.path).query)
+        try:
+            site_dir = self._resolve_site_dir(query.get("folder_name", [""])[0])
+            path = resolve_sequence_image(
+                site_dir,
+                query.get("sequence_id", [""])[0],
+                query.get("filename", [""])[0],
+            )
+            self._send_file(path, content_type="image/jpeg")
+        except (OSError, ValueError, RiverImageError):
+            self.send_error(404, "Image not found")
 
     def _send_run_detail(self) -> None:
         """Read one run's saved report, scorecard, metadata, and input snapshot."""
@@ -407,6 +441,12 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         if self.path == "/api/delete-all-sites":
             self._handle_delete_all_sites()
             return
+        if self.path == "/api/preview-image-sequence":
+            self._handle_preview_image_sequence()
+            return
+        if self.path == "/api/download-image-sequence":
+            self._handle_download_image_sequence()
+            return
         self.send_error(404, "Not found")
 
     def log_message(self, format: str, *args: Any) -> None:
@@ -482,6 +522,63 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             self._send_json(result.to_dict(), status_code=200)
         except ValueError as error:
             self._send_json({"message": str(error)}, status_code=400)
+        except OSError:
+            self._send_json(
+                {"message": "Could not save the download. Check local disk space and permissions."},
+                status_code=500,
+            )
+
+    def _handle_preview_image_sequence(self) -> None:
+        """Report how many images a USGS image-sequence request would fetch, before downloading."""
+
+        data = self._reject_untrusted_json_post()
+        if data is None:
+            return
+        try:
+            preview = preview_river_image_sequence(
+                camera_url=str(data.get("camera_url", "")),
+                start_date=str(data.get("start_date", "")),
+                end_date=str(data.get("end_date", "")),
+                timezone_name=str(data.get("timezone", "")),
+                sampling_mode=str(data.get("sampling_mode", "")),
+            )
+            self._send_json({"success": True} | preview.to_dict(), status_code=200)
+        except RiverImageError as error:
+            self._send_json({"success": False, "message": str(error)}, status_code=400)
+
+    def _handle_download_image_sequence(self) -> None:
+        """Download a sampled, date-ranged USGS image sequence into a site folder."""
+
+        data = self._reject_untrusted_json_post()
+        if data is None:
+            return
+        try:
+            site_dir = self._resolve_site_dir(str(data.get("folder_name", "")).strip())
+        except ValueError:
+            self._send_json(
+                {
+                    "success": False,
+                    "message": (
+                        "Invalid folder_name: site folder must stay inside the sites directory."
+                    ),
+                },
+                status_code=400,
+            )
+            return
+        try:
+            result = download_river_image_sequence(
+                camera_url=str(data.get("camera_url", "")),
+                start_date=str(data.get("start_date", "")),
+                end_date=str(data.get("end_date", "")),
+                timezone_name=str(data.get("timezone", "")),
+                sampling_mode=str(data.get("sampling_mode", "")),
+                site_id=str(data.get("site_id", "")),
+                site_dir=site_dir,
+                overwrite=bool(data.get("overwrite", False)),
+            )
+            self._send_json(result.to_dict(), status_code=200)
+        except RiverImageError as error:
+            self._send_json({"success": False, "message": str(error)}, status_code=400)
         except OSError:
             self._send_json(
                 {"message": "Could not save the download. Check local disk space and permissions."},
@@ -761,19 +858,37 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             return
 
         video_id = str(data.get("video_id", "")).strip()
-        try:
-            self._resolve_site_video(folder_name, video_id)
-        except ValueError:
-            self._send_json(
-                {
-                    "success": False,
-                    "message": (
-                        "Choose an existing video in this site before saving the watched area."
-                    ),
-                },
-                status_code=400,
-            )
-            return
+        sequence_id = str(data.get("sequence_id", "")).strip()
+        image_filename = str(data.get("image_filename", "")).strip()
+        if sequence_id or image_filename:
+            try:
+                resolve_sequence_image(site_dir, sequence_id, image_filename)
+            except (OSError, RiverImageError):
+                self._send_json(
+                    {
+                        "success": False,
+                        "message": (
+                            "Choose an existing saved image in this site before saving "
+                            "the watched area."
+                        ),
+                    },
+                    status_code=400,
+                )
+                return
+        else:
+            try:
+                self._resolve_site_video(folder_name, video_id)
+            except ValueError:
+                self._send_json(
+                    {
+                        "success": False,
+                        "message": (
+                            "Choose an existing video in this site before saving the watched area."
+                        ),
+                    },
+                    status_code=400,
+                )
+                return
 
         try:
             reference_region = _parse_reference_region(data.get("reference_region"))

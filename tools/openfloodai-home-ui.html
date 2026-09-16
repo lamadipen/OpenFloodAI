@@ -1090,6 +1090,7 @@
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Watched area *</label>
             <div class="meta">Choose a frame with the video controls, then drag around the river area to watch.</div>
             <video id="watchedAreaPreview" controls preload="metadata" style="display: none; margin-top: 8px; max-width: 100%; width: 100%; background: #182b35;"></video>
+            <img id="watchedAreaImagePreview" alt="Saved image chosen as the watched-area reference" style="display: none; margin-top: 8px; max-width: 100%; width: 100%; background: #182b35;">
             <canvas id="watchedAreaCanvas" class="video-region-canvas" width="800" height="450" aria-label="Select watched area from a video already in the site" style="display: none;"></canvas>
             <input type="hidden" id="watchedAreaRegionInput">
             <div class="meta" id="watchedAreaStatus" role="status" style="margin-top: 6px;">Choose a video to begin.</div>
@@ -1138,6 +1139,53 @@
             <button type="button" id="cancelNormalWaterlineGuide" style="background: transparent; color: var(--muted); border-color: var(--line);">Cancel</button>
           </div>
         </div>
+      </section>
+
+      <section id="imageSequenceFormPanel" class="form-panel" style="display: none;">
+        <h2 style="margin-top: 0;">USGS Image Sequence</h2>
+        <p class="meta" style="margin-top: 0;">
+          Download a sampled, timestamped sequence of USGS still images for this site,
+          for future image validation. This is separate from the video flow above and
+          does not affect Run validation.
+        </p>
+        <form id="imageSequenceForm" style="display: grid; gap: 16px;">
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Site *</label>
+            <select id="imageSequenceSiteSelect" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;"></select>
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">USGS camera URL *</label>
+            <input type="url" id="imageSequenceCameraUrl" required placeholder="https://apps.usgs.gov/hivis/camera/CAMERA_ID" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+          </div>
+          <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 140px;">
+              <label style="display: block; font-weight: 700; margin-bottom: 4px;">Start date *</label>
+              <input type="date" id="imageSequenceStartDate" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+            </div>
+            <div style="flex: 1; min-width: 140px;">
+              <label style="display: block; font-weight: 700; margin-bottom: 4px;">End date *</label>
+              <input type="date" id="imageSequenceEndDate" required style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+            </div>
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Timezone (optional)</label>
+            <input type="text" id="imageSequenceTimezone" placeholder="America/Denver" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+          </div>
+          <div>
+            <label style="display: block; font-weight: 700; margin-bottom: 4px;">Sampling *</label>
+            <select id="imageSequenceSamplingMode" style="width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px;">
+              <option value="one_per_day">One image per day</option>
+              <option value="one_per_hour">One image per hour</option>
+              <option value="all">All images</option>
+            </select>
+          </div>
+          <div class="meta" id="imageSequenceStatus" role="status">Preview before downloading. Nothing downloads until you choose to.</div>
+          <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+            <button type="button" id="previewImageSequenceButton" style="background: transparent; color: var(--fg); border-color: var(--line);">Preview</button>
+            <button type="submit" id="downloadImageSequenceButton" disabled style="background: var(--ok); border-color: var(--ok);">Download</button>
+            <button type="button" id="cancelImageSequence" style="background: transparent; color: var(--muted); border-color: var(--line);">Cancel</button>
+          </div>
+        </form>
       </section>
 
       <section id="watchViewerPanel" class="form-panel" style="display: none;">
@@ -1316,6 +1364,7 @@
       const watchedAreaSiteSelect = document.querySelector("#watchedAreaSiteSelect");
       const watchedAreaVideoSelect = document.querySelector("#watchedAreaVideoSelect");
       const watchedAreaPreview = document.querySelector("#watchedAreaPreview");
+      const watchedAreaImagePreview = document.querySelector("#watchedAreaImagePreview");
       const watchedAreaCanvas = document.querySelector("#watchedAreaCanvas");
       const watchedAreaRegionInput = document.querySelector("#watchedAreaRegionInput");
       const watchedAreaStatus = document.querySelector("#watchedAreaStatus");
@@ -1339,6 +1388,18 @@
       const watchOverlayCanvas = document.querySelector("#watchOverlayCanvas");
       const watchStatus = document.querySelector("#watchStatus");
       const cancelWatchViewer = document.querySelector("#cancelWatchViewer");
+      const imageSequenceFormPanel = document.querySelector("#imageSequenceFormPanel");
+      const imageSequenceForm = document.querySelector("#imageSequenceForm");
+      const imageSequenceSiteSelect = document.querySelector("#imageSequenceSiteSelect");
+      const imageSequenceCameraUrl = document.querySelector("#imageSequenceCameraUrl");
+      const imageSequenceStartDate = document.querySelector("#imageSequenceStartDate");
+      const imageSequenceEndDate = document.querySelector("#imageSequenceEndDate");
+      const imageSequenceTimezone = document.querySelector("#imageSequenceTimezone");
+      const imageSequenceSamplingMode = document.querySelector("#imageSequenceSamplingMode");
+      const imageSequenceStatus = document.querySelector("#imageSequenceStatus");
+      const previewImageSequenceButton = document.querySelector("#previewImageSequenceButton");
+      const downloadImageSequenceButton = document.querySelector("#downloadImageSequenceButton");
+      const cancelImageSequence = document.querySelector("#cancelImageSequence");
       const labelFormPanel = document.querySelector("#labelFormPanel");
       const labelForm = document.querySelector("#labelForm");
       const cancelLabel = document.querySelector("#cancelLabel");
@@ -1395,11 +1456,16 @@
       });
       const watchedAreaSelector = createRegionSelector({
         video: watchedAreaPreview,
+        image: watchedAreaImagePreview,
         canvas: watchedAreaCanvas,
         input: watchedAreaRegionInput,
         status: watchedAreaStatus,
         emptyText: "Choose a video to begin.",
       });
+      // Set only while the watched-area rectangle is being drawn on a saved
+      // image-sequence still instead of a video frame; see
+      // useImageAsWatchedAreaReference and the watchedAreaForm submit handler.
+      let pendingWatchedAreaImageSource = null;
       const normalWaterlineGuideEditor = createNormalWaterlineGuidesEditor({
         video: normalWaterlineGuidePreview,
         canvas: normalWaterlineGuideCanvas,
@@ -1473,7 +1539,29 @@
         fillWatchedAreaSites(sites);
         fillNormalWaterlineGuideSites(sites);
         fillWatchSites(sites);
+        fillImageSequenceSites(sites);
         updateVideoBaselineMode();
+      }
+
+      function fillImageSequenceSites(sites) {
+        const current = imageSequenceSiteSelect.value;
+        imageSequenceSiteSelect.innerHTML = "";
+        if (!sites.length) {
+          const option = document.createElement("option");
+          option.value = "";
+          option.textContent = "Create a site first";
+          imageSequenceSiteSelect.append(option);
+          return;
+        }
+        for (const site of sites) {
+          const option = document.createElement("option");
+          option.value = site.site_name;
+          option.textContent = site.site_name;
+          imageSequenceSiteSelect.append(option);
+        }
+        if ([...imageSequenceSiteSelect.options].some((option) => option.value === current)) {
+          imageSequenceSiteSelect.value = current;
+        }
       }
 
       function fillWatchedAreaSites(sites) {
@@ -1523,6 +1611,7 @@
       }
 
       function showWatchedAreaVideo() {
+        pendingWatchedAreaImageSource = null;
         const folderName = watchedAreaSiteSelect.value;
         const videoId = watchedAreaVideoSelect.value;
         if (!folderName || !videoId) {
@@ -1532,6 +1621,32 @@
         const query = new URLSearchParams({ folder_name: folderName, video_id: videoId });
         watchedAreaSelector.show(`/api/site-video?${query}`);
       }
+
+      // Called from the site-details page's Image sequences tab (a saved
+      // USGS still can stand in for a video frame here, since the watched
+      // area is just a percentage rectangle with no video linkage at all).
+      window.useImageAsWatchedAreaReference = function (folderName, sequenceId, filename) {
+        hideForms();
+        if (watchedAreaSiteSelect) {
+          watchedAreaSiteSelect.value = folderName;
+        }
+        watchedAreaVideoSelect.innerHTML = "";
+        const option = document.createElement("option");
+        // Non-empty so the <select required> doesn't block form submission;
+        // the actual save reads pendingWatchedAreaImageSource, not this value.
+        option.value = filename;
+        option.textContent = `Saved image: ${filename}`;
+        watchedAreaVideoSelect.append(option);
+        pendingWatchedAreaImageSource = { sequenceId, filename };
+        const query = new URLSearchParams({
+          folder_name: folderName,
+          sequence_id: sequenceId,
+          filename,
+        });
+        watchedAreaSelector.show(`/api/image-sequence-image?${query}`, { isImage: true });
+        watchedAreaFormPanel.style.display = "block";
+        revealPanel(watchedAreaFormPanel);
+      };
 
       function fillNormalWaterlineGuideSites(sites) {
         const current = normalWaterlineGuideSiteSelect.value;
@@ -1855,11 +1970,31 @@
       }
 
       // One watched-area selector, shared by site setup, video intake, and step 3.
-      function createRegionSelector({ video, canvas, input, status, emptyText }) {
+      function createRegionSelector({ video, image, canvas, input, status, emptyText }) {
         const context = canvas.getContext("2d");
         let selection = null;
         let dragStart = null;
         let objectUrl = null;
+        let sourceIsImage = false;
+
+        function activeSource() {
+          return sourceIsImage ? image : video;
+        }
+
+        function sourceReady() {
+          if (sourceIsImage) {
+            return Boolean(image && image.complete && image.naturalWidth);
+          }
+          return Boolean(video.videoWidth) && video.readyState >= 2;
+        }
+
+        function sourceWidth() {
+          return sourceIsImage ? image.naturalWidth : video.videoWidth;
+        }
+
+        function sourceHeight() {
+          return sourceIsImage ? image.naturalHeight : video.videoHeight;
+        }
 
         function canvasPoint(event) {
           const bounds = canvas.getBoundingClientRect();
@@ -1884,13 +2019,13 @@
         }
 
         function draw() {
-          if (!video.videoWidth || video.readyState < 2) {
+          if (!sourceReady()) {
             return;
           }
-          const scale = Math.min(1, 800 / video.videoWidth);
-          canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
-          canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
-          context.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const scale = Math.min(1, 800 / sourceWidth());
+          canvas.width = Math.max(1, Math.round(sourceWidth() * scale));
+          canvas.height = Math.max(1, Math.round(sourceHeight() * scale));
+          context.drawImage(activeSource(), 0, 0, canvas.width, canvas.height);
           if (!selection) {
             return;
           }
@@ -1900,7 +2035,9 @@
           context.fillRect(selection.x, selection.y, selection.width, selection.height);
           context.strokeRect(selection.x, selection.y, selection.width, selection.height);
           input.value = JSON.stringify(toPercent(selection));
-          status.textContent = `Selected at ${video.currentTime.toFixed(1)} seconds.`;
+          status.textContent = sourceIsImage
+            ? "Selected on the chosen image."
+            : `Selected at ${video.currentTime.toFixed(1)} seconds.`;
         }
 
         function reset() {
@@ -1908,6 +2045,10 @@
           dragStart = null;
           canvas.style.display = "none";
           video.style.display = "none";
+          if (image) {
+            image.style.display = "none";
+            image.removeAttribute("src");
+          }
           status.textContent = emptyText;
           if (objectUrl) {
             URL.revokeObjectURL(objectUrl);
@@ -1915,15 +2056,24 @@
           }
           video.removeAttribute("src");
           video.load();
+          sourceIsImage = false;
         }
 
-        function show(source, { revokeWhenDone = false } = {}) {
+        function show(source, { revokeWhenDone = false, isImage = false } = {}) {
           reset();
+          sourceIsImage = isImage && Boolean(image);
           objectUrl = revokeWhenDone ? source : null;
-          video.src = source;
-          video.style.display = "block";
+          if (sourceIsImage) {
+            image.src = source;
+            image.style.display = "block";
+          } else {
+            video.src = source;
+            video.style.display = "block";
+          }
           canvas.style.display = "block";
-          status.textContent = "Move to a frame, pause it, then drag to select the watched area.";
+          status.textContent = sourceIsImage
+            ? "Drag to select the watched area on this image."
+            : "Move to a frame, pause it, then drag to select the watched area.";
         }
 
         video.addEventListener("loadedmetadata", () => {
@@ -1931,12 +2081,19 @@
           draw();
         });
         video.addEventListener("seeked", draw);
+        if (image) {
+          image.addEventListener("load", () => {
+            if (sourceIsImage) {
+              draw();
+            }
+          });
+        }
         canvas.addEventListener("pointerdown", (event) => {
-          if (!video.videoWidth) {
-            status.textContent = "Choose a video first.";
+          if (!sourceReady()) {
+            status.textContent = sourceIsImage ? "Choose an image first." : "Choose a video first.";
             return;
           }
-          video.pause();
+          if (!sourceIsImage) video.pause();
           canvas.setPointerCapture(event.pointerId);
           dragStart = canvasPoint(event);
           clearSelection();
@@ -2637,6 +2794,7 @@
         watchedAreaFormPanel.style.display = "none";
         normalWaterlineGuideFormPanel.style.display = "none";
         watchViewerPanel.style.display = "none";
+        imageSequenceFormPanel.style.display = "none";
         watchOverlayViewer.reset();
         labelFormPanel.style.display = "none";
         createSiteButton.style.display = "inline-block";
@@ -3303,6 +3461,15 @@
         revealPanel(watchedAreaFormPanel);
       };
 
+      window.openImageSequenceFormForSite = function (siteName) {
+        hideForms();
+        if (imageSequenceSiteSelect) {
+          imageSequenceSiteSelect.value = siteName;
+        }
+        imageSequenceFormPanel.style.display = "block";
+        revealPanel(imageSequenceFormPanel);
+      };
+
       window.openNormalWaterlineGuideFormForSite = function (siteName) {
         hideForms();
         normalWaterlineGuideSiteSelect.value = siteName;
@@ -3350,6 +3517,9 @@
         }
         if (actionId === "select_label") {
           return labelListPanel;
+        }
+        if (actionId === "start_image_sequence") {
+          return imageSequenceFormPanel;
         }
         return null;
       }
@@ -3454,7 +3624,8 @@
         const alreadyOpen =
           openWorkflowForm &&
           openWorkflowForm.stepKey === stepKey &&
-          openWorkflowForm.actionId === actionId;
+          openWorkflowForm.actionId === actionId &&
+          openWorkflowForm.siteName === siteName;
         if (alreadyOpen) {
           hideForms();
           return;
@@ -3472,6 +3643,10 @@
           const selectedSite = latestSites.find((site) => site.site_name === siteName);
           renderSiteDetails(selectedSite);
           revealPanel(detailPanel);
+          return;
+        }
+        if (actionId === "review_image_sequences") {
+          window.location.href = `/site-details.html?site=${encodeURIComponent(siteName)}&tab=image-sequences`;
           return;
         }
         const panel = panelForAction(actionId);
@@ -3499,6 +3674,9 @@
         if (actionId === "add_label" && labelSiteSelect && siteName) {
           labelSiteSelect.value = siteName;
           updateLabelOptionsForSelectedSite();
+        }
+        if (actionId === "start_image_sequence" && imageSequenceSiteSelect && siteName) {
+          imageSequenceSiteSelect.value = siteName;
         }
         openWorkflowForm = { actionId, stepKey, siteName };
         mountWorkflowForm();
@@ -3692,6 +3870,7 @@
       watchedAreaVideoSelect.addEventListener("change", showWatchedAreaVideo);
 
       cancelWatchedArea.addEventListener("click", () => {
+        pendingWatchedAreaImageSource = null;
         watchedAreaSelector.reset();
         hideForms();
       });
@@ -3703,18 +3882,27 @@
           return;
         }
         try {
+          const body = pendingWatchedAreaImageSource
+            ? {
+                folder_name: watchedAreaSiteSelect.value,
+                sequence_id: pendingWatchedAreaImageSource.sequenceId,
+                image_filename: pendingWatchedAreaImageSource.filename,
+                reference_region: watchedAreaSelector.region(),
+              }
+            : {
+                folder_name: watchedAreaSiteSelect.value,
+                video_id: watchedAreaVideoSelect.value,
+                reference_region: watchedAreaSelector.region(),
+              };
           const response = await fetch("/api/set-watched-area", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              folder_name: watchedAreaSiteSelect.value,
-              video_id: watchedAreaVideoSelect.value,
-              reference_region: watchedAreaSelector.region(),
-            }),
+            body: JSON.stringify(body),
           });
           const result = await response.json();
           alert(response.ok ? result.message : `Error: ${result.message}`);
           if (response.ok) {
+            pendingWatchedAreaImageSource = null;
             watchedAreaSelector.reset();
             hideForms();
             loadSites();
@@ -3752,6 +3940,90 @@
       watchVideoSelect.addEventListener("change", showWatchVideo);
       cancelWatchViewer.addEventListener("click", () => {
         watchOverlayViewer.reset();
+        hideForms();
+      });
+
+      function formatByteSize(bytes) {
+        if (!Number.isFinite(bytes) || bytes < 0) return "unknown size";
+        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+      }
+
+      function imageSequenceRequestBody() {
+        return {
+          folder_name: imageSequenceSiteSelect.value,
+          camera_url: imageSequenceCameraUrl.value.trim(),
+          start_date: imageSequenceStartDate.value,
+          end_date: imageSequenceEndDate.value,
+          timezone: imageSequenceTimezone.value.trim(),
+          sampling_mode: imageSequenceSamplingMode.value,
+        };
+      }
+
+      let lastImageSequencePreviewKey = null;
+
+      previewImageSequenceButton.addEventListener("click", async () => {
+        downloadImageSequenceButton.disabled = true;
+        lastImageSequencePreviewKey = null;
+        imageSequenceStatus.textContent = "Checking the USGS archive…";
+        try {
+          const response = await fetch("/api/preview-image-sequence", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(imageSequenceRequestBody()),
+          });
+          const result = await response.json();
+          if (!response.ok || !result.success) {
+            imageSequenceStatus.textContent = `Error: ${result.message}`;
+            return;
+          }
+          const range =
+            result.earliest_captured_utc && result.latest_captured_utc
+              ? ` (${result.earliest_captured_utc} to ${result.latest_captured_utc})`
+              : "";
+          imageSequenceStatus.textContent =
+            `${result.candidate_count} image(s) found; ${result.sampled_count} will be ` +
+            `downloaded, about ${formatByteSize(result.estimated_bytes)}${range}.`;
+          lastImageSequencePreviewKey = JSON.stringify(imageSequenceRequestBody());
+          downloadImageSequenceButton.disabled = false;
+        } catch (error) {
+          imageSequenceStatus.textContent = `Failed to reach the USGS archive: ${error.message}`;
+        }
+      });
+
+      imageSequenceForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (lastImageSequencePreviewKey !== JSON.stringify(imageSequenceRequestBody())) {
+          imageSequenceStatus.textContent = "Preview this request again before downloading.";
+          return;
+        }
+        const site = latestSites.find((entry) => entry.site_name === imageSequenceSiteSelect.value);
+        downloadImageSequenceButton.disabled = true;
+        imageSequenceStatus.textContent = "Downloading…";
+        try {
+          const response = await fetch("/api/download-image-sequence", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ...imageSequenceRequestBody(),
+              site_id: (site && site.site_id) || "",
+            }),
+          });
+          const result = await response.json();
+          imageSequenceStatus.textContent = result.message;
+          if (response.ok) {
+            lastImageSequencePreviewKey = null;
+            loadSites();
+          } else {
+            downloadImageSequenceButton.disabled = false;
+          }
+        } catch (error) {
+          imageSequenceStatus.textContent = `Failed to save the download: ${error.message}`;
+          downloadImageSequenceButton.disabled = false;
+        }
+      });
+
+      cancelImageSequence.addEventListener("click", () => {
         hideForms();
       });
 
@@ -3947,12 +4219,20 @@
         const params = new URLSearchParams(window.location.search);
         const deepLinkSite = params.get("site");
         const deepLinkAction = params.get("action");
+        const imageSequenceId = params.get("image_sequence_id");
+        const imageFilename = params.get("image_filename");
+        if (deepLinkSite && deepLinkAction === "set_watched_area" && imageSequenceId && imageFilename) {
+          window.useImageAsWatchedAreaReference(deepLinkSite, imageSequenceId, imageFilename);
+          history.replaceState(null, "", window.location.pathname);
+          return;
+        }
         const openers = {
           add_video: window.openVideoFormForSite,
           add_label: window.openLabelFormForSite,
           set_watched_area: window.openWatchedAreaFormForSite,
           set_normal_waterline_guide: window.openNormalWaterlineGuideFormForSite,
           watch: window.openWatchViewerForSite,
+          start_image_sequence: window.openImageSequenceFormForSite,
         };
         if (deepLinkSite && deepLinkAction && openers[deepLinkAction]) {
           openers[deepLinkAction](deepLinkSite);
