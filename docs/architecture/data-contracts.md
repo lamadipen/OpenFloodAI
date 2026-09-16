@@ -1122,3 +1122,53 @@ covers more or less of the reference area, only whether a change was seen at
 all, so a `water_change_seen` result says a change was seen without claiming
 a direction. See `openfloodai.validation.result_explanation.
 explain_normal_waterline_guides` and `explain_riverbank_evidence`.
+
+
+## Image-Sequence Validation Run (Issue #182)
+
+A separate, parallel run type to the video validation flow above, operating
+on a site's saved USGS image sequence (Issue #181) instead of a video. Lives
+under `site/outputs/image-sequence-runs/<run-id>/`, never under
+`outputs/runs/` — the two are never conflated, including by the site-status
+scanning code (`_find_review_images_paths` explicitly excludes
+`image-sequence-runs` when locating the video flow's latest review images).
+
+- `run-summary.json`: `run_id`, `sequence_id`, `site_id`, `camera_id`,
+  `baseline_filename`, `image_count`, one count field per result state (see
+  below), `watched_area_used` (the `reference_region` dict used),
+  `confirmed_riverbank_guide_ids` (only guides with `status: "confirmed"`
+  and `normal_condition: true`), `biggest_change_filename`,
+  `review_images_generated`, `created_at`.
+- `image-sequence-records.jsonl`: one row per compared image (the baseline
+  itself is not a row here — it's named in `run-summary.json`), with
+  `filename`, `captured_at_utc`, `local_time`, `download_status`, `result`,
+  `reason`, and `region_change_score`/`region_brightness_score` when a
+  comparison was actually made.
+- `image-sequence-report.md`: counts, a one-line summary, per-image detail,
+  and the same safety-boundary sentence used elsewhere in this project
+  ("Visual change does not establish water direction or flood safety").
+- `review-images/`: one before/after/comparison set (plus overlay versions
+  with the watched area and any confirmed riverbank guides drawn on) for
+  the single compared image with the largest measured change — the same
+  "biggest change" convention `generate_biggest_change_review_images`
+  already uses for video runs, called directly on `cv2.imread`'d frames.
+- `inputs-used/`: a snapshot of the exact `sequence-manifest.jsonl` used,
+  the `reference_region`/`normal_waterline_guides` fields from the site
+  config at run time, and a small receipt — a sibling to (not a reuse of)
+  the video flow's `input_snapshot.py`, since that module's receipt shape
+  is fixed to video-specific filenames.
+
+**Result states** — every compared image gets exactly one:
+
+- `possible_water_level_change`
+- `no_water_level_change`
+- `cannot_judge_water_level`
+- `camera_or_image_problem`
+
+These are derived entirely from already-existing, video-agnostic signals —
+`openfloodai.vision.simple_signals.compare_region_signals`'s
+`water_level_evidence_state` (`weak_visual_evidence`,
+`useful_water_level_evidence`, `cannot_judge_whole_region_changed`,
+`cannot_judge_region_too_small`) plus a brightness floor and the image's own
+`download_status` — no human label is required or consulted, matching
+Issue #182's explicit scope.

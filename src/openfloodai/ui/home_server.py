@@ -64,6 +64,13 @@ from openfloodai.validation import (
     run_site_validation,
     setup_validation_site,
 )
+from openfloodai.validation.image_sequence_runner import (
+    ImageSequenceValidationError,
+    list_image_sequence_runs,
+    read_image_sequence_run_detail,
+    resolve_image_sequence_run_image,
+    run_image_sequence_validation,
+)
 from openfloodai.validation.input_snapshot import read_input_snapshot
 from openfloodai.validation.site_status import VIDEO_SUFFIXES
 
@@ -132,6 +139,15 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             return
         if path == "/api/image-sequence-image":
             self._send_image_sequence_image()
+            return
+        if path == "/api/image-sequence-runs":
+            self._send_image_sequence_runs()
+            return
+        if path == "/api/image-sequence-run-detail":
+            self._send_image_sequence_run_detail()
+            return
+        if path == "/api/image-sequence-run-image":
+            self._send_image_sequence_run_image()
             return
         if path == "/site-details.html":
             self._send_site_details_page()
@@ -286,6 +302,41 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             )
             self._send_file(path, content_type="image/jpeg")
         except (OSError, ValueError, RiverImageError):
+            self.send_error(404, "Image not found")
+
+    def _send_image_sequence_runs(self) -> None:
+        """List saved image-sequence validation runs for one sequence."""
+
+        query = parse_qs(urlsplit(self.path).query)
+        try:
+            site_dir = self._resolve_site_dir(query.get("folder_name", [""])[0])
+            runs = list_image_sequence_runs(site_dir, query.get("sequence_id", [""])[0])
+            self._send_json({"runs": runs}, status_code=200)
+        except (OSError, ValueError):
+            self._send_json({"message": "Site not found."}, status_code=404)
+
+    def _send_image_sequence_run_detail(self) -> None:
+        """Read one saved image-sequence validation run's summary, records, and report."""
+
+        query = parse_qs(urlsplit(self.path).query)
+        try:
+            site_dir = self._resolve_site_dir(query.get("folder_name", [""])[0])
+            detail = read_image_sequence_run_detail(site_dir, query.get("run_id", [""])[0])
+            self._send_json(detail, status_code=200)
+        except (OSError, ValueError, ImageSequenceValidationError):
+            self._send_json({"message": "Run not found."}, status_code=404)
+
+    def _send_image_sequence_run_image(self) -> None:
+        query = parse_qs(urlsplit(self.path).query)
+        try:
+            site_dir = self._resolve_site_dir(query.get("folder_name", [""])[0])
+            path = resolve_image_sequence_run_image(
+                site_dir,
+                query.get("run_id", [""])[0],
+                query.get("filename", [""])[0],
+            )
+            self._send_file(path, content_type="image/png")
+        except (OSError, ValueError, ImageSequenceValidationError):
             self.send_error(404, "Image not found")
 
     def _send_run_detail(self) -> None:
@@ -447,6 +498,9 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         if self.path == "/api/download-image-sequence":
             self._handle_download_image_sequence()
             return
+        if self.path == "/api/run-image-sequence-validation":
+            self._handle_run_image_sequence_validation()
+            return
         self.send_error(404, "Not found")
 
     def log_message(self, format: str, *args: Any) -> None:
@@ -589,6 +643,57 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
                 {"message": "Could not save the download. Check local disk space and permissions."},
                 status_code=500,
             )
+
+    def _handle_run_image_sequence_validation(self) -> None:
+        """Run local validation against one saved image sequence in a site folder.
+
+        Separate from `_handle_run_validation` (the video flow): its own
+        request shape, its own output folder
+        (`outputs/image-sequence-runs/`), and it never touches anything the
+        video flow reads.
+        """
+
+        data = self._read_json_body()
+        if data is None:
+            return
+        try:
+            site_dir = self._resolve_site_dir(str(data.get("folder_name", "")).strip())
+        except ValueError:
+            self._send_json(
+                {
+                    "success": False,
+                    "message": (
+                        "Invalid folder_name: site folder must stay inside the sites directory."
+                    ),
+                },
+                status_code=400,
+            )
+            return
+        sequence_id = str(data.get("sequence_id", "")).strip()
+        baseline_filename = str(data.get("baseline_filename", "")).strip() or None
+        try:
+            report = run_image_sequence_validation(
+                site_dir, sequence_id, baseline_filename=baseline_filename
+            )
+        except (ImageSequenceValidationError, SiteConfigError) as error:
+            self._send_json({"success": False, "message": str(error)}, status_code=400)
+            return
+        self._send_json(
+            {
+                "success": True,
+                "message": "Image-sequence validation completed.",
+                "run_id": report.run_id,
+                "sequence_id": report.sequence_id,
+                "baseline_filename": report.baseline_filename,
+                "counts": {
+                    "possible_water_level_change": report.possible_change_count,
+                    "no_water_level_change": report.no_change_count,
+                    "cannot_judge_water_level": report.cannot_judge_count,
+                    "camera_or_image_problem": report.camera_or_image_problem_count,
+                },
+            },
+            status_code=200,
+        )
 
     def _send_river_image(self) -> None:
         query = parse_qs(urlsplit(self.path).query)
