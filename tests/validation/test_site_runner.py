@@ -128,6 +128,9 @@ def test_run_site_validation_reports_multiple_video_results(tmp_path: Path) -> N
     assert report.disagree_count == 0
     assert report.cannot_compare_count == 6
     assert report.scorecard.videos_reviewed == 5
+    # bad-001 has a video but no label; every other video_id here does.
+    assert report.scorecard.videos_with_human_label == 4
+    assert "- Videos with a human label: 4" in rendered
     assert report.scorecard.label_windows == 5
     assert report.scorecard.agree_count == 0
     assert report.scorecard.disagree_count == 0
@@ -180,6 +183,9 @@ def test_run_site_validation_handles_missing_human_label(tmp_path: Path) -> None
     assert report.results[0].human_label == "missing"
     assert report.results[0].result == "cannot_compare"
     assert report.label_window_count == 0
+    assert report.scorecard.videos_reviewed == 1
+    assert report.scorecard.videos_with_human_label == 0
+    assert "0 of 1 video(s) have a human label" in report.scorecard.summary
 
 
 def test_run_site_validation_without_videos_still_reports_label_only_cases(
