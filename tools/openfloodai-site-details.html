@@ -1442,9 +1442,15 @@
               sequence_id: sequence.sequence_id,
               filename: record.filename,
             });
-            const referenceQuery = new URLSearchParams({
+            const watchedAreaQuery = new URLSearchParams({
               site: siteName,
               action: "set_watched_area",
+              image_sequence_id: sequence.sequence_id,
+              image_filename: record.filename,
+            });
+            const riverbankQuery = new URLSearchParams({
+              site: siteName,
+              action: "set_normal_waterline_guide",
               image_sequence_id: sequence.sequence_id,
               image_filename: record.filename,
             });
@@ -1452,7 +1458,8 @@
               <div class="image-sequence-thumb">
                 <img src="/api/image-sequence-image?${query}" alt="${escapeHtml(record.captured_at_utc || record.filename)}" loading="lazy">
                 <div class="video-card-meta">${escapeHtml(formatDateTime(record.local_time || record.captured_at_utc))}</div>
-                <a class="btn small" href="/openfloodai-home-ui.html?${referenceQuery}">Use as watched-area reference</a>
+                <a class="btn small" href="/openfloodai-home-ui.html?${watchedAreaQuery}">Use as watched-area reference</a>
+                <a class="btn small" href="/openfloodai-home-ui.html?${riverbankQuery}">Use as riverbank reference</a>
               </div>
             `;
           })

@@ -1123,6 +1123,7 @@
             <label style="display: block; font-weight: 700; margin-bottom: 4px;">Lines *</label>
             <div class="meta">The dashed blue box is your watched area. The active line (highlighted below) receives new points; every other line stays visible in gray while you draw.</div>
             <video id="normalWaterlineGuidePreview" controls preload="metadata" style="display: none; margin-top: 8px; max-width: 100%; width: 100%; background: #182b35;"></video>
+            <img id="normalWaterlineGuideImagePreview" alt="Saved image chosen as the riverbank reference" style="display: none; margin-top: 8px; max-width: 100%; width: 100%; background: #182b35;">
             <canvas id="normalWaterlineGuideCanvas" class="video-region-canvas" width="800" height="450" aria-label="Trace the normal waterline inside the watched area" style="display: none;"></canvas>
             <div style="display: flex; gap: 8px; align-items: center; margin-top: 8px;">
               <button type="button" id="undoGuidePointButton" style="font-size: 13px; min-height: 34px; padding: 6px 12px; background: transparent; color: var(--muted); border-color: var(--line);">Undo Last Point</button>
@@ -1178,6 +1179,13 @@
               <option value="one_per_hour">One image per hour</option>
               <option value="all">All images</option>
             </select>
+          </div>
+          <div>
+            <label style="display: flex; align-items: center; gap: 8px; font-weight: 700;">
+              <input type="checkbox" id="imageSequenceOverwrite">
+              Replace an existing sequence for this camera/date range/sampling
+            </label>
+            <div class="meta">Check this to retry a partial or failed download, or to redo the same request.</div>
           </div>
           <div class="meta" id="imageSequenceStatus" role="status">Preview before downloading. Nothing downloads until you choose to.</div>
           <div style="display: flex; gap: 12px; flex-wrap: wrap;">
@@ -1373,6 +1381,7 @@
       const normalWaterlineGuideVideoSelect = document.querySelector("#normalWaterlineGuideVideoSelect");
       const addAnotherGuideButton = document.querySelector("#addAnotherGuideButton");
       const normalWaterlineGuidePreview = document.querySelector("#normalWaterlineGuidePreview");
+      const normalWaterlineGuideImagePreview = document.querySelector("#normalWaterlineGuideImagePreview");
       const normalWaterlineGuideCanvas = document.querySelector("#normalWaterlineGuideCanvas");
       const normalWaterlineGuideStatus = document.querySelector("#normalWaterlineGuideStatus");
       const normalWaterlineGuideRows = document.querySelector("#normalWaterlineGuideRows");
@@ -1396,6 +1405,7 @@
       const imageSequenceEndDate = document.querySelector("#imageSequenceEndDate");
       const imageSequenceTimezone = document.querySelector("#imageSequenceTimezone");
       const imageSequenceSamplingMode = document.querySelector("#imageSequenceSamplingMode");
+      const imageSequenceOverwrite = document.querySelector("#imageSequenceOverwrite");
       const imageSequenceStatus = document.querySelector("#imageSequenceStatus");
       const previewImageSequenceButton = document.querySelector("#previewImageSequenceButton");
       const downloadImageSequenceButton = document.querySelector("#downloadImageSequenceButton");
@@ -1468,12 +1478,17 @@
       let pendingWatchedAreaImageSource = null;
       const normalWaterlineGuideEditor = createNormalWaterlineGuidesEditor({
         video: normalWaterlineGuidePreview,
+        image: normalWaterlineGuideImagePreview,
         canvas: normalWaterlineGuideCanvas,
         status: normalWaterlineGuideStatus,
         rowsContainer: normalWaterlineGuideRows,
         emptyText: "Choose a video to begin.",
         onDeleteExisting: (guideId) => deleteSavedNormalWaterlineGuide(guideId),
       });
+      // Set only while tracing a line on a saved image-sequence still
+      // instead of a video frame; see useImageAsRiverbankReference and the
+      // saveAllNormalWaterlineGuidesButton click handler.
+      let pendingNormalWaterlineGuideImageSource = null;
       const watchOverlayViewer = createReadOnlyOverlayViewer({
         video: watchVideoPreview,
         wrap: watchVideoWrap,
@@ -1714,6 +1729,7 @@
       }
 
       function showGuidesForSelectedVideo() {
+        pendingNormalWaterlineGuideImageSource = null;
         const folderName = normalWaterlineGuideSiteSelect.value;
         const videoId = normalWaterlineGuideVideoSelect.value;
         if (!folderName || !videoId) {
@@ -1728,6 +1744,42 @@
         const query = new URLSearchParams({ folder_name: folderName, video_id: videoId });
         normalWaterlineGuideEditor.show(`/api/site-video?${query}`, { guideRegion, existingGuides });
       }
+
+      // Called from the site-details page's Image sequences tab (a saved
+      // USGS still can stand in for a video frame here too, tracing
+      // riverbank lines directly on it instead of on a video frame).
+      window.useImageAsRiverbankReference = function (folderName, sequenceId, filename) {
+        hideForms();
+        if (normalWaterlineGuideSiteSelect) {
+          normalWaterlineGuideSiteSelect.value = folderName;
+        }
+        normalWaterlineGuideVideoSelect.innerHTML = "";
+        const option = document.createElement("option");
+        // Non-empty so the <select required> doesn't block form submission;
+        // the actual save reads pendingNormalWaterlineGuideImageSource, not this value.
+        option.value = filename;
+        option.textContent = `Saved image: ${filename}`;
+        normalWaterlineGuideVideoSelect.append(option);
+        pendingNormalWaterlineGuideImageSource = { sequenceId, filename };
+
+        const site = latestSites.find((entry) => entry.site_name === folderName);
+        const guideRegion = site && site.reference_region ? site.reference_region : null;
+        const existingGuides = ((site && site.normal_waterline_guides) || []).filter(
+          (guide) => guide.image_sequence_id === sequenceId && guide.image_filename === filename
+        );
+        const query = new URLSearchParams({
+          folder_name: folderName,
+          sequence_id: sequenceId,
+          filename,
+        });
+        normalWaterlineGuideEditor.show(`/api/image-sequence-image?${query}`, {
+          guideRegion,
+          existingGuides,
+          isImage: true,
+        });
+        normalWaterlineGuideFormPanel.style.display = "block";
+        revealPanel(normalWaterlineGuideFormPanel);
+      };
 
       function fillWatchSites(sites) {
         const current = watchSiteSelect.value;
@@ -2150,6 +2202,7 @@
       // overlays elsewhere, never this one.
       function createNormalWaterlineGuidesEditor({
         video,
+        image,
         canvas,
         status,
         rowsContainer,
@@ -2161,6 +2214,26 @@
         let rows = [];
         let activeUid = null;
         let objectUrl = null;
+        let sourceIsImage = false;
+
+        function activeSource() {
+          return sourceIsImage ? image : video;
+        }
+
+        function sourceReady() {
+          if (sourceIsImage) {
+            return Boolean(image && image.complete && image.naturalWidth);
+          }
+          return Boolean(video.videoWidth) && video.readyState >= 2;
+        }
+
+        function sourceWidth() {
+          return sourceIsImage ? image.naturalWidth : video.videoWidth;
+        }
+
+        function sourceHeight() {
+          return sourceIsImage ? image.naturalHeight : video.videoHeight;
+        }
 
         function canvasPoint(event) {
           const bounds = canvas.getBoundingClientRect();
@@ -2215,13 +2288,13 @@
         }
 
         function draw() {
-          if (!video.videoWidth || video.readyState < 2) {
+          if (!sourceReady()) {
             return;
           }
-          const scale = Math.min(1, 800 / video.videoWidth);
-          canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
-          canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
-          context.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const scale = Math.min(1, 800 / sourceWidth());
+          canvas.width = Math.max(1, Math.round(sourceWidth() * scale));
+          canvas.height = Math.max(1, Math.round(sourceHeight() * scale));
+          context.drawImage(activeSource(), 0, 0, canvas.width, canvas.height);
 
           if (guideRegion) {
             const guide = toPixelsRect(guideRegion);
@@ -2461,6 +2534,10 @@
           guideRegion = null;
           canvas.style.display = "none";
           video.style.display = "none";
+          if (image) {
+            image.style.display = "none";
+            image.removeAttribute("src");
+          }
           status.textContent = emptyText;
           if (objectUrl) {
             URL.revokeObjectURL(objectUrl);
@@ -2469,9 +2546,18 @@
           video.removeAttribute("src");
           video.load();
           rowsContainer.innerHTML = "";
+          sourceIsImage = false;
         }
 
-        function show(source, { revokeWhenDone = false, guideRegion: initialGuide = null, existingGuides = [] } = {}) {
+        function show(
+          source,
+          {
+            revokeWhenDone = false,
+            guideRegion: initialGuide = null,
+            existingGuides = [],
+            isImage = false,
+          } = {}
+        ) {
           reset();
           guideRegion = initialGuide;
           for (const guide of existingGuides) {
@@ -2487,12 +2573,20 @@
               notes: guide.notes || "",
             });
           }
+          sourceIsImage = isImage && Boolean(image);
           objectUrl = revokeWhenDone ? source : null;
-          video.src = source;
-          video.style.display = "block";
+          if (sourceIsImage) {
+            image.src = source;
+            image.style.display = "block";
+          } else {
+            video.src = source;
+            video.style.display = "block";
+          }
           canvas.style.display = "block";
           status.textContent = rows.length
-            ? "Move to a frame, pause it, then choose a line below to edit, or add another."
+            ? sourceIsImage
+              ? "Choose a line below to edit, or add another."
+              : "Move to a frame, pause it, then choose a line below to edit, or add another."
             : emptyText;
         }
 
@@ -2501,10 +2595,17 @@
           draw();
         });
         video.addEventListener("seeked", draw);
+        if (image) {
+          image.addEventListener("load", () => {
+            if (sourceIsImage) {
+              draw();
+            }
+          });
+        }
 
         canvas.addEventListener("click", (event) => {
-          if (!video.videoWidth) {
-            status.textContent = "Choose a video first.";
+          if (!sourceReady()) {
+            status.textContent = sourceIsImage ? "Choose an image first." : "Choose a video first.";
             return;
           }
           const active = activeRow();
@@ -2512,7 +2613,7 @@
             status.textContent = 'Choose a line below (or click "+ Add Another Line") before clicking the video.';
             return;
           }
-          video.pause();
+          if (!sourceIsImage) video.pause();
           const point = toPercentPoint(canvasPoint(event));
           if (guideRegion && !pointInsideRect(point, guideRegion)) {
             status.textContent = "Click inside the dashed watched area to add a point.";
@@ -2579,11 +2680,12 @@
                     rowStatus === "invalid" ? row.fields.invalidationReason.value : null,
                   normal_condition: row.fields.normalCondition.checked,
                   notes: row.fields.notes.value,
-                  video_time_seconds: video.currentTime || row.videoTimeSeconds || 0,
+                  video_time_seconds: sourceIsImage ? 0 : video.currentTime || row.videoTimeSeconds || 0,
                 };
               }),
             };
           },
+          isImageSource: () => sourceIsImage,
           markAllExistingOnServer: () => {
             for (const row of rows) {
               row.existingOnServer = true;
@@ -3932,6 +4034,7 @@
       });
 
       cancelNormalWaterlineGuide.addEventListener("click", () => {
+        pendingNormalWaterlineGuideImageSource = null;
         normalWaterlineGuideEditor.reset();
         hideForms();
       });
@@ -3997,22 +4100,24 @@
           imageSequenceStatus.textContent = "Preview this request again before downloading.";
           return;
         }
-        const site = latestSites.find((entry) => entry.site_name === imageSequenceSiteSelect.value);
         downloadImageSequenceButton.disabled = true;
         imageSequenceStatus.textContent = "Downloading…";
         try {
           const response = await fetch("/api/download-image-sequence", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
+            // The server derives site_id from the site's own config; the
+            // client never gets to assert it.
             body: JSON.stringify({
               ...imageSequenceRequestBody(),
-              site_id: (site && site.site_id) || "",
+              overwrite: imageSequenceOverwrite.checked,
             }),
           });
           const result = await response.json();
           imageSequenceStatus.textContent = result.message;
           if (response.ok) {
             lastImageSequencePreviewKey = null;
+            imageSequenceOverwrite.checked = false;
             loadSites();
           } else {
             downloadImageSequenceButton.disabled = false;
@@ -4064,14 +4169,22 @@
           return;
         }
         try {
+          const body = pendingNormalWaterlineGuideImageSource
+            ? {
+                folder_name: folderName,
+                sequence_id: pendingNormalWaterlineGuideImageSource.sequenceId,
+                image_filename: pendingNormalWaterlineGuideImageSource.filename,
+                guides: collected.guides,
+              }
+            : {
+                folder_name: folderName,
+                video_id: videoId,
+                guides: collected.guides,
+              };
           const response = await fetch("/api/set-normal-waterline-guides", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              folder_name: folderName,
-              video_id: videoId,
-              guides: collected.guides,
-            }),
+            body: JSON.stringify(body),
           });
           const result = await response.json();
           if (response.ok) {
@@ -4223,6 +4336,16 @@
         const imageFilename = params.get("image_filename");
         if (deepLinkSite && deepLinkAction === "set_watched_area" && imageSequenceId && imageFilename) {
           window.useImageAsWatchedAreaReference(deepLinkSite, imageSequenceId, imageFilename);
+          history.replaceState(null, "", window.location.pathname);
+          return;
+        }
+        if (
+          deepLinkSite &&
+          deepLinkAction === "set_normal_waterline_guide" &&
+          imageSequenceId &&
+          imageFilename
+        ) {
+          window.useImageAsRiverbankReference(deepLinkSite, imageSequenceId, imageFilename);
           history.replaceState(null, "", window.location.pathname);
           return;
         }

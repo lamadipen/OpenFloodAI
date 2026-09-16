@@ -42,6 +42,17 @@ def _post(base: str, path: str, payload: dict[str, object]) -> dict[str, object]
         return result
 
 
+def _make_site(site_dir: Path, *, site_id: str = "trusted-site-id") -> None:
+    (site_dir / "configs").mkdir(parents=True)
+    config = {
+        "site_id": site_id,
+        "camera_id": "camera-demo-01",
+        "site_name": "Demo Site",
+        "input_type": "local_video",
+    }
+    (site_dir / "configs" / "site-config.json").write_text(json.dumps(config), encoding="utf-8")
+
+
 def test_preview_endpoint_reports_counts_without_downloading(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -74,7 +85,7 @@ def test_download_endpoint_saves_into_the_site_and_lists_and_serves_images(
     monkeypatch.setattr(river, "_fetch", _fetch)
     sites_dir = tmp_path / "sites"
     site_dir = sites_dir / "example-site"
-    site_dir.mkdir(parents=True)
+    _make_site(site_dir)
 
     with serve_home_ui(sites_dir) as base:
         result = _post(
@@ -87,7 +98,6 @@ def test_download_endpoint_saves_into_the_site_and_lists_and_serves_images(
                 "end_date": "2026-09-01",
                 "timezone": "UTC",
                 "sampling_mode": "all",
-                "site_id": "example-site-id",
             },
         )
         assert result["success"] is True
@@ -113,6 +123,63 @@ def test_download_endpoint_saves_into_the_site_and_lists_and_serves_images(
             assert response.read() == JPEG
 
     assert (site_dir / "inputs" / "image-sequences" / sequence_id / "images" / filename).is_file()
+
+
+def test_download_endpoint_ignores_a_client_supplied_site_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The server must use the site's own trusted config, never a client-asserted value."""
+
+    monkeypatch.setattr(river, "_fetch", _fetch)
+    sites_dir = tmp_path / "sites"
+    site_dir = sites_dir / "example-site"
+    _make_site(site_dir, site_id="trusted-site-id")
+
+    with serve_home_ui(sites_dir) as base:
+        result = _post(
+            base,
+            "/api/download-image-sequence",
+            {
+                "folder_name": "example-site",
+                "camera_url": river.DEFAULT_CAMERA_URL,
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-01",
+                "timezone": "UTC",
+                "sampling_mode": "all",
+                "site_id": "attacker-supplied-site-id",
+            },
+        )
+    assert result["success"] is True
+    records = cast("list[dict[str, str]]", result["records"])
+    assert records
+    assert all(record["site_id"] == "trusted-site-id" for record in records)
+
+
+def test_download_endpoint_requires_an_existing_site_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def unexpected_fetch(*args: object, **kwargs: object) -> None:
+        pytest.fail("A site with no config must be rejected before any network request")
+
+    monkeypatch.setattr(river, "_fetch", unexpected_fetch)
+    sites_dir = tmp_path / "sites"
+    (sites_dir / "example-site").mkdir(parents=True)
+
+    with serve_home_ui(sites_dir) as base:
+        with pytest.raises(HTTPError) as error:
+            _post(
+                base,
+                "/api/download-image-sequence",
+                {
+                    "folder_name": "example-site",
+                    "camera_url": river.DEFAULT_CAMERA_URL,
+                    "start_date": "2026-09-01",
+                    "end_date": "2026-09-01",
+                    "timezone": "UTC",
+                    "sampling_mode": "all",
+                },
+            )
+    assert error.value.code == 400
 
 
 def test_download_endpoint_rejects_folder_outside_sites_directory(

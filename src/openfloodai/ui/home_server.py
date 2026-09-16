@@ -566,13 +566,18 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             )
             return
         try:
+            site_config = load_site_config(_find_site_config(site_dir))
+        except SiteConfigError as error:
+            self._send_json({"success": False, "message": str(error)}, status_code=400)
+            return
+        try:
             result = download_river_image_sequence(
                 camera_url=str(data.get("camera_url", "")),
                 start_date=str(data.get("start_date", "")),
                 end_date=str(data.get("end_date", "")),
                 timezone_name=str(data.get("timezone", "")),
                 sampling_mode=str(data.get("sampling_mode", "")),
-                site_id=str(data.get("site_id", "")),
+                site_id=site_config.site_id,
                 site_dir=site_dir,
                 overwrite=bool(data.get("overwrite", False)),
             )
@@ -909,6 +914,60 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             status_code=200,
         )
 
+    def _resolve_normal_waterline_guide_source(
+        self, folder_name: str, site_dir: Path, data: dict[str, Any]
+    ) -> dict[str, object] | None:
+        """Validate a guide's video-or-image source, sending an error response if invalid.
+
+        Returns the source fields to merge into the guide payload, or ``None``
+        after already sending an error response (the caller should just return).
+        """
+
+        sequence_id = str(data.get("sequence_id", "")).strip()
+        image_filename = str(data.get("image_filename", "")).strip()
+        if sequence_id or image_filename:
+            try:
+                resolve_sequence_image(site_dir, sequence_id, image_filename)
+            except (OSError, RiverImageError):
+                self._send_json(
+                    {
+                        "success": False,
+                        "message": (
+                            "Choose an existing saved image in this site before "
+                            "saving a waterline guide."
+                        ),
+                    },
+                    status_code=400,
+                )
+                return None
+            return {
+                "video_id": "",
+                "video_time_seconds": 0,
+                "image_sequence_id": sequence_id,
+                "image_filename": image_filename,
+            }
+
+        video_id = str(data.get("video_id", "")).strip()
+        try:
+            self._resolve_site_video(folder_name, video_id)
+        except ValueError:
+            self._send_json(
+                {
+                    "success": False,
+                    "message": (
+                        "Choose an existing video in this site before saving a waterline guide."
+                    ),
+                },
+                status_code=400,
+            )
+            return None
+        return {
+            "video_id": video_id,
+            "video_time_seconds": data.get("video_time_seconds"),
+            "image_sequence_id": "",
+            "image_filename": "",
+        }
+
     def _handle_set_normal_waterline_guide(self) -> None:
         """Save a draft or confirmed normal-waterline guide inside a site's watched area."""
 
@@ -930,19 +989,8 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        video_id = str(data.get("video_id", "")).strip()
-        try:
-            self._resolve_site_video(folder_name, video_id)
-        except ValueError:
-            self._send_json(
-                {
-                    "success": False,
-                    "message": (
-                        "Choose an existing video in this site before saving a waterline guide."
-                    ),
-                },
-                status_code=400,
-            )
+        source = self._resolve_normal_waterline_guide_source(folder_name, site_dir, data)
+        if source is None:
             return
 
         try:
@@ -953,8 +1001,7 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
                 "label": str(data.get("label", "")).strip(),
                 "points": _parse_waterline_points(data.get("points")),
                 "status": str(data.get("status", "")).strip(),
-                "video_id": video_id,
-                "video_time_seconds": data.get("video_time_seconds"),
+                **source,
                 "site_id": site_config.site_id,
                 "camera_id": site_config.camera_id,
                 "normal_condition": _as_bool(data.get("normal_condition"), default=False),
@@ -999,19 +1046,8 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        video_id = str(data.get("video_id", "")).strip()
-        try:
-            self._resolve_site_video(folder_name, video_id)
-        except ValueError:
-            self._send_json(
-                {
-                    "success": False,
-                    "message": (
-                        "Choose an existing video in this site before saving waterline guides."
-                    ),
-                },
-                status_code=400,
-            )
+        source = self._resolve_normal_waterline_guide_source(folder_name, site_dir, data)
+        if source is None:
             return
 
         raw_guides = data.get("guides")
@@ -1037,8 +1073,12 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
                     "label": str(entry.get("label", "")).strip(),
                     "points": _parse_waterline_points(entry.get("points")),
                     "status": str(entry.get("status", "")).strip(),
-                    "video_id": video_id,
-                    "video_time_seconds": entry.get("video_time_seconds"),
+                    "video_id": source["video_id"],
+                    "video_time_seconds": (
+                        0 if source["image_filename"] else entry.get("video_time_seconds")
+                    ),
+                    "image_sequence_id": source["image_sequence_id"],
+                    "image_filename": source["image_filename"],
                     "site_id": site_config.site_id,
                     "camera_id": site_config.camera_id,
                     "normal_condition": _as_bool(entry.get("normal_condition"), default=False),

@@ -35,7 +35,10 @@ MAX_SEQUENCE_CANDIDATES = 20_000
 MAX_SEQUENCE_LISTING_PAGES = 50
 _SEQUENCE_LISTING_PAGE_SIZE = 1000
 _SEQUENCE_DATE_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}")
-_SEQUENCE_ID_PATTERN = re.compile(r"usgs-[A-Za-z0-9_-]{1,160}-\d{4}-\d{2}-\d{2}-\d{4}-\d{2}-\d{2}")
+_SEQUENCE_ID_PATTERN = re.compile(
+    r"usgs-[A-Za-z0-9_-]{1,160}-\d{4}-\d{2}-\d{2}-\d{4}-\d{2}-\d{2}-"
+    r"(?:" + "|".join(sorted(ALLOWED_SEQUENCE_SAMPLING_MODES)) + ")"
+)
 
 
 class RiverImageError(ValueError):
@@ -596,7 +599,7 @@ def download_river_image_sequence(
     sampled = sample_image_sequence_candidates(candidates, sampling_mode, timezone_name=zone_name)
     zone = ZoneInfo(zone_name)
 
-    sequence_id = f"usgs-{slug}-{start}-{end}"
+    sequence_id = f"usgs-{slug}-{start}-{end}-{sampling_mode}"
     sequence_dir = (site_dir / "inputs" / "image-sequences" / sequence_id).resolve()
     if sequence_dir.exists():
         if not overwrite:

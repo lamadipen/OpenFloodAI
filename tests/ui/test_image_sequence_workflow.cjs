@@ -98,8 +98,12 @@ test("preview and download call the two dedicated image-sequence endpoints", () 
   )[0];
   assert.ok(submitHandler.includes("lastImageSequencePreviewKey"));
   assert.ok(
-    submitHandler.includes("site_id: (site && site.site_id) || \"\""),
-    "download must send the site's site_id"
+    !submitHandler.includes("site_id:"),
+    "the client must never assert site_id; the server derives it from the site's own config"
+  );
+  assert.ok(
+    submitHandler.includes("overwrite: imageSequenceOverwrite.checked"),
+    "download must let the user explicitly replace/retry an existing sequence"
   );
 });
 
@@ -268,4 +272,91 @@ test("each downloaded image links back to the home UI with the image as the watc
     html,
     /\/openfloodai-home-ui\.html\?site=demo-site&action=set_watched_area&image_sequence_id=usgs-camera-2026-09-01-2026-09-01&image_filename=camera___2026-09-01T09-00-00Z\.jpg/
   );
+  assert.match(
+    html,
+    /\/openfloodai-home-ui\.html\?site=demo-site&action=set_normal_waterline_guide&image_sequence_id=usgs-camera-2026-09-01-2026-09-01&image_filename=camera___2026-09-01T09-00-00Z\.jpg/
+  );
+});
+
+test("createNormalWaterlineGuidesEditor draws from an image source without needing video-only properties", () => {
+  assert.ok(
+    homeScript.includes(
+      "function createNormalWaterlineGuidesEditor({\n        video,\n        image,\n        canvas,"
+    )
+  );
+  assert.ok(homeScript.includes("context.drawImage(activeSource(), 0, 0, canvas.width, canvas.height);"));
+  assert.ok(homeScript.includes("sourceIsImage = isImage && Boolean(image);"));
+  assert.ok(homeScript.includes("isImageSource: () => sourceIsImage,"));
+});
+
+test("useImageAsRiverbankReference shows the image, filters existing guides, and leaves a submittable video select", () => {
+  const panel = { style: {} };
+  const select = selectStub();
+  const shown = [];
+  const site = {
+    site_name: "demo-site",
+    reference_region: { x: 0, y: 50, width: 100, height: 50 },
+    normal_waterline_guides: [
+      {
+        id: "matching",
+        image_sequence_id: "usgs-camera-2026-09-01-2026-09-01-all",
+        image_filename: "camera___2026-09-01T09-00-00Z.jpg",
+      },
+      {
+        id: "other-image",
+        image_sequence_id: "usgs-camera-2026-09-02-2026-09-02-all",
+        image_filename: "camera___2026-09-02T09-00-00Z.jpg",
+      },
+      { id: "video-sourced", video_id: "river-001" },
+    ],
+  };
+  const context = runWithStubs(grabWindowAssignment(homeScript, "useImageAsRiverbankReference"), {
+    hideForms: () => {},
+    revealPanel: () => {},
+    normalWaterlineGuideFormPanel: panel,
+    normalWaterlineGuideSiteSelect: { value: "" },
+    normalWaterlineGuideVideoSelect: select,
+    normalWaterlineGuideEditor: { show: (source, options) => shown.push([source, JSON.stringify(options)]) },
+    latestSites: [site],
+    URLSearchParams,
+    pendingNormalWaterlineGuideImageSource: null,
+  });
+  context.useImageAsRiverbankReference(
+    "demo-site",
+    "usgs-camera-2026-09-01-2026-09-01-all",
+    "camera___2026-09-01T09-00-00Z.jpg"
+  );
+
+  assert.equal(select.options.length, 1);
+  assert.notEqual(
+    select.options[0].value,
+    "",
+    "select required=true would block form submit on an empty value"
+  );
+  assert.equal(
+    JSON.stringify(context.pendingNormalWaterlineGuideImageSource),
+    JSON.stringify({
+      sequenceId: "usgs-camera-2026-09-01-2026-09-01-all",
+      filename: "camera___2026-09-01T09-00-00Z.jpg",
+    })
+  );
+  assert.equal(shown.length, 1);
+  assert.match(shown[0][0], /^\/api\/image-sequence-image\?/);
+  const options = JSON.parse(shown[0][1]);
+  assert.equal(options.isImage, true);
+  assert.deepEqual(
+    options.existingGuides.map((guide) => guide.id),
+    ["matching"],
+    "only guides for this exact image should be preloaded"
+  );
+  assert.equal(panel.style.display, "block");
+});
+
+test("saving normal waterline guides sends the image source instead of a video id when set", () => {
+  const handler = homeScript.match(
+    /saveAllNormalWaterlineGuidesButton\.addEventListener\("click"[\s\S]*?\n      \}\);/
+  )[0];
+  assert.ok(handler.includes("pendingNormalWaterlineGuideImageSource"));
+  assert.ok(handler.includes("sequence_id: pendingNormalWaterlineGuideImageSource.sequenceId"));
+  assert.ok(handler.includes("image_filename: pendingNormalWaterlineGuideImageSource.filename"));
 });

@@ -209,6 +209,62 @@ def test_download_sequence_records_downloaded_missing_and_writes_manifest(
             site_dir=site_dir,
         )
 
+    # A different sampling mode for the same camera/date range must not
+    # collide with the sequence already saved above.
+    other_mode_result = river.download_river_image_sequence(
+        camera_url=river.DEFAULT_CAMERA_URL,
+        start_date="2026-09-01",
+        end_date="2026-09-01",
+        timezone_name="UTC",
+        sampling_mode="all",
+        site_id="test-site",
+        site_dir=site_dir,
+    )
+    assert other_mode_result.sequence_id != result.sequence_id
+    assert other_mode_result.sequence_id.endswith("-all")
+    assert result.sequence_id.endswith("-one_per_hour")
+
+
+def test_download_sequence_with_overwrite_replaces_a_failed_download(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    site_dir = tmp_path / "site"
+    site_dir.mkdir()
+    attempt = {"n": 0}
+
+    def fetch(url: str, **kwargs: object) -> tuple[bytes, str]:
+        if "?" in url:
+            return listing([("2026-09-01T09-00-00Z", 10)]), "application/xml"
+        attempt["n"] += 1
+        if attempt["n"] == 1:
+            return b"<html>error</html>", "text/html"
+        return JPEG, "image/jpeg"
+
+    monkeypatch.setattr(river, "_fetch", fetch)
+    first = river.download_river_image_sequence(
+        camera_url=river.DEFAULT_CAMERA_URL,
+        start_date="2026-09-01",
+        end_date="2026-09-01",
+        timezone_name="UTC",
+        sampling_mode="all",
+        site_id="test-site",
+        site_dir=site_dir,
+    )
+    assert [record.download_status for record in first.records] == ["failed"]
+
+    retried = river.download_river_image_sequence(
+        camera_url=river.DEFAULT_CAMERA_URL,
+        start_date="2026-09-01",
+        end_date="2026-09-01",
+        timezone_name="UTC",
+        sampling_mode="all",
+        site_id="test-site",
+        site_dir=site_dir,
+        overwrite=True,
+    )
+    assert retried.sequence_id == first.sequence_id
+    assert [record.download_status for record in retried.records] == ["downloaded"]
+
 
 def test_download_sequence_records_failed_image_without_raising(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch

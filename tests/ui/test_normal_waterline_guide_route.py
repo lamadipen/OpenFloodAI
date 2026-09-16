@@ -145,6 +145,84 @@ def test_normal_waterline_guide_video_must_already_be_in_the_site(tmp_path: Path
     assert "existing video" in payload["message"]
 
 
+def _download_test_sequence(site_dir: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[str, str]:
+    """Download one saved image into the site and return (sequence_id, filename)."""
+
+    from openfloodai.ingestion import river_images as river
+
+    slug = river.camera_slug(river.DEFAULT_CAMERA_URL)
+    listing = (
+        '<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">'
+        f"<Contents><Key>720/{slug}/{slug}___2026-09-01T09-00-00Z.jpg</Key>"
+        "<Size>10</Size></Contents></ListBucketResult>"
+    ).encode()
+
+    def fetch(url: str, **kwargs: object) -> tuple[bytes, str]:
+        if "?" in url:
+            return listing, "application/xml"
+        return b"\xff\xd8\xff\xe0test-image\xff\xd9", "image/jpeg"
+
+    monkeypatch.setattr(river, "_fetch", fetch)
+    result = river.download_river_image_sequence(
+        camera_url=river.DEFAULT_CAMERA_URL,
+        start_date="2026-09-01",
+        end_date="2026-09-01",
+        timezone_name="UTC",
+        sampling_mode="all",
+        site_id="site-demo-01",
+        site_dir=site_dir,
+    )
+    filename = next(
+        record.filename for record in result.records if record.download_status == "downloaded"
+    )
+    return result.sequence_id, filename
+
+
+def test_normal_waterline_guide_accepts_a_saved_image_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    site_dir = make_site(tmp_path / "example-site")
+    sequence_id, filename = _download_test_sequence(site_dir, monkeypatch)
+
+    with serve_home_ui(tmp_path) as base_url:
+        status, payload = post(
+            base_url,
+            "/api/set-normal-waterline-guide",
+            normal_waterline_guide_request(
+                video_id="",
+                video_time_seconds=0,
+                sequence_id=sequence_id,
+                image_filename=filename,
+            ),
+        )
+
+    assert status == 200
+    assert payload["success"] is True
+    saved = read_config(site_dir)["normal_waterline_guides"][0]
+    assert saved["video_id"] == ""
+    assert saved["image_sequence_id"] == sequence_id
+    assert saved["image_filename"] == filename
+
+
+def test_normal_waterline_guide_rejects_an_unknown_saved_image(tmp_path: Path) -> None:
+    make_site(tmp_path / "example-site")
+
+    with serve_home_ui(tmp_path) as base_url:
+        status, payload = post(
+            base_url,
+            "/api/set-normal-waterline-guide",
+            normal_waterline_guide_request(
+                video_id="",
+                video_time_seconds=0,
+                sequence_id="usgs-camera-2026-09-01-2026-09-01-all",
+                image_filename="camera___2026-09-01T09-00-00Z.jpg",
+            ),
+        )
+
+    assert status == 400
+    assert "existing saved image" in payload["message"]
+
+
 @pytest.mark.parametrize("folder_name", ["", "../outside-site", "example-site/configs"])
 def test_normal_waterline_guide_folder_outside_sites_directory_is_refused(
     tmp_path: Path, folder_name: str
@@ -252,6 +330,31 @@ def test_set_normal_waterline_guides_saves_all_rows_in_one_request(tmp_path: Pat
         "left_bank_normal_waterline": "confirmed",
         "right_bank_normal_waterline": "draft",
     }
+
+
+def test_set_normal_waterline_guides_accepts_a_saved_image_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    site_dir = make_site(tmp_path / "example-site")
+    sequence_id, filename = _download_test_sequence(site_dir, monkeypatch)
+
+    with serve_home_ui(tmp_path) as base_url:
+        status, payload = post(
+            base_url,
+            "/api/set-normal-waterline-guides",
+            normal_waterline_guides_bulk_request(
+                video_id="",
+                sequence_id=sequence_id,
+                image_filename=filename,
+            ),
+        )
+
+    assert status == 200
+    assert payload["success"] is True
+    saved = read_config(site_dir)["normal_waterline_guides"]
+    assert all(guide["image_sequence_id"] == sequence_id for guide in saved)
+    assert all(guide["image_filename"] == filename for guide in saved)
+    assert all(guide["video_id"] == "" for guide in saved)
 
 
 def test_set_normal_waterline_guides_requires_at_least_one_guide(tmp_path: Path) -> None:
