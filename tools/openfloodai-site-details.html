@@ -1429,6 +1429,14 @@
             <div class="card-grid">${cards}</div>
           </div>
         `;
+        for (const card of panel.querySelectorAll(".video-card[data-sequence-id]")) {
+          const sequenceId = card.dataset.sequenceId;
+          const button = card.querySelector("[data-run-image-sequence-validation]");
+          button.addEventListener("click", () =>
+            runImageSequenceValidationForSite(site.site_name, sequenceId, button, card)
+          );
+          loadImageSequenceRuns(site.site_name, sequenceId, card);
+        }
       }
 
       function renderImageSequenceCard(siteName, sequence) {
@@ -1465,7 +1473,7 @@
           })
           .join("");
         return `
-          <div class="video-card">
+          <div class="video-card" data-sequence-id="${escapeHtml(sequence.sequence_id || "")}">
             <div class="video-card-head">
               <div class="video-card-id">${escapeHtml(sequence.sequence_id || "")}</div>
               <div class="video-card-filename">${escapeHtml(sequence.sampling_mode || "")}</div>
@@ -1481,8 +1489,198 @@
                 ${escapeHtml(sequence.requested_end_date || "")} (${escapeHtml(sequence.timezone || "UTC")})
               </div>
               <div class="image-sequence-thumb-grid">${thumbnails || "<p class=\"status-line\">No images downloaded yet.</p>"}</div>
+              <div style="margin-top: 12px;">
+                <label style="display: block; font-weight: 700; margin-bottom: 4px; font-size: 12.5px;">
+                  Baseline image
+                </label>
+                <select data-baseline-select style="width: 100%; max-width: 320px; padding: 6px; border: 1px solid var(--line); border-radius: 4px;">
+                  <option value="">Auto (earliest downloaded image)</option>
+                  ${downloaded
+                    .map(
+                      (record) =>
+                        `<option value="${escapeHtml(record.filename)}">${escapeHtml(formatDateTime(record.local_time || record.captured_at_utc))} &mdash; ${escapeHtml(record.filename)}</option>`
+                    )
+                    .join("")}
+                </select>
+              </div>
+              <div style="margin-top: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                <button type="button" class="btn small" data-run-image-sequence-validation>Run image-sequence validation</button>
+                <span class="status-line" data-image-sequence-run-status></span>
+              </div>
+              <div data-image-sequence-run-list style="margin-top: 10px;">
+                <p class="status-line">Loading past runs&hellip;</p>
+              </div>
             </div>
           </div>
+        `;
+      }
+
+      // ---------------------------------------------------------------
+      // Image-sequence validation runs (issue #182) — a separate, parallel
+      // flow from the video Runs tab above: own state, own endpoints, own
+      // output folder (outputs/image-sequence-runs/). Never touches
+      // panel-runs, runDetailCache, or selectedRunIds.
+      // ---------------------------------------------------------------
+      const runningImageSequenceValidations = new Set();
+      const imageSequenceRunDetailCache = new Map();
+
+      async function runImageSequenceValidationForSite(siteName, sequenceId, button, card) {
+        const key = `${siteName}::${sequenceId}`;
+        if (runningImageSequenceValidations.has(key)) return;
+        runningImageSequenceValidations.add(key);
+        const statusEl = card.querySelector("[data-image-sequence-run-status]");
+        const originalText = button.textContent;
+        button.disabled = true;
+        button.setAttribute("aria-busy", "true");
+        button.textContent = "Running…";
+        const baselineSelect = card.querySelector("[data-baseline-select]");
+        const baselineFilename = baselineSelect ? baselineSelect.value : "";
+        try {
+          const response = await fetch("/api/run-image-sequence-validation", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              folder_name: siteName,
+              sequence_id: sequenceId,
+              ...(baselineFilename ? { baseline_filename: baselineFilename } : {}),
+            }),
+          });
+          const result = await response.json();
+          if (!response.ok || !result.success) {
+            throw new Error(result.message || `Request failed: ${response.status}`);
+          }
+          const counts = result.counts || {};
+          statusEl.textContent =
+            `Done: ${fallback(counts.possible_water_level_change, 0)} possible change, ` +
+            `${fallback(counts.no_water_level_change, 0)} no change, ` +
+            `${fallback(counts.cannot_judge_water_level, 0)} cannot judge, ` +
+            `${fallback(counts.camera_or_image_problem, 0)} camera/image problem.`;
+          await loadImageSequenceRuns(siteName, sequenceId, card);
+        } catch (error) {
+          statusEl.textContent = `Failed: ${error.message}`;
+        } finally {
+          button.disabled = false;
+          button.removeAttribute("aria-busy");
+          button.textContent = originalText;
+          runningImageSequenceValidations.delete(key);
+        }
+      }
+
+      async function loadImageSequenceRuns(siteName, sequenceId, card) {
+        const list = card.querySelector("[data-image-sequence-run-list]");
+        try {
+          const response = await fetch(
+            `/api/image-sequence-runs?${new URLSearchParams({ folder_name: siteName, sequence_id: sequenceId })}`
+          );
+          if (!response.ok) throw new Error("Request failed");
+          const payload = await response.json();
+          renderImageSequenceRunList(list, siteName, payload.runs || []);
+        } catch (error) {
+          list.innerHTML = '<p class="status-line error">Could not load past runs.</p>';
+        }
+      }
+
+      function renderImageSequenceRunList(list, siteName, runs) {
+        if (!runs.length) {
+          list.innerHTML = '<p class="status-line">No image-sequence validation runs yet.</p>';
+          return;
+        }
+        list.innerHTML = runs
+          .map(
+            (run, index) => `
+              <div class="run-card" data-run-index="${index}" data-run-id="${escapeHtml(run.run_id || "")}">
+                <div class="run-card-head" data-run-head>
+                  <div class="run-head-main">
+                    <div class="run-id">${escapeHtml(run.run_id || "Unknown run")}</div>
+                    <div class="run-time">
+                      ${escapeHtml(formatDateTime(run.created_at))} &middot;
+                      baseline ${escapeHtml(run.baseline_filename || "unknown")}
+                    </div>
+                  </div>
+                  <div class="run-counts">
+                    <span class="badge ok">${fallback(run.possible_water_level_change_count, 0)} possible</span>
+                    <span class="badge neutral">${fallback(run.no_water_level_change_count, 0)} no change</span>
+                    <span class="badge warn">${fallback(run.cannot_judge_water_level_count, 0)} cannot judge</span>
+                    <span class="badge missing">${fallback(run.camera_or_image_problem_count, 0)} problem</span>
+                  </div>
+                  <span class="run-caret">&#9654;</span>
+                </div>
+                <div class="run-card-body" data-run-body>
+                  <div class="loading-line">Loading run details&hellip;</div>
+                </div>
+              </div>
+            `
+          )
+          .join("");
+        list.querySelectorAll("[data-run-head]").forEach((head) => {
+          head.addEventListener("click", () => {
+            const card = head.closest(".run-card");
+            const willOpen = !card.classList.contains("open");
+            card.classList.toggle("open");
+            if (willOpen) {
+              loadImageSequenceRunBody(card, siteName, card.dataset.runId);
+            }
+          });
+        });
+      }
+
+      async function loadImageSequenceRunBody(card, siteName, runId) {
+        const body = card.querySelector("[data-run-body]");
+        const cacheKey = `${siteName}::${runId}`;
+        if (imageSequenceRunDetailCache.has(cacheKey)) {
+          body.innerHTML = imageSequenceRunDetailCache.get(cacheKey);
+          return;
+        }
+        try {
+          const response = await fetch(
+            `/api/image-sequence-run-detail?${new URLSearchParams({ folder_name: siteName, run_id: runId })}`
+          );
+          if (!response.ok) throw new Error("Request failed");
+          const detail = await response.json();
+          const html = renderImageSequenceRunDetail(siteName, runId, detail);
+          imageSequenceRunDetailCache.set(cacheKey, html);
+          body.innerHTML = html;
+        } catch (error) {
+          body.innerHTML = `<p class="status-line error">Could not load this run: ${escapeHtml(error.message)}</p>`;
+        }
+      }
+
+      function renderImageSequenceRunDetail(siteName, runId, detail) {
+        const summary = detail.summary || {};
+        const images = (detail.review_images || [])
+          .map((filename) => {
+            const query = new URLSearchParams({ folder_name: siteName, run_id: runId, filename });
+            return `<img src="/api/image-sequence-run-image?${query}" alt="${escapeHtml(filename)}" loading="lazy">`;
+          })
+          .join("");
+        const records = (detail.records || [])
+          .map(
+            (record) => `
+              <div class="kv-row">
+                <div class="kv-label">${escapeHtml(record.filename)}</div>
+                <div>${escapeHtml(record.result)} &mdash; ${escapeHtml(record.reason)}</div>
+              </div>
+            `
+          )
+          .join("");
+        return `
+          <div class="kv-grid" style="margin-bottom: 12px;">
+            <div class="kv-row">
+              <div class="kv-label">Baseline image</div>
+              <div>${escapeHtml(summary.baseline_filename || "Not recorded")}</div>
+            </div>
+            <div class="kv-row">
+              <div class="kv-label">Confirmed riverbank guides used</div>
+              <div>${(summary.confirmed_riverbank_guide_ids || []).length}</div>
+            </div>
+          </div>
+          <div class="image-sequence-thumb-grid" style="margin-bottom: 12px;">
+            ${images || '<p class="status-line">No review images for this run.</p>'}
+          </div>
+          <div class="kv-grid" style="margin-bottom: 12px;">
+            ${records || '<p class="status-line">No compared images recorded.</p>'}
+          </div>
+          <div class="report-text">${escapeHtml(detail.report || "This report is empty.")}</div>
         `;
       }
 

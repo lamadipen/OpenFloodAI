@@ -762,7 +762,11 @@ def _find_review_images_paths(site_dir: Path) -> list[Path]:
     outputs_dir = site_dir / "outputs"
     if not outputs_dir.exists():
         return []
-    return sorted(path for path in outputs_dir.rglob("review-images") if path.is_dir())
+    return sorted(
+        path
+        for path in outputs_dir.rglob("review-images")
+        if path.is_dir() and "image-sequence-runs" not in path.parts
+    )
 
 
 def _read_report_counts(report_path: Path | None) -> dict[str, int] | None:
