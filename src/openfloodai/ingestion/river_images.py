@@ -319,10 +319,13 @@ def download_latest_timelapse(*, camera_url: str, output_root: Path) -> dict[str
         raise
 
 
+_DOWNLOADED_VIDEO_KINDS = {"latest_timelapse", "image_test_timelapse", "live_camera_clip"}
+
+
 def resolve_downloaded_video(root: Path, batch_id: str, filename: str) -> Path:
-    """Limit video playback/download to completed local time-lapse batches."""
+    """Limit video playback/download to completed local time-lapse/clip batches."""
     if not re.fullmatch(r"[a-f0-9]{32}", batch_id) or not re.fullmatch(
-        r"(?:[A-Za-z0-9_-]+_720|images_test_timelapse)\.mp4", filename
+        r"(?:[A-Za-z0-9_-]+_720|images_test_timelapse|live_camera_clip)\.mp4", filename
     ):
         raise RiverImageError("Downloaded video not found.")
     directory = root.resolve() / batch_id
@@ -333,7 +336,7 @@ def resolve_downloaded_video(root: Path, batch_id: str, filename: str) -> Path:
     metadata = json.loads((directory / "download.json").read_text(encoding="utf-8"))
     if (
         not isinstance(metadata, dict)
-        or metadata.get("kind") not in {"latest_timelapse", "image_test_timelapse"}
+        or metadata.get("kind") not in _DOWNLOADED_VIDEO_KINDS
         or metadata.get("success") is not True
         or metadata.get("filename") != filename
     ):

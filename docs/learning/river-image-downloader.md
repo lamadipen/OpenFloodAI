@@ -1,7 +1,8 @@
 # Download River Images And Video
 
-Use this page to download public USGS HIVIS images and latest time-lapse videos for local research.
-It does not connect to a live stream, upload local files, or run validation.
+Use this page to download public USGS HIVIS images and latest time-lapse videos for local
+research, or to save a short clip from any other HTTPS live camera stream you point it at.
+It does not upload local files or run validation.
 
 ## Use The Home UI
 
@@ -81,6 +82,34 @@ must not be used to claim detection delay, water speed, or flood accuracy. Resul
 depend on sampling settings and may miss a brief displayed image. A frozen-image
 slideshow is not evidence that the real river stayed unchanged between captures.
 
+## Save A Clip From A Live Camera Stream
+
+This tool works with any HTTPS live stream, not only the USGS archive above — paste
+its `.m3u8` (HLS) URL into **Live stream URL**. A live feed can be unreliable: an
+attempt either saves a complete clip or fails cleanly with no batch left behind;
+it never saves a partial or corrupted file.
+
+Select **Download live camera clip now** for one manual attempt. Set **Clip
+length** (2–30 seconds) first; the attempt tries to open the stream and, once
+open, captures that many seconds' worth of frames at the stream's own frame
+rate before saving. If the stream cannot be opened right now, the status
+message says so and nothing is saved — try again later.
+
+To keep trying automatically, turn on **Enable scheduled downloads**, set an
+interval (5–1440 minutes), and select **Save schedule**. The schedule is
+saved on the server and a single background check runs for as long as the
+Home UI server process stays running (not tied to this browser tab): on each
+interval, it makes exactly one attempt and records whether it succeeded,
+never retrying early after a failure. The status line shows the last attempt's
+time and result. Restarting the server keeps the saved schedule but starts a
+fresh background check.
+
+Each clip is saved as its own batch under `data/river-images/`, alongside the
+USGS downloads, with a `download.json` marked `live_camera_clip`. This
+feature does not know anything about the stream's real-world capture time
+beyond when the attempt ran; treat clip timing the same way as the latest
+USGS time-lapse video above.
+
 ## Time And Image Selection
 
 For 09:00, the tool searches four windows: 09:00–09:15, 09:15–09:30,
@@ -117,9 +146,12 @@ repository `data/*` ignore rule excludes these downloads; keep media local and
 check permission before sharing. Delete batch folders manually when no longer
 needed. Home's **Delete All Sites** does not delete these separate downloads.
 
-Only official HIVIS camera URLs are accepted. Archive requests have timeouts and
-size limits, redirects are refused, and the viewer serves only saved batch media.
-The browser cannot choose an arbitrary server output folder.
+Only official HIVIS camera URLs are accepted for the USGS image/latest-video
+actions. Archive requests have timeouts and size limits, redirects are refused,
+and the viewer serves only saved batch media. The browser cannot choose an
+arbitrary server output folder. The live-camera clip action accepts any HTTPS
+URL you provide, but refuses one that resolves to a local or private network
+address, so it cannot be used to probe your own network from the browser.
 
 ## Command Line
 
@@ -140,6 +172,13 @@ The supplied standalone downloader is integrated as reusable acquisition logic i
 Home UI server handles routes and `tools/openfloodai-river-images.html` owns the
 new form and gallery. Home links to it through `tools/openfloodai-home-ui.html`.
 Wheel and desktop packaging include both pages.
+
+The live-camera clip capture lives in `src/openfloodai/ingestion/live_camera.py`,
+which runs the actual frame grab in a separate subprocess
+(`live_camera_worker.py`) so a stream that never responds can be killed from
+outside instead of hanging the server. The background schedule is
+`src/openfloodai/ingestion/live_camera_schedule.py`, started once per server
+process by the same launchers that start the Home UI server.
 
 Archive selection uses the source script's USGS bucket naming convention and
 [S3 listing behaviour](https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectsV2.html).

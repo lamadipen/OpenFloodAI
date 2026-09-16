@@ -620,8 +620,11 @@ independently of the selected image date/hour, with playback and a **Save video*
 link. After downloading at least two images, **Make test video from these images**
 creates a separate MP4 with five playback seconds per image and a capture-time map.
 Import it through your site's existing Add Video action for workflow testing.
-**Back to Home** returns to validation. Restart the server after
-updating Python code. See [Download river images](docs/learning/river-image-downloader.md)
+The same page can also save a short clip from any HTTPS live camera stream
+(paste its .m3u8 URL), either on demand with **Download live camera clip now**
+or on a background schedule you turn on there — useful for a feed that is only
+sometimes reachable. **Back to Home** returns to validation. Restart the server
+after updating Python code. See [Download river images](docs/learning/river-image-downloader.md)
 for timezone setup, storage, and command-line usage.
 
 Simple meaning: this page checks folders under `data/sites/` and shows whether each site has config, videos, labels, manifest, output reports, and a latest report.

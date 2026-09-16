@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 
 import platformdirs
 
+from openfloodai.ingestion.live_camera_schedule import ensure_scheduler_running
 from openfloodai.ui.home_server import OpenFloodAIHomeHandler
 
 if TYPE_CHECKING:
@@ -82,6 +83,7 @@ def start_server(host: str, port: int, sites_dir: Path, ui_path: Path) -> Thread
 
     OpenFloodAIHomeHandler.sites_dir = sites_dir
     OpenFloodAIHomeHandler.ui_path = ui_path
+    ensure_scheduler_running(sites_dir.resolve().parent / "river-images")
     server = ThreadingHTTPServer((host, port), OpenFloodAIHomeHandler)
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
