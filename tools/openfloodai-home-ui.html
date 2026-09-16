@@ -3939,7 +3939,26 @@
         }
       });
 
-      loadSites();
+      loadSites().then(() => {
+        // Lets the redesigned site-details page deep-link straight into a
+        // form here (e.g. "Add Video") without duplicating its canvas-based
+        // drawing UI on that page. Runs once; the query string is then
+        // cleared so a later loadSites() refresh doesn't reopen it.
+        const params = new URLSearchParams(window.location.search);
+        const deepLinkSite = params.get("site");
+        const deepLinkAction = params.get("action");
+        const openers = {
+          add_video: window.openVideoFormForSite,
+          add_label: window.openLabelFormForSite,
+          set_watched_area: window.openWatchedAreaFormForSite,
+          set_normal_waterline_guide: window.openNormalWaterlineGuideFormForSite,
+          watch: window.openWatchViewerForSite,
+        };
+        if (deepLinkSite && deepLinkAction && openers[deepLinkAction]) {
+          openers[deepLinkAction](deepLinkSite);
+          history.replaceState(null, "", window.location.pathname);
+        }
+      });
     </script>
   </body>
 </html>
