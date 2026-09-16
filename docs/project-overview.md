@@ -112,7 +112,7 @@ OpenFloodAI has a usable local validation MVP. It can currently:
 - track validation results and known limits
 - provide privacy, retention, ML research, and labeling guidance
 
-Simple example: a developer can run a local video, mark the lower part of a bridge pillar as the watched area, save records, generate review images, label the video as `water_rising`, and compare that label with the system output.
+Simple example: a developer can run a local video, mark the lower part of a bridge pillar as the watched area, save records, generate review images, label the video as `water_level_rising`, and compare that label with the system output.
 
 OpenFloodAI still does not:
 

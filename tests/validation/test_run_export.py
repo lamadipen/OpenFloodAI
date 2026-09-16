@@ -54,7 +54,7 @@ def make_site_with_completed_run(
             {
                 "video_id": "rising-001",
                 "time_window_seconds": [0, 30],
-                "human_label": "water_rising",
+                "human_label": "water_level_rising",
             }
         )
         + "\n"

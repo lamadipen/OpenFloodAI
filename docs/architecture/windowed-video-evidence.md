@@ -66,7 +66,7 @@ so old measurements are not mixed with the new run.
 
 ## Easy Example
 
-A person labels seconds 0–30 as water_rising.
+A person labels seconds 0–30 as water_level_rising.
 
 - Seconds 0–4 are black: keep metadata and mark them too dark.
 - Use clear frames around 5, 10, 15, 20, 25, and the last frame before 30 seconds.

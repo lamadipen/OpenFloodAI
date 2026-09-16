@@ -31,7 +31,7 @@ def _add_labels_and_manifest(site_dir: Path) -> None:
     labels_dir = site_dir / "labels"
     labels_dir.mkdir(parents=True, exist_ok=True)
     (labels_dir / "labels.jsonl").write_text(
-        '{"video_id":"rising-001","time_window_seconds":[0,30],"human_label":"water_rising"}\n',
+        '{"video_id":"rising-001","time_window_seconds":[0,30],"human_label":"water_level_rising"}\n',
         encoding="utf-8",
     )
     (site_dir / "manifest.jsonl").write_text(

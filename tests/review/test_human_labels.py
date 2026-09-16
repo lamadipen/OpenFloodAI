@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
 from openfloodai.review import (
     HumanLabelError,
+    compare_label_records,
     create_human_label_record,
     is_valid_human_label_record,
     load_human_label_records,
@@ -14,13 +16,57 @@ from openfloodai.review import (
 )
 
 
+@pytest.mark.parametrize(
+    ("legacy", "current", "score", "expected"),
+    [
+        ("water_rising", "water_level_rising", 0.42, "agree"),
+        ("water_falling", "water_level_falling", 0.42, "agree"),
+        ("no_clear_change", "no_water_level_change", 0.0, "agree"),
+        ("cannot_judge", "cannot_judge_water_level", 0.0, "cannot_compare"),
+    ],
+)
+def test_legacy_labels_remain_readable_and_new_records_use_current_names(
+    tmp_path: Path, legacy: str, current: str, score: float, expected: str
+) -> None:
+    old_path = tmp_path / "old-labels.jsonl"
+    old_text = (
+        json.dumps({"video_id": "test", "time_window_seconds": [0, 30], "human_label": legacy})
+        + "\n"
+    )
+    old_path.write_text(old_text, encoding="utf-8")
+    report = compare_label_records(
+        video_id="test",
+        human_labels=load_human_label_records(old_path),
+        system_records=[
+            {
+                "record_type": "visual_signal_output",
+                "video_time_seconds": 10,
+                "region_change_score": score,
+            }
+        ],
+    )
+    assert report.comparisons[0].human_label == current
+    assert report.comparisons[0].result == expected
+    assert old_path.read_text(encoding="utf-8") == old_text
+
+    result = create_human_label_record(
+        site_dir=tmp_path,
+        video_id="test",
+        start_second=0,
+        end_second=30,
+        human_label=legacy,
+    )
+    assert result.created
+    assert load_human_label_records(result.labels_path)[0]["human_label"] == current
+
+
 def test_valid_human_label_record_passes() -> None:
     record = {
         "video_id": "demo-river-001",
         "site_id": "site-demo-01",
         "camera_id": "camera-demo-01",
         "time_window_seconds": [0, 30],
-        "human_label": "water_rising",
+        "human_label": "water_level_rising",
         "confidence": "medium",
         "note": "Water appears higher against the bridge pillar.",
     }
@@ -33,7 +79,7 @@ def test_valid_human_label_record_with_quality_fields_passes() -> None:
     record = {
         "video_id": "demo-river-001",
         "time_window_seconds": [0, 30],
-        "human_label": "water_rising",
+        "human_label": "water_level_rising",
         "riverbank_visible": "yes",
         "stable_marker_visible": "unsure",
         "water_boundary_visible": "yes",
@@ -50,7 +96,7 @@ def test_human_label_record_rejects_invalid_tristate_value() -> None:
         {
             "video_id": "demo-river-001",
             "time_window_seconds": [0, 30],
-            "human_label": "water_rising",
+            "human_label": "water_level_rising",
             "riverbank_visible": "maybe",
         }
     )
@@ -63,7 +109,7 @@ def test_human_label_record_rejects_invalid_visibility_condition() -> None:
         {
             "video_id": "demo-river-001",
             "time_window_seconds": [0, 30],
-            "human_label": "water_rising",
+            "human_label": "water_level_rising",
             "visibility_condition": "sunny",
         }
     )
@@ -99,7 +145,7 @@ def test_invalid_time_window_fails_clearly() -> None:
         {
             "video_id": "demo-river-001",
             "time_window_seconds": [30, 10],
-            "human_label": "water_falling",
+            "human_label": "water_level_falling",
         }
     )
 
@@ -117,7 +163,7 @@ def test_load_human_label_records_reads_valid_jsonl(tmp_path: Path) -> None:
     label_path.write_text(
         (
             '{"video_id":"demo-river-001","time_window_seconds":[0,30],'
-            '"human_label":"no_clear_change","confidence":"high"}\n'
+            '"human_label":"no_water_level_change","confidence":"high"}\n'
         ),
         encoding="utf-8",
     )
@@ -125,7 +171,7 @@ def test_load_human_label_records_reads_valid_jsonl(tmp_path: Path) -> None:
     records = load_human_label_records(label_path)
 
     assert len(records) == 1
-    assert records[0]["human_label"] == "no_clear_change"
+    assert records[0]["human_label"] == "no_water_level_change"
 
 
 def test_load_human_label_records_reports_record_number(tmp_path: Path) -> None:
@@ -148,7 +194,7 @@ def test_create_valid_human_label_record_creates_file_and_record(tmp_path: Path)
         video_id="rising-001",
         start_second=30,
         end_second=60,
-        human_label="water_rising",
+        human_label="water_level_rising",
         confidence="medium",
         note="water appears higher near the bridge pillar",
     )
@@ -162,7 +208,7 @@ def test_create_valid_human_label_record_creates_file_and_record(tmp_path: Path)
     assert len(records) == 1
     assert records[0]["video_id"] == "rising-001"
     assert records[0]["time_window_seconds"] == [30, 60]
-    assert records[0]["human_label"] == "water_rising"
+    assert records[0]["human_label"] == "water_level_rising"
     assert records[0]["confidence"] == "medium"
     assert records[0]["note"] == "water appears higher near the bridge pillar"
 
@@ -177,7 +223,7 @@ def test_create_human_label_record_rejects_invalid_time_windows(tmp_path: Path) 
         video_id="rising-001",
         start_second=60,
         end_second=30,
-        human_label="water_rising",
+        human_label="water_level_rising",
     )
     assert res1.created is False
     assert "end must be greater than start" in res1.message
@@ -188,7 +234,7 @@ def test_create_human_label_record_rejects_invalid_time_windows(tmp_path: Path) 
         video_id="rising-001",
         start_second=30,
         end_second=30,
-        human_label="water_rising",
+        human_label="water_level_rising",
     )
     assert res2.created is False
     assert "end must be greater than start" in res2.message
@@ -199,7 +245,7 @@ def test_create_human_label_record_rejects_invalid_time_windows(tmp_path: Path) 
         video_id="rising-001",
         start_second=-5,
         end_second=30,
-        human_label="water_rising",
+        human_label="water_level_rising",
     )
     assert res3.created is False
     assert "0 or greater" in res3.message
@@ -247,7 +293,7 @@ def test_create_human_label_record_rejects_unknown_confidence_values(tmp_path: P
         video_id="rising-001",
         start_second=0,
         end_second=30,
-        human_label="water_rising",
+        human_label="water_level_rising",
         confidence="extremely_high",
     )
 
@@ -264,7 +310,7 @@ def test_create_human_label_record_accepts_quality_fields(tmp_path: Path) -> Non
         video_id="rising-001",
         start_second=0,
         end_second=30,
-        human_label="water_rising",
+        human_label="water_level_rising",
         riverbank_visible="yes",
         water_boundary_visible="unsure",
         visibility_condition="glare",
@@ -288,7 +334,7 @@ def test_create_human_label_record_rejects_unknown_tristate_value(tmp_path: Path
         video_id="rising-001",
         start_second=0,
         end_second=30,
-        human_label="water_rising",
+        human_label="water_level_rising",
         camera_stable="maybe",
     )
 
@@ -305,7 +351,7 @@ def test_create_human_label_record_rejects_unsafe_video_ids(tmp_path: Path) -> N
         video_id="../bad_path",
         start_second=0,
         end_second=30,
-        human_label="water_rising",
+        human_label="water_level_rising",
     )
 
     assert result.created is False
@@ -321,7 +367,7 @@ def test_create_human_label_record_appends_to_existing_file_safely(tmp_path: Pat
         video_id="rising-001",
         start_second=0,
         end_second=30,
-        human_label="no_clear_change",
+        human_label="no_water_level_change",
     )
     assert res1.created is True
 
@@ -330,16 +376,16 @@ def test_create_human_label_record_appends_to_existing_file_safely(tmp_path: Pat
         video_id="rising-001",
         start_second=30,
         end_second=60,
-        human_label="water_rising",
+        human_label="water_level_rising",
     )
     assert res2.created is True
 
     records = load_human_label_records(site_dir / "labels" / "labels.jsonl")
     assert len(records) == 2
     assert records[0]["time_window_seconds"] == [0, 30]
-    assert records[0]["human_label"] == "no_clear_change"
+    assert records[0]["human_label"] == "no_water_level_change"
     assert records[1]["time_window_seconds"] == [30, 60]
-    assert records[1]["human_label"] == "water_rising"
+    assert records[1]["human_label"] == "water_level_rising"
 
 
 def test_create_human_label_record_handles_missing_trailing_newline(tmp_path: Path) -> None:
@@ -347,7 +393,7 @@ def test_create_human_label_record_handles_missing_trailing_newline(tmp_path: Pa
     labels_dir = site_dir / "labels"
     labels_dir.mkdir(parents=True)
     (labels_dir / "labels.jsonl").write_bytes(
-        b'{"human_label":"cannot_judge","time_window_seconds":[0,10],"video_id":"v1"}'
+        b'{"human_label":"cannot_judge_water_level","time_window_seconds":[0,10],"video_id":"v1"}'
     )
 
     result = create_human_label_record(
@@ -355,7 +401,7 @@ def test_create_human_label_record_handles_missing_trailing_newline(tmp_path: Pa
         video_id="v1",
         start_second=10,
         end_second=20,
-        human_label="water_rising",
+        human_label="water_level_rising",
     )
 
     assert result.created is True
@@ -374,7 +420,7 @@ def test_create_human_label_record_avoids_accidental_overwrite(tmp_path: Path) -
         video_id="rising-001",
         start_second=30,
         end_second=60,
-        human_label="water_rising",
+        human_label="water_level_rising",
         note="Initial label",
     )
     assert res1.created is True
@@ -385,7 +431,7 @@ def test_create_human_label_record_avoids_accidental_overwrite(tmp_path: Path) -
         video_id="rising-001",
         start_second=30,
         end_second=60,
-        human_label="cannot_judge",
+        human_label="cannot_judge_water_level",
         note="Accidental duplicate attempt",
         overwrite=False,
     )
@@ -395,7 +441,7 @@ def test_create_human_label_record_avoids_accidental_overwrite(tmp_path: Path) -
 
     records = load_human_label_records(site_dir / "labels" / "labels.jsonl")
     assert len(records) == 1
-    assert records[0]["human_label"] == "water_rising"
+    assert records[0]["human_label"] == "water_level_rising"
     assert records[0]["note"] == "Initial label"
 
 
@@ -408,14 +454,14 @@ def test_create_human_label_record_overwrites_when_requested(tmp_path: Path) -> 
         video_id="rising-001",
         start_second=0,
         end_second=30,
-        human_label="no_clear_change",
+        human_label="no_water_level_change",
     )
     create_human_label_record(
         site_dir=site_dir,
         video_id="rising-001",
         start_second=30,
         end_second=60,
-        human_label="water_rising",
+        human_label="water_level_rising",
         confidence="low",
     )
 
@@ -425,7 +471,7 @@ def test_create_human_label_record_overwrites_when_requested(tmp_path: Path) -> 
         video_id="rising-001",
         start_second=30,
         end_second=60,
-        human_label="water_rising",
+        human_label="water_level_rising",
         confidence="high",
         note="Confirmed higher on second review",
         overwrite=True,
@@ -435,7 +481,7 @@ def test_create_human_label_record_overwrites_when_requested(tmp_path: Path) -> 
 
     records = load_human_label_records(site_dir / "labels" / "labels.jsonl")
     assert len(records) == 2
-    assert records[0]["human_label"] == "no_clear_change"
+    assert records[0]["human_label"] == "no_water_level_change"
     assert records[1]["confidence"] == "high"
     assert records[1]["note"] == "Confirmed higher on second review"
 
@@ -449,7 +495,7 @@ def test_create_human_label_record_no_private_footage_required(tmp_path: Path) -
         video_id="remote-review-001",
         start_second=10,
         end_second=40,
-        human_label="water_falling",
+        human_label="water_level_falling",
     )
 
     assert result.created is True
@@ -474,7 +520,7 @@ def test_create_human_label_record_updates_manifest_if_present(tmp_path: Path) -
         video_id="rising-001",
         start_second=0,
         end_second=30,
-        human_label="water_rising",
+        human_label="water_level_rising",
     )
 
     assert result.created is True

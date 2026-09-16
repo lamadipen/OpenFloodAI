@@ -160,20 +160,36 @@ def test_friendly_failure_reason_handles_none() -> None:
 
 def test_find_matching_label_matches_video_and_window() -> None:
     labels = [
-        {"video_id": "rising-001", "time_window_seconds": [0, 30], "human_label": "water_rising"},
-        {"video_id": "rising-001", "time_window_seconds": [30, 60], "human_label": "cannot_judge"},
-        {"video_id": "other-001", "time_window_seconds": [0, 30], "human_label": "no_clear_change"},
+        {
+            "video_id": "rising-001",
+            "time_window_seconds": [0, 30],
+            "human_label": "water_level_rising",
+        },
+        {
+            "video_id": "rising-001",
+            "time_window_seconds": [30, 60],
+            "human_label": "cannot_judge_water_level",
+        },
+        {
+            "video_id": "other-001",
+            "time_window_seconds": [0, 30],
+            "human_label": "no_water_level_change",
+        },
     ]
 
     match = find_matching_label(labels, video_id="rising-001", time_window_seconds=(30.0, 60.0))
 
     assert match is not None
-    assert match["human_label"] == "cannot_judge"
+    assert match["human_label"] == "cannot_judge_water_level"
 
 
 def test_find_matching_label_returns_none_when_no_exact_match() -> None:
     labels = [
-        {"video_id": "rising-001", "time_window_seconds": [0, 30], "human_label": "water_rising"}
+        {
+            "video_id": "rising-001",
+            "time_window_seconds": [0, 30],
+            "human_label": "water_level_rising",
+        }
     ]
 
     assert (

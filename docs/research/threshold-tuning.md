@@ -17,7 +17,7 @@ The current prototype uses these visible rules for a configured reference region
 | All bands at or above `0.08` with similar scores | Unclear whole-region change; return `cannot_judge`. |
 
 The system detects visual change. It does not currently determine whether the
-water is rising or falling. Human labels `water_rising` and `water_falling` can
+water is rising or falling. Human labels `water_level_rising` and `water_level_falling` can
 therefore both agree with a `water_change_seen` result when the evidence is useful.
 Dark, weak, small, or whole-region-changing evidence stays unclear instead of
 being forced into a confident result.

@@ -50,35 +50,35 @@ def write_labels(path: Path) -> None:
                     {
                         "video_id": "rising-001",
                         "time_window_seconds": [0, 30],
-                        "human_label": "water_rising",
+                        "human_label": "water_level_rising",
                     }
                 ),
                 json.dumps(
                     {
                         "video_id": "rising-001",
                         "time_window_seconds": [30, 60],
-                        "human_label": "cannot_judge",
+                        "human_label": "cannot_judge_water_level",
                     }
                 ),
                 json.dumps(
                     {
                         "video_id": "normal-001",
                         "time_window_seconds": [0, 30],
-                        "human_label": "water_rising",
+                        "human_label": "water_level_rising",
                     }
                 ),
                 json.dumps(
                     {
                         "video_id": "unclear-001",
                         "time_window_seconds": [0, 30],
-                        "human_label": "cannot_judge",
+                        "human_label": "cannot_judge_water_level",
                     }
                 ),
                 json.dumps(
                     {
                         "video_id": "missing-001",
                         "time_window_seconds": [0, 30],
-                        "human_label": "water_rising",
+                        "human_label": "water_level_rising",
                     }
                 ),
             ]
@@ -290,7 +290,7 @@ def test_scorecard_reports_baseline_ready_and_practice_only_counts(tmp_path: Pat
                     {
                         "video_id": "rising-001",
                         "time_window_seconds": [0, 30],
-                        "human_label": "water_rising",
+                        "human_label": "water_level_rising",
                         "riverbank_visible": "yes",
                         "water_boundary_visible": "yes",
                     }
@@ -299,7 +299,7 @@ def test_scorecard_reports_baseline_ready_and_practice_only_counts(tmp_path: Pat
                     {
                         "video_id": "rising-001",
                         "time_window_seconds": [30, 60],
-                        "human_label": "cannot_judge",
+                        "human_label": "cannot_judge_water_level",
                         "riverbank_visible": "no",
                     }
                 ),
@@ -326,7 +326,7 @@ def test_scorecard_treats_unconfirmed_baseline_as_practice_only(tmp_path: Path) 
             {
                 "video_id": "rising-001",
                 "time_window_seconds": [0, 30],
-                "human_label": "water_rising",
+                "human_label": "water_level_rising",
                 "riverbank_visible": "yes",
                 "water_boundary_visible": "yes",
             }
@@ -395,7 +395,7 @@ def test_rendered_report_shows_normal_waterline_guides_section_once(tmp_path: Pa
                     {
                         "video_id": "rising-001",
                         "time_window_seconds": [0, 30],
-                        "human_label": "water_rising",
+                        "human_label": "water_level_rising",
                         "riverbank_visible": "yes",
                         "water_boundary_visible": "yes",
                     }
@@ -404,7 +404,7 @@ def test_rendered_report_shows_normal_waterline_guides_section_once(tmp_path: Pa
                     {
                         "video_id": "rising-001",
                         "time_window_seconds": [30, 60],
-                        "human_label": "cannot_judge",
+                        "human_label": "cannot_judge_water_level",
                         "riverbank_visible": "no",
                     }
                 ),
@@ -436,7 +436,7 @@ def test_rendered_report_without_normal_waterline_guides_still_renders(tmp_path:
             {
                 "video_id": "rising-001",
                 "time_window_seconds": [0, 30],
-                "human_label": "water_rising",
+                "human_label": "water_level_rising",
                 "riverbank_visible": "yes",
                 "water_boundary_visible": "yes",
             }
@@ -468,7 +468,7 @@ def test_missing_human_label_and_quality_failure_both_shown(tmp_path: Path) -> N
             {
                 "video_id": "other-001",
                 "time_window_seconds": [0, 30],
-                "human_label": "cannot_judge",
+                "human_label": "cannot_judge_water_level",
                 "riverbank_visible": "no",
             }
         )
@@ -556,12 +556,12 @@ def test_runs_preserve_input_receipts_across_site_edits(tmp_path: Path) -> None:
     label = {
         "video_id": "rising-001",
         "time_window_seconds": [0, 30],
-        "human_label": "water_rising",
+        "human_label": "water_level_rising",
     }
     labels.write_text(json.dumps(label) + "\n")
     second = run_site_validation(site)
     assert read_input_snapshot(Path(second.run_dir))["labels"] == [label]
-    label2 = dict(label, human_label="water_falling")
+    label2 = dict(label, human_label="water_level_falling")
     labels.write_text(json.dumps(label) + "\n" + json.dumps(label2) + "\n")
     create_tiny_video(site / "inputs/videos/new-video.avi", frame_values=(80, 80))
     third = run_site_validation(site)

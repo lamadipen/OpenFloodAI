@@ -29,7 +29,7 @@ def make_site(site_dir: Path) -> Path:
     (site_dir / "labels" / "labels.jsonl").write_text(
         (
             '{"video_id":"river-001","time_window_seconds":[0,30],'
-            '"human_label":"cannot_judge"}\n'
+            '"human_label":"cannot_judge_water_level"}\n'
             '{"video_id":"river-001","time_window_seconds":[30,60],'
             '"human_label":"bridge_pillar_covered"}\n'
         ),
@@ -62,7 +62,7 @@ def test_read_validation_site_status_reports_ready_site(tmp_path: Path) -> None:
     assert status.to_dict()["video_ids"] == ["river-001"]
     assert status.labels_found is True
     assert status.label_count == 1
-    assert status.human_label_options == ["bridge_pillar_covered", "cannot_judge"]
+    assert status.human_label_options == ["bridge_pillar_covered", "cannot_judge_water_level"]
     assert status.labeled_video_ids == ["river-001"]
     assert status.manifest_found is True
     assert status.outputs_found is True
@@ -207,7 +207,7 @@ def test_status_to_dict_includes_ready_flag(tmp_path: Path) -> None:
     assert status.to_dict()["ready_for_validation"] is True
     assert status.to_dict()["human_label_options"] == [
         "bridge_pillar_covered",
-        "cannot_judge",
+        "cannot_judge_water_level",
     ]
 
 

@@ -155,7 +155,7 @@ def test_repair_manifest_marks_existing_human_labels(tmp_path: Path) -> None:
     labels_dir = site_dir / "labels"
     labels_dir.mkdir()
     (labels_dir / "labels.jsonl").write_text(
-        '{"video_id":"river-001","time_window_seconds":[0,30],"human_label":"water_rising"}\n',
+        '{"video_id":"river-001","time_window_seconds":[0,30],"human_label":"water_level_rising"}\n',
         encoding="utf-8",
     )
 

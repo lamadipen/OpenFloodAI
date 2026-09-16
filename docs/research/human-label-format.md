@@ -13,7 +13,7 @@ Use JSON Lines, with one label record per line.
 Simple example:
 
 ```json
-{"video_id":"demo-river-001","time_window_seconds":[0,30],"human_label":"water_rising","confidence":"medium","note":"Water appears to move higher against the bridge pillar."}
+{"video_id":"demo-river-001","time_window_seconds":[0,30],"human_label":"water_level_rising","confidence":"medium","note":"Water appears to move higher against the bridge pillar."}
 ```
 
 ## Required Fields
@@ -44,13 +44,15 @@ Prefer one of these values:
 
 | Label | Simple Meaning |
 | --- | --- |
-| `water_rising` | Water appears to move higher or cover more of the watched area. |
-| `water_falling` | Water appears to move lower or cover less of the watched area. |
-| `no_clear_change` | The reviewer does not see a clear water change. |
+| `water_level_rising` | Water appears to move higher or cover more of the watched area. |
+| `water_level_falling` | Water appears to move lower or cover less of the watched area. |
+| `no_water_level_change` | The reviewer does not see a clear water change. |
 | `camera_video_problem` | The video, camera view, or file has a problem. |
-| `cannot_judge` | The reviewer cannot safely decide from the image or video. |
+| `cannot_judge_water_level` | The reviewer cannot safely decide from the image or video. |
 
-Simple example: use `cannot_judge` when the image is too dark, blurry, blocked, or confusing.
+Simple example: use `cannot_judge_water_level` when the image is too dark, blurry, blocked, or confusing.
+
+Older labels (`water_rising`, `water_falling`, `no_clear_change`, and `cannot_judge`) still work. The system treats them as the corresponding water-level labels above. Existing files are not rewritten; new labels use the current names.
 
 If your site needs a label that is not in the list, you may use a short custom value with letters, numbers, dashes, or underscores.
 
@@ -112,7 +114,7 @@ python3 scripts/create_human_label.py \
   --video-id rising-001 \
   --start 30 \
   --end 60 \
-  --label water_rising \
+  --label water_level_rising \
   --confidence medium \
   --note "water appears higher near the bridge pillar"
 ```

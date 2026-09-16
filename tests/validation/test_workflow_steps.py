@@ -200,7 +200,7 @@ def test_label_step_offers_select_only_when_labels_exist(tmp_path: Path) -> None
     labels_dir = site_dir / "labels"
     labels_dir.mkdir(parents=True, exist_ok=True)
     (labels_dir / "labels.jsonl").write_text(
-        '{"video_id":"rising-001","time_window_seconds":[0,30],"human_label":"water_rising"}\n',
+        '{"video_id":"rising-001","time_window_seconds":[0,30],"human_label":"water_level_rising"}\n',
         encoding="utf-8",
     )
 

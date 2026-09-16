@@ -17,7 +17,7 @@ So far, validation is local and small.
 | Visual signals | Full-frame and reference-region image changes | The code can create simple brightness, change, and watched-region band scores. |
 | Region POC pipeline | A configured watched area inside a video | The code can save records for the selected area. |
 | Review images | Biggest local visual changes | The code can save images so a person can review what changed. |
-| Human labels | Small example label files | The code can read labels like `water_rising`, `no_clear_change`, and `cannot_judge`. |
+| Human labels | Small example label files | The code can read labels like `water_level_rising`, `no_water_level_change`, and `cannot_judge_water_level`. |
 | Label comparison | System output compared with human labels | The report can compare matching time windows and show `agree`, `disagree`, and `cannot_compare`. |
 | Threshold tuning | A few prototype visual-change thresholds | The report can show how different threshold numbers change the comparison result. |
 | Validation tracking | A plain-language known-limits page | The docs can now show what is tested, what is weak, and what should come next. |
@@ -65,7 +65,7 @@ saved-run evidence.
 - The validation scorecard keeps `cannot_compare` visible and lists common review reasons.
 - Hard-case expectations are documented for confusing inputs like glare, darkness, camera shake, and blocked views.
 
-Simple example: if a person says a clip shows `water_rising`, and the system shows stronger change in the lower part of a watched bridge pillar while the upper part stays steady, the comparison may say `agree`.
+Simple example: if a person says a clip shows `water_level_rising`, and the system shows stronger change in the lower part of a watched bridge pillar while the upper part stays steady, the comparison may say `agree`.
 
 ## What Did Not Work Yet
 

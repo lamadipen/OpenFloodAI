@@ -64,9 +64,9 @@ def write_unreadable_video(path: Path) -> None:
 @pytest.mark.parametrize(
     ("kind", "human_label"),
     [
-        (SyntheticVideoKind.RISING, "water_rising"),
-        (SyntheticVideoKind.FALLING, "water_falling"),
-        (SyntheticVideoKind.NO_CHANGE, "no_clear_change"),
+        (SyntheticVideoKind.RISING, "water_level_rising"),
+        (SyntheticVideoKind.FALLING, "water_level_falling"),
+        (SyntheticVideoKind.NO_CHANGE, "no_water_level_change"),
     ],
 )
 def test_synthetic_video_has_known_validation_result(

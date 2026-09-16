@@ -4,6 +4,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from openfloodai.review.human_labels import normalize_human_label
 from openfloodai.review.sample_quality import (
     compute_failure_reason,
     friendly_failure_reason,
@@ -14,6 +15,7 @@ from openfloodai.review.sample_quality import (
 def explain_result(machine: str, human: str, result: str, note: str) -> dict[str, str]:
     """Explain outcomes without changing comparison rules or hiding original notes."""
 
+    normalized_human = normalize_human_label(human)
     machine_text = {
         "water_change_seen": (
             "The machine detected a visual change in the watched area. "
@@ -25,12 +27,14 @@ def explain_result(machine: str, human: str, result: str, note: str) -> dict[str
     }.get(machine, f"Machine result: {machine}.")
     human_text = {
         "missing": "No human label for comparison.",
-        "water_rising": "The person saw water rising.",
-        "water_falling": "The person saw water falling.",
-        "no_clear_change": "The person saw no clear water change.",
-        "cannot_judge": "The person could not judge this video time window.",
+        "water_level_rising": "The person saw the water level rising.",
+        "water_level_falling": "The person saw the water level falling.",
+        "no_water_level_change": "The person saw no water-level change.",
+        "cannot_judge_water_level": (
+            "The person could not judge the water level in this video time window."
+        ),
         "camera_video_problem": "The person reported a camera or video problem.",
-    }.get(human, f"Human label: {human}.")
+    }.get(normalized_human, f"Human label: {human}.")
     comparison_text = {
         "agree": "The machine evidence and human label agree under the current comparison rules.",
         "disagree": "The machine evidence and human label do not agree.",
@@ -38,13 +42,13 @@ def explain_result(machine: str, human: str, result: str, note: str) -> dict[str
     }.get(result, result)
     reasons = []
     if result == "cannot_compare":
-        if human == "missing":
+        if normalized_human == "missing":
             reasons.append("No human label for comparison.")
         if machine == "missing_system_output":
             reasons.append("Machine output is missing for the reviewed time window.")
         if machine == "cannot_judge":
             reasons.append("The machine evidence is unclear or insufficient.")
-        if human in {"cannot_judge", "camera_video_problem"}:
+        if normalized_human in {"cannot_judge_water_level", "camera_video_problem"}:
             reasons.append(human_text)
     if note:
         reasons.append(note)

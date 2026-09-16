@@ -41,27 +41,27 @@ def write_labels(path: Path) -> None:
         {
             "video_id": "rising-001",
             "time_window_seconds": [0, 30],
-            "human_label": "water_rising",
+            "human_label": "water_level_rising",
         },
         {
             "video_id": "rising-001",
             "time_window_seconds": [30, 60],
-            "human_label": "cannot_judge",
+            "human_label": "cannot_judge_water_level",
         },
         {
             "video_id": "normal-001",
             "time_window_seconds": [0, 30],
-            "human_label": "water_rising",
+            "human_label": "water_level_rising",
         },
         {
             "video_id": "unclear-001",
             "time_window_seconds": [0, 30],
-            "human_label": "cannot_judge",
+            "human_label": "cannot_judge_water_level",
         },
         {
             "video_id": "missing-001",
             "time_window_seconds": [0, 30],
-            "human_label": "water_rising",
+            "human_label": "water_level_rising",
         },
     ]
     path.write_text(

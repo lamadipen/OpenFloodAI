@@ -58,10 +58,10 @@ Use one of the machine-readable labels below for each reviewed window.
 
 | Label | Use it when |
 | --- | --- |
-| `water_rising` | Water covers more of the watched area than earlier in the same window. |
-| `water_falling` | Water covers less of the watched area than earlier in the same window. |
-| `no_clear_change` | The watched area is usable, but there is no clear water change. |
-| `cannot_judge` | The reviewer cannot safely decide because the evidence is unclear. |
+| `water_level_rising` | Water covers more of the watched area than earlier in the same window. |
+| `water_level_falling` | Water covers less of the watched area than earlier in the same window. |
+| `no_water_level_change` | The watched area is usable, but there is no clear water change. |
+| `cannot_judge_water_level` | The reviewer cannot safely decide because the evidence is unclear. |
 | `camera_video_problem` | The video or camera view has a direct problem, such as missing, unreadable, or moved input. |
 
 The current machine signal can detect visual change, but it does not reliably
@@ -70,32 +70,32 @@ person can see it, and remember that the machine result is only review evidence.
 
 ## When To Use Unclear Labels
 
-Use `cannot_judge` when the view is too dark, blurry, blocked, glared, rainy,
+Use `cannot_judge_water_level` when the view is too dark, blurry, blocked, glared, rainy,
 shaky, or confusing to decide safely.
 
 Use `camera_video_problem` when the input itself is missing, unreadable, frozen,
 or the camera moved away from the expected scene.
 
-Use `no_clear_change` only when the scene is usable and the reviewer looked at
+Use `no_water_level_change` only when the scene is usable and the reviewer looked at
 the whole labelled window but saw no clear water change. Do not use it as a
 shortcut for a dark or broken video.
 
 Example:
 
 ```text
-Good: cannot_judge because heavy glare hides the water boundary.
-Bad: no_clear_change because the video could not be opened.
+Good: cannot_judge_water_level because heavy glare hides the water boundary.
+Bad: no_water_level_change because the video could not be opened.
 ```
 
-Unclear labels are valuable data. Do not force them into `water_rising` or
-`water_falling` just to avoid an incomplete result.
+Unclear labels are valuable data. Do not force them into `water_level_rising` or
+`water_level_falling` just to avoid an incomplete result.
 
 ## Good And Bad Examples
 
 ### Good Example
 
 ```json
-{"video_id":"river-demo-001","time_window_seconds":[30,60],"human_label":"water_rising","confidence":"medium","note":"Water covers more of the lower bridge pillar by the end of the window."}
+{"video_id":"river-demo-001","time_window_seconds":[30,60],"human_label":"water_level_rising","confidence":"medium","note":"Water covers more of the lower bridge pillar by the end of the window."}
 ```
 
 Why it is good:
@@ -108,7 +108,7 @@ Why it is good:
 ### Bad Example
 
 ```json
-{"video_id":"river-demo-001","time_window_seconds":[0,1],"human_label":"water_rising","note":"Looks bad."}
+{"video_id":"river-demo-001","time_window_seconds":[0,1],"human_label":"water_level_rising","note":"Looks bad."}
 ```
 
 Why it is bad:
@@ -120,7 +120,7 @@ Why it is bad:
 ### Good Unclear Example
 
 ```json
-{"video_id":"river-demo-002","time_window_seconds":[0,30],"human_label":"cannot_judge","confidence":"low","note":"The first half is dark and glare hides the water boundary."}
+{"video_id":"river-demo-002","time_window_seconds":[0,30],"human_label":"cannot_judge_water_level","confidence":"low","note":"The first half is dark and glare hides the water boundary."}
 ```
 
 ## Useful Location Details
@@ -154,7 +154,7 @@ Before adding a labelled example, ask:
 - Can another reviewer find the change inside this time window?
 - Is the watched/reference region correct?
 - Does the label describe what is visible, not what we hope is true?
-- Should this be `cannot_judge` or `camera_video_problem` instead?
+- Should this be `cannot_judge_water_level` or `camera_video_problem` instead?
 - Is the video safe to keep locally or commit?
 - Does the example avoid claiming flood accuracy?
 

@@ -33,7 +33,7 @@ def test_create_human_label_cli_creates_record(tmp_path: Path) -> None:
         "--end",
         "60",
         "--label",
-        "water_rising",
+        "water_level_rising",
         "--confidence",
         "medium",
         "--note",
@@ -50,7 +50,7 @@ def test_create_human_label_cli_creates_record(tmp_path: Path) -> None:
     assert len(records) == 1
     assert records[0]["video_id"] == "rising-001"
     assert records[0]["time_window_seconds"] == [30, 60]
-    assert records[0]["human_label"] == "water_rising"
+    assert records[0]["human_label"] == "water_level_rising"
 
 
 def test_add_human_label_cli_alias_works(tmp_path: Path) -> None:
@@ -78,7 +78,7 @@ def test_add_human_label_cli_alias_works(tmp_path: Path) -> None:
 
     records = load_human_label_records(site_dir / "labels" / "labels.jsonl")
     assert len(records) == 1
-    assert records[0]["human_label"] == "cannot_judge"
+    assert records[0]["human_label"] == "cannot_judge_water_level"
 
 
 def test_create_human_label_cli_accepts_custom_label(tmp_path: Path) -> None:
@@ -123,7 +123,7 @@ def test_create_human_label_cli_rejects_duplicate_without_overwrite(tmp_path: Pa
         "--end",
         "20",
         "--label",
-        "no_clear_change",
+        "no_water_level_change",
     ]
     res1 = subprocess.run(base_cmd, capture_output=True, text=True, check=False)
     assert res1.returncode == 0
@@ -172,7 +172,7 @@ def test_home_ui_add_label_api_endpoint(tmp_path: Path) -> None:
             "video_id": "rising-001",
             "start_second": 30,
             "end_second": 60,
-            "human_label": "water_rising",
+            "human_label": "water_level_rising",
             "confidence": "medium",
             "note": "water appears higher near the bridge pillar",
         }
@@ -192,16 +192,16 @@ def test_home_ui_add_label_api_endpoint(tmp_path: Path) -> None:
         assert labels_path.exists()
         records = load_human_label_records(labels_path)
         assert len(records) == 1
-        assert records[0]["human_label"] == "water_rising"
+        assert records[0]["human_label"] == "water_level_rising"
 
         # Check /api/sites includes label options
         sites_req = Request(f"http://{host}:{port}/api/sites")
         with urlopen(sites_req) as resp:
             sites_data = json.loads(resp.read().decode("utf-8"))
             assert "human_label_options" in sites_data
-            assert "water_rising" in sites_data["human_label_options"]
+            assert "water_level_rising" in sites_data["human_label_options"]
             assert "confidence_options" in sites_data
-            assert "water_rising" in sites_data["sites"][0]["human_label_options"]
+            assert "water_level_rising" in sites_data["sites"][0]["human_label_options"]
 
         # Test error rejection on invalid time window
         bad_payload = {
@@ -209,7 +209,7 @@ def test_home_ui_add_label_api_endpoint(tmp_path: Path) -> None:
             "video_id": "rising-001",
             "start_second": 60,
             "end_second": 30,
-            "human_label": "water_rising",
+            "human_label": "water_level_rising",
         }
         bad_req = Request(
             url,

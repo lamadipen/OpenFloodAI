@@ -16,7 +16,7 @@ def test_compare_label_records_reports_agree_for_change_label_and_change_signal(
             {
                 "video_id": "demo-river-001",
                 "time_window_seconds": [0, 30],
-                "human_label": "water_rising",
+                "human_label": "water_level_rising",
             }
         ],
         system_records=[
@@ -40,7 +40,7 @@ def test_compare_label_records_reports_agree_for_falling_label_and_change_signal
             {
                 "video_id": "demo-river-001",
                 "time_window_seconds": [0, 30],
-                "human_label": "water_falling",
+                "human_label": "water_level_falling",
             }
         ],
         system_records=[
@@ -63,7 +63,7 @@ def test_compare_label_records_reports_disagree_for_change_label_and_low_signal(
             {
                 "video_id": "demo-river-001",
                 "time_window_seconds": [0, 30],
-                "human_label": "water_rising",
+                "human_label": "water_level_rising",
             }
         ],
         system_records=[
@@ -87,7 +87,7 @@ def test_compare_label_records_keeps_unsafe_region_evidence_unknown() -> None:
             {
                 "video_id": "demo-river-001",
                 "time_window_seconds": [0, 30],
-                "human_label": "water_rising",
+                "human_label": "water_level_rising",
             }
         ],
         system_records=[
@@ -111,7 +111,7 @@ def test_compare_label_records_filters_system_records_by_video_id() -> None:
             {
                 "video_id": "demo-river-001",
                 "time_window_seconds": [0, 30],
-                "human_label": "water_rising",
+                "human_label": "water_level_rising",
             }
         ],
         system_records=[
@@ -141,7 +141,7 @@ def test_compare_label_records_does_not_use_other_video_system_records() -> None
             {
                 "video_id": "demo-river-001",
                 "time_window_seconds": [0, 30],
-                "human_label": "water_rising",
+                "human_label": "water_level_rising",
             }
         ],
         system_records=[
@@ -165,7 +165,7 @@ def test_compare_label_records_reports_missing_human_label() -> None:
             {
                 "video_id": "demo-river-001",
                 "time_window_seconds": [0, 30],
-                "human_label": "water_rising",
+                "human_label": "water_level_rising",
             }
         ],
         system_records=[
@@ -189,7 +189,7 @@ def test_compare_label_records_reports_missing_system_output() -> None:
             {
                 "video_id": "demo-river-001",
                 "time_window_seconds": [0, 30],
-                "human_label": "water_rising",
+                "human_label": "water_level_rising",
             }
         ],
         system_records=[
@@ -210,7 +210,7 @@ def test_compare_label_records_reports_cannot_compare_for_unclear_case() -> None
             {
                 "video_id": "demo-river-001",
                 "time_window_seconds": [0, 30],
-                "human_label": "cannot_judge",
+                "human_label": "cannot_judge_water_level",
             }
         ],
         system_records=[
@@ -234,7 +234,7 @@ def test_compare_label_records_uses_only_matching_time_window_records() -> None:
             {
                 "video_id": "demo-river-001",
                 "time_window_seconds": [30, 60],
-                "human_label": "water_rising",
+                "human_label": "water_level_rising",
             }
         ],
         system_records=[
@@ -263,7 +263,7 @@ def test_compare_label_records_reports_cannot_compare_when_window_has_no_records
             {
                 "video_id": "demo-river-001",
                 "time_window_seconds": [30, 60],
-                "human_label": "water_rising",
+                "human_label": "water_level_rising",
             }
         ],
         system_records=[
@@ -287,12 +287,12 @@ def test_compare_label_records_handles_multiple_windows_for_one_video() -> None:
             {
                 "video_id": "demo-river-001",
                 "time_window_seconds": [0, 30],
-                "human_label": "water_rising",
+                "human_label": "water_level_rising",
             },
             {
                 "video_id": "demo-river-001",
                 "time_window_seconds": [30, 60],
-                "human_label": "water_rising",
+                "human_label": "water_level_rising",
             },
         ],
         system_records=[
@@ -324,12 +324,12 @@ def test_compare_label_records_uses_half_open_time_windows() -> None:
             {
                 "video_id": "demo-river-001",
                 "time_window_seconds": [0, 30],
-                "human_label": "water_rising",
+                "human_label": "water_level_rising",
             },
             {
                 "video_id": "demo-river-001",
                 "time_window_seconds": [30, 60],
-                "human_label": "water_rising",
+                "human_label": "water_level_rising",
             },
         ],
         system_records=[
@@ -354,7 +354,7 @@ def test_compare_label_records_uses_visual_records_linked_to_frame_metadata() ->
             {
                 "video_id": "demo-river-001",
                 "time_window_seconds": [30, 60],
-                "human_label": "water_rising",
+                "human_label": "water_level_rising",
             }
         ],
         system_records=[
@@ -393,7 +393,7 @@ def test_compare_label_files_reads_jsonl_and_renders_report(tmp_path: Path) -> N
     label_path.write_text(
         (
             '{"video_id":"demo-river-001","time_window_seconds":[0,30],'
-            '"human_label":"water_rising"}\n'
+            '"human_label":"water_level_rising"}\n'
         ),
         encoding="utf-8",
     )
@@ -407,7 +407,7 @@ def test_compare_label_files_reads_jsonl_and_renders_report(tmp_path: Path) -> N
     rendered_report = render_label_comparison_report(report)
 
     assert report.agree_count == 1
-    assert "Human label: water_rising" in rendered_report
+    assert "Human label: water_level_rising" in rendered_report
     assert "Time window: 0s to 30s" in rendered_report
     assert "Result: agree" in rendered_report
 
@@ -437,7 +437,11 @@ def test_pair_crossing_label_boundary_cannot_enter_through_source_id() -> None:
     report = compare_label_records(
         system_records=records,
         human_labels=[
-            {"video_id": "test", "time_window_seconds": [10, 20], "human_label": "water_rising"}
+            {
+                "video_id": "test",
+                "time_window_seconds": [10, 20],
+                "human_label": "water_level_rising",
+            }
         ],
         video_id="test",
     )
@@ -457,7 +461,11 @@ def test_pair_at_exclusive_end_is_not_counted() -> None:
             }
         ],
         human_labels=[
-            {"video_id": "test", "time_window_seconds": [10, 20], "human_label": "water_rising"}
+            {
+                "video_id": "test",
+                "time_window_seconds": [10, 20],
+                "human_label": "water_level_rising",
+            }
         ],
         video_id="test",
     )
@@ -467,7 +475,7 @@ def test_pair_at_exclusive_end_is_not_counted() -> None:
 def test_duplicate_time_windows_are_not_silently_selected() -> None:
     labels = [
         {"video_id": "river", "time_window_seconds": [0, 30], "human_label": value}
-        for value in ("water_rising", "water_falling")
+        for value in ("water_level_rising", "water_level_falling")
     ]
     report = compare_label_records(
         video_id="river",

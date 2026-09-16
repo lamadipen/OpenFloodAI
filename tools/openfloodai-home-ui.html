@@ -1415,11 +1415,11 @@
         status: watchStatus,
       });
       let defaultHumanLabelOptions = [
-        "water_rising",
-        "water_falling",
-        "no_clear_change",
+        "water_level_rising",
+        "water_level_falling",
+        "no_water_level_change",
         "camera_video_problem",
-        "cannot_judge",
+        "cannot_judge_water_level",
       ];
 
       if (isDetailsPage) {
@@ -1691,10 +1691,10 @@
         obstruction: "Obstruction",
       };
       const humanLabelDisplayLabels = {
-        water_rising: "Water is rising",
-        water_falling: "Water is falling",
-        no_clear_change: "No clear water change",
-        cannot_judge: "I cannot judge from this video",
+        water_level_rising: "Water level is rising",
+        water_level_falling: "Water level is falling",
+        no_water_level_change: "No water level change",
+        cannot_judge_water_level: "Cannot judge water level from this video",
         camera_video_problem: "Camera or video problem",
       };
       const videoPurposeLabels = {

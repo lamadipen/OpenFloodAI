@@ -75,7 +75,7 @@ local video
 -> hard-case expectations
 ```
 
-Simple example: a reviewer can watch one video, label it as `water_rising`, and compare that label with the simple system output.
+Simple example: a reviewer can watch one video, label it as `water_level_rising`, and compare that label with the simple system output.
 
 It can:
 

@@ -22,6 +22,7 @@ from openfloodai.review.human_labels import (
     create_human_label_record,
     is_valid_human_label_record,
     load_human_label_records,
+    normalize_human_label,
     validate_human_label_record,
 )
 from openfloodai.review.label_comparison import (
@@ -96,6 +97,7 @@ __all__ = [
     "is_valid_manifest_record",
     "load_human_label_records",
     "load_manifest_records",
+    "normalize_human_label",
     "repair_manifest_from_local_videos",
     "render_label_comparison_report",
     "render_threshold_tuning_report",

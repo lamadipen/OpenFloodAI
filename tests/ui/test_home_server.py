@@ -38,7 +38,7 @@ def make_site(site_dir: Path) -> Path:
     write_json(site_dir / "configs" / "site-config.json", {"site_id": site_dir.name})
     (site_dir / "inputs" / "videos" / "river-001.mp4").write_bytes(b"not-real-video")
     (site_dir / "labels" / "labels.jsonl").write_text(
-        '{"video_id":"river-001","time_window_seconds":[0,30],"human_label":"cannot_judge"}\n',
+        '{"video_id":"river-001","time_window_seconds":[0,30],"human_label":"cannot_judge_water_level"}\n',
         encoding="utf-8",
     )
     (site_dir / "manifest.jsonl").write_text(
@@ -244,7 +244,7 @@ def test_add_label_response_includes_quality_block(tmp_path: Path) -> None:
                 "video_id": "river-002",
                 "start_second": 0,
                 "end_second": 10,
-                "human_label": "water_rising",
+                "human_label": "water_level_rising",
                 "riverbank_visible": "yes",
                 "water_boundary_visible": "yes",
             },
@@ -271,7 +271,7 @@ def test_add_label_response_quality_reflects_unconfirmed_baseline(tmp_path: Path
                 "video_id": "river-003",
                 "start_second": 0,
                 "end_second": 10,
-                "human_label": "water_rising",
+                "human_label": "water_level_rising",
                 "riverbank_visible": "yes",
                 "water_boundary_visible": "yes",
             },
@@ -1047,11 +1047,11 @@ def test_mvp_rehearsal_setup_to_five_video_result_review(
     sites = tmp_path / "sites"
     sites.mkdir()
     cases = [
-        ("stable", [80] * 20, "no_clear_change"),
-        ("rising", list(range(50, 90, 2)), "water_rising"),
-        ("falling", list(range(90, 50, -2)), "water_falling"),
-        ("dark", [0] * 20, "cannot_judge"),
-        ("unclear", [80] * 20, "cannot_judge"),
+        ("stable", [80] * 20, "no_water_level_change"),
+        ("rising", list(range(50, 90, 2)), "water_level_rising"),
+        ("falling", list(range(90, 50, -2)), "water_level_falling"),
+        ("dark", [0] * 20, "cannot_judge_water_level"),
+        ("unclear", [80] * 20, "cannot_judge_water_level"),
     ]
     region = {"x": 0, "y": 50, "width": 100, "height": 50}
     with serve_home_ui(sites) as base:

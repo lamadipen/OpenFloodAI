@@ -47,7 +47,7 @@ def config(path: Path) -> None:
     )
 
 
-def label(window: tuple[float, float], value: str = "water_rising") -> dict[str, object]:
+def label(window: tuple[float, float], value: str = "water_level_rising") -> dict[str, object]:
     return {"video_id": "test", "time_window_seconds": list(window), "human_label": value}
 
 
@@ -120,7 +120,9 @@ def test_quality_and_coverage_are_visible(
     )
     records = read_jsonl_records(Path(result.records_path))
     comparison = compare_label_records(
-        system_records=records, human_labels=[label((0, 30), "no_clear_change")], video_id="test"
+        system_records=records,
+        human_labels=[label((0, 30), "no_water_level_change")],
+        video_id="test",
     ).comparisons[0]
     assert comparison.result == expected
     assert reason in comparison.note
@@ -150,7 +152,10 @@ def test_separate_windows_do_not_compare_across_a_jump(tmp_path: Path) -> None:
     records = read_jsonl_records(Path(result.records_path))
     report = compare_label_records(
         system_records=records,
-        human_labels=[label((0, 10), "no_clear_change"), label((10, 20), "no_clear_change")],
+        human_labels=[
+            label((0, 10), "no_water_level_change"),
+            label((10, 20), "no_water_level_change"),
+        ],
         video_id="test",
     )
     assert report.cannot_compare_count == 2
@@ -254,7 +259,7 @@ def test_issue_104_synthetic_waterline(tmp_path: Path, reverse: bool) -> None:
     )
     report = compare_label_records(
         system_records=read_jsonl_records(Path(result.records_path)),
-        human_labels=[label((0, 30), "water_falling" if reverse else "water_rising")],
+        human_labels=[label((0, 30), "water_level_falling" if reverse else "water_level_rising")],
         video_id="test",
     )
     assert report.agree_count == 1

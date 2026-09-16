@@ -187,7 +187,7 @@ def test_local_video_review_flags_unusable_evidence_in_overlay_caption(tmp_path:
         {
             "video_id": "sample",
             "time_window_seconds": bounds,
-            "human_label": "cannot_judge",
+            "human_label": "cannot_judge_water_level",
             "riverbank_visible": "no",
         }
     ]

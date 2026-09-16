@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from openfloodai.contracts import read_jsonl_records
-from openfloodai.review import validate_manifest_record
+from openfloodai.review import normalize_human_label, validate_manifest_record
 from openfloodai.validation.result_explanation import read_result_explanations
 
 VIDEO_SUFFIXES = {".avi", ".mkv", ".mov", ".mp4"}
@@ -720,7 +720,7 @@ def _find_human_label_options(label_paths: list[Path]) -> list[str]:
                     continue
                 label = record.get("human_label")
                 if isinstance(label, str) and label.strip():
-                    options.add(label.strip())
+                    options.add(normalize_human_label(label))
         except (OSError, json.JSONDecodeError, UnicodeDecodeError):
             continue
     return sorted(options)

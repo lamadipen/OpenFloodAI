@@ -20,7 +20,7 @@ def test_tune_threshold_records_shows_how_thresholds_change_agreement() -> None:
             {
                 "video_id": "demo-river-001",
                 "time_window_seconds": [0, 30],
-                "human_label": "water_rising",
+                "human_label": "water_level_rising",
             }
         ],
         system_records=[
@@ -46,7 +46,7 @@ def test_tune_threshold_records_keeps_cannot_compare_separate() -> None:
             {
                 "video_id": "demo-river-001",
                 "time_window_seconds": [0, 30],
-                "human_label": "cannot_judge",
+                "human_label": "cannot_judge_water_level",
             }
         ],
         system_records=[
@@ -83,7 +83,7 @@ def test_render_threshold_tuning_report_is_stable() -> None:
             {
                 "video_id": "demo-river-001",
                 "time_window_seconds": [0, 30],
-                "human_label": "water_rising",
+                "human_label": "water_level_rising",
             }
         ],
         system_records=[
@@ -112,7 +112,7 @@ def test_tune_threshold_files_reads_local_jsonl_inputs(tmp_path: Path) -> None:
     labels_path.write_text(
         (
             '{"video_id":"demo-river-001","time_window_seconds":[0,30],'
-            '"human_label":"water_rising"}\n'
+            '"human_label":"water_level_rising"}\n'
         ),
         encoding="utf-8",
     )

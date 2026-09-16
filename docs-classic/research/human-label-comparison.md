@@ -19,7 +19,7 @@ Simple example:
 System output: region_change_score = 0.42
 System output time: 12s
 Human label window: 0s to 30s
-Human label: water_rising
+Human label: water_level_rising
 Report: agree
 ```
 
@@ -102,10 +102,10 @@ See [the sampling decision and coverage rules](../architecture/windowed-video-ev
 
 So, for now:
 
-- `water_rising` can agree with a strong visual-change signal
-- `water_falling` can agree with a strong visual-change signal
-- `no_clear_change` can agree with a low visual-change signal
-- `cannot_judge` means the report should not compare the case
+- `water_level_rising` can agree with a strong visual-change signal
+- `water_level_falling` can agree with a strong visual-change signal
+- `no_water_level_change` can agree with a low visual-change signal
+- `cannot_judge_water_level` means the report should not compare the case
 - `camera_video_problem` means the report should not compare the case
 
 ## Run A Comparison
@@ -141,7 +141,7 @@ python3 scripts/compare_human_labels.py \
 
 ```text
 Video: demo-river-001
-Human label: water_rising
+Human label: water_level_rising
 System result: water_change_seen
 Result: agree
 Time window: 0s to 30s

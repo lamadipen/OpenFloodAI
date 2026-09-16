@@ -13,11 +13,17 @@ from openfloodai.contracts.local_store import JsonObject, JsonValue
 from openfloodai.review.dataset_manifest import load_manifest_records
 
 ALLOWED_HUMAN_LABELS = {
-    "water_rising",
-    "water_falling",
-    "no_clear_change",
+    "water_level_rising",
+    "water_level_falling",
+    "no_water_level_change",
     "camera_video_problem",
-    "cannot_judge",
+    "cannot_judge_water_level",
+}
+LEGACY_HUMAN_LABEL_ALIASES = {
+    "water_rising": "water_level_rising",
+    "water_falling": "water_level_falling",
+    "no_clear_change": "no_water_level_change",
+    "cannot_judge": "cannot_judge_water_level",
 }
 ALLOWED_CONFIDENCE_LEVELS = {"low", "medium", "high"}
 ALLOWED_TRISTATE_VALUES = {"yes", "no", "unsure"}
@@ -109,6 +115,15 @@ def is_valid_human_label_record(record: Mapping[str, object]) -> bool:
     """Return whether one human label record is valid."""
 
     return not validate_human_label_record(record)
+
+
+def normalize_human_label(value: object) -> str:
+    """Return the current human-label name, accepting old names as aliases."""
+
+    if not isinstance(value, str):
+        return ""
+    clean_value = value.strip()
+    return LEGACY_HUMAN_LABEL_ALIASES.get(clean_value, clean_value)
 
 
 def load_human_label_records(path: Path) -> list[JsonObject]:
@@ -311,7 +326,7 @@ def create_human_label_record(
             message="time_window_seconds end must be greater than start",
         )
 
-    clean_human_label = str(human_label).strip()
+    clean_human_label = normalize_human_label(str(human_label).strip())
     if not clean_human_label:
         return CreateHumanLabelResult(
             site_dir=site_dir,

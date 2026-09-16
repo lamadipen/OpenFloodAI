@@ -10,7 +10,7 @@ from pathlib import Path
 
 from openfloodai.contracts import read_jsonl_records
 from openfloodai.ingestion.evidence_sampling import SamplingSettings, window_evidence
-from openfloodai.review.human_labels import load_human_label_records
+from openfloodai.review.human_labels import load_human_label_records, normalize_human_label
 
 CHANGE_SIGNAL_THRESHOLD = 0.05
 SAFE_WATER_LEVEL_EVIDENCE_STATE = "useful_water_level_evidence"
@@ -20,9 +20,9 @@ VISUAL_CHANGE_FIELDS = (
     "risk_signal_score",
     "water_coverage_score",
 )
-CHANGE_LABELS = {"water_rising", "water_falling"}
-NO_CHANGE_LABELS = {"no_clear_change"}
-UNCLEAR_LABELS = {"camera_video_problem", "cannot_judge"}
+CHANGE_LABELS = {"water_level_rising", "water_level_falling"}
+NO_CHANGE_LABELS = {"no_water_level_change"}
+UNCLEAR_LABELS = {"camera_video_problem", "cannot_judge_water_level"}
 
 
 class LabelComparisonError(ValueError):
@@ -182,7 +182,7 @@ def _compare_one_label_window(
     change_signal_threshold: float,
 ) -> LabelComparison:
     time_window = _time_window_seconds(label)
-    human_label = _text(label.get("human_label"), fallback="unknown")
+    human_label = normalize_human_label(_text(label.get("human_label"), fallback="unknown"))
 
     if time_window is None:
         return LabelComparison(
@@ -253,7 +253,7 @@ def _compare_one_label(
     system_result: str,
     time_window_seconds: tuple[float, float] | None,
 ) -> LabelComparison:
-    human_label = _text(label.get("human_label"), fallback="unknown")
+    human_label = normalize_human_label(_text(label.get("human_label"), fallback="unknown"))
 
     if human_label in UNCLEAR_LABELS or system_result == "cannot_judge":
         return LabelComparison(
