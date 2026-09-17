@@ -34,6 +34,7 @@ env/
 # Project artifacts
 data/*
 !data/.gitkeep
+!data/reference/
 !data/sites/
 !data/sites/README.md
 !data/sites/*/
@@ -73,12 +74,14 @@ data/sites/*/outputs/review-images/*
 !data/sites/*/outputs/review-images/.gitkeep
 models/*
 !models/.gitkeep
+
+# Downloaded USGS image sequences are local-only: never commit raw images,
+# per-sequence manifests, or gage-data summaries for any site (issue #152).
+data/sites/*/inputs/image-sequences/
+
 # Local-only site runs
 data/sites/colorado-site/
 data/sites/nuwakot-river-01-1/
-data/sites/co_colorado_river_at_windy_gap_near_granby_720/
-data/sites/co_colorado_river_near_cameo_720/
-data/sites/ut_colorado_river_near_cisco_720/
 
 # Local-only project notes
 READMELOCAL.md

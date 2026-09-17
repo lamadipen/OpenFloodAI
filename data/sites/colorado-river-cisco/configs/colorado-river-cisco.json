@@ -1,0 +1,14 @@
+{
+  "site_id": "colorado-river-cisco_sid",
+  "camera_id": "UT_Colorado_River_near_Cisco",
+  "site_name": "Colorado River near Cisco",
+  "input_type": "local_video",
+  "reference_region": {
+    "x": 0,
+    "y": 50,
+    "width": 100,
+    "height": 50
+  },
+  "privacy_notes": "This site uses a broad public location only.",
+  "public_location": "Colorado River near Cisco"
+}

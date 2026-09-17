@@ -1,0 +1,14 @@
+{
+  "site_id": "colorado-river-windy-gap_sid",
+  "camera_id": "CO_Colorado_River_at_Windy_Gap_near_Granby",
+  "site_name": "Colorado River at Windy Gap near Granby",
+  "input_type": "local_video",
+  "reference_region": {
+    "x": 0,
+    "y": 50,
+    "width": 100,
+    "height": 50
+  },
+  "privacy_notes": "This site uses a broad public location only.",
+  "public_location": "Colorado River at Windy Gap near Granby"
+}
