@@ -197,6 +197,13 @@
         margin-top: 12px;
       }
 
+      .hero-explanation {
+        color: var(--faint);
+        font-size: 13px;
+        margin: 8px 0 0;
+        max-width: 480px;
+      }
+
       .hero-stats {
         display: flex;
         gap: 22px;
@@ -871,6 +878,7 @@
             <h1 id="siteName"></h1>
             <div class="hero-path" id="sitePath"></div>
             <div class="hero-badges" id="siteBadges"></div>
+            <p class="hero-explanation" id="heroExplanation"></p>
           </div>
           <div class="hero-stats" id="heroStats"></div>
         </section>
@@ -1078,6 +1086,20 @@
           statusBadge(site.ready_for_machine_review, "Machine ready", "Machine review not ready"),
           statusBadge(site.ready_for_human_comparison, "Compare ready", "Comparison not ready"),
         ].join("");
+        const explanationParts = [];
+        if (!site.ready_for_machine_review) {
+          explanationParts.push(site.machine_review_explanation);
+          if (site.video_count === 0 && site.image_sequence_count > 0) {
+            explanationParts.push(
+              "This is about the local-video flow only. Your USGS image sequence " +
+              "is a separate flow and does not need a local video — see the " +
+              "Image Sequences tab."
+            );
+          }
+        }
+        const heroExplanation = document.getElementById("heroExplanation");
+        heroExplanation.textContent = explanationParts.join(" ");
+        heroExplanation.hidden = explanationParts.length === 0;
         const scorecard = site.latest_scorecard || {};
         document.getElementById("heroStats").innerHTML = [
           ["Videos", site.video_count],
