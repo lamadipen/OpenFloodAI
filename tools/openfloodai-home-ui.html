@@ -3432,6 +3432,8 @@
               <button type="button" onclick="openLabelFormForSite('${escapeHtml(site.site_name)}')" style="font-size: 13px; min-height: 34px; padding: 6px 12px; background: var(--accent-strong); border-color: var(--accent-strong);">+ Add Label</button>
               <button type="button" onclick="openNormalWaterlineGuideFormForSite('${escapeHtml(site.site_name)}')" style="font-size: 13px; min-height: 34px; padding: 6px 12px;" ${site.reference_region ? "" : "disabled"}>Normal Waterline Guide</button>
               <button type="button" onclick="openWatchViewerForSite('${escapeHtml(site.site_name)}')" style="font-size: 13px; min-height: 34px; padding: 6px 12px;" ${site.video_count > 0 ? "" : "disabled"}>Watch</button>
+              <button type="button" onclick="openImageSequenceFormForSite('${escapeHtml(site.site_name)}')" style="font-size: 13px; min-height: 34px; padding: 6px 12px;">Start Image Sequence</button>
+              <a class="site-action-link" href="/site-details.html?site=${encodeURIComponent(site.site_name)}&tab=image-sequences">Review Image Sequence</a>
               <a class="site-action-link" href="/site-details.html?site=${encodeURIComponent(site.site_name)}">Details View</a>
             </div>
           </article>

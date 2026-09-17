@@ -52,6 +52,20 @@ function runWithStubs(source, extra) {
   return context;
 }
 
+test("classic view's site card offers Start Image Sequence and Review Image Sequence", () => {
+  const source = grab(homeScript, "renderSite");
+  assert.match(
+    source,
+    /onclick="openImageSequenceFormForSite\('\$\{escapeHtml\(site\.site_name\)\}'\)"[^>]*>Start Image Sequence</,
+    "classic view must offer a button that opens the image-sequence intake form"
+  );
+  assert.match(
+    source,
+    /href="\/site-details\.html\?site=\$\{encodeURIComponent\(site\.site_name\)\}&tab=image-sequences">Review Image Sequence</,
+    "classic view must offer a link straight into the site-details Image sequences tab"
+  );
+});
+
 test("the home UI has one USGS image-sequence form, not duplicated per selector", () => {
   assert.equal((homeHtml.match(/id="imageSequenceFormPanel"/g) || []).length, 1);
   for (const id of [
