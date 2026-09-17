@@ -2074,6 +2074,28 @@
             })
           : null;
 
+        // The currently selected day's own raw image, real and re-fetched
+        // on every selection (chart point, event row, Previous/Next event)
+        // — distinct from the fixed "biggest change" picture above, which
+        // never changes regardless of what is selected.
+        const baselineImageQuery = summary.baseline_filename
+          ? new URLSearchParams({
+              folder_name: siteName,
+              sequence_id: summary.sequence_id,
+              filename: summary.baseline_filename,
+            })
+          : null;
+        // A coverage-gap day (missing or failed download) has a filename
+        // recorded in the manifest but no actual image file on disk —
+        // fetching it would just 404, so treat it the same as "no image".
+        const selectedImageQuery = sel.filename && sel.code !== "M"
+          ? new URLSearchParams({
+              folder_name: siteName,
+              sequence_id: summary.sequence_id,
+              filename: sel.filename,
+            })
+          : null;
+
         const changeSummaryHtml = changeStartDay
           ? `From the first days on record the region held steady around ${changeInfo.baselineMean.toFixed(3)}. Starting ${escapeHtml(changeStartDay.date)}, the day-to-day score stayed above ${changeInfo.threshold.toFixed(3)} for three days running. That is the actual turning point &mdash; not any single flagged day.`
           : "Not enough same-camera history yet to say when (or whether) a sustained shift started.";
@@ -2175,14 +2197,30 @@
           </div>
 
           <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:18px;margin-bottom:8px;">
-            <strong>Biggest change detected</strong>
+            <strong>Selected day &mdash; ${escapeHtml(sel.date)}</strong>
             <div style="display:flex;gap:8px;">
               <button type="button" class="btn small" data-act="prev-event">&larr; Previous event</button>
               <button type="button" class="btn small" data-act="next-event">Next event &rarr;</button>
             </div>
           </div>
+          <div class="kv-grid" style="margin-bottom: 14px;">
+            <div>
+              <p class="status-line" style="margin-bottom: 6px;">Baseline &mdash; ${escapeHtml(summary.baseline_filename || "not recorded")}</p>
+              ${baselineImageQuery
+                ? `<img src="/api/image-sequence-image?${baselineImageQuery}" alt="Baseline image" loading="lazy" style="width: 100%; border-radius: 8px; display: block;">`
+                : '<p class="status-line">No baseline image recorded.</p>'}
+            </div>
+            <div>
+              <p class="status-line" style="margin-bottom: 6px;">${escapeHtml(sel.date)}, ${escapeHtml(sel.time)} local (${escapeHtml(sel.resultLabel)})</p>
+              ${selectedImageQuery
+                ? `<img src="/api/image-sequence-image?${selectedImageQuery}" alt="Image for ${escapeHtml(sel.date)}" loading="lazy" style="width: 100%; border-radius: 8px; display: block;">`
+                : '<p class="status-line">No image for this day (missing or failed download).</p>'}
+            </div>
+          </div>
+
+          <div style="margin-bottom: 8px;"><strong>Biggest change detected</strong></div>
           ${comparisonQuery ? `
-            <p class="status-line" style="margin-bottom: 8px;">Baseline (left) vs. ${escapeHtml(summary.biggest_change_filename)} (right), watched area outlined.</p>
+            <p class="status-line" style="margin-bottom: 8px;">Baseline (left) vs. ${escapeHtml(summary.biggest_change_filename)} (right), watched area outlined. This is the single largest change found in the whole run, not necessarily the day selected above.</p>
             <img src="/api/image-sequence-run-image?${comparisonQuery}" alt="Baseline compared with the biggest detected change" loading="lazy" style="width: 100%; border-radius: 8px; display: block;">
           ` : '<p class="status-line">No review images for this run.</p>'}
           ${state.errorText ? `<p class="status-line error">${escapeHtml(state.errorText)}</p>` : ""}
