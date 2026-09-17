@@ -213,6 +213,77 @@ def test_set_image_sequence_event_review_rejects_path_traversal_in_sequence_id(
         assert payload["success"] is False
 
 
+def write_named_sequence(site_dir: Path, sequence_id: str = SEQUENCE_ID) -> tuple[str, str]:
+    """Write a sequence using real USGS-style filenames resolve_sequence_image requires."""
+
+    sequence_dir = site_dir / "inputs" / "image-sequences" / sequence_id
+    images_dir = sequence_dir / "images"
+    baseline_name = "camera-demo___2026-09-01T00-00-00Z.jpg"
+    changed_name = "camera-demo___2026-09-01T01-00-00Z.jpg"
+    write_frame(images_dir / baseline_name, 30)
+    write_frame(images_dir / changed_name, 30, bottom_third_value=220)
+    records = [
+        {
+            "site_id": "site-demo-01",
+            "camera_id": "camera-demo-01",
+            "source_url": f"https://example.test/{name}",
+            "captured_at_utc": captured,
+            "local_time": captured,
+            "filename": name,
+            "file_size_bytes": 100,
+            "download_status": "downloaded",
+            "source_system": "usgs_nims",
+        }
+        for name, captured in (
+            (baseline_name, "2026-09-01T00:00:00+00:00"),
+            (changed_name, "2026-09-01T01:00:00+00:00"),
+        )
+    ]
+    with (sequence_dir / "sequence-manifest.jsonl").open("w", encoding="utf-8") as handle:
+        for record in records:
+            handle.write(json.dumps(record) + "\n")
+    return baseline_name, changed_name
+
+
+def test_image_sequence_comparison_route_renders_an_on_demand_png(tmp_path: Path) -> None:
+    site_dir = tmp_path / "example-site"
+    make_site(site_dir)
+    baseline_name, changed_name = write_named_sequence(site_dir)
+
+    with serve_home_ui(tmp_path) as base_url:
+        query = urlencode(
+            {
+                "folder_name": "example-site",
+                "sequence_id": SEQUENCE_ID,
+                "baseline_filename": baseline_name,
+                "filename": changed_name,
+            }
+        )
+        with urlopen(f"{base_url}/api/image-sequence-comparison?{query}") as response:
+            assert response.headers.get_content_type() == "image/png"
+            body = response.read()
+            assert body[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_image_sequence_comparison_route_404s_for_unknown_filename(tmp_path: Path) -> None:
+    site_dir = tmp_path / "example-site"
+    make_site(site_dir)
+    baseline_name, _ = write_named_sequence(site_dir)
+
+    with serve_home_ui(tmp_path) as base_url:
+        query = urlencode(
+            {
+                "folder_name": "example-site",
+                "sequence_id": SEQUENCE_ID,
+                "baseline_filename": baseline_name,
+                "filename": "camera-demo___2099-01-01T00-00-00Z.jpg",
+            }
+        )
+        with pytest.raises(HTTPError) as error:
+            urlopen(f"{base_url}/api/image-sequence-comparison?{query}")
+        assert error.value.code == 404
+
+
 def test_run_image_sequence_validation_requires_a_watched_area(tmp_path: Path) -> None:
     site_dir = tmp_path / "example-site"
     make_site(site_dir, reference_region=False)

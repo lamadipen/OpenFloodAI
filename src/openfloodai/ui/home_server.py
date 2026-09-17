@@ -48,11 +48,14 @@ from openfloodai.review import (
     ALLOWED_HUMAN_LABELS,
     ALLOWED_TRISTATE_VALUES,
     ALLOWED_VISIBILITY_CONDITIONS,
+    ReviewImageError,
     compute_failure_reason,
     create_human_label_record,
+    encode_png,
     friendly_failure_reason,
     is_baseline_ready,
     is_normal_baseline_confirmed,
+    render_pair_comparison_overlay,
     repair_manifest_from_local_videos,
 )
 from openfloodai.review.dataset_manifest import HARD_CASE_TYPE_OPTIONS, MANIFEST_PURPOSE_OPTIONS
@@ -147,6 +150,9 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             return
         if path == "/api/image-sequence-image":
             self._send_image_sequence_image()
+            return
+        if path == "/api/image-sequence-comparison":
+            self._send_image_sequence_comparison()
             return
         if path == "/api/image-sequence-runs":
             self._send_image_sequence_runs()
@@ -317,6 +323,45 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             self._send_file(path, content_type="image/jpeg")
         except (OSError, ValueError, RiverImageError):
             self.send_error(404, "Image not found")
+
+    def _send_image_sequence_comparison(self) -> None:
+        """Render an on-demand baseline-vs-selected comparison, watched area boxed.
+
+        Unlike a run's saved review images (fixed to that run's single
+        biggest-change day), this builds the comparison for whichever two
+        images the caller names, so a reviewer stepping through days or
+        events sees the right pair every time, not just one fixed pair.
+        """
+
+        query = parse_qs(urlsplit(self.path).query)
+        try:
+            site_dir = self._resolve_site_dir(query.get("folder_name", [""])[0])
+            sequence_id = query.get("sequence_id", [""])[0]
+            baseline_path = resolve_sequence_image(
+                site_dir, sequence_id, query.get("baseline_filename", [""])[0]
+            )
+            selected_path = resolve_sequence_image(
+                site_dir, sequence_id, query.get("filename", [""])[0]
+            )
+            site_config = load_site_config(_find_site_config(site_dir))
+            baseline_frame = cv2.imread(str(baseline_path))
+            selected_frame = cv2.imread(str(selected_path))
+            if baseline_frame is None or selected_frame is None:
+                raise RiverImageError("Could not read one of the images to compare.")
+            overlay = render_pair_comparison_overlay(
+                baseline_frame,
+                selected_frame,
+                reference_region=site_config.reference_region,
+                normal_waterline_guides=site_config.normal_waterline_guides,
+            )
+            body = encode_png(overlay)
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except (OSError, ValueError, RiverImageError, SiteConfigError, ReviewImageError):
+            self.send_error(404, "Comparison image not found")
 
     def _send_image_sequence_runs(self) -> None:
         """List saved image-sequence validation runs for one sequence."""

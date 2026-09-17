@@ -7,7 +7,12 @@ import numpy as np
 import pytest
 
 from openfloodai.config import NormalWaterlineGuide, ReferenceRegion, WaterlinePoint
-from openfloodai.review import ReviewImageError, generate_biggest_change_review_images
+from openfloodai.review import (
+    ReviewImageError,
+    encode_png,
+    generate_biggest_change_review_images,
+    render_pair_comparison_overlay,
+)
 
 REFERENCE_REGION = {"x": 0, "y": 50, "width": 100, "height": 50}
 NORMAL_WATERLINE_GUIDES = [
@@ -301,3 +306,41 @@ def test_output_path_must_be_directory(tmp_path: Path) -> None:
 
     with pytest.raises(ReviewImageError, match="not a directory"):
         generate_biggest_change_review_images([baseline_frame, changed_frame], output_path)
+
+
+def test_render_pair_comparison_overlay_stitches_two_arbitrary_frames() -> None:
+    baseline_frame = np.zeros((10, 10), dtype=np.uint8)
+    other_frame = np.full((10, 10), 200, dtype=np.uint8)
+
+    overlay = render_pair_comparison_overlay(baseline_frame, other_frame)
+
+    assert overlay.shape == (10, 20, 3)
+
+
+def test_render_pair_comparison_overlay_draws_the_watched_area_on_both_sides() -> None:
+    baseline_frame = np.zeros((20, 20), dtype=np.uint8)
+    other_frame = np.full((20, 20), 200, dtype=np.uint8)
+
+    plain = render_pair_comparison_overlay(baseline_frame, other_frame)
+    boxed = render_pair_comparison_overlay(
+        baseline_frame, other_frame, reference_region=REFERENCE_REGION
+    )
+
+    assert not np.array_equal(plain, boxed), "a reference region must change the rendered pixels"
+
+
+def test_render_pair_comparison_overlay_rejects_mismatched_heights() -> None:
+    baseline_frame = np.zeros((10, 10), dtype=np.uint8)
+    other_frame = np.zeros((20, 10), dtype=np.uint8)
+
+    with pytest.raises(ReviewImageError, match="matching height"):
+        render_pair_comparison_overlay(baseline_frame, other_frame)
+
+
+def test_encode_png_round_trips_through_cv2() -> None:
+    frame = np.full((10, 10, 3), 128, dtype=np.uint8)
+
+    body = encode_png(frame)
+
+    assert isinstance(body, bytes)
+    assert body[:8] == b"\x89PNG\r\n\x1a\n"

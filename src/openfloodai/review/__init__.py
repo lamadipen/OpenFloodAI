@@ -46,7 +46,9 @@ from openfloodai.review.operator_notes import build_operator_note
 from openfloodai.review.review_images import (
     ReviewImageError,
     ReviewImageSet,
+    encode_png,
     generate_biggest_change_review_images,
+    render_pair_comparison_overlay,
 )
 from openfloodai.review.sample_quality import (
     ALLOWED_FAILURE_REASONS,
@@ -103,6 +105,7 @@ __all__ = [
     "compute_failure_reason",
     "create_human_label_record",
     "dataset_group_for_date",
+    "encode_png",
     "find_matching_label",
     "friendly_failure_reason",
     "generate_biggest_change_review_images",
@@ -116,6 +119,7 @@ __all__ = [
     "normalize_human_label",
     "repair_manifest_from_local_videos",
     "render_label_comparison_report",
+    "render_pair_comparison_overlay",
     "render_threshold_tuning_report",
     "summarize_sample_quality",
     "tune_threshold_files",

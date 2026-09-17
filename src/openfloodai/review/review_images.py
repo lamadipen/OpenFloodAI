@@ -168,6 +168,51 @@ def generate_biggest_change_review_images(
     )
 
 
+def render_pair_comparison_overlay(
+    baseline_frame: FrameArray,
+    other_frame: FrameArray,
+    *,
+    reference_region: ReferenceRegionInput | None = None,
+    normal_waterline_guides: Sequence[NormalWaterlineGuideInput] | None = None,
+) -> NDArray[np.uint8]:
+    """Return a baseline-vs-other frame, side by side, with the watched area boxed.
+
+    Unlike `generate_biggest_change_review_images` (which searches many
+    frames for the single biggest change and writes files for it), this
+    takes exactly the two frames the caller already chose and returns the
+    combined image in memory — used to build an on-demand comparison for
+    whichever day a reviewer has selected, not just the run's one
+    biggest-change day.
+    """
+
+    prepared_baseline = _prepare_image_frame(baseline_frame)
+    prepared_other = _prepare_image_frame(other_frame)
+    if prepared_baseline.shape[0] != prepared_other.shape[0]:
+        raise ReviewImageError("Images must have matching height to compare side by side.")
+
+    if reference_region is not None:
+        prepared_baseline = _draw_reference_region_box(prepared_baseline, reference_region)
+        prepared_other = _draw_reference_region_box(prepared_other, reference_region)
+        if normal_waterline_guides:
+            prepared_baseline = _draw_normal_waterline_guides_overlay(
+                prepared_baseline, normal_waterline_guides
+            )
+            prepared_other = _draw_normal_waterline_guides_overlay(
+                prepared_other, normal_waterline_guides
+            )
+
+    return cast(NDArray[np.uint8], np.hstack([prepared_baseline, prepared_other]))
+
+
+def encode_png(frame: NDArray[np.uint8]) -> bytes:
+    """Encode a frame as PNG bytes, for serving without writing to disk."""
+
+    ok, buffer = cv2.imencode(".png", frame)
+    if not ok:
+        raise ReviewImageError("Could not encode comparison image as PNG.")
+    return bytes(buffer)
+
+
 def _prepare_image_frame(frame: FrameArray) -> NDArray[np.uint8]:
     if not isinstance(frame, np.ndarray):
         raise ReviewImageError("Frame must be a NumPy array")

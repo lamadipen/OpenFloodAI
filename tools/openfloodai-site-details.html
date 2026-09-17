@@ -1893,6 +1893,12 @@
             state.eventCursor = next;
             state.selectedIndex = events[next].peak;
             render();
+          } else if (act === "jump-biggest-change") {
+            const index = days.findIndex((d) => d.filename === summary.biggest_change_filename);
+            if (index < 0) return;
+            state.selectedIndex = index;
+            state.eventCursor = -1;
+            render();
           }
         });
 
@@ -2062,18 +2068,6 @@
         const gaugeStart = gaugeDates.length ? gaugeByDate.get(gaugeDates[0]) : null;
         const gaugeEnd = gaugeDates.length ? gaugeByDate.get(gaugeDates[gaugeDates.length - 1]) : null;
 
-        // image-sequence-comparison-overlay.png already places the baseline
-        // and biggest-change frames side by side with the watched area
-        // marked, so it alone is the "biggest change" picture — showing the
-        // baseline/changed frames again next to it would just repeat it.
-        const comparisonQuery = summary.biggest_change_filename
-          ? new URLSearchParams({
-              folder_name: siteName,
-              run_id: runId,
-              filename: "image-sequence-comparison-overlay.png",
-            })
-          : null;
-
         // The currently selected day's own raw image, real and re-fetched
         // on every selection (chart point, event row, Previous/Next event)
         // — distinct from the fixed "biggest change" picture above, which
@@ -2092,6 +2086,18 @@
           ? new URLSearchParams({
               folder_name: siteName,
               sequence_id: summary.sequence_id,
+              filename: sel.filename,
+            })
+          : null;
+
+        // The watched-area-boxed side-by-side view, regenerated on demand
+        // for whatever day is currently selected (not fixed to the run's
+        // one biggest-change day) so it stays in sync with Previous/Next.
+        const sideBySideQuery = summary.baseline_filename && sel.filename && sel.code !== "M"
+          ? new URLSearchParams({
+              folder_name: siteName,
+              sequence_id: summary.sequence_id,
+              baseline_filename: summary.baseline_filename,
               filename: sel.filename,
             })
           : null;
@@ -2199,6 +2205,7 @@
           <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:18px;margin-bottom:8px;">
             <strong>Selected day &mdash; ${escapeHtml(sel.date)}</strong>
             <div style="display:flex;gap:8px;">
+              <button type="button" class="btn small" data-act="jump-biggest-change" ${summary.biggest_change_filename ? "" : "disabled"}>Biggest change detected</button>
               <button type="button" class="btn small" data-act="prev-event">&larr; Previous event</button>
               <button type="button" class="btn small" data-act="next-event">Next event &rarr;</button>
             </div>
@@ -2218,11 +2225,11 @@
             </div>
           </div>
 
-          <div style="margin-bottom: 8px;"><strong>Biggest change detected</strong></div>
-          ${comparisonQuery ? `
-            <p class="status-line" style="margin-bottom: 8px;">Baseline (left) vs. ${escapeHtml(summary.biggest_change_filename)} (right), watched area outlined. This is the single largest change found in the whole run, not necessarily the day selected above.</p>
-            <img src="/api/image-sequence-run-image?${comparisonQuery}" alt="Baseline compared with the biggest detected change" loading="lazy" style="width: 100%; border-radius: 8px; display: block;">
-          ` : '<p class="status-line">No review images for this run.</p>'}
+          <div style="margin-bottom: 8px;"><strong>Side-by-side comparison &mdash; ${escapeHtml(sel.date)}</strong></div>
+          ${sideBySideQuery ? `
+            <p class="status-line" style="margin-bottom: 8px;">Baseline (left) vs. ${escapeHtml(sel.date)} (right), watched area outlined. Updates with the day selected above &mdash; use "Biggest change detected" or Previous/Next event to jump around.</p>
+            <img src="/api/image-sequence-comparison?${sideBySideQuery}" alt="Baseline compared with ${escapeHtml(sel.date)}" loading="lazy" style="width: 100%; border-radius: 8px; display: block;">
+          ` : '<p class="status-line">No side-by-side comparison for this day (missing or failed download).</p>'}
           ${state.errorText ? `<p class="status-line error">${escapeHtml(state.errorText)}</p>` : ""}
         `;
       }
