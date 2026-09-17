@@ -16,7 +16,7 @@
       button { background: #12644f; color: white; border: 0; border-radius: 7px; padding: 12px 18px; font: inherit; cursor: pointer; }
       button:disabled { opacity: .65; cursor: wait; }
       :focus-visible { outline: 3px solid #cf8500; outline-offset: 3px; }
-      #cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; margin-top: 20px; }
+      #cards, .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; margin-top: 20px; }
       article { background: white; border: 1px solid #ccd9d2; border-radius: 12px; padding: 18px 20px; overflow-wrap: anywhere; }
       article h2 { margin: 0 0 4px; font-size: 1.05rem; }
       article .camera-id { color: #5a6f65; font-size: .85rem; margin-bottom: 12px; }
@@ -32,6 +32,21 @@
       .problems ul { margin: 4px 0 0; padding-left: 18px; }
       [hidden] { display: none !important; }
       .notice { background: white; border: 1px solid #ccd9d2; border-radius: 12px; padding: 16px 20px; }
+      details.bootstrap { background: white; border: 1px solid #ccd9d2; border-radius: 12px; padding: 4px 22px 20px; margin: 20px 0; }
+      details.bootstrap summary { cursor: pointer; font-weight: 650; padding: 14px 0; }
+      .bootstrap-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-top: 10px; }
+      .bootstrap-fields > div { display: flex; flex-direction: column; }
+      textarea { box-sizing: border-box; padding: 11px; margin: 7px 0; border: 1px solid #7a9586; border-radius: 6px; font: inherit; resize: vertical; }
+      select { box-sizing: border-box; padding: 11px; margin: 7px 0; border: 1px solid #7a9586; border-radius: 6px; font: inherit; }
+      .checkbox-row { display: flex; align-items: center; gap: 8px; flex-direction: row !important; }
+      .checkbox-row input { margin: 0; width: auto; }
+      small { display: block; line-height: 1.5; color: #425a50; }
+      .bootstrap-actions { margin-top: 16px; display: flex; gap: 12px; align-items: center; }
+      .spinner { display: inline-block; width: 1em; height: 1em; border: 2px solid #a4b8af; border-top-color: #12644f; border-radius: 50%; animation: spin 1s linear infinite; margin-right: 8px; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+      #bootstrapResult { margin-top: 16px; }
+      #bootstrapResult .badge.bad { display: inline-block; }
     </style>
   </head>
   <body>
@@ -51,6 +66,57 @@
       </form>
       <p id="riverHelp" role="status" aria-live="polite"></p>
       <div id="cards" aria-label="Sites for this river"></div>
+
+      <details class="bootstrap">
+        <summary>Run bootstrap (download images and gage data)</summary>
+        <p>Same command as <code>scripts/bootstrap_river_sites.py</code>. Always try "Preview only" first — it reports what a real run would do without downloading anything.</p>
+        <form id="bootstrapForm">
+          <div class="bootstrap-fields">
+            <div>
+              <label for="bootstrapRiver">River id</label>
+              <input id="bootstrapRiver" value="colorado-river" required>
+            </div>
+            <div>
+              <label for="bootstrapStartDate">Start date</label>
+              <input id="bootstrapStartDate" type="date" required>
+            </div>
+            <div>
+              <label for="bootstrapEndDate">End date</label>
+              <input id="bootstrapEndDate" type="date" required>
+            </div>
+            <div>
+              <label for="bootstrapSamplingMode">Sampling mode</label>
+              <select id="bootstrapSamplingMode">
+                <option value="one_daylight_image_per_day" selected>one_daylight_image_per_day</option>
+                <option value="one_per_day">one_per_day</option>
+                <option value="one_per_hour">one_per_hour</option>
+                <option value="all">all</option>
+              </select>
+            </div>
+          </div>
+          <label for="bootstrapCameras" style="margin-top: 14px;">Cameras (one per line; leave empty for every camera in the registry)</label>
+          <textarea id="bootstrapCameras" rows="3">CO_Colorado_River_at_Windy_Gap_near_Granby
+CO_Colorado_River_near_Cameo
+UT_Colorado_River_near_Cisco</textarea>
+          <small id="bootstrapHelp">A real run creates or reuses one site per camera and downloads images and gage data. It can take a few minutes.</small>
+          <div class="bootstrap-fields" style="margin-top: 10px;">
+            <div class="checkbox-row">
+              <input id="bootstrapPreview" type="checkbox" checked>
+              <label for="bootstrapPreview" style="font-weight: 500;">Preview only (no downloads)</label>
+            </div>
+            <div class="checkbox-row">
+              <input id="bootstrapReplaceSequence" type="checkbox">
+              <label for="bootstrapReplaceSequence" style="font-weight: 500;">Replace existing sequence for these cameras</label>
+            </div>
+          </div>
+          <div class="bootstrap-actions">
+            <button type="submit" id="bootstrapButton">Run</button>
+            <span id="bootstrapSpinner" class="spinner" hidden aria-hidden="true"></span>
+            <span id="bootstrapStatus" role="status" aria-live="polite"></span>
+          </div>
+        </form>
+        <div id="bootstrapResult" aria-live="polite"></div>
+      </details>
     </main>
     <script>
       const form = document.getElementById("trackerForm");
@@ -127,6 +193,94 @@
       });
 
       loadTracker(riverIdInput.value.trim());
+
+      const bootstrapForm = document.getElementById("bootstrapForm");
+      const bootstrapButton = document.getElementById("bootstrapButton");
+      const bootstrapSpinner = document.getElementById("bootstrapSpinner");
+      const bootstrapStatus = document.getElementById("bootstrapStatus");
+      const bootstrapResult = document.getElementById("bootstrapResult");
+      let bootstrapRunning = false;
+
+      function renderPreviewResult(preview) {
+        const rows = preview.cameras.map((camera) => `
+          <article>
+            <h2>${escapeHtml(camera.display_name)}</h2>
+            <div class="camera-id">${escapeHtml(camera.camera_id)} · site: ${escapeHtml(camera.site_status)}</div>
+            <dl>
+              <dt>Days requested</dt><dd>${camera.days_requested}</dd>
+              <dt>Daylight images available</dt><dd>${camera.daylight_images_available}</dd>
+              <dt>Missing days</dt><dd>${camera.missing_day_count}</dd>
+              <dt>Estimated size</dt><dd>${(camera.estimated_bytes / 1_000_000).toFixed(1)} MB</dd>
+              <dt>Gage relationship</dt><dd>${escapeHtml(camera.gage_relationship)}</dd>
+            </dl>
+            ${camera.error ? `<div class="problems"><strong>Error</strong><ul><li>${escapeHtml(camera.error)}</li></ul></div>` : ""}
+          </article>`).join("");
+        return `<p>${escapeHtml(preview.excluded_cameras_note || "")}</p><div class="cards">${rows}</div>`;
+      }
+
+      function renderRunResult(outcomes) {
+        const rows = outcomes.map((outcome) => {
+          const conflictOrError = outcome.error || (outcome.site_status === "conflict" ? outcome.site_message : "");
+          return `
+          <article>
+            <h2>${escapeHtml(outcome.camera_id)}</h2>
+            <div class="camera-id">folder: ${escapeHtml(outcome.folder_name)} · site: ${escapeHtml(outcome.site_status)}</div>
+            <dl>
+              <dt>Downloaded</dt><dd>${outcome.downloaded_count}</dd>
+              <dt>Missing</dt><dd>${outcome.missing_count}</dd>
+              <dt>Failed</dt><dd>${outcome.failed_count}</dd>
+              <dt>Gage available</dt><dd>${outcome.gage_available === null ? "—" : outcome.gage_available ? "yes" : "no"}</dd>
+            </dl>
+            ${conflictOrError ? `<div class="problems"><strong>Note</strong><ul><li>${escapeHtml(conflictOrError)}</li></ul></div>` : ""}
+          </article>`;
+        }).join("");
+        return `<div class="cards">${rows}</div>`;
+      }
+
+      bootstrapForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (bootstrapRunning) return;
+
+        const preview = document.getElementById("bootstrapPreview").checked;
+        const replaceSequence = document.getElementById("bootstrapReplaceSequence").checked;
+        if (!preview && !confirm("This downloads real images and gage data now. Continue?")) return;
+
+        bootstrapRunning = true;
+        bootstrapButton.disabled = true;
+        bootstrapSpinner.hidden = false;
+        bootstrapStatus.textContent = preview ? "Previewing…" : "Running (this can take a few minutes)…";
+        bootstrapResult.replaceChildren();
+
+        const cameras = document.getElementById("bootstrapCameras").value
+          .split("\n").map((line) => line.trim()).filter(Boolean);
+
+        try {
+          const response = await fetch("/api/bootstrap-river-sites", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+              river: document.getElementById("bootstrapRiver").value.trim(),
+              start_date: document.getElementById("bootstrapStartDate").value,
+              end_date: document.getElementById("bootstrapEndDate").value,
+              sampling_mode: document.getElementById("bootstrapSamplingMode").value,
+              cameras,
+              preview,
+              replace_sequence: replaceSequence,
+            }),
+          });
+          const payload = await response.json();
+          if (!response.ok || !payload.success) throw new Error(payload.message || "The request failed.");
+          bootstrapStatus.textContent = preview ? "Preview complete." : "Run complete.";
+          bootstrapResult.innerHTML = preview ? renderPreviewResult(payload.preview) : renderRunResult(payload.outcomes);
+          if (!preview) loadTracker(riverIdInput.value.trim());
+        } catch (error) {
+          bootstrapStatus.textContent = `Could not complete the request: ${error.message}`;
+        } finally {
+          bootstrapRunning = false;
+          bootstrapButton.disabled = false;
+          bootstrapSpinner.hidden = true;
+        }
+      });
     </script>
   </body>
 </html>

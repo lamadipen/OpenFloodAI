@@ -30,6 +30,7 @@ from openfloodai.contracts import read_jsonl_records
 from openfloodai.ingestion.image_video import create_image_test_video
 from openfloodai.ingestion.live_camera import LiveCameraError, capture_live_clip
 from openfloodai.ingestion.live_camera_schedule import read_schedule, write_schedule
+from openfloodai.ingestion.river_bootstrap import preview_bootstrap_run, run_bootstrap
 from openfloodai.ingestion.river_images import (
     RiverImageError,
     download_latest_timelapse,
@@ -551,6 +552,9 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         if self.path == "/api/run-image-sequence-validation":
             self._handle_run_image_sequence_validation()
             return
+        if self.path == "/api/bootstrap-river-sites":
+            self._handle_bootstrap_river_sites()
+            return
         self.send_error(404, "Not found")
 
     def log_message(self, format: str, *args: Any) -> None:
@@ -744,6 +748,62 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             },
             status_code=200,
         )
+
+    def _handle_bootstrap_river_sites(self) -> None:
+        """Run (or preview) a registry-driven camera bootstrap, from the tracker page's form.
+
+        Mirrors scripts/bootstrap_river_sites.py exactly, so the form is a
+        thin front-end for the same CLI behavior, not a separate code path.
+        A real (non-preview) run can take a while, since it downloads
+        images and gage data; there is no request timeout here for that
+        reason.
+        """
+
+        data = self._reject_untrusted_json_post()
+        if data is None:
+            return
+        river_id = str(data.get("river", "")).strip()
+        start_date = str(data.get("start_date", "")).strip()
+        end_date = str(data.get("end_date", "")).strip()
+        sampling_mode = str(data.get("sampling_mode") or "one_daylight_image_per_day").strip()
+        raw_cameras = data.get("cameras")
+        camera_ids = (
+            [str(camera).strip() for camera in raw_cameras if str(camera).strip()]
+            if isinstance(raw_cameras, list)
+            else []
+        )
+        preview = bool(data.get("preview"))
+        replace_sequence = bool(data.get("replace_sequence"))
+
+        try:
+            if preview:
+                result = preview_bootstrap_run(
+                    reference_dir=self._reference_dir(),
+                    sites_base_dir=self.sites_dir,
+                    river_id=river_id,
+                    camera_ids=camera_ids,
+                    start_date=start_date,
+                    end_date=end_date,
+                    sampling_mode=sampling_mode,
+                )
+                self._send_json({"success": True, "preview": result.to_dict()}, status_code=200)
+                return
+            outcomes = run_bootstrap(
+                reference_dir=self._reference_dir(),
+                sites_base_dir=self.sites_dir,
+                river_id=river_id,
+                camera_ids=camera_ids,
+                start_date=start_date,
+                end_date=end_date,
+                sampling_mode=sampling_mode,
+                replace_sequence=replace_sequence,
+            )
+            self._send_json(
+                {"success": True, "outcomes": [outcome.to_dict() for outcome in outcomes]},
+                status_code=200,
+            )
+        except (RiverRegistryError, RiverImageError, ValueError) as error:
+            self._send_json({"success": False, "message": str(error)}, status_code=400)
 
     def _send_river_image(self) -> None:
         query = parse_qs(urlsplit(self.path).query)
