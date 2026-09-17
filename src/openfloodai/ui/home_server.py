@@ -41,6 +41,7 @@ from openfloodai.ingestion.river_images import (
     resolve_downloaded_video,
     resolve_sequence_image,
 )
+from openfloodai.ingestion.river_registry import RiverRegistryError
 from openfloodai.review import (
     ALLOWED_CONFIDENCE_LEVELS,
     ALLOWED_HUMAN_LABELS,
@@ -54,6 +55,7 @@ from openfloodai.review import (
     repair_manifest_from_local_videos,
 )
 from openfloodai.review.dataset_manifest import HARD_CASE_TYPE_OPTIONS, MANIFEST_PURPOSE_OPTIONS
+from openfloodai.review.river_tracker import build_river_tracker
 from openfloodai.validation import (
     build_export_all,
     build_run_export,
@@ -151,6 +153,12 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             return
         if path == "/site-details.html":
             self._send_site_details_page()
+            return
+        if path == "/river-tracker.html":
+            self._send_river_tracker_page()
+            return
+        if path == "/api/river-tracker":
+            self._send_river_tracker_json()
             return
         if path in {"/", "/openfloodai-home-ui.html"}:
             self._send_file(self.ui_path, content_type="text/html; charset=utf-8")
@@ -379,6 +387,48 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _send_river_tracker_page(self) -> None:
+        source = self.ui_path.parent / "openfloodai-river-tracker.html"
+        if source.is_file():
+            self._send_file(source, content_type="text/html; charset=utf-8")
+            return
+        # Wheel and desktop builds carry the page as a package resource.
+        page = resources.files("openfloodai.ui") / "static" / "openfloodai-river-tracker.html"
+        if not page.is_file():
+            self.send_error(404, "River tracker page not found")
+            return
+        body = page.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _reference_dir(self) -> Path:
+        return self.sites_dir.resolve().parent / "reference"
+
+    def _send_river_tracker_json(self) -> None:
+        query = parse_qs(urlsplit(self.path).query)
+        river_id = (query.get("river") or [""])[0].strip()
+        if not river_id:
+            self._send_json({"message": "Missing required query parameter: river"}, status_code=400)
+            return
+        try:
+            registry, rows = build_river_tracker(
+                river_id, reference_dir=self._reference_dir(), sites_base_dir=self.sites_dir
+            )
+        except RiverRegistryError as error:
+            self._send_json({"message": str(error)}, status_code=404)
+            return
+        self._send_json(
+            {
+                "river_id": registry.river_id,
+                "river_display_name": registry.display_name,
+                "sites": [row.to_dict() for row in rows],
+            },
+            status_code=200,
+        )
 
     def _send_review_images(self, *, single_image: bool) -> None:
         """Expose only generated review images inside the configured local sites."""

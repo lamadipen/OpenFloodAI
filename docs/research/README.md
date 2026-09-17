@@ -16,6 +16,7 @@ Avoid committing copyrighted datasets, sensitive imagery, or private field obser
 - [Hard-Case Validation Examples](hard-case-validation.md)
 - [Real Hard-Case Sample Workflow](real-hard-case-sample-workflow.md)
 - [ML Model, Dataset, And Cloud Options](ml-model-options.md)
+- [Colorado River Validation Sample Pilot](colorado-river-pilot-tracker.md)
 
 ## See Also
 

@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>River Camera Tracker · OpenFloodAI</title>
+    <style>
+      :root { color-scheme: light; font-family: system-ui, sans-serif; color: #18342f; background: #f2f6f3; }
+      body { max-width: 1100px; margin: auto; padding: 28px 20px; }
+      a { color: #12644f; }
+      h1 { margin-bottom: 12px; }
+      p { line-height: 1.6; }
+      form.controls { background: white; border: 1px solid #ccd9d2; border-radius: 12px; padding: 18px 22px; margin: 20px 0; display: flex; gap: 14px; align-items: end; flex-wrap: wrap; }
+      label { display: block; font-weight: 650; }
+      input { box-sizing: border-box; padding: 11px; margin: 7px 0; border: 1px solid #7a9586; border-radius: 6px; font: inherit; }
+      button { background: #12644f; color: white; border: 0; border-radius: 7px; padding: 12px 18px; font: inherit; cursor: pointer; }
+      button:disabled { opacity: .65; cursor: wait; }
+      :focus-visible { outline: 3px solid #cf8500; outline-offset: 3px; }
+      #cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; margin-top: 20px; }
+      article { background: white; border: 1px solid #ccd9d2; border-radius: 12px; padding: 18px 20px; overflow-wrap: anywhere; }
+      article h2 { margin: 0 0 4px; font-size: 1.05rem; }
+      article .camera-id { color: #5a6f65; font-size: .85rem; margin-bottom: 12px; }
+      dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; font-size: .92rem; }
+      dt { font-weight: 650; color: #425a50; }
+      dd { margin: 0; }
+      .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .82rem; font-weight: 650; }
+      .badge.ok { background: #dcf1e6; color: #12644f; }
+      .badge.warn { background: #fdf0d8; color: #8a5a00; }
+      .badge.neutral { background: #e6ecec; color: #425a50; }
+      .badge.bad { background: #fbe3e0; color: #963224; }
+      .problems { margin-top: 10px; font-size: .88rem; color: #963224; }
+      .problems ul { margin: 4px 0 0; padding-left: 18px; }
+      [hidden] { display: none !important; }
+      .notice { background: white; border: 1px solid #ccd9d2; border-radius: 12px; padding: 16px 20px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <nav aria-label="Workspace navigation"><a href="/openfloodai-home-ui.html">← Back to Home</a></nav>
+      <h1>River Camera Tracker</h1>
+      <p>Track pilot progress for one river's cameras, grouped by the river's own camera registry, not by parsing folder names.</p>
+    </header>
+    <main>
+      <p class="notice">This page only reads local files and calls local endpoints. It does not download images, change site configuration, or run validation.</p>
+      <form class="controls" id="trackerForm">
+        <div>
+          <label for="riverId">River id</label>
+          <input id="riverId" name="river" value="colorado-river" required aria-describedby="riverHelp">
+        </div>
+        <button type="submit" id="loadButton">Load tracker</button>
+      </form>
+      <p id="riverHelp" role="status" aria-live="polite"></p>
+      <div id="cards" aria-label="Sites for this river"></div>
+    </main>
+    <script>
+      const form = document.getElementById("trackerForm");
+      const riverIdInput = document.getElementById("riverId");
+      const loadButton = document.getElementById("loadButton");
+      const helpText = document.getElementById("riverHelp");
+      const cards = document.getElementById("cards");
+
+      function badgeClass(value, positiveValues, warnValues) {
+        if (positiveValues.some((v) => value === v || value.startsWith(v))) return "ok";
+        if (warnValues.some((v) => value === v || value.startsWith(v))) return "warn";
+        return "neutral";
+      }
+
+      function renderSite(site) {
+        const availability = site.camera_availability;
+        const availabilityClass = badgeClass(availability, ["downloaded"], ["created_no_downloads_yet"]);
+        const gageClass = site.gage_data_status.startsWith("available") ? "ok"
+          : site.gage_data_status.startsWith("unavailable") ? "warn" : "neutral";
+        const watchedClass = site.watched_area_status === "drawn" ? "ok" : "neutral";
+        const riverbankClass = site.riverbank_guide_status.endsWith("drawn") && site.riverbank_guide_status !== "not_drawn" ? "ok" : "neutral";
+        const baselineClass = site.baseline_selected ? "ok" : "neutral";
+        const reviewClass = site.human_review_progress === "validated" ? "ok"
+          : site.human_review_progress === "not_started" ? "neutral" : "warn";
+        const problems = site.known_problems.length
+          ? `<div class="problems"><strong>Known problems</strong><ul>${site.known_problems.map((p) => `<li>${escapeHtml(p)}</li>`).join("")}</ul></div>`
+          : "";
+        return `
+          <article>
+            <h2>${escapeHtml(site.display_name)}</h2>
+            <div class="camera-id">${escapeHtml(site.camera_id)} · folder: ${escapeHtml(site.folder_name)}</div>
+            <dl>
+              <dt>Camera</dt><dd><span class="badge ${availabilityClass}">${escapeHtml(availability)}</span></dd>
+              <dt>Date range</dt><dd>${escapeHtml(site.requested_date_range || "—")}</dd>
+              <dt>Images downloaded</dt><dd>${site.daylight_images_downloaded} (missing ${site.missing_days})</dd>
+              <dt>Gage data</dt><dd><span class="badge ${gageClass}">${escapeHtml(site.gage_data_status)}</span></dd>
+              <dt>Watched area</dt><dd><span class="badge ${watchedClass}">${escapeHtml(site.watched_area_status)}</span></dd>
+              <dt>Riverbank guide</dt><dd><span class="badge ${riverbankClass}">${escapeHtml(site.riverbank_guide_status)}</span></dd>
+              <dt>Baseline selected</dt><dd><span class="badge ${baselineClass}">${site.baseline_selected ? "yes" : "no"}</span></dd>
+              <dt>Validation runs</dt><dd>${site.validation_run_count}</dd>
+              <dt>Dataset group</dt><dd>${escapeHtml(site.dataset_group)}</dd>
+              <dt>Human review</dt><dd><span class="badge ${reviewClass}">${escapeHtml(site.human_review_progress)}</span></dd>
+            </dl>
+            ${problems}
+          </article>`;
+      }
+
+      function escapeHtml(value) {
+        return String(value).replace(/[&<>"']/g, (c) => ({
+          "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+        }[c]));
+      }
+
+      async function loadTracker(riverId) {
+        loadButton.disabled = true;
+        helpText.textContent = "Loading…";
+        cards.replaceChildren();
+        try {
+          const response = await fetch(`/api/river-tracker?river=${encodeURIComponent(riverId)}`);
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.message || "Could not load the tracker.");
+          helpText.textContent = `${payload.river_display_name} · ${payload.sites.length} camera(s) in the registry.`;
+          cards.innerHTML = payload.sites.map(renderSite).join("");
+        } catch (error) {
+          helpText.textContent = `Could not load the tracker: ${error.message}`;
+        } finally {
+          loadButton.disabled = false;
+        }
+      }
+
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        loadTracker(riverIdInput.value.trim());
+      });
+
+      loadTracker(riverIdInput.value.trim());
+    </script>
+  </body>
+</html>
