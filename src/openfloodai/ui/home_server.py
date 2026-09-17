@@ -56,6 +56,11 @@ from openfloodai.review import (
     repair_manifest_from_local_videos,
 )
 from openfloodai.review.dataset_manifest import HARD_CASE_TYPE_OPTIONS, MANIFEST_PURPOSE_OPTIONS
+from openfloodai.review.event_reviews import (
+    EventReviewError,
+    list_event_reviews,
+    set_event_review,
+)
 from openfloodai.review.river_tracker import build_river_tracker
 from openfloodai.validation import (
     build_export_all,
@@ -552,6 +557,9 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         if self.path == "/api/run-image-sequence-validation":
             self._handle_run_image_sequence_validation()
             return
+        if self.path == "/api/set-image-sequence-event-review":
+            self._handle_set_image_sequence_event_review()
+            return
         if self.path == "/api/bootstrap-river-sites":
             self._handle_bootstrap_river_sites()
             return
@@ -747,6 +755,48 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
                 },
             },
             status_code=200,
+        )
+
+    def _handle_set_image_sequence_event_review(self) -> None:
+        """Mark (or clear) a review status for one machine-detected event.
+
+        Stored per sequence, not per run, so a mark survives re-running
+        validation on the same downloaded images.
+        """
+
+        data = self._read_json_body()
+        if data is None:
+            return
+        try:
+            site_dir = self._resolve_site_dir(str(data.get("folder_name", "")).strip())
+        except ValueError:
+            self._send_json(
+                {
+                    "success": False,
+                    "message": (
+                        "Invalid folder_name: site folder must stay inside the sites directory."
+                    ),
+                },
+                status_code=400,
+            )
+            return
+        sequences_root = (site_dir / "inputs" / "image-sequences").resolve()
+        sequence_dir = (sequences_root / str(data.get("sequence_id", "")).strip()).resolve()
+        try:
+            sequence_dir.relative_to(sequences_root)
+        except ValueError:
+            self._send_json({"success": False, "message": "Invalid sequence_id."}, status_code=400)
+            return
+        event_key = str(data.get("event_key", "")).strip()
+        raw_status = data.get("status")
+        status = str(raw_status).strip() if isinstance(raw_status, str) and raw_status else None
+        try:
+            set_event_review(sequence_dir, event_key=event_key, status=status)
+        except EventReviewError as error:
+            self._send_json({"success": False, "message": str(error)}, status_code=400)
+            return
+        self._send_json(
+            {"success": True, "event_reviews": list_event_reviews(sequence_dir)}, status_code=200
         )
 
     def _handle_bootstrap_river_sites(self) -> None:

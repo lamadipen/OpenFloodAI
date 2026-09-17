@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -273,3 +274,134 @@ def test_write_gauge_readings_summary_saves_json_file(
     assert output_path.exists()
     assert summary.available is False
     assert '"nwis_site_id": "09095500"' in output_path.read_text(encoding="utf-8")
+
+
+def test_build_daily_gage_series_picks_nearest_reading_per_downloaded_image() -> None:
+    series = gage.GageSeries(
+        nwis_site_id="09095500",
+        parameter_code=gage.PARAMETER_GAGE_HEIGHT,
+        parameter_label="gage height",
+        unit="ft",
+        used_fallback_discharge=False,
+        readings=[
+            gage.GageReading(datetime_utc="2025-01-01T11:00:00+00:00", value=3.1),
+            gage.GageReading(datetime_utc="2025-01-01T12:00:00+00:00", value=3.5),
+            gage.GageReading(datetime_utc="2025-01-02T12:00:00+00:00", value=3.9),
+        ],
+        source_url="https://example.invalid",
+    )
+    manifest_records = [
+        {
+            "filename": "a.jpg",
+            "captured_at_utc": "2025-01-01T12:05:00+00:00",
+            "local_time": "2025-01-01T05:05:00-07:00",
+            "download_status": "downloaded",
+        },
+        {
+            "filename": "b.jpg",
+            "captured_at_utc": "2025-01-02T11:50:00+00:00",
+            "local_time": "2025-01-02T04:50:00-07:00",
+            "download_status": "downloaded",
+        },
+        {
+            "filename": "c.jpg",
+            "captured_at_utc": "2025-01-03T12:00:00+00:00",
+            "download_status": "missing",
+        },
+    ]
+
+    rows = gage.build_daily_gage_series(series, manifest_records)
+
+    assert len(rows) == 2
+    assert rows[0]["date"] == "2025-01-01"
+    assert rows[0]["gauge_value"] == 3.5
+    assert rows[1]["date"] == "2025-01-02"
+    assert rows[1]["gauge_value"] == 3.9
+
+
+def test_build_daily_gage_series_skips_images_with_no_nearby_reading() -> None:
+    series = gage.GageSeries(
+        nwis_site_id="09095500",
+        parameter_code=gage.PARAMETER_GAGE_HEIGHT,
+        parameter_label="gage height",
+        unit="ft",
+        used_fallback_discharge=False,
+        readings=[],
+        source_url="",
+    )
+    manifest_records = [
+        {
+            "filename": "a.jpg",
+            "captured_at_utc": "2025-01-01T12:00:00+00:00",
+            "download_status": "downloaded",
+        },
+    ]
+
+    assert gage.build_daily_gage_series(series, manifest_records) == []
+
+
+def test_write_gauge_readings_summary_also_writes_daily_series_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload = _series_payload(
+        gage.PARAMETER_GAGE_HEIGHT,
+        [("2025-01-01T12:00:00.000+00:00", "3.5")],
+    )
+    fetch_calls: list[str] = []
+
+    def fetch(url: str) -> Any:
+        fetch_calls.append(url)
+        return payload
+
+    monkeypatch.setattr(gage, "_fetch_json", fetch)
+    manifest_records = [
+        {
+            "filename": "a.jpg",
+            "captured_at_utc": "2025-01-01T12:00:00+00:00",
+            "local_time": "2025-01-01T05:00:00-07:00",
+            "download_status": "downloaded",
+        },
+    ]
+
+    summary = gage.write_gauge_readings_summary(
+        tmp_path,
+        nwis_site_id="09095500",
+        start_date="2025-01-01",
+        end_date="2025-01-31",
+        gage_relationship="same_site",
+        gage_relationship_note=None,
+        manifest_records=manifest_records,
+    )
+
+    assert summary.available is True
+    # Only one fetch cycle (per parameter attempt) backs both output files.
+    assert len(fetch_calls) == 1
+    series_path = tmp_path / "gauge-daily-series.json"
+    assert series_path.is_file()
+    rows = json.loads(series_path.read_text(encoding="utf-8"))
+    assert rows == [
+        {
+            "date": "2025-01-01",
+            "local_time": "2025-01-01T05:00:00-07:00",
+            "captured_at_utc": "2025-01-01T12:00:00+00:00",
+            "gauge_datetime_utc": "2025-01-01T12:00:00+00:00",
+            "gauge_value": 3.5,
+        }
+    ]
+
+
+def test_write_gauge_readings_summary_writes_empty_daily_series_when_unavailable(
+    tmp_path: Path,
+) -> None:
+    gage.write_gauge_readings_summary(
+        tmp_path,
+        nwis_site_id="09095500",
+        start_date="2025-01-01",
+        end_date="2025-01-31",
+        gage_relationship="unavailable",
+        gage_relationship_note=None,
+        manifest_records=[],
+    )
+
+    series_path = tmp_path / "gauge-daily-series.json"
+    assert json.loads(series_path.read_text(encoding="utf-8")) == []

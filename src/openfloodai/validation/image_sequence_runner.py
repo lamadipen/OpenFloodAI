@@ -25,6 +25,7 @@ import cv2
 
 from openfloodai.config import load_site_config, reference_region_to_dict
 from openfloodai.contracts import read_jsonl_records, write_jsonl_records
+from openfloodai.review.event_reviews import EventReviewError, list_event_reviews
 from openfloodai.review.review_images import generate_biggest_change_review_images
 from openfloodai.vision.simple_signals import (
     VisualSignalError,
@@ -353,11 +354,31 @@ def read_image_sequence_run_detail(site_dir: Path, run_id: str) -> dict[str, Any
     if review_images_dir.is_dir():
         review_images = sorted(path.name for path in review_images_dir.glob("*.png"))
 
+    gauge_series: list[dict[str, Any]] = []
+    event_reviews: dict[str, str] = {}
+    sequence_id = summary.get("sequence_id") if isinstance(summary, dict) else None
+    if isinstance(sequence_id, str) and sequence_id:
+        sequence_dir = site_dir / "inputs" / "image-sequences" / sequence_id
+        gauge_series_path = sequence_dir / "gauge-daily-series.json"
+        if gauge_series_path.is_file():
+            try:
+                loaded = json.loads(gauge_series_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, list):
+                    gauge_series = loaded
+            except (OSError, ValueError):
+                gauge_series = []
+        try:
+            event_reviews = list_event_reviews(sequence_dir)
+        except EventReviewError:
+            event_reviews = {}
+
     return {
         "summary": summary,
         "records": records,
         "report": report_text,
         "review_images": review_images,
+        "gauge_series": gauge_series,
+        "event_reviews": event_reviews,
     }
 
 

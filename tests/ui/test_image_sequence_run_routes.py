@@ -123,6 +123,96 @@ def test_run_image_sequence_validation_route_saves_a_run(tmp_path: Path) -> None
             assert response.read()
 
 
+def test_set_image_sequence_event_review_route_round_trip(tmp_path: Path) -> None:
+    site_dir = tmp_path / "example-site"
+    make_site(site_dir)
+    write_sequence(site_dir)
+
+    with serve_home_ui(tmp_path) as base_url:
+        status, payload = post(
+            base_url,
+            "/api/set-image-sequence-event-review",
+            {
+                "folder_name": "example-site",
+                "sequence_id": SEQUENCE_ID,
+                "event_key": "2026-09-01-2026-09-01-P",
+                "status": "confirmed_real",
+            },
+        )
+        assert status == 200
+        assert payload["success"] is True
+        assert payload["event_reviews"] == {"2026-09-01-2026-09-01-P": "confirmed_real"}
+
+        # Run detail for a later run must reflect the same review state,
+        # since it's stored per sequence, not per run.
+        _, run_payload = post(
+            base_url,
+            "/api/run-image-sequence-validation",
+            {"folder_name": "example-site", "sequence_id": SEQUENCE_ID},
+        )
+        detail = get_json(
+            f"{base_url}/api/image-sequence-run-detail?"
+            f"{urlencode({'folder_name': 'example-site', 'run_id': run_payload['run_id']})}"
+        )
+        assert detail["event_reviews"] == {"2026-09-01-2026-09-01-P": "confirmed_real"}
+
+        # Clearing (status: null) removes it again.
+        status, payload = post(
+            base_url,
+            "/api/set-image-sequence-event-review",
+            {
+                "folder_name": "example-site",
+                "sequence_id": SEQUENCE_ID,
+                "event_key": "2026-09-01-2026-09-01-P",
+                "status": None,
+            },
+        )
+        assert status == 200
+        assert payload["event_reviews"] == {}
+
+
+def test_set_image_sequence_event_review_rejects_invalid_status(tmp_path: Path) -> None:
+    site_dir = tmp_path / "example-site"
+    make_site(site_dir)
+    write_sequence(site_dir)
+
+    with serve_home_ui(tmp_path) as base_url:
+        status, payload = post(
+            base_url,
+            "/api/set-image-sequence-event-review",
+            {
+                "folder_name": "example-site",
+                "sequence_id": SEQUENCE_ID,
+                "event_key": "k1",
+                "status": "bogus",
+            },
+        )
+        assert status == 400
+        assert payload["success"] is False
+
+
+def test_set_image_sequence_event_review_rejects_path_traversal_in_sequence_id(
+    tmp_path: Path,
+) -> None:
+    site_dir = tmp_path / "example-site"
+    make_site(site_dir)
+    write_sequence(site_dir)
+
+    with serve_home_ui(tmp_path) as base_url:
+        status, payload = post(
+            base_url,
+            "/api/set-image-sequence-event-review",
+            {
+                "folder_name": "example-site",
+                "sequence_id": "../../etc",
+                "event_key": "k1",
+                "status": "acknowledged",
+            },
+        )
+        assert status == 400
+        assert payload["success"] is False
+
+
 def test_run_image_sequence_validation_requires_a_watched_area(tmp_path: Path) -> None:
     site_dir = tmp_path / "example-site"
     make_site(site_dir, reference_region=False)

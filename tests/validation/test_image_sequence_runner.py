@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 import pytest
 
+from openfloodai.review.event_reviews import set_event_review
 from openfloodai.validation.image_sequence_runner import (
     RESULT_CAMERA_OR_IMAGE_PROBLEM,
     RESULT_CANNOT_JUDGE_WATER_LEVEL,
@@ -287,6 +288,38 @@ def test_list_and_read_run_detail_round_trip(tmp_path: Path) -> None:
     assert detail["summary"]["run_id"] == report.run_id
     assert len(detail["records"]) == 1
     assert "Image Sequence Validation Report" in detail["report"]
+    # No gauge-daily-series.json or event-reviews.jsonl exist for this
+    # sequence yet: both keys are present but empty, never missing.
+    assert detail["gauge_series"] == []
+    assert detail["event_reviews"] == {}
+
+
+def test_read_run_detail_includes_gauge_series_and_event_reviews_when_present(
+    tmp_path: Path,
+) -> None:
+    site_dir = tmp_path / "site"
+    make_site(site_dir)
+    sequence_dir = site_dir / "inputs" / "image-sequences" / SEQUENCE_ID
+    images_dir = sequence_dir / "images"
+    write_frame(images_dir / "a.jpg", 30)
+    write_frame(images_dir / "b.jpg", 30)
+    write_manifest(
+        sequence_dir,
+        [
+            manifest_record("a.jpg", "2026-09-01T00:00:00+00:00", "downloaded"),
+            manifest_record("b.jpg", "2026-09-01T01:00:00+00:00", "downloaded"),
+        ],
+    )
+    (sequence_dir / "gauge-daily-series.json").write_text(
+        json.dumps([{"date": "2026-09-01", "gauge_value": 3.5}]), encoding="utf-8"
+    )
+    set_event_review(sequence_dir, event_key="2026-09-01-2026-09-01-P", status="confirmed_real")
+
+    report = run_image_sequence_validation(site_dir, SEQUENCE_ID)
+    detail = read_image_sequence_run_detail(site_dir, report.run_id)
+
+    assert detail["gauge_series"] == [{"date": "2026-09-01", "gauge_value": 3.5}]
+    assert detail["event_reviews"] == {"2026-09-01-2026-09-01-P": "confirmed_real"}
 
 
 def test_list_image_sequence_runs_ignores_other_sequences(tmp_path: Path) -> None:

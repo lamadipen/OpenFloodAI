@@ -329,6 +329,14 @@ def summarize_gage_readings(
     except GageDataError as error:
         return _with_reason(empty, str(error))
 
+    return _build_summary_from_series(series, empty, manifest_records)
+
+
+def _build_summary_from_series(
+    series: GageSeries,
+    empty: GageReadingsSummary,
+    manifest_records: Sequence[Mapping[str, Any]],
+) -> GageReadingsSummary:
     if not series.readings:
         return _with_reason(
             empty, "No gage-height or discharge data was available for this site and date range."
@@ -347,16 +355,16 @@ def summarize_gage_readings(
             largest_decreases.append(_build_delta(window_hours, decrease, manifest_records))
 
     return GageReadingsSummary(
-        nwis_site_id=nwis_site_id,
+        nwis_site_id=empty.nwis_site_id,
         parameter_code=series.parameter_code,
         parameter_label=series.parameter_label,
         unit=series.unit,
-        gage_relationship=gage_relationship,
-        gage_relationship_note=gage_relationship_note,
+        gage_relationship=empty.gage_relationship,
+        gage_relationship_note=empty.gage_relationship_note,
         used_fallback_discharge=series.used_fallback_discharge,
         source_url=series.source_url,
-        start_date=start_date,
-        end_date=end_date,
+        start_date=empty.start_date,
+        end_date=empty.end_date,
         point_count=len(series.readings),
         available=True,
         unavailable_reason=None,
@@ -365,6 +373,60 @@ def summarize_gage_readings(
         largest_increases=largest_increases,
         largest_decreases=largest_decreases,
     )
+
+
+def build_daily_gage_series(
+    series: GageSeries, manifest_records: Sequence[Mapping[str, Any]]
+) -> list[dict[str, Any]]:
+    """Return the gage reading nearest each downloaded image, for charting.
+
+    One row per downloaded manifest record rather than the much denser raw
+    series (a year of 15-minute readings) — exactly enough to draw a gage
+    line aligned to the images a reviewer is already looking at, without
+    persisting thousands of raw points nobody will read directly.
+    """
+
+    rows: list[dict[str, Any]] = []
+    for record in manifest_records:
+        if record.get("download_status") != "downloaded":
+            continue
+        captured_at = record.get("captured_at_utc")
+        if not captured_at:
+            continue
+        nearest = _nearest_reading(series.readings, str(captured_at))
+        if nearest is None:
+            continue
+        rows.append(
+            {
+                "date": str(captured_at)[:10],
+                "local_time": record.get("local_time"),
+                "captured_at_utc": captured_at,
+                "gauge_datetime_utc": nearest.datetime_utc,
+                "gauge_value": nearest.value,
+            }
+        )
+    return rows
+
+
+def _nearest_reading(readings: list[GageReading], target_datetime_utc: str) -> GageReading | None:
+    """Find the reading closest in time to a target (image capture) timestamp."""
+
+    try:
+        target = datetime.fromisoformat(target_datetime_utc)
+    except ValueError:
+        return None
+    best: GageReading | None = None
+    best_diff: float | None = None
+    for reading in readings:
+        try:
+            reading_dt = datetime.fromisoformat(reading.datetime_utc)
+        except ValueError:
+            continue
+        diff = abs((reading_dt - target).total_seconds())
+        if best_diff is None or diff < best_diff:
+            best_diff = diff
+            best = reading
+    return best
 
 
 def write_gauge_readings_summary(
@@ -377,19 +439,61 @@ def write_gauge_readings_summary(
     gage_relationship_note: str | None,
     manifest_records: Sequence[Mapping[str, Any]],
 ) -> GageReadingsSummary:
-    """Summarize gage data for one sequence and save it alongside the sequence."""
+    """Summarize gage data for one sequence and save it, plus a daily series for charting.
 
-    summary = summarize_gage_readings(
+    Fetches once and derives both `gauge-readings-summary.json` (extremes
+    and deltas) and `gauge-daily-series.json` (one reading per downloaded
+    image) from the same fetch, rather than summarizing and then charting
+    from two separate network calls.
+    """
+
+    if gage_relationship not in ALLOWED_GAGE_RELATIONSHIPS:
+        raise GageDataError(
+            f"Invalid gage_relationship: use one of {sorted(ALLOWED_GAGE_RELATIONSHIPS)}."
+        )
+    if gage_relationship == "nearby" and not (gage_relationship_note or "").strip():
+        raise GageDataError("A nearby gage record must include a short explanation.")
+
+    empty = GageReadingsSummary(
         nwis_site_id=nwis_site_id,
-        start_date=start_date,
-        end_date=end_date,
+        parameter_code="",
+        parameter_label="unavailable",
+        unit="",
         gage_relationship=gage_relationship,
         gage_relationship_note=gage_relationship_note,
-        manifest_records=manifest_records,
+        used_fallback_discharge=False,
+        source_url="",
+        start_date=start_date,
+        end_date=end_date,
+        point_count=0,
+        available=False,
+        unavailable_reason=None,
+        highest=None,
+        lowest=None,
+        largest_increases=[],
+        largest_decreases=[],
     )
+
+    series: GageSeries | None = None
+    if gage_relationship == "unavailable":
+        summary = _with_reason(empty, "This site has no known matching or nearby USGS gage.")
+    else:
+        try:
+            series = fetch_gage_readings(nwis_site_id, start_date, end_date)
+        except GageDataError as error:
+            summary = _with_reason(empty, str(error))
+        else:
+            summary = _build_summary_from_series(series, empty, manifest_records)
+
     (sequence_dir / "gauge-readings-summary.json").write_text(
         json.dumps(summary.to_dict(), indent=2) + "\n", encoding="utf-8"
     )
+
+    daily_series = build_daily_gage_series(series, manifest_records) if series is not None else []
+    (sequence_dir / "gauge-daily-series.json").write_text(
+        json.dumps(daily_series, indent=2) + "\n", encoding="utf-8"
+    )
+
     return summary
 
 

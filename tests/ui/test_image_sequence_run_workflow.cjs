@@ -37,7 +37,7 @@ test("issue #182 does not touch the video Run validation UI at all", () => {
     "run-image-sequence-validation",
     "runImageSequenceValidationForSite",
     "image-sequence-run",
-    "imageSequenceRunDetailCache",
+    "imageSequenceRunDetailDataCache",
   ]) {
     assert.ok(!homeHtml.includes(marker), `${marker} must not appear in the home-ui.html file`);
   }
@@ -45,12 +45,12 @@ test("issue #182 does not touch the video Run validation UI at all", () => {
 
 test("the image-sequence run flow uses its own state, never the video Runs tab's state", () => {
   assert.ok(detailsScript.includes("const runningImageSequenceValidations = new Set();"));
-  assert.ok(detailsScript.includes("const imageSequenceRunDetailCache = new Map();"));
+  assert.ok(detailsScript.includes("const imageSequenceRunDetailDataCache = new Map();"));
   // The two caches must be genuinely distinct variables (not aliases of the
   // video Runs tab's own runDetailCache/selectedRunIds).
   assert.ok(detailsScript.includes("const runDetailCache = new Map();"));
   assert.notEqual(
-    detailsScript.indexOf("const imageSequenceRunDetailCache"),
+    detailsScript.indexOf("const imageSequenceRunDetailDataCache"),
     detailsScript.indexOf("const runDetailCache")
   );
 });
@@ -147,21 +147,85 @@ test("renderImageSequenceCard offers a baseline picker over the downloaded image
   assert.doesNotMatch(html, /value="c\.jpg"/, "a missing image must not be offered as a baseline");
 });
 
-test("renderImageSequenceRunDetail renders review images and the report text", () => {
-  const source = grab("renderImageSequenceRunDetail");
-  const context = runWithStubs(source, {
-    URLSearchParams,
-    escapeHtml: (value) => String(value),
-  });
-  const html = context.renderImageSequenceRunDetail("demo-site", "run-1", {
-    summary: { baseline_filename: "a.jpg", confirmed_riverbank_guide_ids: ["left"] },
-    records: [{ filename: "b.jpg", result: "possible_water_level_change", reason: "changed" }],
-    report: "# Image Sequence Validation Report",
-    review_images: ["image-sequence-baseline.png"],
-  });
+test("the old renderImageSequenceRunDetail helper is gone, replaced by the interactive review view", () => {
+  assert.ok(
+    !/function renderImageSequenceRunDetail\(/.test(detailsScript),
+    "renderImageSequenceRunDetail should no longer exist as a standalone HTML-string renderer"
+  );
+  assert.ok(detailsScript.includes("function mountImageSequenceDetailView("));
+  assert.ok(detailsScript.includes("function renderImageSequenceDetail("));
+  assert.ok(
+    detailsScript.includes("mountImageSequenceDetailView(body, siteName, runId,"),
+    "loadImageSequenceRunBody must mount the interactive view, not cache a rendered HTML string"
+  );
+});
 
-  assert.match(html, /\/api\/image-sequence-run-image\?folder_name=demo-site&run_id=run-1/);
-  assert.match(html, /a\.jpg/);
-  assert.match(html, /b\.jpg/);
-  assert.match(html, /Image Sequence Validation Report/);
+const RESULT_CODE_STUB = {
+  possible_water_level_change: "P",
+  no_water_level_change: "N",
+  cannot_judge_water_level: "U",
+  camera_or_image_problem: "C",
+};
+const CODE_LABEL_STUB = {
+  N: "No water level change",
+  P: "Possible water level change",
+  C: "Camera or image problem",
+  U: "Cannot judge",
+  M: "No image available",
+};
+
+test("buildImageSequenceDays treats a non-downloaded record as a coverage gap, not a comparison", () => {
+  const context = runWithStubs(grab("buildImageSequenceDays"), {
+    RESULT_CODE: RESULT_CODE_STUB,
+    CODE_LABEL: CODE_LABEL_STUB,
+  });
+  const days = context.buildImageSequenceDays([
+    {
+      captured_at_utc: "2026-06-19T18:00:00+00:00",
+      local_time: "2026-06-19T12:00:00-06:00",
+      download_status: "downloaded",
+      result: "possible_water_level_change",
+      region_change_score: 0.05,
+      reason: "changed",
+    },
+    {
+      captured_at_utc: "2026-06-20T18:00:00+00:00",
+      local_time: "2026-06-20T12:00:00-06:00",
+      download_status: "missing",
+      result: "camera_or_image_problem",
+      reason: "not downloaded",
+    },
+  ]);
+
+  assert.equal(days.length, 2);
+  assert.equal(days[0].code, "P");
+  assert.equal(days[0].score, 0.05);
+  assert.equal(days[1].code, "M", "a missing/failed image must be a gap, never a camera_or_image_problem row");
+  assert.equal(days[1].score, null);
+});
+
+test("buildImageSequenceEvents clusters consecutive same-code days and never includes gaps or no-change days", () => {
+  const context = runWithStubs(grab("buildImageSequenceEvents"), {});
+  const days = [
+    { date: "2026-06-19", code: "N", score: 0.03 },
+    { date: "2026-06-20", code: "P", score: 0.05 },
+    { date: "2026-06-21", code: "P", score: 0.09 },
+    { date: "2026-06-22", code: "M", score: null },
+    { date: "2026-06-23", code: "C", score: 0.11 },
+  ];
+  const events = context.buildImageSequenceEvents(days);
+
+  assert.equal(events.length, 2);
+  assert.equal(events[0].code, "P");
+  assert.equal(events[0].key, "2026-06-20-2026-06-21-P");
+  assert.equal(events[0].peak, 2, "the peak day within a cluster must be its highest-scoring day");
+  assert.equal(events[1].code, "C");
+});
+
+test("findImageSequenceChangeStart reports no change point when there is too little baseline history", () => {
+  const context = runWithStubs(grab("findImageSequenceChangeStart") + "\n" + grab("isoImageSequenceMean"), {});
+  const tooFewDays = [{ score: 0.05 }, { score: 0.06 }];
+  const result = context.findImageSequenceChangeStart(tooFewDays);
+  assert.equal(result.index, -1);
+  assert.equal(result.threshold, null);
 });
