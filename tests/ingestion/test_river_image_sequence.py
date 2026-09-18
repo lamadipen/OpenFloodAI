@@ -7,6 +7,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
+from openfloodai.contracts.local_store import read_jsonl_records
 from openfloodai.ingestion import river_images as river
 
 SLUG = "CO_Colorado_River_near_Cameo"
@@ -85,6 +86,73 @@ def test_sample_one_per_day_keeps_first_seen_per_day() -> None:
 def test_sample_rejects_invalid_mode() -> None:
     with pytest.raises(river.RiverImageError):
         river.sample_image_sequence_candidates([], "nightly")
+
+
+def test_sample_daylight_picks_image_nearest_local_noon() -> None:
+    candidates = [_candidate(9, 45), _candidate(11, 45), _candidate(12, 15), _candidate(16, 0)]
+    sampled = river.sample_image_sequence_candidates(candidates, "one_daylight_image_per_day")
+    assert len(sampled) == 1
+    assert sampled[0] is candidates[2]
+
+
+def test_sample_daylight_skips_day_with_no_image_inside_window() -> None:
+    candidates = [_candidate(6, 0), _candidate(20, 0)]
+    sampled = river.sample_image_sequence_candidates(candidates, "one_daylight_image_per_day")
+    assert sampled == []
+
+
+def test_sample_daylight_respects_configurable_window() -> None:
+    candidates = [_candidate(8, 0)]
+    assert river.sample_image_sequence_candidates(candidates, "one_daylight_image_per_day") == []
+    widened = river.sample_image_sequence_candidates(
+        candidates,
+        "one_daylight_image_per_day",
+        daylight_window_start_hour=7,
+        daylight_window_end_hour=9,
+    )
+    assert widened == candidates
+
+
+def test_sample_daylight_rejects_invalid_window() -> None:
+    with pytest.raises(river.RiverImageError):
+        river.sample_image_sequence_candidates(
+            [_candidate(9)],
+            "one_daylight_image_per_day",
+            daylight_window_start_hour=14,
+            daylight_window_end_hour=10,
+        )
+
+
+def test_utc_calendar_year_windows_splits_and_clips() -> None:
+    windows = river._utc_calendar_year_windows(
+        datetime(2024, 6, 1, tzinfo=UTC), datetime(2026, 8, 30, tzinfo=UTC)
+    )
+    assert windows == [
+        (datetime(2024, 6, 1, tzinfo=UTC), datetime(2025, 1, 1, tzinfo=UTC)),
+        (datetime(2025, 1, 1, tzinfo=UTC), datetime(2026, 1, 1, tzinfo=UTC)),
+        (datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 8, 30, tzinfo=UTC)),
+    ]
+
+
+def test_list_archive_images_between_windowed_issues_one_listing_per_year(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    def fetch(url: str, **kwargs: object) -> tuple[bytes, str]:
+        calls.append(url)
+        query = parse_qs(urlsplit(url).query)
+        start_after = query.get("start-after", [""])[0]
+        if start_after.endswith("2024-06-01T00-00-00Z"):
+            return listing([("2024-12-31T00-00-00Z", 10)]), "application/xml"
+        return listing([("2025-06-01T00-00-00Z", 20)]), "application/xml"
+
+    monkeypatch.setattr(river, "_fetch", fetch)
+    candidates = river.list_archive_images_between_windowed(
+        SLUG, datetime(2024, 6, 1, tzinfo=UTC), datetime(2025, 12, 31, tzinfo=UTC)
+    )
+    assert [c.captured_utc.year for c in candidates] == [2024, 2025]
+    assert len(calls) == 2
 
 
 def test_list_archive_images_between_paginates_and_stops_at_end(
@@ -264,6 +332,87 @@ def test_download_sequence_with_overwrite_replaces_a_failed_download(
     )
     assert retried.sequence_id == first.sequence_id
     assert [record.download_status for record in retried.records] == ["downloaded"]
+
+
+def test_download_sequence_with_resume_reuses_downloaded_images_and_retries_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    site_dir = tmp_path / "site"
+    site_dir.mkdir()
+    page = listing([("2026-09-01T09-00-00Z", 10), ("2026-09-01T10-00-00Z", 10)])
+    fetch_calls: list[str] = []
+
+    def fetch_first(url: str, **kwargs: object) -> tuple[bytes, str]:
+        fetch_calls.append(url)
+        if "?" in url:
+            return page, "application/xml"
+        if "09-00-00" in url:
+            return JPEG, "image/jpeg"
+        return b"<html>error</html>", "text/html"
+
+    monkeypatch.setattr(river, "_fetch", fetch_first)
+    first = river.download_river_image_sequence(
+        camera_url=river.DEFAULT_CAMERA_URL,
+        start_date="2026-09-01",
+        end_date="2026-09-01",
+        timezone_name="UTC",
+        sampling_mode="all",
+        site_id="test-site",
+        site_dir=site_dir,
+    )
+    statuses = {record.filename: record.download_status for record in first.records}
+    assert statuses[f"{SLUG}___2026-09-01T09-00-00Z.jpg"] == "downloaded"
+    assert statuses[f"{SLUG}___2026-09-01T10-00-00Z.jpg"] == "failed"
+
+    fetch_calls.clear()
+
+    def fetch_retry(url: str, **kwargs: object) -> tuple[bytes, str]:
+        fetch_calls.append(url)
+        if "?" in url:
+            return page, "application/xml"
+        return JPEG, "image/jpeg"
+
+    monkeypatch.setattr(river, "_fetch", fetch_retry)
+    resumed = river.download_river_image_sequence(
+        camera_url=river.DEFAULT_CAMERA_URL,
+        start_date="2026-09-01",
+        end_date="2026-09-01",
+        timezone_name="UTC",
+        sampling_mode="all",
+        site_id="test-site",
+        site_dir=site_dir,
+        resume=True,
+    )
+    statuses = {record.filename: record.download_status for record in resumed.records}
+    assert statuses[f"{SLUG}___2026-09-01T09-00-00Z.jpg"] == "downloaded"
+    assert statuses[f"{SLUG}___2026-09-01T10-00-00Z.jpg"] == "downloaded"
+    # Resume must not re-fetch the already-downloaded image, only the failed one.
+    image_fetches = [url for url in fetch_calls if "?" not in url]
+    assert len(image_fetches) == 1
+    assert "10-00-00" in image_fetches[0]
+
+    # The saved manifest must hold exactly one current row per sample, not
+    # the pre-resume rows plus the post-resume rows appended on top.
+    manifest_path = resumed.directory / "sequence-manifest.jsonl"
+    saved_records = read_jsonl_records(manifest_path)
+    assert len(saved_records) == 2
+    saved_filenames = [record["filename"] for record in saved_records]
+    assert len(saved_filenames) == len(set(saved_filenames))
+
+    # Resuming again (nothing left to retry) must still not duplicate rows.
+    monkeypatch.setattr(river, "_fetch", fetch_retry)
+    resumed_again = river.download_river_image_sequence(
+        camera_url=river.DEFAULT_CAMERA_URL,
+        start_date="2026-09-01",
+        end_date="2026-09-01",
+        timezone_name="UTC",
+        sampling_mode="all",
+        site_id="test-site",
+        site_dir=site_dir,
+        resume=True,
+    )
+    saved_records_again = read_jsonl_records(resumed_again.directory / "sequence-manifest.jsonl")
+    assert len(saved_records_again) == 2
 
 
 def test_download_sequence_records_failed_image_without_raising(

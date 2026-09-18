@@ -25,6 +25,11 @@ import cv2
 
 from openfloodai.config import load_site_config, reference_region_to_dict
 from openfloodai.contracts import read_jsonl_records, write_jsonl_records
+from openfloodai.review.event_reviews import (
+    EventReviewError,
+    compute_evidence_key,
+    list_event_reviews,
+)
 from openfloodai.review.review_images import generate_biggest_change_review_images
 from openfloodai.vision.simple_signals import (
     VisualSignalError,
@@ -328,6 +333,56 @@ def resolve_image_sequence_run_image(site_dir: Path, run_id: str, filename: str)
     return candidate
 
 
+def resolve_run_config_snapshot(
+    site_dir: Path, run_id: str, *, expected_sequence_id: str | None = None
+) -> dict[str, Any]:
+    """Load the exact watched-area/waterline-guide config one saved run used.
+
+    A run's own comparison images must always reflect what that run was
+    scored against, even after the site's live config is later edited —
+    this reads the frozen `site-config.snapshot.json` written at run time
+    (`_write_inputs_used`), never the current config.
+
+    `run_id` and a caller-supplied `sequence_id` are independent values
+    from the same request; pass `expected_sequence_id` to confirm this run
+    actually belongs to that sequence before its config is used — a
+    mismatch means the caller named one sequence's images alongside a
+    different sequence's run, which must not silently render an image
+    using the wrong run's watched-area config.
+    """
+
+    if not _RUN_ID_PATTERN.fullmatch(run_id or ""):
+        raise ImageSequenceValidationError("Run not found.")
+    runs_root = (site_dir / "outputs" / "image-sequence-runs").resolve()
+    run_dir = (runs_root / run_id).resolve()
+    try:
+        run_dir.relative_to(runs_root)
+    except ValueError as error:
+        raise ImageSequenceValidationError("Run not found.") from error
+    if expected_sequence_id is not None:
+        summary_path = run_dir / "run-summary.json"
+        try:
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as error:
+            raise ImageSequenceValidationError("Run not found.") from error
+        if not isinstance(summary, dict) or summary.get("sequence_id") != expected_sequence_id:
+            raise ImageSequenceValidationError("run_id does not belong to sequence_id.")
+    snapshot_path = (run_dir / "inputs-used" / "site-config.snapshot.json").resolve()
+    try:
+        snapshot_path.relative_to(runs_root)
+    except ValueError as error:
+        raise ImageSequenceValidationError("Run not found.") from error
+    if snapshot_path.is_symlink() or not snapshot_path.is_file():
+        raise ImageSequenceValidationError("Run configuration snapshot not found.")
+    try:
+        loaded = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise ImageSequenceValidationError("Run configuration snapshot not found.") from error
+    if not isinstance(loaded, dict):
+        raise ImageSequenceValidationError("Run configuration snapshot not found.")
+    return loaded
+
+
 def read_image_sequence_run_detail(site_dir: Path, run_id: str) -> dict[str, Any]:
     """Read one saved image-sequence run's summary, records, and report text."""
 
@@ -353,11 +408,35 @@ def read_image_sequence_run_detail(site_dir: Path, run_id: str) -> dict[str, Any
     if review_images_dir.is_dir():
         review_images = sorted(path.name for path in review_images_dir.glob("*.png"))
 
+    gauge_series: list[dict[str, Any]] = []
+    event_reviews: dict[str, str] = {}
+    sequence_id = summary.get("sequence_id") if isinstance(summary, dict) else None
+    if isinstance(sequence_id, str) and sequence_id:
+        sequence_dir = site_dir / "inputs" / "image-sequences" / sequence_id
+        gauge_series_path = sequence_dir / "gauge-daily-series.json"
+        if gauge_series_path.is_file():
+            try:
+                loaded = json.loads(gauge_series_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, list):
+                    gauge_series = loaded
+            except (OSError, ValueError):
+                gauge_series = []
+        evidence_key = compute_evidence_key(
+            summary.get("baseline_filename") if isinstance(summary, dict) else None,
+            summary.get("watched_area_used") if isinstance(summary, dict) else None,
+        )
+        try:
+            event_reviews = list_event_reviews(sequence_dir, evidence_key=evidence_key)
+        except EventReviewError:
+            event_reviews = {}
+
     return {
         "summary": summary,
         "records": records,
         "report": report_text,
         "review_images": review_images,
+        "gauge_series": gauge_series,
+        "event_reviews": event_reviews,
     }
 
 

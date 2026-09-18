@@ -1,0 +1,129 @@
+{
+  "river_id": "colorado-river",
+  "display_name": "Colorado River",
+  "source": "https://api.waterdata.usgs.gov/nims/v0/cameras?enabled=true",
+  "source_checked": "2026-09-16",
+  "notes": "Two additional Colorado River cameras exist upstream but are marked hideCam:true by USGS as of the source_checked date and are intentionally excluded: CO_Colorado_River_near_Kremmling_XS (nwis_id 09058000) and CO_Colorado_River_above_Glenwood_Springs (nwis_id 09071750).",
+  "cameras": [
+    {
+      "river_id": "colorado-river",
+      "camera_id": "CO_Colorado_River_below_Baker_Gulch_nr_Grand_Lake",
+      "nwis_id": "09010500",
+      "state": "CO",
+      "latitude": 40.325818,
+      "longitude": -105.856679,
+      "display_name": "Colorado River below Baker Gulch near Grand Lake",
+      "folder_name": "colorado-river-grand-lake",
+      "gage_relationship": "same_site",
+      "timezone": "America/Denver"
+    },
+    {
+      "river_id": "colorado-river",
+      "camera_id": "CO_Colorado_River_at_Windy_Gap_near_Granby",
+      "nwis_id": "09034250",
+      "state": "CO",
+      "latitude": 40.108319,
+      "longitude": -106.004185,
+      "display_name": "Colorado River at Windy Gap near Granby",
+      "folder_name": "colorado-river-windy-gap",
+      "gage_relationship": "same_site",
+      "timezone": "America/Denver"
+    },
+    {
+      "river_id": "colorado-river",
+      "camera_id": "CO_Colorado_River_near_Kremmling_Control_View",
+      "nwis_id": "09058000",
+      "state": "CO",
+      "latitude": 40.036667,
+      "longitude": -106.439444,
+      "display_name": "Colorado River near Kremmling (control view)",
+      "folder_name": "colorado-river-kremmling",
+      "gage_relationship": "same_site",
+      "timezone": "America/Denver"
+    },
+    {
+      "river_id": "colorado-river",
+      "camera_id": "CO_Colorado_River_near_Dotsero",
+      "nwis_id": "09070500",
+      "state": "CO",
+      "latitude": 39.644611,
+      "longitude": -107.078014,
+      "display_name": "Colorado River near Dotsero",
+      "folder_name": "colorado-river-dotsero",
+      "gage_relationship": "same_site",
+      "timezone": "America/Denver"
+    },
+    {
+      "river_id": "colorado-river",
+      "camera_id": "CO_Colorado_River_above_Roaring_Fork_River_at_Glenwood_Springs",
+      "nwis_id": "393259107194801",
+      "state": "CO",
+      "latitude": 39.54975,
+      "longitude": -107.3301,
+      "display_name": "Colorado River above Roaring Fork River at Glenwood Springs",
+      "folder_name": "colorado-river-glenwood-springs",
+      "gage_relationship": "same_site",
+      "timezone": "America/Denver"
+    },
+    {
+      "river_id": "colorado-river",
+      "camera_id": "CO_Colorado_River_near_Cameo",
+      "nwis_id": "09095500",
+      "state": "CO",
+      "latitude": 39.239146,
+      "longitude": -108.266195,
+      "display_name": "Colorado River near Cameo",
+      "folder_name": "colorado-river-cameo",
+      "gage_relationship": "same_site",
+      "timezone": "America/Denver"
+    },
+    {
+      "river_id": "colorado-river",
+      "camera_id": "CO_Colorado_River_near_Coloradoutah_State_Line",
+      "nwis_id": "09163500",
+      "state": "CO",
+      "latitude": 39.132743,
+      "longitude": -109.027076,
+      "display_name": "Colorado River near Colorado/Utah state line",
+      "folder_name": "colorado-river-state-line",
+      "gage_relationship": "same_site",
+      "timezone": "America/Denver"
+    },
+    {
+      "river_id": "colorado-river",
+      "camera_id": "UT_Colorado_River_near_Cisco",
+      "nwis_id": "09180500",
+      "state": "UT",
+      "latitude": 38.810541,
+      "longitude": -109.293449,
+      "display_name": "Colorado River near Cisco",
+      "folder_name": "colorado-river-cisco",
+      "gage_relationship": "same_site",
+      "timezone": "America/Denver"
+    },
+    {
+      "river_id": "colorado-river",
+      "camera_id": "AZ_Colorado_River_at_Lees_Ferry_Upstream",
+      "nwis_id": "09380000",
+      "state": "AZ",
+      "latitude": 36.864333,
+      "longitude": -111.587872,
+      "display_name": "Colorado River at Lees Ferry (upstream view)",
+      "folder_name": "colorado-river-lees-ferry-upstream",
+      "gage_relationship": "same_site",
+      "timezone": "America/Phoenix"
+    },
+    {
+      "river_id": "colorado-river",
+      "camera_id": "AZ_Colorado_River_at_Lees_Ferry",
+      "nwis_id": "09380000",
+      "state": "AZ",
+      "latitude": 36.864333,
+      "longitude": -111.587872,
+      "display_name": "Colorado River at Lees Ferry (downstream view)",
+      "folder_name": "colorado-river-lees-ferry-downstream",
+      "gage_relationship": "same_site",
+      "timezone": "America/Phoenix"
+    }
+  ]
+}

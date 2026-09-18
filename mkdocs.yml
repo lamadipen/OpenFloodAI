@@ -63,9 +63,11 @@ nav:
       - Hard-Case Validation Examples: research/hard-case-validation.md
       - Real Hard-Case Sample Workflow: research/real-hard-case-sample-workflow.md
       - ML Model Options: research/ml-model-options.md
+      - Colorado River Validation Sample Pilot: research/colorado-river-pilot-tracker.md
   - Learning:
       - Learning Home: learning/index.md
       - Your First End-to-End Review: learning/end-to-end-workflow.md
+      - Review Workspace: learning/review-workspace.md
       - Download River Images And Video: learning/river-image-downloader.md
       - USGS Image-Sequence Workflow: learning/usgs-image-sequence-workflow.md
       - Image-Sequence Validation Runs: learning/image-sequence-validation.md

@@ -197,6 +197,13 @@
         margin-top: 12px;
       }
 
+      .hero-explanation {
+        color: var(--faint);
+        font-size: 13px;
+        margin: 8px 0 0;
+        max-width: 480px;
+      }
+
       .hero-stats {
         display: flex;
         gap: 22px;
@@ -871,6 +878,7 @@
             <h1 id="siteName"></h1>
             <div class="hero-path" id="sitePath"></div>
             <div class="hero-badges" id="siteBadges"></div>
+            <p class="hero-explanation" id="heroExplanation"></p>
           </div>
           <div class="hero-stats" id="heroStats"></div>
         </section>
@@ -1078,6 +1086,20 @@
           statusBadge(site.ready_for_machine_review, "Machine ready", "Machine review not ready"),
           statusBadge(site.ready_for_human_comparison, "Compare ready", "Comparison not ready"),
         ].join("");
+        const explanationParts = [];
+        if (!site.ready_for_machine_review) {
+          explanationParts.push(site.machine_review_explanation);
+          if (site.video_count === 0 && site.image_sequence_count > 0) {
+            explanationParts.push(
+              "This is about the local-video flow only. Your USGS image sequence " +
+              "is a separate flow and does not need a local video — see the " +
+              "Image Sequences tab."
+            );
+          }
+        }
+        const heroExplanation = document.getElementById("heroExplanation");
+        heroExplanation.textContent = explanationParts.join(" ");
+        heroExplanation.hidden = explanationParts.length === 0;
         const scorecard = site.latest_scorecard || {};
         document.getElementById("heroStats").innerHTML = [
           ["Videos", site.video_count],
@@ -1522,7 +1544,7 @@
       // panel-runs, runDetailCache, or selectedRunIds.
       // ---------------------------------------------------------------
       const runningImageSequenceValidations = new Set();
-      const imageSequenceRunDetailCache = new Map();
+      const imageSequenceRunDetailDataCache = new Map();
 
       async function runImageSequenceValidationForSite(siteName, sequenceId, button, card) {
         const key = `${siteName}::${sequenceId}`;
@@ -1627,8 +1649,8 @@
       async function loadImageSequenceRunBody(card, siteName, runId) {
         const body = card.querySelector("[data-run-body]");
         const cacheKey = `${siteName}::${runId}`;
-        if (imageSequenceRunDetailCache.has(cacheKey)) {
-          body.innerHTML = imageSequenceRunDetailCache.get(cacheKey);
+        if (imageSequenceRunDetailDataCache.has(cacheKey)) {
+          mountImageSequenceDetailView(body, siteName, runId, imageSequenceRunDetailDataCache.get(cacheKey));
           return;
         }
         try {
@@ -1637,50 +1659,612 @@
           );
           if (!response.ok) throw new Error("Request failed");
           const detail = await response.json();
-          const html = renderImageSequenceRunDetail(siteName, runId, detail);
-          imageSequenceRunDetailCache.set(cacheKey, html);
-          body.innerHTML = html;
+          imageSequenceRunDetailDataCache.set(cacheKey, detail);
+          mountImageSequenceDetailView(body, siteName, runId, detail);
         } catch (error) {
           body.innerHTML = `<p class="status-line error">Could not load this run: ${escapeHtml(error.message)}</p>`;
         }
       }
 
-      function renderImageSequenceRunDetail(siteName, runId, detail) {
-        const summary = detail.summary || {};
-        const images = (detail.review_images || [])
-          .map((filename) => {
-            const query = new URLSearchParams({ folder_name: siteName, run_id: runId, filename });
-            return `<img src="/api/image-sequence-run-image?${query}" alt="${escapeHtml(filename)}" loading="lazy">`;
+      // ---------------------------------------------------------------
+      // Image-sequence run detail: timeline chart, gage correlation,
+      // event review. Ports the approved review-UI design (issue #152) onto
+      // real records/gauge_series/event_reviews from the API instead of
+      // mock data. See docs/research/colorado-river-pilot-tracker.md.
+      // ---------------------------------------------------------------
+      const RESULT_CODE = {
+        possible_water_level_change: "P",
+        no_water_level_change: "N",
+        cannot_judge_water_level: "U",
+        camera_or_image_problem: "C",
+      };
+      const CODE_COLOR = { N: "#98a2b3", P: "#9a5b13", C: "#9b1c31", U: "#1769aa" };
+      const CODE_BADGE_BG = { P: "#fff6df", C: "#fff0f3", U: "#e9f4fb" };
+      const CODE_LABEL = {
+        N: "No water level change",
+        P: "Possible water level change",
+        C: "Camera or image problem",
+        U: "Cannot judge",
+        M: "No image available",
+      };
+      const GRANULARITIES = ["hourly", "daily", "weekly", "monthly", "yearly"];
+      const GRANULARITY_LABEL = {
+        hourly: "Hourly",
+        daily: "Daily",
+        weekly: "Weekly",
+        monthly: "Monthly",
+        yearly: "Yearly",
+      };
+
+      function isoImageSequenceMean(values) {
+        return values.reduce((sum, value) => sum + value, 0) / values.length;
+      }
+
+      function buildImageSequenceDays(records) {
+        return (records || [])
+          .map((record) => {
+            const isGap = record.download_status !== "downloaded";
+            const code = isGap ? "M" : RESULT_CODE[record.result] || "N";
+            const capturedAtUtc = String(record.captured_at_utc || "");
+            const localTime = String(record.local_time || capturedAtUtc);
+            return {
+              date: capturedAtUtc.slice(0, 10),
+              time: localTime.length >= 16 ? localTime.slice(11, 16) : localTime,
+              score: typeof record.region_change_score === "number" ? record.region_change_score : null,
+              code,
+              filename: record.filename || "",
+              reason: record.reason || "",
+              resultLabel: CODE_LABEL[code] || record.result || "",
+            };
           })
-          .join("");
-        const records = (detail.records || [])
-          .map(
-            (record) => `
-              <div class="kv-row">
-                <div class="kv-label">${escapeHtml(record.filename)}</div>
-                <div>${escapeHtml(record.result)} &mdash; ${escapeHtml(record.reason)}</div>
+          .filter((day) => day.date)
+          .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+      }
+
+      function buildGaugeByDate(gaugeSeries) {
+        const map = new Map();
+        (gaugeSeries || []).forEach((row) => {
+          if (row && row.date && typeof row.gauge_value === "number") map.set(row.date, row.gauge_value);
+        });
+        return map;
+      }
+
+      // The backend can fall back from gage height to discharge when a site
+      // has no gage-height data; every row already carries which one it is,
+      // so read it here instead of assuming "gage height" everywhere.
+      function gaugeSeriesMeta(gaugeSeries) {
+        const row = (gaugeSeries || []).find((r) => r && r.parameter_label);
+        if (!row) return { label: "Gage height", unit: "", usedFallbackDischarge: false };
+        return {
+          label: row.parameter_label.charAt(0).toUpperCase() + row.parameter_label.slice(1),
+          unit: row.unit || "",
+          usedFallbackDischarge: !!row.used_fallback_discharge,
+        };
+      }
+
+      function findImageSequenceChangeStart(days) {
+        const scores = days.map((day) => day.score);
+        const base = scores.slice(0, 15).filter((value) => value != null);
+        if (base.length < 3) return { index: -1, threshold: null, baselineMean: null };
+        const meanValue = isoImageSequenceMean(base);
+        const variance = isoImageSequenceMean(base.map((value) => (value - meanValue) ** 2));
+        const threshold = meanValue + 2 * Math.sqrt(variance);
+        for (let i = 0; i < scores.length - 2; i++) {
+          // A camera/image-problem record's score reflects a quality issue,
+          // not a real observation — three such records above the
+          // threshold is noise, not a candidate visual shift, even though
+          // their score value is preserved for the chart.
+          const window = [days[i], days[i + 1], days[i + 2]];
+          if (window.some((day) => day.code === "C")) continue;
+          if (scores[i] > threshold && scores[i + 1] > threshold && scores[i + 2] > threshold) {
+            return { index: i, threshold, baselineMean: meanValue };
+          }
+        }
+        return { index: -1, threshold, baselineMean: meanValue };
+      }
+
+      function buildImageSequenceEvents(days) {
+        const events = [];
+        let i = 0;
+        while (i < days.length) {
+          let j = i;
+          while (j + 1 < days.length && days[j + 1].code === days[i].code) j++;
+          if (days[i].code !== "N" && days[i].code !== "M") {
+            let peak = i;
+            for (let k = i; k <= j; k++) {
+              if ((days[k].score ?? -Infinity) > (days[peak].score ?? -Infinity)) peak = k;
+            }
+            events.push({
+              start: i,
+              end: j,
+              peak,
+              code: days[i].code,
+              key: `${days[i].date}-${days[j].date}-${days[i].code}`,
+            });
+          }
+          i = j + 1;
+        }
+        return events;
+      }
+
+      function isoWeekStart(dateStr) {
+        const parsed = new Date(dateStr + "T00:00:00Z");
+        const day = parsed.getUTCDay();
+        parsed.setUTCDate(parsed.getUTCDate() + (day === 0 ? -6 : 1 - day));
+        return parsed.toISOString().slice(0, 10);
+      }
+
+      function imageSequenceBucketKey(dateStr, granularity) {
+        if (granularity === "weekly") return isoWeekStart(dateStr);
+        if (granularity === "monthly") return dateStr.slice(0, 7);
+        if (granularity === "yearly") return dateStr.slice(0, 4);
+        return dateStr;
+      }
+
+      function buildImageSequenceBuckets(days, granularity) {
+        const map = new Map();
+        days.forEach((day, index) => {
+          const key = imageSequenceBucketKey(day.date, granularity);
+          if (!map.has(key)) map.set(key, { key, indices: [] });
+          map.get(key).indices.push(index);
+        });
+        return Array.from(map.values());
+      }
+
+      function summarizeImageSequenceBucket(bucket, days, gaugeByDate) {
+        const codes = bucket.indices.map((i) => days[i].code);
+        const validScoreIdx = bucket.indices.filter((i) => days[i].score != null);
+        const meanScore = validScoreIdx.length ? isoImageSequenceMean(validScoreIdx.map((i) => days[i].score)) : null;
+        const gaugeValues = bucket.indices.map((i) => gaugeByDate.get(days[i].date)).filter((v) => v != null);
+        const meanGauge = gaugeValues.length ? isoImageSequenceMean(gaugeValues) : null;
+        const hasPossible = codes.some((code) => code === "P" || code === "U");
+        const hasCamera = codes.some((code) => code === "C");
+        const dominant = hasPossible ? "P" : hasCamera ? "C" : "N";
+        let repIndex = bucket.indices[0];
+        if (hasPossible) repIndex = bucket.indices.find((i) => days[i].code === "P" || days[i].code === "U");
+        else if (hasCamera) repIndex = bucket.indices.find((i) => days[i].code === "C");
+        return {
+          dateForTick: days[bucket.indices[0]].date,
+          meanScore,
+          meanGauge,
+          color: CODE_COLOR[dominant],
+          dayCount: bucket.indices.length,
+          possibleCount: codes.filter((code) => code === "P" || code === "U").length,
+          cameraCount: codes.filter((code) => code === "C").length,
+          gapCount: codes.filter((code) => code === "M").length,
+          repIndex,
+        };
+      }
+
+      function mountImageSequenceDetailView(container, siteName, runId, detail) {
+        const summary = detail.summary || {};
+        const days = buildImageSequenceDays(detail.records);
+        const gaugeByDate = buildGaugeByDate(detail.gauge_series);
+        const gaugeMeta = gaugeSeriesMeta(detail.gauge_series);
+        const events = buildImageSequenceEvents(days);
+        const changeInfo = findImageSequenceChangeStart(days);
+
+        const state = {
+          selectedIndex: changeInfo.index >= 0 ? changeInfo.index : 0,
+          eventCursor: -1,
+          categoryFilter: null,
+          granularity: "daily",
+          reviewStatus: Object.assign({}, detail.event_reviews || {}),
+          hideReviewedSignal: false,
+          hideReviewedQuality: false,
+          pendingKey: null,
+          errorText: "",
+        };
+
+        async function setEventReview(eventKey, status) {
+          state.pendingKey = eventKey;
+          render();
+          try {
+            const response = await fetch("/api/set-image-sequence-event-review", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                folder_name: siteName,
+                sequence_id: summary.sequence_id,
+                run_id: runId,
+                event_key: eventKey,
+                status,
+              }),
+            });
+            const payload = await response.json();
+            if (!response.ok || !payload.success) throw new Error(payload.message || "Request failed.");
+            state.reviewStatus = payload.event_reviews || {};
+            state.errorText = "";
+          } catch (error) {
+            state.errorText = `Could not save that review: ${error.message}`;
+          } finally {
+            state.pendingKey = null;
+            render();
+          }
+        }
+
+        container.addEventListener("click", (event) => {
+          const target = event.target.closest("[data-act]");
+          if (!target || !container.contains(target)) return;
+          const act = target.dataset.act;
+          if (act === "select") {
+            state.selectedIndex = Number(target.dataset.index);
+            state.eventCursor = -1;
+            render();
+          } else if (act === "filter") {
+            const code = target.dataset.code;
+            state.categoryFilter = state.categoryFilter === code ? null : code;
+            render();
+          } else if (act === "granularity") {
+            if (target.dataset.value === "hourly") return;
+            state.granularity = target.dataset.value;
+            render();
+          } else if (act === "toggle-hide-signal") {
+            state.hideReviewedSignal = !state.hideReviewedSignal;
+            render();
+          } else if (act === "toggle-hide-quality") {
+            state.hideReviewedQuality = !state.hideReviewedQuality;
+            render();
+          } else if (act === "review") {
+            setEventReview(target.dataset.key, target.dataset.status || null);
+          } else if (act === "prev-event" || act === "next-event") {
+            if (!events.length) return;
+            const delta = act === "prev-event" ? -1 : 1;
+            const next = (state.eventCursor + delta + events.length) % events.length;
+            state.eventCursor = next;
+            state.selectedIndex = events[next].peak;
+            render();
+          } else if (act === "jump-biggest-change") {
+            const index = days.findIndex((d) => d.filename === summary.biggest_change_filename);
+            if (index < 0) return;
+            state.selectedIndex = index;
+            state.eventCursor = -1;
+            render();
+          }
+        });
+
+        function render() {
+          container.innerHTML = renderImageSequenceDetail({
+            siteName,
+            runId,
+            summary,
+            days,
+            gaugeByDate,
+            gaugeMeta,
+            events,
+            changeInfo,
+            state,
+          });
+        }
+
+        render();
+      }
+
+      function renderImageSequenceDetail({ siteName, runId, summary, days, gaugeByDate, gaugeMeta, events, changeInfo, state }) {
+        const n = days.length;
+        if (n === 0) {
+          return '<p class="status-line">No compared images in this run yet.</p>';
+        }
+
+        const granularity = state.granularity;
+        const rawBuckets = buildImageSequenceBuckets(days, granularity);
+        const buckets = rawBuckets.map((bucket) => summarizeImageSequenceBucket(bucket, days, gaugeByDate));
+        const bn = buckets.length;
+        const chartW = 1040;
+        const leftPad = 34;
+        const usableW = chartW - leftPad;
+        const xAt = (index) => (bn <= 1 ? leftPad + usableW / 2 : leftPad + (index / (bn - 1)) * usableW);
+        buckets.forEach((bucket, index) => {
+          bucket.x = Math.round(xAt(index) * 10) / 10;
+        });
+
+        const validScores = buckets.map((bucket) => bucket.meanScore).filter((value) => value != null);
+        const scoreMax = validScores.length ? Math.ceil(Math.max(...validScores) * 100) / 100 + 0.02 : 0.1;
+        const scoreH = 178;
+        const scoreY = (value) => 4 + scoreH - (Math.max(0, value) / scoreMax) * scoreH;
+
+        const gaugeValues = buckets.map((bucket) => bucket.meanGauge).filter((value) => value != null);
+        const hasGaugeData = gaugeValues.length > 0;
+        const gaugeMin = hasGaugeData ? Math.floor(Math.min(...gaugeValues) * 10) / 10 - 0.1 : 0;
+        const gaugeMax = hasGaugeData ? Math.ceil(Math.max(...gaugeValues) * 10) / 10 + 0.1 : 1;
+        const gaugeH = 118;
+        const gaugeY = (value) => 4 + gaugeH - ((value - gaugeMin) / (gaugeMax - gaugeMin || 1)) * gaugeH;
+
+        const filter = state.categoryFilter;
+        const points = buckets
+          .filter((bucket) => bucket.meanScore != null)
+          .map((bucket) => {
+            const dominantCode = bucket.possibleCount > 0 ? "P" : bucket.cameraCount > 0 ? "C" : "N";
+            const dimmed = filter && !(dominantCode === filter || (filter === "U" && bucket.possibleCount > 0));
+            const selected = bucket.repIndex === state.selectedIndex;
+            return {
+              x: bucket.x,
+              y: Math.round(scoreY(bucket.meanScore) * 10) / 10,
+              color: bucket.color,
+              radius: granularity === "daily" ? (selected ? 5 : 3) : Math.min(9, 4 + bucket.dayCount / 4),
+              ring: selected ? 2 : 1,
+              opacity: dimmed ? 0.12 : 1,
+              index: bucket.repIndex,
+            };
+          });
+
+        const scoreSegments = [];
+        let currentSeg = [];
+        buckets.forEach((bucket) => {
+          if (bucket.meanScore == null) {
+            if (currentSeg.length) {
+              scoreSegments.push(currentSeg.join(" "));
+              currentSeg = [];
+            }
+          } else {
+            currentSeg.push(`${bucket.x},${Math.round(scoreY(bucket.meanScore) * 10) / 10}`);
+          }
+        });
+        if (currentSeg.length) scoreSegments.push(currentSeg.join(" "));
+
+        const gaugeLinePoints = hasGaugeData
+          ? buckets
+              .filter((bucket) => bucket.meanGauge != null)
+              .map((bucket) => `${bucket.x},${Math.round(gaugeY(bucket.meanGauge) * 10) / 10}`)
+              .join(" ")
+          : "";
+
+        const gapMarkers =
+          granularity === "daily"
+            ? buckets.filter((bucket) => bucket.gapCount > 0 && bucket.meanScore == null)
+            : [];
+
+        const monthTicks = [];
+        let lastTick = "";
+        buckets.forEach((bucket) => {
+          const tickKey = granularity === "yearly" ? bucket.dateForTick.slice(0, 4) : bucket.dateForTick.slice(0, 7);
+          if (tickKey !== lastTick) {
+            monthTicks.push({ x: Math.round(bucket.x), label: bucket.dateForTick.slice(granularity === "yearly" ? 0 : 5, granularity === "yearly" ? 4 : 7) });
+            lastTick = tickKey;
+          }
+        });
+
+        const changeBucketIdx = rawBuckets.findIndex((bucket) => bucket.indices.includes(changeInfo.index));
+        const changeX = changeInfo.index >= 0 && changeBucketIdx >= 0 ? buckets[changeBucketIdx].x : -10;
+        const thresholdY = changeInfo.threshold != null ? Math.round(scoreY(changeInfo.threshold) * 10) / 10 : -10;
+        const bandBottomY = 182;
+
+        const counts = { N: 0, P: 0, C: 0, U: 0, M: 0 };
+        days.forEach((day) => {
+          counts[day.code]++;
+        });
+
+        function reviewButtons(ev, kind) {
+          const status = state.reviewStatus[ev.key];
+          const pending = state.pendingKey === ev.key;
+          if (status) {
+            const label = status === "confirmed_real" ? "Confirmed real change" : status === "not_real" ? "Not a real change" : "Acknowledged";
+            return `
+              <span style="font-size: 12px; font-weight: 700; color: ${status === "confirmed_real" ? "var(--ok)" : "var(--muted)"}; white-space: nowrap;">&check; ${escapeHtml(label)}</span>
+              <button type="button" class="btn small" data-act="review" data-key="${escapeHtml(ev.key)}" data-status="" ${pending ? "disabled" : ""}>Undo</button>
+            `;
+          }
+          if (kind === "quality") {
+            return `<button type="button" class="btn small" data-act="review" data-key="${escapeHtml(ev.key)}" data-status="acknowledged" ${pending ? "disabled" : ""}>${pending ? "Saving…" : "Acknowledge"}</button>`;
+          }
+          return `
+            <button type="button" class="btn small" data-act="review" data-key="${escapeHtml(ev.key)}" data-status="confirmed_real" ${pending ? "disabled" : ""}>${pending ? "Saving…" : "Confirm real"}</button>
+            <button type="button" class="btn small" data-act="review" data-key="${escapeHtml(ev.key)}" data-status="not_real" ${pending ? "disabled" : ""}>Not real</button>
+          `;
+        }
+
+        function eventRow(ev, kind) {
+          const startDay = days[ev.start];
+          const endDay = days[ev.end];
+          const dayCount = ev.end - ev.start + 1;
+          const rangeLabel = ev.start === ev.end ? startDay.date : `${startDay.date} to ${endDay.date}`;
+          const reason = days[ev.peak].reason || CODE_LABEL[ev.code];
+          const dimmedByFilter = filter && ev.code !== filter;
+          const reviewed = Boolean(state.reviewStatus[ev.key]);
+          if (reviewed && (kind === "signal" ? state.hideReviewedSignal : state.hideReviewedQuality)) return "";
+          return `
+            <div class="ev-row" style="display: flex; align-items: center; gap: 12px; padding: 10px 4px; border-top: 1px solid var(--soft-line); opacity: ${dimmedByFilter ? 0.3 : reviewed ? 0.6 : 1};">
+              <span style="width: 9px; height: 9px; border-radius: 50%; background: ${CODE_COLOR[ev.code]}; flex-shrink: 0;"></span>
+              <div data-act="select" data-index="${ev.peak}" style="flex-grow: 1; min-width: 0; cursor: pointer;">
+                <div style="font-size: 13px; font-weight: 700;">${escapeHtml(rangeLabel)}</div>
+                <div style="font-size: 12px; color: var(--muted);">${escapeHtml(reason)}</div>
               </div>
-            `
-          )
-          .join("");
+              <span class="badge plain" style="background: ${CODE_BADGE_BG[ev.code]}; flex-shrink: 0;">${dayCount} day${dayCount === 1 ? "" : "s"}</span>
+              <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">${reviewButtons(ev, kind)}</div>
+            </div>
+          `;
+        }
+
+        const signalEvents = events.filter((ev) => ev.code === "P" || ev.code === "U");
+        const qualityEvents = events.filter((ev) => ev.code === "C");
+        const signalReviewedCount = signalEvents.filter((ev) => state.reviewStatus[ev.key]).length;
+        const qualityReviewedCount = qualityEvents.filter((ev) => state.reviewStatus[ev.key]).length;
+        const signalRows = signalEvents.map((ev) => eventRow(ev, "signal")).join("");
+        const qualityRows = qualityEvents.map((ev) => eventRow(ev, "quality")).join("");
+
+        const sel = days[state.selectedIndex];
+        const selGauge = gaugeByDate.get(sel.date);
+        const changeStartDay = changeInfo.index >= 0 ? days[changeInfo.index] : null;
+
+        const gaugeDates = Array.from(gaugeByDate.keys());
+        const gaugeStart = gaugeDates.length ? gaugeByDate.get(gaugeDates[0]) : null;
+        const gaugeEnd = gaugeDates.length ? gaugeByDate.get(gaugeDates[gaugeDates.length - 1]) : null;
+
+        // The currently selected day's own raw image, real and re-fetched
+        // on every selection (chart point, event row, Previous/Next event)
+        // — distinct from the fixed "biggest change" picture above, which
+        // never changes regardless of what is selected.
+        const baselineImageQuery = summary.baseline_filename
+          ? new URLSearchParams({
+              folder_name: siteName,
+              sequence_id: summary.sequence_id,
+              filename: summary.baseline_filename,
+            })
+          : null;
+        // A coverage-gap day (missing or failed download) has a filename
+        // recorded in the manifest but no actual image file on disk —
+        // fetching it would just 404, so treat it the same as "no image".
+        const selectedImageQuery = sel.filename && sel.code !== "M"
+          ? new URLSearchParams({
+              folder_name: siteName,
+              sequence_id: summary.sequence_id,
+              filename: sel.filename,
+            })
+          : null;
+
+        // The watched-area-boxed side-by-side view, regenerated on demand
+        // for whatever day is currently selected (not fixed to the run's
+        // one biggest-change day) so it stays in sync with Previous/Next.
+        const sideBySideQuery = summary.baseline_filename && sel.filename && sel.code !== "M"
+          ? new URLSearchParams({
+              folder_name: siteName,
+              sequence_id: summary.sequence_id,
+              run_id: runId,
+              baseline_filename: summary.baseline_filename,
+              filename: sel.filename,
+            })
+          : null;
+
+        // "Three days running" only means three calendar days when the
+        // records themselves span three distinct dates — with hourly (or
+        // denser) sampling the same three records could be a few hours on
+        // one day, which is a very different claim.
+        const changeWindowDistinctDates = changeInfo.index >= 0
+          ? new Set([days[changeInfo.index], days[changeInfo.index + 1], days[changeInfo.index + 2]].map((d) => d.date)).size
+          : 0;
+        const changeSpanLabel = changeWindowDistinctDates >= 3
+          ? "for three days running"
+          : "across three consecutive sampled records";
+        const changeSummaryHtml = changeStartDay
+          ? `Baseline-to-image visual-change scores held steady around ${changeInfo.baselineMean.toFixed(3)} through the first sampled records. Starting ${escapeHtml(changeStartDay.date)}, the score stayed above ${changeInfo.threshold.toFixed(3)} ${changeSpanLabel}. This is a possible visual shift in the watched area, based on comparison scores &mdash; not a confirmed water-level change, and not necessarily the true first day it started.`
+          : "Not enough same-camera history yet to say when (or whether) a sustained visual shift started.";
+
+        const gaugeUnitSuffix = gaugeMeta.unit ? ` ${gaugeMeta.unit}` : "";
+        const gaugeCorrelationHtml = hasGaugeData && gaugeStart != null && gaugeEnd != null
+          ? `${escapeHtml(gaugeMeta.label)} went from ${gaugeStart.toFixed(2)}${gaugeUnitSuffix} to ${gaugeEnd.toFixed(2)}${gaugeUnitSuffix} over this period.${gaugeMeta.usedFallbackDischarge ? " This site has no gage-height data, so discharge is shown instead &mdash; it is not a direct water-level measurement." : ""} Compare that against the change-score trend below to see whether a flagged period lines up with an actual water-level move.`
+          : "No gage data is available to correlate for this sequence yet.";
+
         return `
-          <div class="kv-grid" style="margin-bottom: 12px;">
-            <div class="kv-row">
-              <div class="kv-label">Baseline image</div>
-              <div>${escapeHtml(summary.baseline_filename || "Not recorded")}</div>
+          <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px;">
+            ${["P", "C", "N", "U"].map((code) => `
+              <div data-act="filter" data-code="${code}" style="cursor: pointer; padding: 10px 12px; border-radius: 8px; background: ${code === "N" || code === "U" ? "var(--panel-2)" : CODE_BADGE_BG[code]}; outline: ${filter === code ? "2px solid var(--ink)" : "none"};">
+                <div style="font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase;">${escapeHtml(CODE_LABEL[code])}</div>
+                <div style="font-size: 20px; font-weight: 800;">${counts[code]}</div>
+              </div>
+            `).join("")}
+          </div>
+          <p class="status-line" style="margin-bottom: 14px;">${filter ? `Showing only "${escapeHtml(CODE_LABEL[filter])}" on the chart and in the lists below. Click the card again to show everything.` : "Click a card above to isolate just that result on the chart and in the lists below."}</p>
+
+          <div class="kv-grid" style="background: var(--panel-2); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px;">
+            <div class="kv"><div class="kv-label">Possible visual shift</div><div class="kv-value">${changeSummaryHtml}</div></div>
+            <div class="kv"><div class="kv-label">Gage correlation</div><div class="kv-value">${gaugeCorrelationHtml}</div></div>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px;">
+            <span style="font-size: 12px; color: var(--muted); font-weight: 700;">View by:</span>
+            ${GRANULARITIES.map((g) => `
+              <button type="button" data-act="granularity" data-value="${g}" ${g === "hourly" ? "disabled title=\"This sampling mode captures one image per day; there is no hourly resolution yet.\"" : ""} class="btn small" style="${g === granularity ? "background: var(--ink); color: #fff; border-color: var(--ink);" : ""}">${GRANULARITY_LABEL[g]}</button>
+            `).join("")}
+          </div>
+
+          ${hasGaugeData ? `
+          <div class="kv" style="margin-bottom: 6px;">
+            <div class="kv-label">${escapeHtml(gaugeMeta.label)}${gaugeMeta.unit ? ` (${escapeHtml(gaugeMeta.unit)})` : ""}, ${granularity === "daily" ? "every day" : `by ${granularity.replace("ly", "")}`}</div>
+          </div>
+          <svg viewBox="0 0 1040 130" style="width: 100%; display: block; margin-bottom: 4px;">
+            <text x="4" y="10" font-size="10" fill="var(--faint)">${gaugeMax.toFixed(1)}</text>
+            <line x1="50" y1="10" x2="1040" y2="10" stroke="var(--soft-line)" stroke-width="1" />
+            <text x="4" y="70" font-size="10" fill="var(--faint)">${((gaugeMax + gaugeMin) / 2).toFixed(1)}</text>
+            <line x1="50" y1="66" x2="1040" y2="66" stroke="var(--soft-line)" stroke-width="1" />
+            <text x="4" y="130" font-size="10" fill="var(--faint)">${gaugeMin.toFixed(1)}</text>
+            <line x1="50" y1="122" x2="1040" y2="122" stroke="var(--soft-line)" stroke-width="1" />
+            ${changeX > 0 ? `<line x1="${changeX}" y1="4" x2="${changeX}" y2="122" stroke="#9a5b13" stroke-width="1.5" stroke-dasharray="2,3" />` : ""}
+            <polyline points="${gaugeLinePoints}" fill="none" stroke="#1769aa" stroke-width="2" />
+          </svg>
+          ` : '<p class="status-line" style="margin-bottom:10px;">No gage data available to chart for this sequence.</p>'}
+
+          <div class="kv" style="margin-bottom: 6px;">
+            <div class="kv-label">Region change score, ${granularity === "daily" ? "every day" : `by ${granularity.replace("ly", "")}`}</div>
+          </div>
+          <div class="status-line" style="background: var(--panel-2); border-radius: 8px; padding: 8px 12px; margin-bottom: 10px;">
+            <strong>${escapeHtml(sel.date)}, ${escapeHtml(sel.time)} local</strong> &middot;
+            change score ${sel.score == null ? "no image, not compared" : sel.score.toFixed(4)}
+            ${selGauge != null ? ` &middot; ${escapeHtml(gaugeMeta.label.toLowerCase())} ${selGauge.toFixed(2)}${gaugeUnitSuffix}` : ""}
+            &middot; <span style="color: ${CODE_COLOR[sel.code]}; font-weight: 700;">${escapeHtml(sel.resultLabel)}</span>
+          </div>
+          <svg viewBox="0 0 1040 200" style="width: 100%; display: block;">
+            ${thresholdY >= 0 ? `<rect x="30" y="${thresholdY}" width="1010" height="${Math.max(0, bandBottomY - thresholdY)}" fill="var(--accent-bg)" opacity="0.6" />` : ""}
+            <text x="4" y="10" font-size="10" fill="var(--faint)">${scoreMax.toFixed(2)}</text>
+            <line x1="30" y1="10" x2="1040" y2="10" stroke="var(--soft-line)" stroke-width="1" />
+            <text x="4" y="100" font-size="10" fill="var(--faint)">${(scoreMax / 2).toFixed(2)}</text>
+            <line x1="30" y1="96" x2="1040" y2="96" stroke="var(--soft-line)" stroke-width="1" />
+            <text x="4" y="190" font-size="10" fill="var(--faint)">0</text>
+            <line x1="30" y1="182" x2="1040" y2="182" stroke="var(--soft-line)" stroke-width="1" />
+            ${thresholdY >= 0 ? `<line x1="30" y1="${thresholdY}" x2="1040" y2="${thresholdY}" stroke="#1769aa" stroke-width="1" stroke-dasharray="4,3" opacity="0.7" /><text x="1036" y="${Math.max(12, thresholdY - 6)}" font-size="10" fill="var(--accent-strong)" text-anchor="end">typical range ends ${changeInfo.threshold.toFixed(3)}</text>` : ""}
+            ${changeX > 0 ? `<line x1="${changeX}" y1="4" x2="${changeX}" y2="182" stroke="#9a5b13" stroke-width="1.5" stroke-dasharray="2,3" />` : ""}
+            ${scoreSegments.map((seg) => `<polyline points="${seg}" fill="none" stroke="#c3c2b7" stroke-width="1.5" />`).join("")}
+            ${points.map((p) => `<circle cx="${p.x}" cy="${p.y}" r="${p.radius}" fill="${p.color}" stroke="#ffffff" stroke-width="${p.ring}" opacity="${p.opacity}" data-act="select" data-index="${p.index}" style="cursor: pointer;" />`).join("")}
+            ${gapMarkers.map((bucket) => `<line x1="${bucket.x}" y1="4" x2="${bucket.x}" y2="182" stroke="#c3c2b7" stroke-width="1.5" stroke-dasharray="1,3" />`).join("")}
+            ${monthTicks.map((tick) => `<text x="${tick.x}" y="198" font-size="11" fill="var(--faint)" text-anchor="middle">${escapeHtml(tick.label)}</text>`).join("")}
+          </svg>
+          <div style="display: flex; gap: 16px; margin-top: 8px; font-size: 12px; color: var(--muted); flex-wrap: wrap;">
+            <span style="display:flex;align-items:center;gap:6px;"><span style="width:9px;height:9px;border-radius:50%;background:${CODE_COLOR.N};display:inline-block;"></span>No change</span>
+            <span style="display:flex;align-items:center;gap:6px;"><span style="width:9px;height:9px;border-radius:50%;background:${CODE_COLOR.P};display:inline-block;"></span>Needs a look</span>
+            <span style="display:flex;align-items:center;gap:6px;"><span style="width:9px;height:9px;border-radius:50%;background:${CODE_COLOR.C};display:inline-block;"></span>Camera or image issue</span>
+          </div>
+
+          <div class="card-grid" style="margin-top: 18px;">
+            <div>
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+                <strong>Worth reviewing (${signalEvents.length})</strong>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <span style="font-size:12px;color:var(--muted);">${signalReviewedCount} of ${signalEvents.length} reviewed</span>
+                  <button type="button" class="btn small" data-act="toggle-hide-signal" style="${state.hideReviewedSignal ? "background: var(--ink); color: #fff;" : ""}">Hide reviewed</button>
+                </div>
+              </div>
+              ${signalRows || '<p class="status-line">None right now.</p>'}
             </div>
-            <div class="kv-row">
-              <div class="kv-label">Confirmed riverbank guides used</div>
-              <div>${(summary.confirmed_riverbank_guide_ids || []).length}</div>
+            <div>
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+                <strong>Data quality issues (${qualityEvents.length})</strong>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <span style="font-size:12px;color:var(--muted);">${qualityReviewedCount} of ${qualityEvents.length} acknowledged</span>
+                  <button type="button" class="btn small" data-act="toggle-hide-quality" style="${state.hideReviewedQuality ? "background: var(--ink); color: #fff;" : ""}">Hide acknowledged</button>
+                </div>
+              </div>
+              ${qualityRows || '<p class="status-line">None right now.</p>'}
             </div>
           </div>
-          <div class="image-sequence-thumb-grid" style="margin-bottom: 12px;">
-            ${images || '<p class="status-line">No review images for this run.</p>'}
+
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:18px;margin-bottom:8px;">
+            <strong>Selected day &mdash; ${escapeHtml(sel.date)}</strong>
+            <div style="display:flex;gap:8px;">
+              <button type="button" class="btn small" data-act="jump-biggest-change" ${summary.biggest_change_filename ? "" : "disabled"}>Biggest change detected</button>
+              <button type="button" class="btn small" data-act="prev-event">&larr; Previous event</button>
+              <button type="button" class="btn small" data-act="next-event">Next event &rarr;</button>
+            </div>
           </div>
-          <div class="kv-grid" style="margin-bottom: 12px;">
-            ${records || '<p class="status-line">No compared images recorded.</p>'}
+          <div class="kv-grid" style="margin-bottom: 14px;">
+            <div>
+              <p class="status-line" style="margin-bottom: 6px;">Baseline &mdash; ${escapeHtml(summary.baseline_filename || "not recorded")}</p>
+              ${baselineImageQuery
+                ? `<img src="/api/image-sequence-image?${baselineImageQuery}" alt="Baseline image" loading="lazy" style="width: 100%; border-radius: 8px; display: block;">`
+                : '<p class="status-line">No baseline image recorded.</p>'}
+            </div>
+            <div>
+              <p class="status-line" style="margin-bottom: 6px;">${escapeHtml(sel.date)}, ${escapeHtml(sel.time)} local (${escapeHtml(sel.resultLabel)})</p>
+              ${selectedImageQuery
+                ? `<img src="/api/image-sequence-image?${selectedImageQuery}" alt="Image for ${escapeHtml(sel.date)}" loading="lazy" style="width: 100%; border-radius: 8px; display: block;">`
+                : '<p class="status-line">No image for this day (missing or failed download).</p>'}
+            </div>
           </div>
-          <div class="report-text">${escapeHtml(detail.report || "This report is empty.")}</div>
+
+          <div style="margin-bottom: 8px;"><strong>Side-by-side comparison &mdash; ${escapeHtml(sel.date)}</strong></div>
+          ${sideBySideQuery ? `
+            <p class="status-line" style="margin-bottom: 8px;">Baseline (left) vs. ${escapeHtml(sel.date)} (right), watched area outlined. Updates with the day selected above &mdash; use "Biggest change detected" or Previous/Next event to jump around.</p>
+            <img src="/api/image-sequence-comparison?${sideBySideQuery}" alt="Baseline compared with ${escapeHtml(sel.date)}" loading="lazy" style="width: 100%; border-radius: 8px; display: block;">
+          ` : '<p class="status-line">No side-by-side comparison for this day (missing or failed download).</p>'}
+          ${state.errorText ? `<p class="status-line error">${escapeHtml(state.errorText)}</p>` : ""}
         `;
       }
 

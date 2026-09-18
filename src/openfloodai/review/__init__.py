@@ -1,5 +1,14 @@
 """Human review helpers for OpenFloodAI POC outputs."""
 
+from openfloodai.review.dataset_groups import (
+    ALLOWED_DATASET_GROUPS,
+    DEFAULT_DATASET_GROUP,
+    DatasetGroupAssignment,
+    DatasetGroupError,
+    assign_dataset_group,
+    dataset_group_for_date,
+    list_dataset_group_assignments,
+)
 from openfloodai.review.dataset_manifest import (
     ALLOWED_MANIFEST_SPLITS,
     HARD_CASE_TYPE_OPTIONS,
@@ -37,7 +46,9 @@ from openfloodai.review.operator_notes import build_operator_note
 from openfloodai.review.review_images import (
     ReviewImageError,
     ReviewImageSet,
+    encode_png,
     generate_biggest_change_review_images,
+    render_pair_comparison_overlay,
 )
 from openfloodai.review.sample_quality import (
     ALLOWED_FAILURE_REASONS,
@@ -61,15 +72,19 @@ from openfloodai.review.threshold_tuning import (
 
 __all__ = [
     "ALLOWED_CONFIDENCE_LEVELS",
+    "ALLOWED_DATASET_GROUPS",
     "ALLOWED_FAILURE_REASONS",
     "ALLOWED_HUMAN_LABELS",
     "ALLOWED_MANIFEST_SPLITS",
     "ALLOWED_TRISTATE_VALUES",
     "ALLOWED_VISIBILITY_CONDITIONS",
+    "DEFAULT_DATASET_GROUP",
     "HARD_CASE_TYPE_OPTIONS",
     "MANIFEST_PURPOSE_OPTIONS",
     "DEFAULT_CANDIDATE_THRESHOLDS",
     "CreateHumanLabelResult",
+    "DatasetGroupAssignment",
+    "DatasetGroupError",
     "DatasetManifestError",
     "ManifestRepairResult",
     "HumanLabelError",
@@ -83,11 +98,14 @@ __all__ = [
     "ThresholdTuningReport",
     "ThresholdTuningResult",
     "add_human_label_record",
+    "assign_dataset_group",
     "build_operator_note",
     "compare_label_files",
     "compare_label_records",
     "compute_failure_reason",
     "create_human_label_record",
+    "dataset_group_for_date",
+    "encode_png",
     "find_matching_label",
     "friendly_failure_reason",
     "generate_biggest_change_review_images",
@@ -95,11 +113,13 @@ __all__ = [
     "is_normal_baseline_confirmed",
     "is_valid_human_label_record",
     "is_valid_manifest_record",
+    "list_dataset_group_assignments",
     "load_human_label_records",
     "load_manifest_records",
     "normalize_human_label",
     "repair_manifest_from_local_videos",
     "render_label_comparison_report",
+    "render_pair_comparison_overlay",
     "render_threshold_tuning_report",
     "summarize_sample_quality",
     "tune_threshold_files",

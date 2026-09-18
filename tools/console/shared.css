@@ -1,0 +1,396 @@
+/* OpenFloodAI console — shared design tokens and shell layout.
+   New, separate UI (tools/console/). Does not touch or restyle any
+   existing tools/*.html page. */
+
+:root {
+  --ink: #12202e;
+  --ink-soft: #4c5c6b;
+  --ink-muted: #8b98a5;
+  --paper: #f6f8fa;
+  --card: #ffffff;
+  --line: #e1e6eb;
+  --line-soft: #edf0f3;
+  --rail: #0e1a28;
+  --rail-line: #22323f;
+  --rail-text: #b9c6d2;
+  --rail-text-dim: #6e7e8c;
+  --accent: #2456c9;
+  --accent-dark: #173e9e;
+  --accent-soft: #e9effc;
+  --ok: #1f7a4d;
+  --ok-soft: #e6f3eb;
+  --warn: #b5750b;
+  --warn-soft: #fcf1de;
+  --bad: #c22f2f;
+  --bad-soft: #fbeaea;
+  --sans: "Fira Sans", system-ui, sans-serif;
+  --mono: "Fira Code", ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--sans);
+  background: var(--paper);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+input,
+textarea,
+select {
+  font-family: var(--sans);
+  font-size: 13px;
+  box-sizing: border-box;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: #fff;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: 2px solid var(--accent-soft);
+  border-color: var(--accent);
+}
+
+label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  margin-bottom: 6px;
+}
+
+.hint {
+  font-size: 11px;
+  color: var(--ink-muted);
+  margin-top: 5px;
+}
+
+.err {
+  font-size: 11px;
+  color: var(--bad);
+  margin-top: 5px;
+}
+
+.btn {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn.primary {
+  border: none;
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn.primary:hover:not(:disabled) {
+  background: var(--accent-dark);
+}
+
+.btn.outline-accent {
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  background: var(--card);
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.pill {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.pill.ok {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.pill.warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.pill.bad {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.pill.gray {
+  background: var(--line-soft);
+  color: var(--ink-soft);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+th {
+  text-align: left;
+  padding: 9px 18px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+td {
+  padding: 11px 18px;
+}
+
+tr.row {
+  border-top: 1px solid var(--line-soft);
+}
+
+/* App shell */
+
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.rail {
+  width: 232px;
+  flex-shrink: 0;
+  background: var(--rail);
+  display: flex;
+  flex-direction: column;
+  padding: 22px 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.rail-brand {
+  padding: 0 22px 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rail-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.rail-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  line-height: 1.2;
+}
+
+.rail-subtitle {
+  font-size: 11px;
+  color: var(--rail-text-dim);
+  line-height: 1.2;
+}
+
+.rail-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 12px;
+}
+
+.rail-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  color: var(--rail-text);
+  font-size: 13px;
+  border: none;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+}
+
+.rail-item.active {
+  background: #17263650;
+  color: #fff;
+  font-weight: 500;
+}
+
+.rail-sites {
+  flex-grow: 1;
+  overflow-y: auto;
+  min-height: 0;
+  margin: 18px 12px 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--rail-line);
+}
+
+.rail-sites-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--rail-text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0 10px 8px;
+}
+
+.rail-site-link {
+  display: block;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--rail-text);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.rail-site-link.active {
+  background: #17263650;
+  color: #fff;
+}
+
+.rail-foot {
+  padding: 0 22px;
+}
+
+.app-main {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.topbar {
+  height: 64px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 32px;
+  border-bottom: 1px solid var(--line);
+  background: var(--card);
+}
+
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+.crumbs .current {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.content {
+  flex-grow: 1;
+  overflow: auto;
+  padding: 28px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.toast {
+  position: fixed;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #203933;
+  color: white;
+  padding: 12px 20px;
+  border-radius: 10px;
+  z-index: 10;
+  font-size: 12px;
+}
+
+.toast[hidden] {
+  display: none;
+}
+
+.spinner {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-right: 7px;
+  vertical-align: middle;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(16, 28, 25, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+
+.modal-overlay[hidden] {
+  display: none;
+}
+
+.modal-card {
+  background: var(--card);
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(18, 32, 46, 0.25);
+  max-height: 88vh;
+  overflow: auto;
+}
