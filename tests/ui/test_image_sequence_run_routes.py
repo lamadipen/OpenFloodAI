@@ -269,6 +269,39 @@ def test_set_image_sequence_event_review_rejects_unknown_run(tmp_path: Path) -> 
         assert payload["success"] is False
 
 
+def test_set_image_sequence_event_review_rejects_a_run_from_a_different_sequence(
+    tmp_path: Path,
+) -> None:
+    other_sequence_id = "usgs-camera-demo-2026-10-01-2026-10-01-all"
+    site_dir = tmp_path / "example-site"
+    make_site(site_dir)
+    write_sequence(site_dir)
+    write_sequence(site_dir, sequence_id=other_sequence_id)
+
+    with serve_home_ui(tmp_path) as base_url:
+        _, run_payload = post(
+            base_url,
+            "/api/run-image-sequence-validation",
+            {"folder_name": "example-site", "sequence_id": other_sequence_id},
+        )
+        # sequence_id names one sequence, but run_id belongs to the OTHER
+        # sequence — must be rejected, not silently mix evidence fingerprints.
+        status, payload = post(
+            base_url,
+            "/api/set-image-sequence-event-review",
+            {
+                "folder_name": "example-site",
+                "sequence_id": SEQUENCE_ID,
+                "run_id": run_payload["run_id"],
+                "event_key": "k1",
+                "status": "acknowledged",
+            },
+        )
+        assert status == 400
+        assert payload["success"] is False
+        assert "does not belong to" in cast(str, payload["message"])
+
+
 def test_set_image_sequence_event_review_rejects_path_traversal_in_sequence_id(
     tmp_path: Path,
 ) -> None:
@@ -367,6 +400,38 @@ def test_image_sequence_comparison_route_404s_for_unknown_filename(tmp_path: Pat
                 "run_id": run_payload["run_id"],
                 "baseline_filename": baseline_name,
                 "filename": "camera-demo___2099-01-01T00-00-00Z.jpg",
+            }
+        )
+        with pytest.raises(HTTPError) as error:
+            urlopen(f"{base_url}/api/image-sequence-comparison?{query}")
+        assert error.value.code == 404
+
+
+def test_image_sequence_comparison_route_rejects_a_run_from_a_different_sequence(
+    tmp_path: Path,
+) -> None:
+    other_sequence_id = "usgs-camera-demo-2026-10-01-2026-10-01-all"
+    site_dir = tmp_path / "example-site"
+    make_site(site_dir)
+    baseline_name, changed_name = write_named_sequence(site_dir)
+    write_named_sequence(site_dir, sequence_id=other_sequence_id)
+
+    with serve_home_ui(tmp_path) as base_url:
+        _, run_payload = post(
+            base_url,
+            "/api/run-image-sequence-validation",
+            {"folder_name": "example-site", "sequence_id": other_sequence_id},
+        )
+        # sequence_id (and its images) belong to SEQUENCE_ID, but run_id
+        # belongs to the OTHER sequence's run — must be rejected, not
+        # rendered using the wrong run's watched-area config.
+        query = urlencode(
+            {
+                "folder_name": "example-site",
+                "sequence_id": SEQUENCE_ID,
+                "run_id": run_payload["run_id"],
+                "baseline_filename": baseline_name,
+                "filename": changed_name,
             }
         )
         with pytest.raises(HTTPError) as error:

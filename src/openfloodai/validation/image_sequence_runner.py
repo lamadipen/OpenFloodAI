@@ -333,19 +333,41 @@ def resolve_image_sequence_run_image(site_dir: Path, run_id: str, filename: str)
     return candidate
 
 
-def resolve_run_config_snapshot(site_dir: Path, run_id: str) -> dict[str, Any]:
+def resolve_run_config_snapshot(
+    site_dir: Path, run_id: str, *, expected_sequence_id: str | None = None
+) -> dict[str, Any]:
     """Load the exact watched-area/waterline-guide config one saved run used.
 
     A run's own comparison images must always reflect what that run was
     scored against, even after the site's live config is later edited —
     this reads the frozen `site-config.snapshot.json` written at run time
     (`_write_inputs_used`), never the current config.
+
+    `run_id` and a caller-supplied `sequence_id` are independent values
+    from the same request; pass `expected_sequence_id` to confirm this run
+    actually belongs to that sequence before its config is used — a
+    mismatch means the caller named one sequence's images alongside a
+    different sequence's run, which must not silently render an image
+    using the wrong run's watched-area config.
     """
 
     if not _RUN_ID_PATTERN.fullmatch(run_id or ""):
         raise ImageSequenceValidationError("Run not found.")
     runs_root = (site_dir / "outputs" / "image-sequence-runs").resolve()
-    snapshot_path = (runs_root / run_id / "inputs-used" / "site-config.snapshot.json").resolve()
+    run_dir = (runs_root / run_id).resolve()
+    try:
+        run_dir.relative_to(runs_root)
+    except ValueError as error:
+        raise ImageSequenceValidationError("Run not found.") from error
+    if expected_sequence_id is not None:
+        summary_path = run_dir / "run-summary.json"
+        try:
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as error:
+            raise ImageSequenceValidationError("Run not found.") from error
+        if not isinstance(summary, dict) or summary.get("sequence_id") != expected_sequence_id:
+            raise ImageSequenceValidationError("run_id does not belong to sequence_id.")
+    snapshot_path = (run_dir / "inputs-used" / "site-config.snapshot.json").resolve()
     try:
         snapshot_path.relative_to(runs_root)
     except ValueError as error:

@@ -317,9 +317,7 @@ def test_read_run_detail_includes_gauge_series_and_event_reviews_when_present(
     report = run_image_sequence_validation(site_dir, SEQUENCE_ID)
     detail = read_image_sequence_run_detail(site_dir, report.run_id)
     summary = detail["summary"]
-    evidence_key = compute_evidence_key(
-        summary["baseline_filename"], summary["watched_area_used"]
-    )
+    evidence_key = compute_evidence_key(summary["baseline_filename"], summary["watched_area_used"])
     set_event_review(
         sequence_dir,
         event_key="2026-09-01-2026-09-01-P",

@@ -22,6 +22,7 @@ def test_bootstrap_creates_new_site_when_folder_absent(tmp_path: Path) -> None:
     assert config_path.is_file()
     config = json.loads(config_path.read_text())
     assert config["camera_id"] == "CO_Colorado_River_near_Cameo"
+    assert result.site_id == config["site_id"]
 
 
 def test_bootstrap_reuses_existing_site_with_same_camera_id_without_modifying_it(
@@ -50,6 +51,39 @@ def test_bootstrap_reuses_existing_site_with_same_camera_id_without_modifying_it
 
     assert result.status == "reused"
     assert config_path.read_text() == before
+
+
+def test_bootstrap_reuses_the_existing_configs_own_site_id_not_a_generated_one(
+    tmp_path: Path,
+) -> None:
+    # A site set up before this bootstrap flow existed (or with a custom
+    # site_id) must keep its OWN trusted site_id — the generated
+    # "<folder_name>_sid" convention must never override it on reuse.
+    sites_dir = tmp_path / "sites"
+    site_dir = sites_dir / "colorado-river-cameo"
+    (site_dir / "configs").mkdir(parents=True)
+    config_path = site_dir / "configs" / "colorado-river-cameo.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "site_id": "a-completely-different-hand-picked-id",
+                "camera_id": "CO_Colorado_River_near_Cameo",
+                "site_name": "Colorado River near Cameo",
+                "input_type": "local_video",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = bootstrap_camera_site(
+        sites_base_dir=sites_dir,
+        folder_name="colorado-river-cameo",
+        camera_id="CO_Colorado_River_near_Cameo",
+        site_name="Colorado River near Cameo",
+    )
+
+    assert result.status == "reused"
+    assert result.site_id == "a-completely-different-hand-picked-id"
 
 
 def test_bootstrap_reports_conflict_on_mismatched_camera_id_without_touching_config(

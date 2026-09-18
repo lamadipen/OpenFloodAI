@@ -54,6 +54,39 @@ def test_assign_dataset_group_rejects_overlap_with_existing_assignment(tmp_path:
         )
 
 
+def test_assign_dataset_group_promotes_a_full_range_to_a_new_group(tmp_path: Path) -> None:
+    assign_dataset_group(tmp_path, group="practice", start_date="2026-06-18", end_date="2026-07-31")
+    promoted = assign_dataset_group(
+        tmp_path, group="locked_validation", start_date="2026-06-18", end_date="2026-07-31"
+    )
+    assert promoted.group == "locked_validation"
+
+    assignments = list_dataset_group_assignments(tmp_path)
+    assert len(assignments) == 2, "both the old and new assignment are kept, not overwritten"
+    assert dataset_group_for_date(assignments, "2026-07-04") == "locked_validation"
+
+
+def test_assign_dataset_group_promotes_via_a_wider_superset_range(tmp_path: Path) -> None:
+    assign_dataset_group(tmp_path, group="practice", start_date="2026-06-18", end_date="2026-06-30")
+    assign_dataset_group(
+        tmp_path, group="locked_validation", start_date="2026-06-01", end_date="2026-07-31"
+    )
+
+    assignments = list_dataset_group_assignments(tmp_path)
+    assert dataset_group_for_date(assignments, "2026-06-20") == "locked_validation"
+    assert dataset_group_for_date(assignments, "2026-06-01") == "locked_validation"
+
+
+def test_assign_dataset_group_still_rejects_a_partial_overlap_even_with_latest_wins(
+    tmp_path: Path,
+) -> None:
+    assign_dataset_group(tmp_path, group="practice", start_date="2026-06-18", end_date="2026-07-31")
+    with pytest.raises(DatasetGroupError, match="partially overlaps an existing 'practice'"):
+        assign_dataset_group(
+            tmp_path, group="locked_validation", start_date="2026-06-01", end_date="2026-06-20"
+        )
+
+
 def test_assign_dataset_group_allows_adjacent_non_overlapping_ranges(tmp_path: Path) -> None:
     assign_dataset_group(tmp_path, group="practice", start_date="2026-06-18", end_date="2026-07-31")
     second = assign_dataset_group(

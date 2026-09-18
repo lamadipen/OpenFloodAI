@@ -411,9 +411,7 @@ def test_download_sequence_with_resume_reuses_downloaded_images_and_retries_fail
         site_dir=site_dir,
         resume=True,
     )
-    saved_records_again = read_jsonl_records(
-        resumed_again.directory / "sequence-manifest.jsonl"
-    )
+    saved_records_again = read_jsonl_records(resumed_again.directory / "sequence-manifest.jsonl")
     assert len(saved_records_again) == 2
 
 

@@ -297,7 +297,7 @@ def run_bootstrap(
                 end_date=end_date,
                 timezone_name=camera.timezone,
                 sampling_mode=sampling_mode,
-                site_id=f"{camera.folder_name}_sid",
+                site_id=site_result.site_id,
                 site_dir=site_result.site_dir,
                 overwrite=replace_sequence,
                 resume=resume,

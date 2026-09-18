@@ -9,6 +9,10 @@ from pathlib import Path
 from typing import Any
 
 _RIVER_ID_PATTERN = re.compile(r"^[a-z0-9-]{1,80}$")
+# Matches site_setup.py's own folder-name pattern: every caller resolves
+# `sites_base_dir / folder_name` directly, so an unvalidated value here
+# (e.g. containing "..") could resolve outside the sites directory.
+_FOLDER_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 class RiverRegistryError(ValueError):
@@ -111,6 +115,13 @@ def load_river_registry(river_id: str, reference_dir: Path) -> RiverRegistry:
             raise RiverRegistryError(f"Duplicate camera_id in registry: {camera_id}")
         seen_camera_ids.add(camera_id)
 
+        folder_name = _require_str(entry, "folder_name", context=context)
+        if not _FOLDER_NAME_PATTERN.fullmatch(folder_name):
+            raise RiverRegistryError(
+                f"{context}: folder_name must use only letters, numbers, dash, and "
+                f"underscore (got {folder_name!r})."
+            )
+
         gage_relationship = _require_str(entry, "gage_relationship", context=context)
         if gage_relationship not in {"same_site", "nearby", "unavailable"}:
             raise RiverRegistryError(
@@ -133,7 +144,7 @@ def load_river_registry(river_id: str, reference_dir: Path) -> RiverRegistry:
                 latitude=_require_float(entry, "latitude", context=context),
                 longitude=_require_float(entry, "longitude", context=context),
                 display_name=_require_str(entry, "display_name", context=context),
-                folder_name=_require_str(entry, "folder_name", context=context),
+                folder_name=folder_name,
                 gage_relationship=gage_relationship,
                 timezone=_require_str(entry, "timezone", context=context),
                 gage_relationship_note=(

@@ -11,6 +11,7 @@ style, its own small copy of the no-redirects/size-limit safety net.
 from __future__ import annotations
 
 import json
+from collections import deque
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -536,11 +537,15 @@ def _largest_deltas(
 ) -> tuple[_DeltaCandidate | None, _DeltaCandidate | None]:
     """Return the largest rise and the largest fall found within a window.
 
-    `readings` must already be sorted by time. Uses a forward-only two
-    -pointer scan: for each start reading, `end` advances to the last
-    reading at or before `start + window_hours` — valid because both the
-    start time and the window's end bound increase monotonically with the
-    start index.
+    `readings` must already be sorted by time. For every reading `j`
+    (as the end of a rise/fall), the largest rise ending there is
+    `value[j] - min(value[i] for i in the trailing window)`, and the
+    largest fall is `value[j] - max(...)` over the same window — not just
+    the delta to the single farthest-back reading still in the window,
+    which would miss an earlier, larger swing followed by a partial
+    pullback still inside that same window. Uses the standard
+    sliding-window min/max two-deque technique to keep this O(n) despite
+    checking every possible pairing within each window.
     """
 
     if len(readings) < 2:
@@ -550,28 +555,45 @@ def _largest_deltas(
     n = len(parsed)
     best_increase: _DeltaCandidate | None = None
     best_decrease: _DeltaCandidate | None = None
-    end = 0
-    for start in range(n):
-        if end < start:
-            end = start
-        target = parsed[start][0] + window
-        while end + 1 < n and parsed[end + 1][0] <= target:
-            end += 1
-        if end <= start:
-            continue
-        delta = parsed[end][1] - parsed[start][1]
-        if best_increase is None or delta > best_increase.delta_value:
-            best_increase = _DeltaCandidate(
-                start_datetime_utc=readings[start].datetime_utc,
-                end_datetime_utc=readings[end].datetime_utc,
-                delta_value=delta,
-            )
-        if best_decrease is None or delta < best_decrease.delta_value:
-            best_decrease = _DeltaCandidate(
-                start_datetime_utc=readings[start].datetime_utc,
-                end_datetime_utc=readings[end].datetime_utc,
-                delta_value=delta,
-            )
+
+    min_deque: deque[int] = deque()  # increasing values; front is the window's minimum.
+    max_deque: deque[int] = deque()  # decreasing values; front is the window's maximum.
+    left = 0
+    for right in range(n):
+        right_time, right_value = parsed[right]
+        while parsed[left][0] < right_time - window:
+            left += 1
+        while min_deque and min_deque[0] < left:
+            min_deque.popleft()
+        while max_deque and max_deque[0] < left:
+            max_deque.popleft()
+
+        if min_deque:
+            min_idx = min_deque[0]
+            delta = right_value - parsed[min_idx][1]
+            if best_increase is None or delta > best_increase.delta_value:
+                best_increase = _DeltaCandidate(
+                    start_datetime_utc=readings[min_idx].datetime_utc,
+                    end_datetime_utc=readings[right].datetime_utc,
+                    delta_value=delta,
+                )
+        if max_deque:
+            max_idx = max_deque[0]
+            delta = right_value - parsed[max_idx][1]
+            if best_decrease is None or delta < best_decrease.delta_value:
+                best_decrease = _DeltaCandidate(
+                    start_datetime_utc=readings[max_idx].datetime_utc,
+                    end_datetime_utc=readings[right].datetime_utc,
+                    delta_value=delta,
+                )
+
+        while min_deque and parsed[min_deque[-1]][1] >= right_value:
+            min_deque.pop()
+        min_deque.append(right)
+        while max_deque and parsed[max_deque[-1]][1] <= right_value:
+            max_deque.pop()
+        max_deque.append(right)
+
     return best_increase, best_decrease
 
 

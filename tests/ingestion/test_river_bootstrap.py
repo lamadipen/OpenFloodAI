@@ -152,6 +152,54 @@ def test_run_bootstrap_creates_sites_downloads_images_and_writes_gage_summary(
     assert (sequence_dirs[0] / "gauge-readings-summary.json").is_file()
 
 
+def test_run_bootstrap_reuses_the_existing_sites_own_site_id_for_downloaded_records(
+    reference_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    jpeg = b"\xff\xd8\xff\xe0test\xff\xd9"
+    page_a = _listing_xml(SLUG_A, [("2026-09-01T18-00-00Z", 100)])
+
+    def fetch(url: str, **kwargs: object) -> tuple[bytes, str]:
+        if "?" in url:
+            return page_a, "application/xml"
+        return jpeg, "image/jpeg"
+
+    monkeypatch.setattr(river, "_fetch", fetch)
+    monkeypatch.setattr(gage, "_fetch_json", lambda url: {"value": {"timeSeries": []}})
+    sites_dir = tmp_path / "sites"
+    reused_site = sites_dir / "test-river-a"
+    (reused_site / "configs").mkdir(parents=True)
+    (reused_site / "configs" / "test-river-a.json").write_text(
+        json.dumps(
+            {
+                "site_id": "a-hand-picked-trusted-site-id",
+                "camera_id": SLUG_A,
+                "site_name": "Test Camera A",
+                "input_type": "local_video",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    outcomes = run_bootstrap(
+        reference_dir=reference_dir,
+        sites_base_dir=sites_dir,
+        river_id="test-river",
+        camera_ids=[SLUG_A],
+        start_date="2026-09-01",
+        end_date="2026-09-01",
+        sampling_mode="one_daylight_image_per_day",
+    )
+
+    outcome = next(o for o in outcomes if o.camera_id == SLUG_A)
+    assert outcome.site_status == "reused"
+    assert outcome.error is None
+    sequence_dirs = list((reused_site / "inputs" / "image-sequences").iterdir())
+    manifest = json.loads(
+        (sequence_dirs[0] / "sequence-manifest.jsonl").read_text().splitlines()[0]
+    )
+    assert manifest["site_id"] == "a-hand-picked-trusted-site-id"
+
+
 def test_run_bootstrap_conflict_on_one_camera_does_not_block_the_other(
     reference_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

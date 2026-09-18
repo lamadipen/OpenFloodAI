@@ -122,6 +122,25 @@ def test_largest_deltas_finds_rise_and_fall_within_window() -> None:
     assert decrease is not None and decrease.delta_value == pytest.approx(-2.5)
 
 
+def test_largest_deltas_finds_an_earlier_larger_swing_with_a_partial_pullback() -> None:
+    # A big spike at t=1h (+10 from t=0h) partially recedes by t=2h. All
+    # three readings sit inside one 6-hour window. Comparing only the
+    # window's start to its farthest point (0h -> 2h, delta +3.0) would
+    # miss the real largest rise (0h -> 1h, delta +10.0).
+    readings = [
+        gage.GageReading(datetime_utc="2025-01-01T00:00:00+00:00", value=0.0),
+        gage.GageReading(datetime_utc="2025-01-01T01:00:00+00:00", value=10.0),
+        gage.GageReading(datetime_utc="2025-01-01T02:00:00+00:00", value=3.0),
+    ]
+
+    increase, decrease = gage._largest_deltas(readings, window_hours=6)
+
+    assert increase is not None and increase.delta_value == 10.0
+    assert increase.start_datetime_utc == "2025-01-01T00:00:00+00:00"
+    assert increase.end_datetime_utc == "2025-01-01T01:00:00+00:00"
+    assert decrease is not None and decrease.delta_value == -7.0
+
+
 def test_largest_deltas_handles_too_few_readings() -> None:
     single = [gage.GageReading(datetime_utc="2025-01-01T00:00:00+00:00", value=1.0)]
     assert gage._largest_deltas(single, 6) == (None, None)

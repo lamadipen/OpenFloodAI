@@ -76,12 +76,15 @@ def list_dataset_group_assignments(site_dir: Path) -> list[DatasetGroupAssignmen
 def assign_dataset_group(
     site_dir: Path, *, group: str, start_date: str, end_date: str, note: str = ""
 ) -> DatasetGroupAssignment:
-    """Assign a date range to a dataset group, rejecting overlap with an existing assignment.
+    """Assign a date range to a dataset group.
 
-    Overlap is refused rather than silently overridden: two assignments
-    covering the same date would leave it ambiguous which group that
-    day's images belong to, and the plan is explicit that a period should
-    move between groups as a deliberate decision, not an implicit one.
+    A PARTIAL overlap with an existing assignment is refused: it would
+    leave it ambiguous which group the non-overlapping days belong to.
+    A new range that fully CONTAINS one or more existing assignments is
+    allowed — that is an unambiguous, deliberate promotion/re-grouping of
+    that whole range (e.g. `practice` -> `locked_validation`), and
+    `dataset_group_for_date` always resolves an overlap to the most
+    recently assigned covering range, so the new group takes effect.
     """
 
     if group not in ALLOWED_DATASET_GROUPS:
@@ -96,11 +99,13 @@ def assign_dataset_group(
     for assignment in existing:
         other_start = _parse_date(assignment.start_date, field="start_date")
         other_end = _parse_date(assignment.end_date, field="end_date")
-        if _ranges_overlap(start, end, other_start, other_end):
+        if _ranges_overlap(start, end, other_start, other_end) and not (
+            start <= other_start and other_end <= end
+        ):
             raise DatasetGroupError(
-                f"{start_date} to {end_date} overlaps an existing '{assignment.group}' "
+                f"{start_date} to {end_date} partially overlaps an existing '{assignment.group}' "
                 f"assignment ({assignment.start_date} to {assignment.end_date}). "
-                "Remove or narrow the existing assignment first."
+                "Narrow the range, or cover that whole assignment's range to replace it."
             )
 
     assignment = DatasetGroupAssignment(
@@ -116,10 +121,17 @@ def assign_dataset_group(
 
 
 def dataset_group_for_date(assignments: list[DatasetGroupAssignment], target_date: str) -> str:
-    """Return the assigned group covering a date, or the development default."""
+    """Return the assigned group covering a date, or the development default.
+
+    `assignments` is in append order (oldest first). When more than one
+    covers the same date (a later assignment promoted/replaced part or all
+    of an earlier one), the MOST RECENT one wins — scan in reverse — so a
+    promotion (e.g. `practice` -> `locked_validation`) actually takes
+    effect instead of the original, superseded assignment still winning.
+    """
 
     target = _parse_date(target_date, field="target_date")
-    for assignment in assignments:
+    for assignment in reversed(assignments):
         start = _parse_date(assignment.start_date, field="start_date")
         end = _parse_date(assignment.end_date, field="end_date")
         if start <= target <= end:

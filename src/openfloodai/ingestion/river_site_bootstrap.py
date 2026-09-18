@@ -20,13 +20,23 @@ ALLOWED_SITE_BOOTSTRAP_STATUSES = {"created", "reused", "conflict"}
 
 @dataclass(frozen=True)
 class SiteBootstrapResult:
-    """What happened when bootstrapping one camera's site."""
+    """What happened when bootstrapping one camera's site.
+
+    `site_id` is the site's TRUSTED identity to use for anything written
+    afterward (downloaded records, gage data): the existing config's own
+    `site_id` for a reused site, never a freshly generated one, since a
+    site set up before this bootstrap flow existed (or with a custom
+    site_id) would otherwise get records tagged with an id that doesn't
+    match its own config. Empty for a "conflict" result, which the caller
+    skips before writing anything.
+    """
 
     camera_id: str
     folder_name: str
     site_dir: Path
     status: str
     message: str
+    site_id: str = ""
 
 
 def bootstrap_camera_site(
@@ -51,10 +61,11 @@ def bootstrap_camera_site(
     config_path = site_dir / "configs" / f"{folder_name}.json"
 
     if not site_dir.exists():
+        generated_site_id = f"{folder_name}_sid"
         result = setup_validation_site(
             sites_base_dir=sites_base_dir,
             folder_name=folder_name,
-            site_id=f"{folder_name}_sid",
+            site_id=generated_site_id,
             camera_id=camera_id,
             site_name=site_name,
             public_location=public_location,
@@ -63,7 +74,12 @@ def bootstrap_camera_site(
         if not result.created:
             return SiteBootstrapResult(camera_id, folder_name, site_dir, "conflict", result.message)
         return SiteBootstrapResult(
-            camera_id, folder_name, site_dir, "created", f"Created site at {site_dir}."
+            camera_id,
+            folder_name,
+            site_dir,
+            "created",
+            f"Created site at {site_dir}.",
+            site_id=generated_site_id,
         )
 
     if not config_path.is_file():
@@ -103,4 +119,5 @@ def bootstrap_camera_site(
         site_dir,
         "reused",
         f"Reusing existing site at {site_dir} (same camera_id); config left unchanged.",
+        site_id=existing.site_id,
     )

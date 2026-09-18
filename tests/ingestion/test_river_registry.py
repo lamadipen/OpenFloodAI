@@ -59,6 +59,19 @@ def test_load_river_registry_rejects_invalid_river_id(tmp_path: Path) -> None:
         load_river_registry("../etc/passwd", tmp_path)
 
 
+def test_load_river_registry_rejects_a_folder_name_that_could_escape_the_sites_directory(
+    tmp_path: Path,
+) -> None:
+    camera = dict(VALID_CAMERA, folder_name="../../etc")
+    _write_registry(
+        tmp_path,
+        "test-river",
+        {"river_id": "test-river", "display_name": "Test River", "cameras": [camera]},
+    )
+    with pytest.raises(RiverRegistryError, match="folder_name must use only letters"):
+        load_river_registry("test-river", tmp_path)
+
+
 def test_load_river_registry_rejects_duplicate_camera_ids(tmp_path: Path) -> None:
     _write_registry(
         tmp_path,

@@ -354,7 +354,7 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
                 site_dir, sequence_id, query.get("filename", [""])[0]
             )
             config_snapshot = resolve_run_config_snapshot(
-                site_dir, query.get("run_id", [""])[0]
+                site_dir, query.get("run_id", [""])[0], expected_sequence_id=sequence_id
             )
             baseline_frame = cv2.imread(str(baseline_path))
             selected_frame = cv2.imread(str(selected_path))
@@ -857,12 +857,23 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         except ValueError:
             self._send_json({"success": False, "message": "Invalid sequence_id."}, status_code=400)
             return
+        requested_sequence_id = str(data.get("sequence_id", "")).strip()
         try:
             detail = read_image_sequence_run_detail(site_dir, str(data.get("run_id", "")).strip())
         except (OSError, ValueError, ImageSequenceValidationError):
             self._send_json({"success": False, "message": "Run not found."}, status_code=404)
             return
         summary = detail["summary"] if isinstance(detail["summary"], dict) else {}
+        if summary.get("sequence_id") != requested_sequence_id:
+            # The run_id and sequence_id are two independent client-supplied
+            # values; without this check a request could store a review
+            # under one sequence while stamping it with a different run's
+            # (wrong) evidence fingerprint.
+            self._send_json(
+                {"success": False, "message": "run_id does not belong to sequence_id."},
+                status_code=400,
+            )
+            return
         evidence_key = compute_evidence_key(
             summary.get("baseline_filename"), summary.get("watched_area_used")
         )
