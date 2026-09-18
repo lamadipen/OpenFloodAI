@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Site workspace · OpenFloodAI console</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap">
+<link rel="stylesheet" href="/console/shared.css">
+</head>
+<body>
+<script src="/console/shared.js"></script>
+<script>
+const folderName = qs("site");
+let state = { tab: "overview", config: null, status: null, sequences: [], runsBySequence: {} };
+
+async function main() {
+  if (!folderName) {
+    document.body.innerHTML = `<div style="padding:40px;font-family:var(--sans);">Missing <code>?site=</code> in the URL.</div>`;
+    return;
+  }
+  const content = mountShell({
+    active: "sites",
+    activeSiteFolder: folderName,
+    crumbs: [{ label: "Sites", href: "/console/dashboard.html" }, { label: folderName }]
+  });
+  $("topbarActions").innerHTML = `
+    <button class="btn" id="refreshBtn">Refresh</button>
+    <a class="btn primary" href="/console/form-add-media.html?site=${encodeURIComponent(folderName)}">+ Add media</a>
+  `;
+  $("refreshBtn").addEventListener("click", load);
+  content.innerHTML = `<div class="card" style="padding:24px;color:var(--ink-muted);font-size:13px;">Loading site&hellip;</div>`;
+  await load();
+}
+
+async function load() {
+  try {
+    const [sitesData, configData, sequenceData] = await Promise.all([
+      api("/api/sites"),
+      api(`/api/site-config?${new URLSearchParams({ folder_name: folderName })}`),
+      api(`/api/site-image-sequences?${new URLSearchParams({ folder_name: folderName })}`)
+    ]);
+    state.status = (sitesData.sites || []).find((s) => s.site_name === folderName) || null;
+    state.config = configData.config || {};
+    state.sequences = sequenceData.sequences || [];
+
+    await Promise.all(
+      state.sequences.map(async (seq) => {
+        try {
+          const runsData = await api(
+            `/api/image-sequence-runs?${new URLSearchParams({ folder_name: folderName, sequence_id: seq.sequence_id })}`
+          );
+          state.runsBySequence[seq.sequence_id] = runsData.runs || [];
+        } catch (error) {
+          state.runsBySequence[seq.sequence_id] = [];
+        }
+      })
+    );
+    render();
+  } catch (error) {
+    $("content").innerHTML = `<div class="card" style="padding:24px;color:var(--bad);font-size:13px;">Could not load this site: ${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function render() {
+  const content = $("content");
+  const cfg = state.config || {};
+  const status = state.status;
+  const guides = cfg.normal_waterline_guides || [];
+  const confirmedGuides = guides.filter((g) => g.status === "confirmed" && g.normal_condition);
+
+  content.innerHTML = `
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;">
+      <div>
+        <div style="font-size:22px;font-weight:600;">${escapeHtml(cfg.site_name || folderName)}</div>
+        <div style="font-size:13px;color:var(--ink-muted);margin-top:2px;">${escapeHtml(cfg.camera_id || "")} &middot; ${escapeHtml(folderName)}</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+        ${cfg.reference_region ? '<span class="pill ok">Watched area set</span>' : '<span class="pill warn">Watched area not drawn</span>'}
+        ${confirmedGuides.length ? `<span class="pill ok">${confirmedGuides.length} confirmed guide(s)</span>` : '<span class="pill warn">Baseline needs review</span>'}
+      </div>
+    </div>
+
+    <div style="display:flex;gap:4px;border-bottom:1px solid var(--line);">
+      ${["overview", "setup", "sequences", "dataset"]
+        .map(
+          (t) => `<button data-tab="${t}" style="border:none;background:none;padding:10px 16px;font-size:13px;font-weight:${state.tab === t ? 600 : 500};color:${state.tab === t ? "var(--accent)" : "var(--ink-soft)"};border-bottom:2px solid ${state.tab === t ? "var(--accent)" : "transparent"};cursor:pointer;">${tabLabel(t)}</button>`
+        )
+        .join("")}
+    </div>
+
+    <div id="tabBody"></div>
+  `;
+
+  content.querySelectorAll("[data-tab]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.tab = btn.dataset.tab;
+      render();
+    });
+  });
+
+  const body = $("tabBody");
+  if (state.tab === "overview") body.innerHTML = renderOverview();
+  else if (state.tab === "setup") body.innerHTML = renderSetup();
+  else if (state.tab === "sequences") body.innerHTML = renderSequences();
+  else body.innerHTML = renderDataset();
+  wireTabActions();
+}
+
+function tabLabel(t) {
+  return { overview: "Overview", setup: "Setup", sequences: "Sequences & runs", dataset: "Dataset tags" }[t];
+}
+
+function renderOverview() {
+  const allRuns = Object.values(state.runsBySequence).flat();
+  const latestRun = allRuns.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""))[0];
+  if (!latestRun) {
+    return `<div class="card" style="padding:18px 20px;">
+      <div style="font-size:13px;font-weight:600;margin-bottom:6px;">No image-sequence run yet</div>
+      <div style="font-size:12px;color:var(--ink-soft);">Add media and run validation from the Sequences &amp; runs tab.</div>
+    </div>`;
+  }
+  const total =
+    (latestRun.possible_water_level_change_count || 0) +
+    (latestRun.no_water_level_change_count || 0) +
+    (latestRun.cannot_judge_water_level_count || 0) +
+    (latestRun.camera_or_image_problem_count || 0);
+  return `
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:18px;">
+      <div class="card" style="padding:18px 20px;">
+        <div style="font-size:13px;font-weight:600;margin-bottom:12px;">Latest run &mdash; <span style="font-family:var(--mono);font-weight:400;">${escapeHtml(latestRun.run_id)}</span></div>
+        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px;">
+          ${metricTile("Possible change", latestRun.possible_water_level_change_count, "warn")}
+          ${metricTile("No change", latestRun.no_water_level_change_count, "gray")}
+          ${metricTile("Camera issue", latestRun.camera_or_image_problem_count, "bad")}
+          ${metricTile("Cannot judge", latestRun.cannot_judge_water_level_count, "gray")}
+        </div>
+        <div style="font-size:12px;color:var(--ink-soft);margin-bottom:14px;">${total} images compared against baseline <span style="font-family:var(--mono);">${escapeHtml(latestRun.baseline_filename || "")}</span>.</div>
+        <a class="btn primary" href="/console/review.html?${new URLSearchParams({ site: folderName, run_id: latestRun.run_id })}">
+          Open review
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </a>
+      </div>
+      <div class="card" style="padding:18px 20px;">
+        <div style="font-size:13px;font-weight:600;margin-bottom:12px;">Setup checklist</div>
+        <div style="display:flex;flex-direction:column;gap:10px;font-size:13px;">
+          ${checklistRow(!!(state.config && state.config.reference_region), "Watched area drawn")}
+          ${checklistRow(((state.config && state.config.normal_waterline_guides) || []).some((g) => g.status === "confirmed" && g.normal_condition), "Riverbank baseline confirmed")}
+          ${checklistRow(false, "USGS gage attached")}
+        </div>
+      </div>
+    </div>`;
+}
+
+function metricTile(label, value, tone) {
+  const bg = { warn: "var(--warn-soft)", bad: "var(--bad-soft)", gray: "var(--line-soft)" }[tone];
+  const fg = { warn: "var(--warn)", bad: "var(--bad)", gray: "inherit" }[tone];
+  return `<div style="background:${bg};border-radius:9px;padding:10px 12px;">
+    <div style="font-size:11px;font-weight:600;color:${fg};text-transform:uppercase;">${label}</div>
+    <div style="font-size:20px;font-weight:600;font-family:var(--mono);color:${fg};">${value || 0}</div>
+  </div>`;
+}
+
+function checklistRow(done, label) {
+  return `<div style="display:flex;align-items:center;gap:8px;${done ? "" : "color:var(--ink-muted);"}">
+    ${done
+      ? '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>'
+      : '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>'}
+    ${label}
+  </div>`;
+}
+
+function renderSetup() {
+  const cfg = state.config || {};
+  const guides = cfg.normal_waterline_guides || [];
+  const confirmed = guides.filter((g) => g.status === "confirmed" && g.normal_condition);
+  return `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
+      <div class="card" style="padding:18px 20px;">
+        <div style="font-size:13px;font-weight:600;">Watched area</div>
+        <div style="font-size:12px;color:var(--ink-soft);margin:6px 0 14px;">${cfg.reference_region ? "An area is saved. Review its position against the current baseline before running validation again." : "Choose a source frame and draw the watched area."}</div>
+        <a class="btn outline-accent" href="/console/form-watched-area.html?${new URLSearchParams({ site: folderName })}">Open editor</a>
+      </div>
+      <div class="card" style="padding:18px 20px;">
+        <div style="font-size:13px;font-weight:600;">Riverbank baseline</div>
+        <div style="font-size:12px;color:var(--ink-soft);margin:6px 0 14px;">${confirmed.length} confirmed normal-condition guide(s). Draw a guide on a day with typical water level.</div>
+        <a class="btn outline-accent" href="/console/form-waterline-guide.html?${new URLSearchParams({ site: folderName })}">Open editor</a>
+      </div>
+      <div class="card" style="padding:18px 20px;grid-column:span 2;">
+        <div style="font-size:13px;font-weight:600;margin-bottom:12px;">Add media</div>
+        <a class="btn" href="/console/form-add-media.html?${new URLSearchParams({ site: folderName })}">+ Add media</a>
+      </div>
+    </div>`;
+}
+
+function renderSequences() {
+  const sequences = state.sequences;
+  if (!sequences.length) {
+    return `<div class="card" style="padding:18px 20px;font-size:13px;color:var(--ink-soft);">No image sequences downloaded yet. <a href="/console/form-add-media.html?${new URLSearchParams({ site: folderName })}" style="color:var(--accent);font-weight:600;">Add media</a> to start one.</div>`;
+  }
+  return `
+    <div class="card" style="overflow:hidden;">
+      <div style="padding:14px 18px;border-bottom:1px solid var(--line-soft);font-size:13px;font-weight:600;">Image sequences</div>
+      <table>
+        <thead><tr><th>Sequence</th><th>Downloaded</th><th>Missing</th><th>Failed</th></tr></thead>
+        <tbody>
+          ${sequences
+            .map(
+              (seq) => `<tr class="row">
+            <td style="font-family:var(--mono);font-size:12px;">${escapeHtml(seq.sequence_id)}</td>
+            <td>${seq.downloaded_count ?? 0}</td>
+            <td>${seq.missing_count ?? 0}</td>
+            <td>${seq.failed_count ?? 0}</td>
+          </tr>`
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+    <div class="card" style="overflow:hidden;">
+      <div style="padding:14px 18px;border-bottom:1px solid var(--line-soft);font-size:13px;font-weight:600;">Validation runs</div>
+      <table>
+        <thead><tr><th>Run</th><th>Created</th><th>Result mix</th><th></th></tr></thead>
+        <tbody>
+          ${sequences
+            .flatMap((seq) => (state.runsBySequence[seq.sequence_id] || []).map((run) => ({ run, seq })))
+            .map(
+              ({ run }) => `<tr class="row">
+            <td style="font-family:var(--mono);font-size:12px;">${escapeHtml(run.run_id)}</td>
+            <td style="color:var(--ink-soft);">${run.created_at ? new Date(run.created_at).toLocaleString() : ""}</td>
+            <td>${run.no_water_level_change_count || 0} no-change &middot; ${run.camera_or_image_problem_count || 0} problem</td>
+            <td style="text-align:right;"><a href="/console/review.html?${new URLSearchParams({ site: folderName, run_id: run.run_id })}" style="font-size:12px;font-weight:600;color:var(--accent);">Review &rarr;</a></td>
+          </tr>`
+            )
+            .join("") || `<tr><td colspan="4" style="color:var(--ink-muted);">No runs yet for this sequence.</td></tr>`}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function renderDataset() {
+  const seq = state.sequences[0];
+  if (!seq) {
+    return `<div class="card" style="padding:18px 20px;font-size:13px;color:var(--ink-soft);">Add an image sequence before assigning a dataset group.</div>`;
+  }
+  const runs = state.runsBySequence[seq.sequence_id] || [];
+  const latestRunId = runs[0]?.run_id || "";
+  return `
+    <div class="card" style="padding:18px 20px;">
+      <div style="font-size:13px;font-weight:600;margin-bottom:6px;">Dataset group assignments</div>
+      <div style="font-size:12px;color:var(--ink-soft);margin-bottom:16px;">Applies to the whole sequence's date range at once &mdash; not a single day or sample.</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;background:var(--paper);border-radius:9px;padding:12px 14px;">
+        <div>
+          <div style="font-size:11px;font-weight:600;color:var(--ink-muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:4px;">Sequence date range</div>
+          <div style="font-size:13px;font-weight:600;font-family:var(--mono);">${escapeHtml(seq.requested_start_date || "?")} &rarr; ${escapeHtml(seq.requested_end_date || "?")}</div>
+        </div>
+        ${latestRunId
+          ? `<a class="btn primary" href="/console/form-dataset-group.html?${new URLSearchParams({ site: folderName, sequence_id: seq.sequence_id, run_id: latestRunId })}">Assign group</a>`
+          : `<span style="font-size:12px;color:var(--ink-muted);">Run validation first</span>`}
+      </div>
+    </div>`;
+}
+
+function wireTabActions() {}
+
+main();
+</script>
+</body>
+</html>

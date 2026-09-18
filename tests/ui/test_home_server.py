@@ -1318,3 +1318,42 @@ def test_workspace_serves_saved_media_ranges_and_rejects_cross_origin_writes(
         with pytest.raises(HTTPError) as changed:
             urlopen(base + "/api/workspace-media?" + query, timeout=5)
         assert changed.value.code == 400
+
+
+@pytest.mark.parametrize(
+    "name,content_type",
+    [
+        ("dashboard.html", "text/html"),
+        ("shared.js", "text/javascript"),
+        ("shared.css", "text/css"),
+        ("form-create-site.html", "text/html"),
+    ],
+)
+def test_console_assets_are_served(tmp_path: Path, name: str, content_type: str) -> None:
+    with serve_home_ui(tmp_path) as base:
+        status, mime, body = get_text(base + "/console/" + name)
+    assert status == 200
+    assert content_type in mime
+    assert body == (REPO_ROOT / "tools" / "console" / name).read_text()
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "../openfloodai-home-ui.html",
+        "%2e%2e%2fopenfloodai-home-ui.html",
+        "%252e%252e%252fopenfloodai-home-ui.html",
+        "missing.html",
+        "shared.py",
+    ],
+)
+def test_console_rejects_paths_outside_its_assets(tmp_path: Path, name: str) -> None:
+    with serve_home_ui(tmp_path) as base:
+        with pytest.raises(HTTPError) as error:
+            get_text(base + "/console/" + name)
+    assert error.value.code == 404
+
+
+def test_home_links_to_console_dashboard(tmp_path: Path) -> None:
+    with serve_home_ui(tmp_path) as base:
+        assert 'href="/console/dashboard.html"' in get_text(base + "/")[2]

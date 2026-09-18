@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard · OpenFloodAI console</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap">
+<link rel="stylesheet" href="/console/shared.css">
+</head>
+<body>
+<script src="/console/shared.js"></script>
+<script>
+async function main() {
+  const content = mountShell({ active: "dashboard", crumbs: [{ label: "Dashboard" }] });
+  $("topbarActions").innerHTML = `
+    <a class="btn primary" href="/console/form-create-site.html">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+      New site
+    </a>`;
+  content.innerHTML = `<div class="card" style="padding:24px;color:var(--ink-muted);font-size:13px;">Loading sites&hellip;</div>`;
+
+  let sites = [];
+  try {
+    const data = await api("/api/sites");
+    sites = data.sites || [];
+  } catch (error) {
+    content.innerHTML = `<div class="card" style="padding:24px;color:var(--bad);font-size:13px;">Could not load sites: ${escapeHtml(error.message)}</div>`;
+    return;
+  }
+
+  const totalSites = sites.length;
+  const withSequences = sites.filter((s) => s.image_sequence_count > 0).length;
+  const needsSetup = sites.filter((s) => !s.reference_region_found).length;
+
+  content.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;">
+      <div class="card" style="padding:16px 18px;">
+        <div style="font-size:12px;color:var(--ink-muted);font-weight:500;">Total sites</div>
+        <div style="font-size:28px;font-weight:600;margin-top:4px;font-family:var(--mono);">${totalSites}</div>
+        <div style="font-size:12px;color:var(--ink-soft);margin-top:2px;">${withSequences} with image sequences</div>
+      </div>
+      <div class="card" style="padding:16px 18px;">
+        <div style="font-size:12px;color:var(--ink-muted);font-weight:500;">Needs setup</div>
+        <div style="font-size:28px;font-weight:600;margin-top:4px;font-family:var(--mono);color:var(--warn);">${needsSetup}</div>
+        <div style="font-size:12px;color:var(--ink-soft);margin-top:2px;">No watched area saved yet</div>
+      </div>
+      <div class="card" style="padding:16px 18px;">
+        <div style="font-size:12px;color:var(--ink-muted);font-weight:500;">Image-sequence runs</div>
+        <div style="font-size:28px;font-weight:600;margin-top:4px;font-family:var(--mono);" id="kpiRuns">&hellip;</div>
+        <div style="font-size:12px;color:var(--ink-soft);margin-top:2px;">Across all sites</div>
+      </div>
+      <div class="card" style="padding:16px 18px;">
+        <div style="font-size:12px;color:var(--ink-muted);font-weight:500;">Flagged for review</div>
+        <div style="font-size:28px;font-weight:600;margin-top:4px;font-family:var(--mono);color:var(--bad);" id="kpiFlagged">&hellip;</div>
+        <div style="font-size:12px;color:var(--ink-soft);margin-top:2px;">Camera/image problem rate &gt; 50%</div>
+      </div>
+    </div>
+
+    <div class="card" id="attentionCard" style="overflow:hidden;display:none;">
+      <div style="padding:14px 18px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;gap:8px;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="2"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L2.5 17a2 2 0 001.7 3h15.6a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+        <div style="font-size:13px;font-weight:600;">Needs attention</div>
+      </div>
+      <div id="attentionList"></div>
+    </div>
+
+    <div class="card" style="overflow:hidden;">
+      <div style="padding:14px 18px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;">
+        <div style="font-size:13px;font-weight:600;">Sites</div>
+        <div style="font-size:12px;color:var(--ink-muted);">${totalSites} total</div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Site</th>
+            <th>Watched area</th>
+            <th>Latest run</th>
+            <th>Result mix</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="sitesTableBody">
+          ${sites
+            .map(
+              (s) => `
+            <tr class="row">
+              <td>
+                <div style="font-weight:500;">${escapeHtml(s.site_name)}</div>
+                <div style="font-size:11px;color:var(--ink-muted);">${s.video_count} video(s) &middot; ${s.image_sequence_count} image sequence(s)</div>
+              </td>
+              <td>${s.reference_region_found ? '<span class="pill ok">Set</span>' : '<span class="pill warn">Not drawn</span>'}</td>
+              <td style="color:var(--ink-soft);font-family:var(--mono);font-size:12px;" data-latest-run="${escapeHtml(s.site_name)}">&hellip;</td>
+              <td data-result-mix="${escapeHtml(s.site_name)}">&mdash;</td>
+              <td style="text-align:right;"><a href="/console/site.html?site=${encodeURIComponent(s.site_name)}" style="font-size:12px;font-weight:600;color:var(--accent);">Open &rarr;</a></td>
+            </tr>`
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  await loadRunHealth(sites);
+}
+
+async function loadRunHealth(sites) {
+  let totalRuns = 0;
+  let flagged = 0;
+  const attention = [];
+
+  await Promise.all(
+    sites
+      .filter((s) => s.image_sequence_count > 0)
+      .map(async (s) => {
+        try {
+          const seqData = await api(`/api/site-image-sequences?${new URLSearchParams({ folder_name: s.site_name })}`);
+          const sequences = seqData.sequences || [];
+          if (!sequences.length) return;
+          const latestSeq = sequences[sequences.length - 1];
+          const runsData = await api(
+            `/api/image-sequence-runs?${new URLSearchParams({ folder_name: s.site_name, sequence_id: latestSeq.sequence_id })}`
+          );
+          const runs = runsData.runs || [];
+          const runCountCell = document.querySelector(`[data-latest-run="${cssEscape(s.site_name)}"]`);
+          const mixCell = document.querySelector(`[data-result-mix="${cssEscape(s.site_name)}"]`);
+          if (!runs.length) {
+            if (runCountCell) runCountCell.textContent = "No runs yet";
+            return;
+          }
+          totalRuns += runs.length;
+          const latestRun = runs[0];
+          if (runCountCell) {
+            const created = latestRun.created_at ? new Date(latestRun.created_at) : null;
+            runCountCell.textContent = created ? created.toLocaleDateString() : latestRun.run_id;
+          }
+          const total =
+            (latestRun.possible_water_level_change_count || 0) +
+            (latestRun.no_water_level_change_count || 0) +
+            (latestRun.cannot_judge_water_level_count || 0) +
+            (latestRun.camera_or_image_problem_count || 0);
+          const problemRate = total ? (latestRun.camera_or_image_problem_count || 0) / total : 0;
+          if (mixCell && total) {
+            const okPct = Math.round((1 - problemRate) * 100);
+            mixCell.innerHTML = `<div style="display:flex;width:120px;height:6px;border-radius:4px;overflow:hidden;">
+              <span style="width:${okPct}%;background:var(--ink-muted);"></span>
+              <span style="width:${100 - okPct}%;background:${problemRate > 0.5 ? "var(--bad)" : "var(--warn)"};"></span>
+            </div>`;
+          }
+          if (problemRate > 0.5) {
+            flagged += 1;
+            attention.push({ site: s.site_name, problemRate, total });
+          }
+        } catch (error) {
+          // Leave the row's placeholders as-is; this site's health just stays unknown.
+        }
+      })
+  );
+
+  $("kpiRuns").textContent = totalRuns;
+  $("kpiFlagged").textContent = flagged;
+
+  if (attention.length) {
+    $("attentionCard").style.display = "";
+    $("attentionList").innerHTML = attention
+      .sort((a, b) => b.problemRate - a.problemRate)
+      .map(
+        (a) => `
+      <div style="display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid var(--line-soft);">
+        <span class="pill bad">${Math.round(a.problemRate * 100)}% problem rate</span>
+        <div style="flex-grow:1;">
+          <div style="font-size:13px;font-weight:500;">${escapeHtml(a.site)}</div>
+          <div style="font-size:12px;color:var(--ink-soft);">${a.total} images compared in the latest run</div>
+        </div>
+        <a href="/console/site.html?site=${encodeURIComponent(a.site)}" style="font-size:12px;font-weight:600;color:var(--accent);white-space:nowrap;">Open site &rarr;</a>
+      </div>`
+      )
+      .join("");
+  }
+}
+
+function cssEscape(value) {
+  return String(value).replace(/["\\]/g, "\\$&");
+}
+
+main();
+</script>
+</body>
+</html>

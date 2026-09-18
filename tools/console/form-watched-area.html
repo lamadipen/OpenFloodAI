@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Watched area · OpenFloodAI console</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap">
+<link rel="stylesheet" href="/console/shared.css">
+<style>body{user-select:none;}</style>
+</head>
+<body style="background:var(--paper);">
+<div class="modal-overlay">
+  <div class="modal-card" style="width:min(900px,96vw);">
+    <div style="padding:16px 22px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;">
+      <div>
+        <div style="font-size:15px;font-weight:600;">Watched area</div>
+        <div style="font-size:12px;color:var(--ink-muted);margin-top:2px;" id="siteLabel">&hellip;</div>
+      </div>
+      <a id="closeLink" href="#" style="width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--ink-muted);">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </a>
+    </div>
+    <div id="body" style="display:flex;min-height:0;">
+      <div style="flex-grow:1;padding:20px;display:flex;align-items:center;justify-content:center;">
+        <div id="stage" style="width:640px;height:400px;position:relative;border-radius:8px;overflow:hidden;background:#33444d;">
+          <img id="stageImg" style="width:100%;height:100%;object-fit:cover;display:block;" alt="Baseline image">
+          <div id="box" style="position:absolute;border:2px solid #f2c94c;background:rgba(242,201,76,0.16);cursor:move;">
+            <div id="resizeHandle" style="position:absolute;right:-7px;bottom:-7px;width:14px;height:14px;border-radius:3px;background:#f2c94c;border:2px solid #fff;cursor:nwse-resize;"></div>
+          </div>
+        </div>
+      </div>
+      <div style="width:270px;flex-shrink:0;border-left:1px solid var(--line-soft);padding:20px;display:flex;flex-direction:column;gap:14px;">
+        <div>
+          <div class="hint" style="text-transform:uppercase;letter-spacing:.03em;margin-bottom:8px;">Region &middot; percent of frame</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div style="background:var(--paper);border-radius:7px;padding:8px 10px;"><div style="font-size:10px;color:var(--ink-muted);">x</div><div id="xOut" style="font-size:14px;font-weight:600;font-family:var(--mono);">&mdash;</div></div>
+            <div style="background:var(--paper);border-radius:7px;padding:8px 10px;"><div style="font-size:10px;color:var(--ink-muted);">y</div><div id="yOut" style="font-size:14px;font-weight:600;font-family:var(--mono);">&mdash;</div></div>
+            <div style="background:var(--paper);border-radius:7px;padding:8px 10px;"><div style="font-size:10px;color:var(--ink-muted);">width</div><div id="wOut" style="font-size:14px;font-weight:600;font-family:var(--mono);">&mdash;</div></div>
+            <div style="background:var(--paper);border-radius:7px;padding:8px 10px;"><div style="font-size:10px;color:var(--ink-muted);">height</div><div id="hOut" style="font-size:14px;font-weight:600;font-family:var(--mono);">&mdash;</div></div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:var(--ink-soft);line-height:1.5;">Drag the box to move it, drag the corner handle to resize.</div>
+        <button id="resetBtn" class="btn">Reset to saved value</button>
+        <div style="flex-grow:1;"></div>
+        <div id="formError" class="err" hidden></div>
+        <button id="saveBtn" class="btn primary" style="justify-content:center;">Save watched area</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="/console/shared.js"></script>
+<script>
+const folderName = qs("site");
+const stageW = 640, stageH = 400;
+let saved = null;
+let rect = { x: 10, y: 10, width: 60, height: 60 };
+let sequenceId = null;
+let baselineFilename = null;
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function paintBox() {
+  const box = $("box");
+  box.style.left = `${(rect.x / 100) * stageW}px`;
+  box.style.top = `${(rect.y / 100) * stageH}px`;
+  box.style.width = `${(rect.width / 100) * stageW}px`;
+  box.style.height = `${(rect.height / 100) * stageH}px`;
+  $("xOut").textContent = rect.x.toFixed(1);
+  $("yOut").textContent = rect.y.toFixed(1);
+  $("wOut").textContent = rect.width.toFixed(1);
+  $("hOut").textContent = rect.height.toFixed(1);
+}
+
+let dragMode = null, startX = 0, startY = 0, startRect = null;
+function onDrag(event) {
+  const dxPct = ((event.clientX - startX) / stageW) * 100;
+  const dyPct = ((event.clientY - startY) / stageH) * 100;
+  if (dragMode === "move") {
+    rect = { ...startRect, x: clamp(startRect.x + dxPct, 0, 100 - startRect.width), y: clamp(startRect.y + dyPct, 0, 100 - startRect.height) };
+  } else if (dragMode === "resize") {
+    rect = { ...startRect, width: clamp(startRect.width + dxPct, 5, 100 - startRect.x), height: clamp(startRect.height + dyPct, 5, 100 - startRect.y) };
+  }
+  paintBox();
+}
+function onDragEnd() {
+  dragMode = null;
+  window.removeEventListener("mousemove", onDrag);
+  window.removeEventListener("mouseup", onDragEnd);
+}
+$("box").addEventListener("mousedown", (event) => {
+  if (event.target === $("resizeHandle")) return;
+  event.preventDefault();
+  dragMode = "move"; startX = event.clientX; startY = event.clientY; startRect = { ...rect };
+  window.addEventListener("mousemove", onDrag);
+  window.addEventListener("mouseup", onDragEnd);
+});
+$("resizeHandle").addEventListener("mousedown", (event) => {
+  event.preventDefault(); event.stopPropagation();
+  dragMode = "resize"; startX = event.clientX; startY = event.clientY; startRect = { ...rect };
+  window.addEventListener("mousemove", onDrag);
+  window.addEventListener("mouseup", onDragEnd);
+});
+$("resetBtn").addEventListener("click", () => {
+  if (saved) { rect = { ...saved }; paintBox(); }
+});
+
+async function main() {
+  if (!folderName) {
+    document.body.innerHTML = `<div style="padding:40px;">Missing <code>?site=</code> in the URL.</div>`;
+    return;
+  }
+  $("closeLink").href = `/console/site.html?${new URLSearchParams({ site: folderName })}`;
+  $("siteLabel").textContent = folderName;
+
+  try {
+    const [configData, sequenceData] = await Promise.all([
+      api(`/api/site-config?${new URLSearchParams({ folder_name: folderName })}`),
+      api(`/api/site-image-sequences?${new URLSearchParams({ folder_name: folderName })}`)
+    ]);
+    const cfg = configData.config || {};
+    if (cfg.reference_region) {
+      saved = { x: cfg.reference_region.x, y: cfg.reference_region.y, width: cfg.reference_region.width, height: cfg.reference_region.height };
+      rect = { ...saved };
+    }
+    paintBox();
+
+    const sequences = sequenceData.sequences || [];
+    if (sequences.length) {
+      const seq = sequences[sequences.length - 1];
+      sequenceId = seq.sequence_id;
+      const downloaded = (seq.records || []).find((r) => r.download_status === "downloaded");
+      if (downloaded) {
+        baselineFilename = downloaded.filename;
+        $("stageImg").src = `/api/image-sequence-image?${new URLSearchParams({ folder_name: folderName, sequence_id: sequenceId, filename: baselineFilename })}`;
+      }
+    }
+    if (!baselineFilename) {
+      $("body").innerHTML = `<div style="padding:24px;font-size:13px;color:var(--ink-soft);">This site has no downloaded image sequence yet, so there is no image to draw a watched area on here. Add an image sequence first from Site &rarr; Setup &rarr; Add media.</div>`;
+      $("saveBtn").disabled = true;
+    }
+  } catch (error) {
+    $("body").innerHTML = `<div style="padding:24px;font-size:13px;color:var(--bad);">Could not load this site: ${escapeHtml(error.message)}</div>`;
+  }
+}
+
+$("saveBtn").addEventListener("click", async () => {
+  $("saveBtn").disabled = true;
+  $("saveBtn").innerHTML = '<span class="spinner"></span>Saving…';
+  $("formError").hidden = true;
+  try {
+    await api("/api/set-watched-area", {
+      folder_name: folderName,
+      sequence_id: sequenceId,
+      image_filename: baselineFilename,
+      reference_region: rect
+    });
+    location.href = `/console/site.html?${new URLSearchParams({ site: folderName })}`;
+  } catch (error) {
+    $("formError").hidden = false;
+    $("formError").textContent = error.message;
+    $("saveBtn").disabled = false;
+    $("saveBtn").textContent = "Save watched area";
+  }
+});
+
+main();
+</script>
+</body>
+</html>

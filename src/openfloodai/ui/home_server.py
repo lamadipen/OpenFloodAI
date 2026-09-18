@@ -95,6 +95,12 @@ VIDEO_CONTENT_TYPES = {
     ".mp4": "video/mp4",
 }
 
+_CONSOLE_CONTENT_TYPES = {
+    ".html": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+}
+
 
 class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
     """Serve the local UI and site-status JSON."""
@@ -106,6 +112,9 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         """Serve site-status JSON or the static local UI."""
 
         path = urlsplit(self.path).path
+        if path.startswith("/console/"):
+            self._send_console_file(path[len("/console/") :])
+            return
         if review_workspace.handle_get(self, path):
             return
         if path == "/river-images.html":
@@ -1904,6 +1913,38 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         body = json.dumps(payload, indent=2).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_console_file(self, relative: str) -> None:
+        """Serve only console HTML/CSS/JS from source or packaged resources."""
+        name = unquote(relative) or "dashboard.html"
+        if (
+            "/" in name
+            or "\\" in name
+            or "%" in name
+            or Path(name).suffix.lower() not in _CONSOLE_CONTENT_TYPES
+        ):
+            self.send_error(404, "Not found")
+            return
+        console_root = (self.ui_path.parent / "console").resolve()
+        candidate = console_root / name
+        try:
+            if console_root.is_dir():
+                if candidate.is_symlink() or not candidate.is_file():
+                    self.send_error(404, "Not found")
+                    return
+                body = candidate.read_bytes()
+            else:
+                body = (
+                    resources.files("openfloodai.ui") / "static" / "console" / name
+                ).read_bytes()
+        except (OSError, ValueError):
+            self.send_error(404, "Not found")
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", _CONSOLE_CONTENT_TYPES[Path(name).suffix.lower()])
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)

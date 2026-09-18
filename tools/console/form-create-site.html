@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Create site · OpenFloodAI console</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap">
+<link rel="stylesheet" href="/console/shared.css">
+</head>
+<body style="background:var(--paper);">
+<div class="modal-overlay">
+  <div class="modal-card" style="width:min(640px,92vw);">
+    <div style="padding:18px 24px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;">
+      <div>
+        <div style="font-size:15px;font-weight:600;">Create site</div>
+        <div style="font-size:12px;color:var(--ink-muted);margin-top:2px;">Sets up an empty validation site folder. Add media afterward.</div>
+      </div>
+      <a href="/console/dashboard.html" style="width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--ink-muted);">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </a>
+    </div>
+    <form id="form" style="padding:20px 24px;display:flex;flex-direction:column;">
+      <div style="margin-bottom:16px;">
+        <label for="folder_name">Folder name</label>
+        <input id="folder_name" name="folder_name" placeholder="colorado-river-cameo" autocomplete="off">
+        <div class="err" id="folderError" hidden></div>
+        <div class="hint" id="folderHint" hidden></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+        <div style="margin-bottom:16px;">
+          <label for="camera_id">Camera id</label>
+          <input id="camera_id" name="camera_id" placeholder="CO_Colorado_River_near_Cameo">
+        </div>
+        <div style="margin-bottom:16px;">
+          <label for="site_name">Display name</label>
+          <input id="site_name" name="site_name" placeholder="Colorado River near Cameo">
+        </div>
+      </div>
+      <div style="margin-bottom:16px;">
+        <label for="public_location">Public location <span style="color:var(--ink-muted);font-weight:400;">(shown in reports, keep broad)</span></label>
+        <input id="public_location" name="public_location" placeholder="Colorado River, Mesa County, CO">
+      </div>
+      <div style="margin-bottom:16px;">
+        <label for="privacy_notes">Privacy notes</label>
+        <textarea id="privacy_notes" name="privacy_notes" rows="3" placeholder="This site uses a broad public location only."></textarea>
+      </div>
+      <div id="formError" class="err" hidden style="margin-bottom:12px;"></div>
+      <div style="display:flex;gap:10px;">
+        <a href="/console/dashboard.html" class="btn" style="flex:1;justify-content:center;">Cancel</a>
+        <button type="submit" id="submitBtn" class="btn primary" style="flex:1;justify-content:center;" disabled>Create site</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script src="/console/shared.js"></script>
+<script>
+const pattern = /^[A-Za-z0-9_-]+$/;
+
+function updateFolderState() {
+  const value = $("folder_name").value.trim();
+  const ok = value.length > 0 && pattern.test(value);
+  $("folderError").hidden = value.length === 0 || ok;
+  if (!ok && value.length > 0) $("folderError").textContent = "Use only letters, numbers, dash and underscore.";
+  $("folderHint").hidden = !ok;
+  if (ok) $("folderHint").innerHTML = `Site id will be <span style="font-family:var(--mono);color:var(--ink);">${escapeHtml(value)}_sid</span>`;
+  $("submitBtn").disabled = !ok;
+}
+
+$("folder_name").addEventListener("input", updateFolderState);
+
+$("form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const folderName = $("folder_name").value.trim();
+  if (!pattern.test(folderName)) return;
+  $("submitBtn").disabled = true;
+  $("submitBtn").innerHTML = '<span class="spinner"></span>Creating…';
+  $("formError").hidden = true;
+  try {
+    const result = await api("/api/setup-site", {
+      folder_name: folderName,
+      site_id: `${folderName}_sid`,
+      camera_id: $("camera_id").value.trim(),
+      site_name: $("site_name").value.trim(),
+      public_location: $("public_location").value.trim(),
+      privacy_notes: $("privacy_notes").value.trim()
+    });
+    location.href = `/console/site.html?${new URLSearchParams({ site: folderName })}`;
+  } catch (error) {
+    $("formError").hidden = false;
+    $("formError").textContent = error.message;
+    $("submitBtn").disabled = false;
+    $("submitBtn").textContent = "Create site";
+  }
+});
+</script>
+</body>
+</html>

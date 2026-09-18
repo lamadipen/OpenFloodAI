@@ -79,6 +79,9 @@ node --test "tests/ui/*.cjs"
 
 Quote the pattern. `node --test tests/ui/` does not work, because Node only looks for file names such as `name.test.cjs`, and these files are named `test_name.cjs` to match the Python tests beside them.
 
+The Home UI navigation also links to **Console Dashboard** at
+`/console/dashboard.html`, with site, image-review, and setup pages.
+
 ## Documentation Site
 
 OpenFloodAI has a small MkDocs documentation site in `docs/`.

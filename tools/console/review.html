@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Review evidence · OpenFloodAI console</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap">
+<link rel="stylesheet" href="/console/shared.css">
+</head>
+<body>
+<script src="/console/shared.js"></script>
+<script>
+const RESULT_CODE = {
+  possible_water_level_change: "P",
+  no_water_level_change: "N",
+  cannot_judge_water_level: "U",
+  camera_or_image_problem: "C"
+};
+const CODE_LABEL = {
+  N: "No water level change",
+  P: "Possible water level change",
+  C: "Camera or image problem",
+  U: "Cannot judge",
+  M: "No image available"
+};
+
+const folderName = qs("site");
+const runId = qs("run_id");
+let detail = null;
+let days = [];
+let events = [];
+let changeInfo = null;
+let gaugeByDate = new Map();
+let gaugeMeta = { label: "Gage height", unit: "", usedFallbackDischarge: false };
+let evidencePoints = [];
+let state = { filter: null, selectedIndex: 0, eventCursor: -1 };
+
+function isoMean(values) {
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function buildDays(records) {
+  return (records || [])
+    .map((record) => {
+      const isGap = record.download_status !== "downloaded";
+      const code = isGap ? "M" : RESULT_CODE[record.result] || "N";
+      const capturedAtUtc = String(record.captured_at_utc || "");
+      const localTime = String(record.local_time || capturedAtUtc);
+      return {
+        date: capturedAtUtc.slice(0, 10),
+        time: localTime.length >= 16 ? localTime.slice(11, 16) : localTime,
+        score: typeof record.region_change_score === "number" ? record.region_change_score : null,
+        code,
+        filename: record.filename || "",
+        reason: record.reason || "",
+        resultLabel: CODE_LABEL[code] || record.result || ""
+      };
+    })
+    .filter((d) => d.date)
+    .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+}
+
+function buildGaugeByDate(gaugeSeries) {
+  const map = new Map();
+  (gaugeSeries || []).forEach((row) => {
+    if (row && row.date && typeof row.gauge_value === "number") map.set(row.date, row.gauge_value);
+  });
+  return map;
+}
+
+function buildGaugeMeta(gaugeSeries) {
+  const row = (gaugeSeries || []).find((r) => r && r.parameter_label);
+  if (!row) return { label: "Gage height", unit: "", usedFallbackDischarge: false };
+  return {
+    label: row.parameter_label.charAt(0).toUpperCase() + row.parameter_label.slice(1),
+    unit: row.unit || "",
+    usedFallbackDischarge: !!row.used_fallback_discharge
+  };
+}
+
+function findChangeStart(rows) {
+  const scores = rows.map((d) => d.score);
+  const base = scores.slice(0, 15).filter((v) => v != null);
+  if (base.length < 3) return { index: -1, threshold: null, baselineMean: null };
+  const mean = isoMean(base);
+  const variance = isoMean(base.map((v) => (v - mean) ** 2));
+  const threshold = mean + 2 * Math.sqrt(variance);
+  for (let i = 0; i < scores.length - 2; i++) {
+    const window = [rows[i], rows[i + 1], rows[i + 2]];
+    if (window.some((d) => d.code === "C")) continue;
+    if (scores[i] > threshold && scores[i + 1] > threshold && scores[i + 2] > threshold) {
+      return { index: i, threshold, baselineMean: mean };
+    }
+  }
+  return { index: -1, threshold, baselineMean: mean };
+}
+
+function buildEvents(rows) {
+  const out = [];
+  let i = 0;
+  while (i < rows.length) {
+    let j = i;
+    while (j + 1 < rows.length && rows[j + 1].code === rows[i].code) j++;
+    if (rows[i].code !== "N" && rows[i].code !== "M") {
+      let peak = i;
+      for (let k = i; k <= j; k++) {
+        if ((rows[k].score ?? -Infinity) > (rows[peak].score ?? -Infinity)) peak = k;
+      }
+      out.push({ start: i, end: j, peak, code: rows[i].code, key: `${rows[i].date}-${rows[j].date}-${rows[i].code}` });
+    }
+    i = j + 1;
+  }
+  return out;
+}
+
+async function main() {
+  if (!folderName || !runId) {
+    document.body.innerHTML = `<div style="padding:40px;">Missing <code>?site=</code> or <code>?run_id=</code> in the URL.</div>`;
+    return;
+  }
+  const content = mountShell({
+    active: "sites",
+    activeSiteFolder: folderName,
+    crumbs: [
+      { label: "Sites", href: "/console/dashboard.html" },
+      { label: folderName, href: `/console/site.html?${new URLSearchParams({ site: folderName })}` },
+      { label: "Review" }
+    ]
+  });
+  $("topbarActions").innerHTML = `<span style="font-size:12px;font-family:var(--mono);color:var(--ink-soft);">${escapeHtml(runId)}</span>`;
+  content.innerHTML = `<div class="card" style="padding:24px;color:var(--ink-muted);font-size:13px;">Loading run&hellip;</div>`;
+
+  try {
+    detail = await api(`/api/image-sequence-run-detail?${new URLSearchParams({ folder_name: folderName, run_id: runId })}`);
+  } catch (error) {
+    content.innerHTML = `<div class="card" style="padding:24px;color:var(--bad);font-size:13px;">Could not load this run: ${escapeHtml(error.message)}</div>`;
+    return;
+  }
+
+  days = buildDays(detail.records);
+  events = buildEvents(days);
+  changeInfo = findChangeStart(days);
+  gaugeByDate = buildGaugeByDate(detail.gauge_series);
+  gaugeMeta = buildGaugeMeta(detail.gauge_series);
+  state.selectedIndex = changeInfo.index >= 0 ? changeInfo.index : 0;
+
+  const sequenceId = detail.summary.sequence_id;
+  try {
+    const evidence = await api(
+      `/api/workspace-evidence?${new URLSearchParams({ folder_name: folderName, kind: "image", run_id: runId, media_id: sequenceId })}`
+    );
+    evidencePoints = evidence.points || [];
+  } catch (error) {
+    evidencePoints = [];
+  }
+
+  render();
+}
+
+function counts() {
+  const c = { P: 0, N: 0, C: 0, U: 0 };
+  days.forEach((d) => {
+    if (d.code !== "M") c[d.code] = (c[d.code] || 0) + 1;
+  });
+  return c;
+}
+
+function visibleEvents() {
+  return state.filter ? events.filter((e) => e.code === state.filter) : events;
+}
+
+function render() {
+  const content = $("content");
+  const sel = days[state.selectedIndex];
+  const summary = detail.summary;
+  const c = counts();
+  const changeStartDay = changeInfo.index >= 0 ? days[changeInfo.index] : null;
+  const gaugeDates = Array.from(gaugeByDate.keys());
+  const selGauge = gaugeByDate.get(sel.date);
+
+  const baselineQuery = new URLSearchParams({ folder_name: folderName, sequence_id: sequenceId(), filename: summary.baseline_filename });
+  const selectedQuery = sel.filename && sel.code !== "M"
+    ? new URLSearchParams({ folder_name: folderName, sequence_id: sequenceId(), filename: sel.filename })
+    : null;
+  const comparisonQuery = summary.baseline_filename && sel.filename && sel.code !== "M"
+    ? new URLSearchParams({ folder_name: folderName, sequence_id: sequenceId(), run_id: runId, baseline_filename: summary.baseline_filename, filename: sel.filename })
+    : null;
+
+  const changeSummary = changeStartDay
+    ? `Baseline-to-image score held around ${changeInfo.baselineMean.toFixed(3)} through the first sampled records, then rose past ${changeInfo.threshold.toFixed(3)} starting ${escapeHtml(changeStartDay.date)}. This is a possible visual shift based on comparison scores, not a confirmed water-level change.`
+    : "Not enough same-camera history yet to say when (or whether) a sustained visual shift started.";
+
+  content.innerHTML = `
+    <div style="display:flex;gap:10px;">
+      ${pillHtml("P", "Possible change", c.P, "warn")}
+      ${pillHtml("N", "No change", c.N, "gray")}
+      ${pillHtml("C", "Camera issue", c.C, "bad")}
+      ${pillHtml("U", "Cannot judge", c.U, "gray")}
+    </div>
+
+    ${changeStartDay ? `
+    <div style="background:var(--warn-soft);border:1px solid #ebd3a0;border-radius:12px;padding:14px 18px;">
+      <div style="font-size:13px;font-weight:600;color:#5c3b08;">Possible visual shift &mdash; ${escapeHtml(changeStartDay.date)}</div>
+      <div style="font-size:12px;color:#6b4a12;margin-top:2px;">${changeSummary}</div>
+    </div>` : ""}
+
+    <div style="display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;flex-grow:1;min-height:0;">
+      <div style="display:flex;flex-direction:column;gap:16px;min-width:0;">
+
+        <div class="card" style="padding:14px 18px;">
+          <div style="font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:6px;">${escapeHtml(gaugeMeta.label)}${gaugeMeta.unit ? ` (${escapeHtml(gaugeMeta.unit)})` : ""} &middot; per day</div>
+          ${gaugeDates.length ? gaugeChartSvg() : `<div style="height:44px;display:flex;align-items:center;font-size:12px;color:var(--ink-muted);">No gage data is available for this sequence yet.</div>`}
+        </div>
+
+        <div class="card" style="padding:16px 18px;">
+          <div style="font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:8px;">Region change score &middot; per day</div>
+          ${scoreChartSvg()}
+        </div>
+
+        <div class="card" style="padding:16px 18px;flex-grow:1;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+            <div style="font-size:13px;font-weight:600;">Selected day &mdash; ${escapeHtml(sel.date)}</div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn" data-act="biggest">Biggest change detected</button>
+              <button class="btn" data-act="prev-event">&larr; Previous event</button>
+              <button class="btn" data-act="next-event">Next event &rarr;</button>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
+            <div>
+              <div class="hint" style="margin-bottom:4px;">Baseline &mdash; ${escapeHtml(summary.baseline_filename || "not recorded")}</div>
+              <img src="/api/image-sequence-image?${baselineQuery}" style="width:100%;border-radius:8px;display:block;" alt="Baseline image">
+            </div>
+            <div>
+              <div class="hint" style="margin-bottom:4px;">${escapeHtml(sel.date)}, ${escapeHtml(sel.time)} local (${escapeHtml(sel.resultLabel)})</div>
+              ${selectedQuery ? `<img src="/api/image-sequence-image?${selectedQuery}" style="width:100%;border-radius:8px;display:block;" alt="Selected image">` : `<div class="hint">No image for this day.</div>`}
+            </div>
+          </div>
+          <div class="hint" style="margin-bottom:6px;">Side-by-side comparison, watched area outlined</div>
+          ${comparisonQuery ? `<img src="/api/image-sequence-comparison?${comparisonQuery}" style="width:100%;border-radius:8px;display:block;" alt="Side-by-side comparison">` : `<div class="hint">No comparison for this day.</div>`}
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:16px;min-width:0;">
+        <div class="card" style="overflow:hidden;">
+          <div style="padding:12px 16px;border-bottom:1px solid var(--line-soft);font-size:13px;font-weight:600;">Events (${visibleEvents().length})</div>
+          <div style="max-height:340px;overflow:auto;">
+            ${visibleEvents()
+              .map((ev, i) => {
+                const evDays = days.slice(ev.start, ev.end + 1);
+                const status = detail.event_reviews[ev.key];
+                return `<button data-act="select-event" data-index="${events.indexOf(ev)}" style="width:100%;text-align:left;border:none;background:${state.selectedIndex === ev.peak ? "var(--accent-soft)" : "transparent"};border-bottom:1px solid var(--line-soft);padding:11px 16px;display:flex;flex-direction:column;gap:3px;cursor:pointer;">
+                  <div style="display:flex;align-items:center;justify-content:space-between;">
+                    <span style="font-size:12px;font-weight:600;font-family:var(--mono);">${escapeHtml(evDays[0].date)}${evDays.length > 1 ? " &ndash; " + escapeHtml(evDays[evDays.length - 1].date) : ""}</span>
+                    <span class="pill ${ev.code === "P" ? "warn" : ev.code === "C" ? "bad" : "gray"}" style="font-size:10px;">${escapeHtml(CODE_LABEL[ev.code])}</span>
+                  </div>
+                  <span style="font-size:11px;color:var(--ink-muted);">${status ? "Reviewed: " + escapeHtml(status.replace(/_/g, " ")) : "Not yet reviewed"}</span>
+                </button>`;
+              })
+              .join("") || `<div style="padding:16px;font-size:12px;color:var(--ink-muted);">No events in this run.</div>`}
+          </div>
+        </div>
+
+        <div class="card" style="padding:16px 18px;">
+          ${eventKeyForSelected() ? `
+          <div style="font-size:11px;font-weight:600;color:var(--ink-muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px;">Event review</div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:10px;">Is this event real?</div>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;">
+            <button class="btn" style="justify-content:flex-start;" data-act="event-review" data-status="confirmed_real">Confirm real change</button>
+            <button class="btn" style="justify-content:flex-start;" data-act="event-review" data-status="not_real">Not a real change</button>
+            <button class="btn" style="justify-content:flex-start;" data-act="event-review" data-status="acknowledged">Acknowledge quality issue</button>
+          </div>
+          <div style="height:1px;background:var(--line-soft);margin-bottom:14px;"></div>
+          ` : `<div class="hint" style="margin-bottom:14px;">This day is not part of a flagged event (it was labeled "${escapeHtml(days[state.selectedIndex].resultLabel)}"), so there is nothing to confirm or dismiss here. You can still record a human label below for this exact image.</div>`}
+          <div class="hint" style="margin-bottom:8px;">Separate from event review &mdash; record what you personally see in this exact image, whether or not the machine flagged it.</div>
+          ${humanLabelHref() ? `<a class="btn outline-accent" style="width:100%;justify-content:center;" href="${humanLabelHref()}">+ Add human label</a>` : `<div class="hint">This day has no saved image to label.</div>`}
+        </div>
+      </div>
+    </div>
+  `;
+  wireActions();
+}
+
+function sequenceId() {
+  return detail.summary.sequence_id;
+}
+
+function eventKeyForSelected() {
+  const ev = events.find((e) => state.selectedIndex >= e.start && state.selectedIndex <= e.end);
+  return ev ? ev.key : null;
+}
+
+function humanLabelHref() {
+  const sel = days[state.selectedIndex];
+  const point = evidencePoints.find((p) => p.filename === sel.filename);
+  if (!point) return null;
+  return `/console/form-human-label.html?${new URLSearchParams({
+    site: folderName,
+    run_id: runId,
+    media_id: sequenceId(),
+    sample_key: point.key,
+    date: sel.date,
+    time: sel.time
+  })}`;
+}
+
+function pillHtml(code, label, count, tone) {
+  const bg = { warn: "var(--warn-soft)", bad: "var(--bad-soft)", gray: "var(--line-soft)" }[tone];
+  const fg = { warn: "var(--warn)", bad: "var(--bad)", gray: "inherit" }[tone];
+  const active = state.filter === code;
+  return `<button data-act="filter" data-code="${code}" style="flex:1;text-align:left;border:1px solid ${active ? "var(--accent)" : "transparent"};background:${bg};border-radius:10px;padding:10px 14px;cursor:pointer;">
+    <div style="font-size:11px;font-weight:600;color:${fg};text-transform:uppercase;letter-spacing:.03em;">${label}</div>
+    <div style="font-size:20px;font-weight:600;font-family:var(--mono);color:${fg};margin-top:2px;">${count}</div>
+  </button>`;
+}
+
+function scoreChartSvg() {
+  const points = days.map((d, i) => ({ d, i })).filter((p) => p.d.score != null);
+  if (!points.length) return `<div class="hint">No scores available.</div>`;
+  const max = Math.max(0.1, ...points.map((p) => p.d.score));
+  const x = (i) => 30 + (i / Math.max(1, days.length - 1)) * 1000;
+  const y = (score) => 100 - (score / max) * 85;
+  const dots = points
+    .map((p) => `<circle cx="${x(p.i)}" cy="${y(p.d.score)}" r="${p.i === state.selectedIndex ? 5 : 3}" fill="${p.d.code === "C" ? "#9b1c31" : p.d.code === "P" ? "#9a5b13" : "#98a2b3"}" data-act="select-day" data-index="${p.i}" style="cursor:pointer;"/>`)
+    .join("");
+  const thresholdY = changeInfo.threshold != null ? y(changeInfo.threshold) : null;
+  return `<svg viewBox="0 0 1040 110" style="width:100%;height:90px;display:block;">
+    <line x1="30" y1="100" x2="1040" y2="100" stroke="var(--line)" stroke-width="1"/>
+    ${thresholdY != null ? `<line x1="30" y1="${thresholdY}" x2="1040" y2="${thresholdY}" stroke="#1769aa" stroke-width="1" stroke-dasharray="4,3" opacity="0.7"/>` : ""}
+    ${dots}
+  </svg>`;
+}
+
+function gaugeChartSvg() {
+  const rows = days.map((d) => gaugeByDate.get(d.date)).filter((v) => v != null);
+  if (!rows.length) return `<div class="hint">No gage data available.</div>`;
+  const min = Math.min(...rows);
+  const max = Math.max(...rows);
+  const range = Math.max(0.001, max - min);
+  const points = days
+    .map((d, i) => ({ v: gaugeByDate.get(d.date), i }))
+    .filter((p) => p.v != null)
+    .map((p) => `${30 + (p.i / Math.max(1, days.length - 1)) * 1000},${58 - ((p.v - min) / range) * 44}`)
+    .join(" ");
+  return `<svg viewBox="0 0 1040 60" style="width:100%;height:50px;display:block;">
+    <polyline points="${points}" fill="none" stroke="#1769aa" stroke-width="1.6"/>
+  </svg>`;
+}
+
+function wireActions() {
+  const content = $("content");
+  content.querySelectorAll("[data-act]").forEach((el) => {
+    el.addEventListener("click", async () => {
+      const act = el.dataset.act;
+      if (act === "filter") {
+        const code = el.dataset.code;
+        state.filter = state.filter === code ? null : code;
+        render();
+      } else if (act === "select-day") {
+        state.selectedIndex = Number(el.dataset.index);
+        state.eventCursor = -1;
+        render();
+      } else if (act === "select-event") {
+        const idx = Number(el.dataset.index);
+        state.eventCursor = idx;
+        state.selectedIndex = events[idx].peak;
+        render();
+      } else if (act === "biggest") {
+        const idx = days.findIndex((d) => d.filename === detail.summary.biggest_change_filename);
+        if (idx >= 0) {
+          state.selectedIndex = idx;
+          state.eventCursor = -1;
+          render();
+        }
+      } else if (act === "prev-event" || act === "next-event") {
+        if (!events.length) return;
+        const delta = act === "prev-event" ? -1 : 1;
+        const next = (state.eventCursor + delta + events.length) % events.length;
+        state.eventCursor = next;
+        state.selectedIndex = events[next].peak;
+        render();
+      } else if (act === "event-review") {
+        const key = eventKeyForSelected();
+        if (!key) return;
+        try {
+          await api("/api/set-image-sequence-event-review", {
+            folder_name: folderName,
+            sequence_id: sequenceId(),
+            run_id: runId,
+            event_key: key,
+            status: el.dataset.status
+          });
+          detail.event_reviews[key] = el.dataset.status;
+          toast("Event review saved.");
+          render();
+        } catch (error) {
+          toast(error.message);
+        }
+      }
+    });
+  });
+}
+
+main();
+</script>
+</body>
+</html>
