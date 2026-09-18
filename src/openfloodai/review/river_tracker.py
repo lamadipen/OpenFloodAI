@@ -179,9 +179,7 @@ def _read_config_progress(
         }
         for guide in config.normal_waterline_guides
     ]
-    riverbank_guide_status = (
-        f"{len(guides)} guide(s) drawn" if guides else "not_drawn"
-    )
+    riverbank_guide_status = f"{len(guides)} guide(s) drawn" if guides else "not_drawn"
     baseline_selected = is_normal_baseline_confirmed(guides)
     return watched_area_status, riverbank_guide_status, baseline_selected
 

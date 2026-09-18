@@ -292,9 +292,7 @@ def run_bootstrap(
 
         try:
             download = download_river_image_sequence(
-                camera_url=(
-                    f"https://apps.usgs.gov/hivis/camera/{camera.camera_id}"
-                ),
+                camera_url=(f"https://apps.usgs.gov/hivis/camera/{camera.camera_id}"),
                 start_date=start_date,
                 end_date=end_date,
                 timezone_name=camera.timezone,

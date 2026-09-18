@@ -47,9 +47,7 @@ def test_assign_dataset_group_rejects_reversed_range(tmp_path: Path) -> None:
 
 
 def test_assign_dataset_group_rejects_overlap_with_existing_assignment(tmp_path: Path) -> None:
-    assign_dataset_group(
-        tmp_path, group="practice", start_date="2026-06-18", end_date="2026-07-31"
-    )
+    assign_dataset_group(tmp_path, group="practice", start_date="2026-06-18", end_date="2026-07-31")
     with pytest.raises(DatasetGroupError, match="overlaps an existing 'practice' assignment"):
         assign_dataset_group(
             tmp_path, group="locked_validation", start_date="2026-07-15", end_date="2026-08-15"
@@ -57,9 +55,7 @@ def test_assign_dataset_group_rejects_overlap_with_existing_assignment(tmp_path:
 
 
 def test_assign_dataset_group_allows_adjacent_non_overlapping_ranges(tmp_path: Path) -> None:
-    assign_dataset_group(
-        tmp_path, group="practice", start_date="2026-06-18", end_date="2026-07-31"
-    )
+    assign_dataset_group(tmp_path, group="practice", start_date="2026-06-18", end_date="2026-07-31")
     second = assign_dataset_group(
         tmp_path, group="excluded", start_date="2026-08-01", end_date="2026-08-31"
     )

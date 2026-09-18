@@ -65,6 +65,7 @@ from openfloodai.review.event_reviews import (
     set_event_review,
 )
 from openfloodai.review.river_tracker import build_river_tracker
+from openfloodai.ui import review_workspace
 from openfloodai.validation import (
     build_export_all,
     build_run_export,
@@ -103,6 +104,8 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         """Serve site-status JSON or the static local UI."""
 
         path = urlsplit(self.path).path
+        if review_workspace.handle_get(self, path):
+            return
         if path == "/river-images.html":
             self._send_river_images_page()
             return
@@ -539,6 +542,8 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
     def do_POST(self) -> None:
         """Handle site setup and video intake requests."""
 
+        if review_workspace.handle_post(self, self.path):
+            return
         if self.path == "/api/download-river-images":
             self._handle_download_river_images()
             return

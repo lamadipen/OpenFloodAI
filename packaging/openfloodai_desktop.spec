@@ -28,6 +28,10 @@ a = Analysis(
     pathex=[str(REPO_ROOT / "src")],
     datas=[
         (
+            str(REPO_ROOT / "tools" / "openfloodai-review-workspace.html"),
+            "openfloodai/ui/static",
+        ),
+        (
             str(REPO_ROOT / "src" / "openfloodai" / "schemas" / "event.schema.json"),
             "openfloodai/schemas",
         ),

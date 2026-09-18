@@ -44,6 +44,7 @@ packages = ["src/openfloodai"]
 "tools/openfloodai-home-ui.html" = "openfloodai/ui/static/openfloodai-home-ui.html"
 "tools/openfloodai-river-images.html" = "openfloodai/ui/static/openfloodai-river-images.html"
 "tools/openfloodai-site-details.html" = "openfloodai/ui/static/openfloodai-site-details.html"
+"tools/openfloodai-review-workspace.html" = "openfloodai/ui/static/openfloodai-review-workspace.html"
 "tools/openfloodai-river-tracker.html" = "openfloodai/ui/static/openfloodai-river-tracker.html"
 
 [tool.pytest.ini_options]

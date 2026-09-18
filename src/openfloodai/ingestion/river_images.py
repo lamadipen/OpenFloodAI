@@ -564,9 +564,7 @@ def sample_image_sequence_candidates(
     except ZoneInfoNotFoundError as error:
         raise RiverImageError("Enter a valid IANA timezone.") from error
     if mode == "one_daylight_image_per_day":
-        if not (
-            0 <= daylight_window_start_hour < daylight_window_end_hour <= 24
-        ):
+        if not (0 <= daylight_window_start_hour < daylight_window_end_hour <= 24):
             raise RiverImageError(
                 "The daylight window needs a start hour before an end hour, both 0-24."
             )
@@ -733,18 +731,16 @@ def download_river_image_sequence(
                         and filename
                         and (sequence_dir / "images" / filename).is_file()
                     ):
-                        already_downloaded[str(raw_record.get("source_url"))] = (
-                            ImageSequenceRecord(
-                                site_id=str(raw_record.get("site_id")),
-                                camera_id=str(raw_record.get("camera_id")),
-                                source_url=str(raw_record.get("source_url")),
-                                captured_at_utc=str(raw_record.get("captured_at_utc")),
-                                local_time=str(raw_record.get("local_time")),
-                                filename=filename,
-                                file_size_bytes=int(str(raw_record.get("file_size_bytes") or 0)),
-                                download_status="downloaded",
-                                source_system=str(raw_record.get("source_system", "usgs_nims")),
-                            )
+                        already_downloaded[str(raw_record.get("source_url"))] = ImageSequenceRecord(
+                            site_id=str(raw_record.get("site_id")),
+                            camera_id=str(raw_record.get("camera_id")),
+                            source_url=str(raw_record.get("source_url")),
+                            captured_at_utc=str(raw_record.get("captured_at_utc")),
+                            local_time=str(raw_record.get("local_time")),
+                            filename=filename,
+                            file_size_bytes=int(str(raw_record.get("file_size_bytes") or 0)),
+                            download_status="downloaded",
+                            source_system=str(raw_record.get("source_system", "usgs_nims")),
                         )
         else:
             raise RiverImageError(

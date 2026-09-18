@@ -584,3 +584,72 @@ def test_runs_preserve_input_receipts_across_site_edits(tmp_path: Path) -> None:
     manifest.unlink()
     labels.unlink()
     assert read_input_snapshot(first_dir) == first_inputs
+
+
+def test_workspace_reviews_saved_video_without_changing_machine_evidence(tmp_path: Path) -> None:
+    import pytest
+
+    from openfloodai.contracts import read_jsonl_records
+    from openfloodai.review.workspace import catalogue, evidence, media_path, save_observation
+
+    site = make_site_dir(tmp_path)
+    labels_file = site / "labels" / "labels.jsonl"
+    labels_file.unlink()
+    video = site / "inputs" / "videos" / "normal-001.avi"
+    create_tiny_video(video, frame_values=(100, 100, 100))
+    report = run_site_validation(site, analyse_full_video=True)
+    run = site / "outputs" / "runs" / report.run_id
+    records = run / "records" / "normal-001.jsonl"
+    original = records.read_bytes()
+    payload = evidence(site, "video", report.run_id, "normal-001")
+    assert payload["points"]
+    assert payload["gauge"] is None
+    assert all(p["label"] is None for p in payload["points"])
+    assert catalogue(site)[0]["media_id"] == "normal-001"
+    assert media_path(site, "video", report.run_id, "normal-001") == video
+    point = payload["points"][0]
+    request = {
+        "kind": "video",
+        "run_id": report.run_id,
+        "media_id": "normal-001",
+        "sample_key": point["key"],
+        "start_second": point["start"],
+        "end_second": point["label_end"],
+        "human_label": "no_water_level_change",
+    }
+    save_observation(site, request)
+    refreshed = evidence(site, "video", report.run_id, "normal-001")
+    assert refreshed["points"][0]["label"]["human_label"] == "no_water_level_change"
+    assert records.read_bytes() == original
+    assert read_jsonl_records(labels_file)[0]["time_window_seconds"] == [
+        point["start"],
+        point["label_end"],
+    ]
+    with pytest.raises(ValueError):
+        save_observation(site, request)
+    video.write_bytes(b"changed")
+    with pytest.raises(ValueError, match="changed since analysis"):
+        media_path(site, "video", report.run_id, "normal-001")
+
+
+def test_workspace_full_video_analysis_does_not_follow_label_windows(tmp_path: Path) -> None:
+    from openfloodai.review.workspace import evidence
+
+    site = make_site_dir(tmp_path)
+    (site / "labels" / "labels.jsonl").write_text(
+        json.dumps(
+            {
+                "video_id": "normal-001",
+                "time_window_seconds": [0, 2],
+                "human_label": "no_water_level_change",
+            }
+        )
+        + "\n"
+    )
+    create_tiny_video(site / "inputs" / "videos" / "normal-001.avi", frame_values=(100, 100))
+    legacy = run_site_validation(site)
+    full = run_site_validation(site, analyse_full_video=True)
+    old_points = evidence(site, "video", legacy.run_id, "normal-001")["points"]
+    full_points = evidence(site, "video", full.run_id, "normal-001")["points"]
+    assert max(p["end"] for p in old_points) < 2
+    assert max(p["end"] for p in full_points) > 2

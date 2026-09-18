@@ -93,6 +93,10 @@ Human video review labels should use the format in [docs/research/human-label-fo
 
 Human labels can be compared with local system output using [docs/research/human-label-comparison.md](docs/research/human-label-comparison.md).
 
+The separate [Review Workspace](docs/learning/review-workspace.md) supports
+analysing videos or image sequences first, then reviewing saved evidence,
+adding human labels, and assigning dataset groups. Open it from the Home UI.
+
 Prototype thresholds can be reviewed using [docs/research/threshold-tuning.md](docs/research/threshold-tuning.md).
 
 Current validation progress and known limits are tracked in [docs/research/validation-results.md](docs/research/validation-results.md).

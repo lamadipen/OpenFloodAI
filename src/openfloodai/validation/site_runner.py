@@ -152,6 +152,7 @@ def run_site_validation(
     *,
     config_path: Path | None = None,
     sampling: SamplingSettings | None = None,
+    analyse_full_video: bool = False,
 ) -> SiteValidationReport:
     """Run local validation for all videos in one site folder."""
 
@@ -189,6 +190,7 @@ def run_site_validation(
                     config_path=captured_config,
                     labels=labels,
                     sampling=sampling,
+                    analyse_full_video=analyse_full_video,
                 )
             )
 
@@ -398,6 +400,7 @@ def _run_one_video(
     config_path: Path,
     labels: list[JsonObject],
     sampling: SamplingSettings | None,
+    analyse_full_video: bool = False,
 ) -> SiteValidationResult:
     output_dir = run_dir / "videos" / video_id
 
@@ -409,7 +412,9 @@ def _run_one_video(
             records_output_path=run_dir / "records" / f"{video_id}.jsonl",
             review_images_output_dir=run_dir / "review-images" / video_id,
             image_prefix=video_id,
-            time_windows=[
+            time_windows=None
+            if analyse_full_video
+            else [
                 window
                 for label in labels
                 if label.get("video_id") == video_id

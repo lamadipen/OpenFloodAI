@@ -1268,3 +1268,53 @@ def test_label_video_duration_reads_local_metadata(tmp_path: Path) -> None:
         with pytest.raises(HTTPError) as error:
             get_json(base_url + "/api/video-duration?folder_name=river&video_id=missing")
         assert error.value.code == 400
+
+
+def test_workspace_serves_saved_media_ranges_and_rejects_cross_origin_writes(
+    tmp_path: Path,
+) -> None:
+    import hashlib
+
+    site = make_site(tmp_path / "demo")
+    run = site / "outputs" / "runs" / "saved-run"
+    inputs = run / "inputs-used"
+    inputs.mkdir(parents=True)
+    video = site / "inputs" / "videos" / "river-001.mp4"
+    (inputs / "video-list.snapshot.json").write_text(
+        json.dumps(
+            [
+                {
+                    "video_id": "river-001",
+                    "filename": video.name,
+                    "sha256": hashlib.sha256(video.read_bytes()).hexdigest(),
+                }
+            ]
+        )
+    )
+    query = urlencode(
+        {"folder_name": "demo", "kind": "video", "run_id": "saved-run", "media_id": "river-001"}
+    )
+    with serve_home_ui(tmp_path) as base:
+        assert "Review workspace" in get_text(base + "/review-workspace.html")[2]
+        req = Request(base + "/api/workspace-media?" + query, headers={"Range": "bytes=0-3"})
+        with urlopen(req, timeout=5) as response:
+            assert response.status == 206
+            assert response.read() == video.read_bytes()[:4]
+            assert response.headers["Content-Range"].startswith("bytes 0-3/")
+        with pytest.raises(HTTPError) as rejected:
+            urlopen(
+                Request(
+                    base + "/api/workspace-label",
+                    data=b"{}",
+                    headers={
+                        "Content-Type": "application/json",
+                        "Origin": "https://example.test",
+                    },
+                ),
+                timeout=5,
+            )
+        assert rejected.value.code == 403
+        video.write_bytes(b"replaced")
+        with pytest.raises(HTTPError) as changed:
+            urlopen(base + "/api/workspace-media?" + query, timeout=5)
+        assert changed.value.code == 400
