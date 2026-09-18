@@ -141,6 +141,34 @@ def test_largest_deltas_finds_an_earlier_larger_swing_with_a_partial_pullback() 
     assert decrease is not None and decrease.delta_value == -7.0
 
 
+def test_largest_deltas_on_a_continuously_falling_series_reports_no_increase() -> None:
+    readings = [
+        gage.GageReading(datetime_utc="2025-01-01T00:00:00+00:00", value=10.0),
+        gage.GageReading(datetime_utc="2025-01-01T01:00:00+00:00", value=7.0),
+        gage.GageReading(datetime_utc="2025-01-01T02:00:00+00:00", value=4.0),
+        gage.GageReading(datetime_utc="2025-01-01T03:00:00+00:00", value=1.0),
+    ]
+
+    increase, decrease = gage._largest_deltas(readings, window_hours=6)
+
+    assert increase is None, "a purely falling series must never report an 'increase'"
+    assert decrease is not None and decrease.delta_value == -9.0
+
+
+def test_largest_deltas_on_a_continuously_rising_series_reports_no_decrease() -> None:
+    readings = [
+        gage.GageReading(datetime_utc="2025-01-01T00:00:00+00:00", value=1.0),
+        gage.GageReading(datetime_utc="2025-01-01T01:00:00+00:00", value=4.0),
+        gage.GageReading(datetime_utc="2025-01-01T02:00:00+00:00", value=7.0),
+        gage.GageReading(datetime_utc="2025-01-01T03:00:00+00:00", value=10.0),
+    ]
+
+    increase, decrease = gage._largest_deltas(readings, window_hours=6)
+
+    assert increase is not None and increase.delta_value == 9.0
+    assert decrease is None, "a purely rising series must never report a 'decrease'"
+
+
 def test_largest_deltas_handles_too_few_readings() -> None:
     single = [gage.GageReading(datetime_utc="2025-01-01T00:00:00+00:00", value=1.0)]
     assert gage._largest_deltas(single, 6) == (None, None)

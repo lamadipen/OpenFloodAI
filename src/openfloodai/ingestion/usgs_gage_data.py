@@ -571,7 +571,10 @@ def _largest_deltas(
         if min_deque:
             min_idx = min_deque[0]
             delta = right_value - parsed[min_idx][1]
-            if best_increase is None or delta > best_increase.delta_value:
+            # A continuously falling series would otherwise report its
+            # least-negative delta as a "largest increase" just because
+            # nothing else was ever compared — only a genuine rise counts.
+            if delta > 0 and (best_increase is None or delta > best_increase.delta_value):
                 best_increase = _DeltaCandidate(
                     start_datetime_utc=readings[min_idx].datetime_utc,
                     end_datetime_utc=readings[right].datetime_utc,
@@ -580,7 +583,8 @@ def _largest_deltas(
         if max_deque:
             max_idx = max_deque[0]
             delta = right_value - parsed[max_idx][1]
-            if best_decrease is None or delta < best_decrease.delta_value:
+            # Symmetric guard: only a genuine fall counts as a decrease.
+            if delta < 0 and (best_decrease is None or delta < best_decrease.delta_value):
                 best_decrease = _DeltaCandidate(
                     start_datetime_utc=readings[max_idx].datetime_utc,
                     end_datetime_utc=readings[right].datetime_utc,
