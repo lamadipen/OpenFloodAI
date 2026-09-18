@@ -7,6 +7,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
+from openfloodai.contracts.local_store import read_jsonl_records
 from openfloodai.ingestion import river_images as river
 
 SLUG = "CO_Colorado_River_near_Cameo"
@@ -389,6 +390,31 @@ def test_download_sequence_with_resume_reuses_downloaded_images_and_retries_fail
     image_fetches = [url for url in fetch_calls if "?" not in url]
     assert len(image_fetches) == 1
     assert "10-00-00" in image_fetches[0]
+
+    # The saved manifest must hold exactly one current row per sample, not
+    # the pre-resume rows plus the post-resume rows appended on top.
+    manifest_path = resumed.directory / "sequence-manifest.jsonl"
+    saved_records = read_jsonl_records(manifest_path)
+    assert len(saved_records) == 2
+    saved_filenames = [record["filename"] for record in saved_records]
+    assert len(saved_filenames) == len(set(saved_filenames))
+
+    # Resuming again (nothing left to retry) must still not duplicate rows.
+    monkeypatch.setattr(river, "_fetch", fetch_retry)
+    resumed_again = river.download_river_image_sequence(
+        camera_url=river.DEFAULT_CAMERA_URL,
+        start_date="2026-09-01",
+        end_date="2026-09-01",
+        timezone_name="UTC",
+        sampling_mode="all",
+        site_id="test-site",
+        site_dir=site_dir,
+        resume=True,
+    )
+    saved_records_again = read_jsonl_records(
+        resumed_again.directory / "sequence-manifest.jsonl"
+    )
+    assert len(saved_records_again) == 2
 
 
 def test_download_sequence_records_failed_image_without_raising(

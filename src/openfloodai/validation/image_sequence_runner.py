@@ -25,7 +25,11 @@ import cv2
 
 from openfloodai.config import load_site_config, reference_region_to_dict
 from openfloodai.contracts import read_jsonl_records, write_jsonl_records
-from openfloodai.review.event_reviews import EventReviewError, list_event_reviews
+from openfloodai.review.event_reviews import (
+    EventReviewError,
+    compute_evidence_key,
+    list_event_reviews,
+)
 from openfloodai.review.review_images import generate_biggest_change_review_images
 from openfloodai.vision.simple_signals import (
     VisualSignalError,
@@ -329,6 +333,34 @@ def resolve_image_sequence_run_image(site_dir: Path, run_id: str, filename: str)
     return candidate
 
 
+def resolve_run_config_snapshot(site_dir: Path, run_id: str) -> dict[str, Any]:
+    """Load the exact watched-area/waterline-guide config one saved run used.
+
+    A run's own comparison images must always reflect what that run was
+    scored against, even after the site's live config is later edited —
+    this reads the frozen `site-config.snapshot.json` written at run time
+    (`_write_inputs_used`), never the current config.
+    """
+
+    if not _RUN_ID_PATTERN.fullmatch(run_id or ""):
+        raise ImageSequenceValidationError("Run not found.")
+    runs_root = (site_dir / "outputs" / "image-sequence-runs").resolve()
+    snapshot_path = (runs_root / run_id / "inputs-used" / "site-config.snapshot.json").resolve()
+    try:
+        snapshot_path.relative_to(runs_root)
+    except ValueError as error:
+        raise ImageSequenceValidationError("Run not found.") from error
+    if snapshot_path.is_symlink() or not snapshot_path.is_file():
+        raise ImageSequenceValidationError("Run configuration snapshot not found.")
+    try:
+        loaded = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise ImageSequenceValidationError("Run configuration snapshot not found.") from error
+    if not isinstance(loaded, dict):
+        raise ImageSequenceValidationError("Run configuration snapshot not found.")
+    return loaded
+
+
 def read_image_sequence_run_detail(site_dir: Path, run_id: str) -> dict[str, Any]:
     """Read one saved image-sequence run's summary, records, and report text."""
 
@@ -367,8 +399,12 @@ def read_image_sequence_run_detail(site_dir: Path, run_id: str) -> dict[str, Any
                     gauge_series = loaded
             except (OSError, ValueError):
                 gauge_series = []
+        evidence_key = compute_evidence_key(
+            summary.get("baseline_filename") if isinstance(summary, dict) else None,
+            summary.get("watched_area_used") if isinstance(summary, dict) else None,
+        )
         try:
-            event_reviews = list_event_reviews(sequence_dir)
+            event_reviews = list_event_reviews(sequence_dir, evidence_key=evidence_key)
         except EventReviewError:
             event_reviews = {}
 

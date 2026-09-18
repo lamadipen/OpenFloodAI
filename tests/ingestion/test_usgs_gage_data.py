@@ -317,6 +317,89 @@ def test_build_daily_gage_series_picks_nearest_reading_per_downloaded_image() ->
     assert rows[0]["gauge_value"] == 3.5
     assert rows[1]["date"] == "2025-01-02"
     assert rows[1]["gauge_value"] == 3.9
+    for row in rows:
+        assert row["parameter_code"] == gage.PARAMETER_GAGE_HEIGHT
+        assert row["parameter_label"] == "gage height"
+        assert row["unit"] == "ft"
+        assert row["used_fallback_discharge"] is False
+
+
+def test_build_daily_gage_series_drops_a_reading_that_is_too_far_from_the_image() -> None:
+    series = gage.GageSeries(
+        nwis_site_id="09095500",
+        parameter_code=gage.PARAMETER_GAGE_HEIGHT,
+        parameter_label="gage height",
+        unit="ft",
+        used_fallback_discharge=False,
+        # The gage was offline for weeks; the only reading anywhere near
+        # this image is 10 days away. That is not a measurement of this
+        # image's moment and must not be plotted as though it were.
+        readings=[gage.GageReading(datetime_utc="2025-01-11T12:00:00+00:00", value=3.5)],
+        source_url="https://example.invalid",
+    )
+    manifest_records = [
+        {
+            "filename": "a.jpg",
+            "captured_at_utc": "2025-01-01T12:00:00+00:00",
+            "download_status": "downloaded",
+        },
+    ]
+
+    assert gage.build_daily_gage_series(series, manifest_records) == []
+
+
+def test_build_daily_gage_series_keeps_a_reading_within_the_allowed_gap() -> None:
+    series = gage.GageSeries(
+        nwis_site_id="09095500",
+        parameter_code=gage.PARAMETER_GAGE_HEIGHT,
+        parameter_label="gage height",
+        unit="ft",
+        used_fallback_discharge=False,
+        readings=[
+            gage.GageReading(
+                datetime_utc="2025-01-01T20:00:00+00:00", value=3.5
+            )  # 8 hours away, within MAX_READING_GAP_HOURS.
+        ],
+        source_url="https://example.invalid",
+    )
+    manifest_records = [
+        {
+            "filename": "a.jpg",
+            "captured_at_utc": "2025-01-01T12:00:00+00:00",
+            "download_status": "downloaded",
+        },
+    ]
+
+    rows = gage.build_daily_gage_series(series, manifest_records)
+    assert len(rows) == 1
+    assert rows[0]["gauge_value"] == 3.5
+
+
+def test_build_daily_gage_series_carries_discharge_fallback_on_every_row() -> None:
+    series = gage.GageSeries(
+        nwis_site_id="09095500",
+        parameter_code=gage.PARAMETER_DISCHARGE,
+        parameter_label="discharge",
+        unit="ft3/s",
+        used_fallback_discharge=True,
+        readings=[gage.GageReading(datetime_utc="2025-01-01T12:00:00+00:00", value=450.0)],
+        source_url="https://example.invalid",
+    )
+    manifest_records = [
+        {
+            "filename": "a.jpg",
+            "captured_at_utc": "2025-01-01T12:00:00+00:00",
+            "download_status": "downloaded",
+        },
+    ]
+
+    rows = gage.build_daily_gage_series(series, manifest_records)
+
+    assert len(rows) == 1
+    assert rows[0]["gauge_value"] == 450.0
+    assert rows[0]["parameter_label"] == "discharge"
+    assert rows[0]["unit"] == "ft3/s"
+    assert rows[0]["used_fallback_discharge"] is True
 
 
 def test_build_daily_gage_series_skips_images_with_no_nearby_reading() -> None:
@@ -386,6 +469,10 @@ def test_write_gauge_readings_summary_also_writes_daily_series_file(
             "captured_at_utc": "2025-01-01T12:00:00+00:00",
             "gauge_datetime_utc": "2025-01-01T12:00:00+00:00",
             "gauge_value": 3.5,
+            "parameter_code": gage.PARAMETER_GAGE_HEIGHT,
+            "parameter_label": "gage height",
+            "unit": "ft",
+            "used_fallback_discharge": False,
         }
     ]
 

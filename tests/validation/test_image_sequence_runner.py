@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 import pytest
 
-from openfloodai.review.event_reviews import set_event_review
+from openfloodai.review.event_reviews import compute_evidence_key, set_event_review
 from openfloodai.validation.image_sequence_runner import (
     RESULT_CAMERA_OR_IMAGE_PROBLEM,
     RESULT_CANNOT_JUDGE_WATER_LEVEL,
@@ -313,13 +313,68 @@ def test_read_run_detail_includes_gauge_series_and_event_reviews_when_present(
     (sequence_dir / "gauge-daily-series.json").write_text(
         json.dumps([{"date": "2026-09-01", "gauge_value": 3.5}]), encoding="utf-8"
     )
-    set_event_review(sequence_dir, event_key="2026-09-01-2026-09-01-P", status="confirmed_real")
 
     report = run_image_sequence_validation(site_dir, SEQUENCE_ID)
+    detail = read_image_sequence_run_detail(site_dir, report.run_id)
+    summary = detail["summary"]
+    evidence_key = compute_evidence_key(
+        summary["baseline_filename"], summary["watched_area_used"]
+    )
+    set_event_review(
+        sequence_dir,
+        event_key="2026-09-01-2026-09-01-P",
+        status="confirmed_real",
+        evidence_key=evidence_key,
+    )
+
     detail = read_image_sequence_run_detail(site_dir, report.run_id)
 
     assert detail["gauge_series"] == [{"date": "2026-09-01", "gauge_value": 3.5}]
     assert detail["event_reviews"] == {"2026-09-01-2026-09-01-P": "confirmed_real"}
+
+
+def test_a_review_does_not_carry_over_when_the_watched_area_changes(tmp_path: Path) -> None:
+    site_dir = tmp_path / "site"
+    make_site(site_dir, reference_region=FULL_REGION)
+    sequence_dir = site_dir / "inputs" / "image-sequences" / SEQUENCE_ID
+    images_dir = sequence_dir / "images"
+    write_frame(images_dir / "a.jpg", 30)
+    write_frame(images_dir / "b.jpg", 30)
+    write_manifest(
+        sequence_dir,
+        [
+            manifest_record("a.jpg", "2026-09-01T00:00:00+00:00", "downloaded"),
+            manifest_record("b.jpg", "2026-09-01T01:00:00+00:00", "downloaded"),
+        ],
+    )
+
+    first_report = run_image_sequence_validation(site_dir, SEQUENCE_ID)
+    first_detail = read_image_sequence_run_detail(site_dir, first_report.run_id)
+    first_evidence_key = compute_evidence_key(
+        first_detail["summary"]["baseline_filename"],
+        first_detail["summary"]["watched_area_used"],
+    )
+    set_event_review(
+        sequence_dir,
+        event_key="k1",
+        status="confirmed_real",
+        evidence_key=first_evidence_key,
+    )
+    assert read_image_sequence_run_detail(site_dir, first_report.run_id)["event_reviews"] == {
+        "k1": "confirmed_real"
+    }
+
+    # Narrow the watched area and rerun on the same downloaded images. Even
+    # though the event_key ("k1") is unchanged, the evidence behind it is
+    # not the same comparison a human actually reviewed.
+    config_path = site_dir / "configs" / "site.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["reference_region"] = {"x": 0, "y": 0, "width": 40, "height": 40}
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    second_report = run_image_sequence_validation(site_dir, SEQUENCE_ID)
+    second_detail = read_image_sequence_run_detail(site_dir, second_report.run_id)
+
+    assert second_detail["event_reviews"] == {}
 
 
 def test_list_image_sequence_runs_ignores_other_sequences(tmp_path: Path) -> None:

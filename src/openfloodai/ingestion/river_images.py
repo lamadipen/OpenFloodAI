@@ -817,9 +817,13 @@ def download_river_image_sequence(
             )
 
     records.sort(key=lambda record: record.captured_at_utc)
-    write_jsonl_records(
-        sequence_dir / "sequence-manifest.jsonl", [asdict(record) for record in records]
-    )
+    manifest_path = sequence_dir / "sequence-manifest.jsonl"
+    # write_jsonl_records only appends; `records` here is already the full,
+    # current manifest (including reused rows on resume), so the old file
+    # must be cleared first or every resume would duplicate every row in it.
+    if manifest_path.exists():
+        manifest_path.unlink()
+    write_jsonl_records(manifest_path, [asdict(record) for record in records])
 
     result = ImageSequenceDownloadResult(sequence_dir, sequence_id, zone_name, records)
     summary = result.to_dict() | {

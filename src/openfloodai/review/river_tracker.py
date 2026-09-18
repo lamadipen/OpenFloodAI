@@ -20,6 +20,7 @@ from openfloodai.ingestion.river_images import list_site_image_sequences
 from openfloodai.ingestion.river_registry import CameraRecord, RiverRegistry, load_river_registry
 from openfloodai.review.dataset_groups import DEFAULT_DATASET_GROUP, list_dataset_group_assignments
 from openfloodai.review.sample_quality import is_normal_baseline_confirmed
+from openfloodai.validation.image_sequence_runner import list_image_sequence_runs
 from openfloodai.validation.site_status import read_validation_site_status
 
 _DEFAULT_REFERENCE_REGION = {"x": 0, "y": 50, "width": 100, "height": 50}
@@ -120,9 +121,20 @@ def _build_row(camera: CameraRecord, registry: RiverRegistry, sites_base_dir: Pa
 
     dataset_group = _summarize_dataset_group(site_dir)
 
+    # This tracker is about the image-sequence pilot flow specifically, so
+    # its progress must come from image-sequence runs (image-sequence-runs/,
+    # run-summary.json), never `status.report_count` — that only counts the
+    # unrelated video flow's `validation-report*.md` files. Using it here
+    # made an image-only site's run count silently read from the wrong
+    # flow: 0 after a real image run, or nonzero from a stray video report.
+    image_sequence_run_count = 0
+    sequence_id = latest.get("sequence_id") if latest is not None else None
+    if isinstance(sequence_id, str) and sequence_id:
+        image_sequence_run_count = len(list_image_sequence_runs(site_dir, sequence_id))
+
     human_review_progress = "not_started"
     if latest is not None:
-        if baseline_selected and status.report_count > 0:
+        if baseline_selected and image_sequence_run_count > 0:
             human_review_progress = "validated"
         elif baseline_selected:
             human_review_progress = "baseline_ready"
@@ -143,7 +155,7 @@ def _build_row(camera: CameraRecord, registry: RiverRegistry, sites_base_dir: Pa
         watched_area_status=watched_area_status,
         riverbank_guide_status=riverbank_guide_status,
         baseline_selected=baseline_selected,
-        validation_run_count=status.report_count,
+        validation_run_count=image_sequence_run_count,
         dataset_group=dataset_group,
         human_review_progress=human_review_progress,
         known_problems=known_problems,

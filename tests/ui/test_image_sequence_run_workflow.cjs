@@ -204,6 +204,28 @@ test("buildImageSequenceDays treats a non-downloaded record as a coverage gap, n
   assert.equal(days[1].score, null);
 });
 
+test("gaugeSeriesMeta reports the real measurement type instead of assuming gage height", () => {
+  const context = runWithStubs(grab("gaugeSeriesMeta"), {});
+
+  const gageHeight = context.gaugeSeriesMeta([
+    { date: "2026-06-19", gauge_value: 3.5, parameter_label: "gage height", unit: "ft", used_fallback_discharge: false },
+  ]);
+  assert.equal(gageHeight.label, "Gage height");
+  assert.equal(gageHeight.unit, "ft");
+  assert.equal(gageHeight.usedFallbackDischarge, false);
+
+  const discharge = context.gaugeSeriesMeta([
+    { date: "2026-06-19", gauge_value: 450, parameter_label: "discharge", unit: "ft3/s", used_fallback_discharge: true },
+  ]);
+  assert.equal(discharge.label, "Discharge");
+  assert.equal(discharge.unit, "ft3/s");
+  assert.equal(discharge.usedFallbackDischarge, true);
+
+  const empty = context.gaugeSeriesMeta([]);
+  assert.equal(empty.label, "Gage height");
+  assert.equal(empty.usedFallbackDischarge, false);
+});
+
 test("buildImageSequenceEvents clusters consecutive same-code days and never includes gaps or no-change days", () => {
   const context = runWithStubs(grab("buildImageSequenceEvents"), {});
   const days = [
@@ -228,4 +250,32 @@ test("findImageSequenceChangeStart reports no change point when there is too lit
   const result = context.findImageSequenceChangeStart(tooFewDays);
   assert.equal(result.index, -1);
   assert.equal(result.threshold, null);
+});
+
+test("findImageSequenceChangeStart ignores a run of camera/image-problem records", () => {
+  const context = runWithStubs(grab("findImageSequenceChangeStart") + "\n" + grab("isoImageSequenceMean"), {});
+  const flatBaseline = Array.from({ length: 15 }, (_, i) => ({ date: `2026-06-${i + 1}`, score: 0.01, code: "N" }));
+  // Three consecutive high scores, but they're camera/image-problem
+  // records (a real quality issue, e.g. lighting/fog), not a real signal.
+  const days = [
+    ...flatBaseline,
+    { date: "2026-06-16", score: 0.9, code: "C" },
+    { date: "2026-06-17", score: 0.9, code: "C" },
+    { date: "2026-06-18", score: 0.9, code: "C" },
+  ];
+  const result = context.findImageSequenceChangeStart(days);
+  assert.equal(result.index, -1, "camera/image-problem records must never be reported as a change start");
+});
+
+test("findImageSequenceChangeStart still detects a real run of possible-change records", () => {
+  const context = runWithStubs(grab("findImageSequenceChangeStart") + "\n" + grab("isoImageSequenceMean"), {});
+  const flatBaseline = Array.from({ length: 15 }, (_, i) => ({ date: `2026-06-${i + 1}`, score: 0.01, code: "N" }));
+  const days = [
+    ...flatBaseline,
+    { date: "2026-06-16", score: 0.9, code: "P" },
+    { date: "2026-06-17", score: 0.9, code: "P" },
+    { date: "2026-06-18", score: 0.9, code: "P" },
+  ];
+  const result = context.findImageSequenceChangeStart(days);
+  assert.equal(result.index, 15);
 });

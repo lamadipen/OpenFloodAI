@@ -61,6 +61,7 @@ from openfloodai.review import (
 from openfloodai.review.dataset_manifest import HARD_CASE_TYPE_OPTIONS, MANIFEST_PURPOSE_OPTIONS
 from openfloodai.review.event_reviews import (
     EventReviewError,
+    compute_evidence_key,
     list_event_reviews,
     set_event_review,
 )
@@ -81,6 +82,7 @@ from openfloodai.validation.image_sequence_runner import (
     list_image_sequence_runs,
     read_image_sequence_run_detail,
     resolve_image_sequence_run_image,
+    resolve_run_config_snapshot,
     run_image_sequence_validation,
 )
 from openfloodai.validation.input_snapshot import read_input_snapshot
@@ -334,6 +336,11 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         biggest-change day), this builds the comparison for whichever two
         images the caller names, so a reviewer stepping through days or
         events sees the right pair every time, not just one fixed pair.
+
+        Always renders using the CONFIG SNAPSHOT SAVED WITH `run_id`, never
+        the site's current live config — otherwise editing the watched area
+        after a run would silently change what an old run's comparison
+        shows, disagreeing with the score that run actually computed.
         """
 
         query = parse_qs(urlsplit(self.path).query)
@@ -346,7 +353,9 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             selected_path = resolve_sequence_image(
                 site_dir, sequence_id, query.get("filename", [""])[0]
             )
-            site_config = load_site_config(_find_site_config(site_dir))
+            config_snapshot = resolve_run_config_snapshot(
+                site_dir, query.get("run_id", [""])[0]
+            )
             baseline_frame = cv2.imread(str(baseline_path))
             selected_frame = cv2.imread(str(selected_path))
             if baseline_frame is None or selected_frame is None:
@@ -354,8 +363,8 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             overlay = render_pair_comparison_overlay(
                 baseline_frame,
                 selected_frame,
-                reference_region=site_config.reference_region,
-                normal_waterline_guides=site_config.normal_waterline_guides,
+                reference_region=config_snapshot.get("reference_region"),
+                normal_waterline_guides=config_snapshot.get("normal_waterline_guides"),
             )
             body = encode_png(overlay)
             self.send_response(200)
@@ -363,7 +372,14 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
-        except (OSError, ValueError, RiverImageError, SiteConfigError, ReviewImageError):
+        except (
+            OSError,
+            ValueError,
+            RiverImageError,
+            SiteConfigError,
+            ReviewImageError,
+            ImageSequenceValidationError,
+        ):
             self.send_error(404, "Comparison image not found")
 
     def _send_image_sequence_runs(self) -> None:
@@ -811,7 +827,11 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         """Mark (or clear) a review status for one machine-detected event.
 
         Stored per sequence, not per run, so a mark survives re-running
-        validation on the same downloaded images.
+        validation on the same downloaded images. Every review is stamped
+        with an evidence fingerprint (baseline image + watched area) taken
+        from the run's OWN saved summary — never from the request body —
+        so a stale or forged client value can't make a review outlive the
+        evidence it was actually made against.
         """
 
         data = self._read_json_body()
@@ -837,16 +857,31 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         except ValueError:
             self._send_json({"success": False, "message": "Invalid sequence_id."}, status_code=400)
             return
+        try:
+            detail = read_image_sequence_run_detail(site_dir, str(data.get("run_id", "")).strip())
+        except (OSError, ValueError, ImageSequenceValidationError):
+            self._send_json({"success": False, "message": "Run not found."}, status_code=404)
+            return
+        summary = detail["summary"] if isinstance(detail["summary"], dict) else {}
+        evidence_key = compute_evidence_key(
+            summary.get("baseline_filename"), summary.get("watched_area_used")
+        )
         event_key = str(data.get("event_key", "")).strip()
         raw_status = data.get("status")
         status = str(raw_status).strip() if isinstance(raw_status, str) and raw_status else None
         try:
-            set_event_review(sequence_dir, event_key=event_key, status=status)
+            set_event_review(
+                sequence_dir, event_key=event_key, status=status, evidence_key=evidence_key
+            )
         except EventReviewError as error:
             self._send_json({"success": False, "message": str(error)}, status_code=400)
             return
         self._send_json(
-            {"success": True, "event_reviews": list_event_reviews(sequence_dir)}, status_code=200
+            {
+                "success": True,
+                "event_reviews": list_event_reviews(sequence_dir, evidence_key=evidence_key),
+            },
+            status_code=200,
         )
 
     def _handle_bootstrap_river_sites(self) -> None:

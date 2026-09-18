@@ -1729,6 +1729,19 @@
         return map;
       }
 
+      // The backend can fall back from gage height to discharge when a site
+      // has no gage-height data; every row already carries which one it is,
+      // so read it here instead of assuming "gage height" everywhere.
+      function gaugeSeriesMeta(gaugeSeries) {
+        const row = (gaugeSeries || []).find((r) => r && r.parameter_label);
+        if (!row) return { label: "Gage height", unit: "", usedFallbackDischarge: false };
+        return {
+          label: row.parameter_label.charAt(0).toUpperCase() + row.parameter_label.slice(1),
+          unit: row.unit || "",
+          usedFallbackDischarge: !!row.used_fallback_discharge,
+        };
+      }
+
       function findImageSequenceChangeStart(days) {
         const scores = days.map((day) => day.score);
         const base = scores.slice(0, 15).filter((value) => value != null);
@@ -1737,6 +1750,12 @@
         const variance = isoImageSequenceMean(base.map((value) => (value - meanValue) ** 2));
         const threshold = meanValue + 2 * Math.sqrt(variance);
         for (let i = 0; i < scores.length - 2; i++) {
+          // A camera/image-problem record's score reflects a quality issue,
+          // not a real observation — three such records above the
+          // threshold is noise, not a candidate visual shift, even though
+          // their score value is preserved for the chart.
+          const window = [days[i], days[i + 1], days[i + 2]];
+          if (window.some((day) => day.code === "C")) continue;
           if (scores[i] > threshold && scores[i + 1] > threshold && scores[i + 2] > threshold) {
             return { index: i, threshold, baselineMean: meanValue };
           }
@@ -1821,6 +1840,7 @@
         const summary = detail.summary || {};
         const days = buildImageSequenceDays(detail.records);
         const gaugeByDate = buildGaugeByDate(detail.gauge_series);
+        const gaugeMeta = gaugeSeriesMeta(detail.gauge_series);
         const events = buildImageSequenceEvents(days);
         const changeInfo = findImageSequenceChangeStart(days);
 
@@ -1846,6 +1866,7 @@
               body: JSON.stringify({
                 folder_name: siteName,
                 sequence_id: summary.sequence_id,
+                run_id: runId,
                 event_key: eventKey,
                 status,
               }),
@@ -1909,6 +1930,7 @@
             summary,
             days,
             gaugeByDate,
+            gaugeMeta,
             events,
             changeInfo,
             state,
@@ -1918,7 +1940,7 @@
         render();
       }
 
-      function renderImageSequenceDetail({ siteName, runId, summary, days, gaugeByDate, events, changeInfo, state }) {
+      function renderImageSequenceDetail({ siteName, runId, summary, days, gaugeByDate, gaugeMeta, events, changeInfo, state }) {
         const n = days.length;
         if (n === 0) {
           return '<p class="status-line">No compared images in this run yet.</p>';
@@ -2097,17 +2119,29 @@
           ? new URLSearchParams({
               folder_name: siteName,
               sequence_id: summary.sequence_id,
+              run_id: runId,
               baseline_filename: summary.baseline_filename,
               filename: sel.filename,
             })
           : null;
 
+        // "Three days running" only means three calendar days when the
+        // records themselves span three distinct dates — with hourly (or
+        // denser) sampling the same three records could be a few hours on
+        // one day, which is a very different claim.
+        const changeWindowDistinctDates = changeInfo.index >= 0
+          ? new Set([days[changeInfo.index], days[changeInfo.index + 1], days[changeInfo.index + 2]].map((d) => d.date)).size
+          : 0;
+        const changeSpanLabel = changeWindowDistinctDates >= 3
+          ? "for three days running"
+          : "across three consecutive sampled records";
         const changeSummaryHtml = changeStartDay
-          ? `From the first days on record the region held steady around ${changeInfo.baselineMean.toFixed(3)}. Starting ${escapeHtml(changeStartDay.date)}, the day-to-day score stayed above ${changeInfo.threshold.toFixed(3)} for three days running. That is the actual turning point &mdash; not any single flagged day.`
-          : "Not enough same-camera history yet to say when (or whether) a sustained shift started.";
+          ? `Baseline-to-image visual-change scores held steady around ${changeInfo.baselineMean.toFixed(3)} through the first sampled records. Starting ${escapeHtml(changeStartDay.date)}, the score stayed above ${changeInfo.threshold.toFixed(3)} ${changeSpanLabel}. This is a possible visual shift in the watched area, based on comparison scores &mdash; not a confirmed water-level change, and not necessarily the true first day it started.`
+          : "Not enough same-camera history yet to say when (or whether) a sustained visual shift started.";
 
+        const gaugeUnitSuffix = gaugeMeta.unit ? ` ${gaugeMeta.unit}` : "";
         const gaugeCorrelationHtml = hasGaugeData && gaugeStart != null && gaugeEnd != null
-          ? `Gage height went from ${gaugeStart.toFixed(2)} to ${gaugeEnd.toFixed(2)} over this period. Compare that against the change-score trend below to see whether a flagged period lines up with an actual water-level move.`
+          ? `${escapeHtml(gaugeMeta.label)} went from ${gaugeStart.toFixed(2)}${gaugeUnitSuffix} to ${gaugeEnd.toFixed(2)}${gaugeUnitSuffix} over this period.${gaugeMeta.usedFallbackDischarge ? " This site has no gage-height data, so discharge is shown instead &mdash; it is not a direct water-level measurement." : ""} Compare that against the change-score trend below to see whether a flagged period lines up with an actual water-level move.`
           : "No gage data is available to correlate for this sequence yet.";
 
         return `
@@ -2122,7 +2156,7 @@
           <p class="status-line" style="margin-bottom: 14px;">${filter ? `Showing only "${escapeHtml(CODE_LABEL[filter])}" on the chart and in the lists below. Click the card again to show everything.` : "Click a card above to isolate just that result on the chart and in the lists below."}</p>
 
           <div class="kv-grid" style="background: var(--panel-2); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px;">
-            <div class="kv"><div class="kv-label">When did it start</div><div class="kv-value">${changeSummaryHtml}</div></div>
+            <div class="kv"><div class="kv-label">Possible visual shift</div><div class="kv-value">${changeSummaryHtml}</div></div>
             <div class="kv"><div class="kv-label">Gage correlation</div><div class="kv-value">${gaugeCorrelationHtml}</div></div>
           </div>
 
@@ -2135,7 +2169,7 @@
 
           ${hasGaugeData ? `
           <div class="kv" style="margin-bottom: 6px;">
-            <div class="kv-label">Gage height, ${granularity === "daily" ? "every day" : `by ${granularity.replace("ly", "")}`}</div>
+            <div class="kv-label">${escapeHtml(gaugeMeta.label)}${gaugeMeta.unit ? ` (${escapeHtml(gaugeMeta.unit)})` : ""}, ${granularity === "daily" ? "every day" : `by ${granularity.replace("ly", "")}`}</div>
           </div>
           <svg viewBox="0 0 1040 130" style="width: 100%; display: block; margin-bottom: 4px;">
             <text x="4" y="10" font-size="10" fill="var(--faint)">${gaugeMax.toFixed(1)}</text>
@@ -2155,7 +2189,7 @@
           <div class="status-line" style="background: var(--panel-2); border-radius: 8px; padding: 8px 12px; margin-bottom: 10px;">
             <strong>${escapeHtml(sel.date)}, ${escapeHtml(sel.time)} local</strong> &middot;
             change score ${sel.score == null ? "no image, not compared" : sel.score.toFixed(4)}
-            ${selGauge != null ? ` &middot; gage height ${selGauge.toFixed(2)}` : ""}
+            ${selGauge != null ? ` &middot; ${escapeHtml(gaugeMeta.label.toLowerCase())} ${selGauge.toFixed(2)}${gaugeUnitSuffix}` : ""}
             &middot; <span style="color: ${CODE_COLOR[sel.code]}; font-weight: 700;">${escapeHtml(sel.resultLabel)}</span>
           </div>
           <svg viewBox="0 0 1040 200" style="width: 100%; display: block;">

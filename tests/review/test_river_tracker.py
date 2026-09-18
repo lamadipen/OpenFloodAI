@@ -112,6 +112,91 @@ def test_site_with_sequence_and_gage_data_reports_progress(
     assert row.known_problems == []
 
 
+def test_human_review_progress_counts_image_sequence_runs_not_video_reports(
+    reference_dir: Path, tmp_path: Path
+) -> None:
+    sites_dir = tmp_path / "sites"
+    sites_dir.mkdir()
+    setup_validation_site(
+        sites_base_dir=sites_dir,
+        folder_name="test-river-a",
+        site_id="test-river-a_sid",
+        camera_id=CAMERA_A,
+        site_name="Test Camera A",
+    )
+    site_dir = sites_dir / "test-river-a"
+    config_path = site_dir / "configs" / "test-river-a.json"
+    config = json.loads(config_path.read_text())
+    config["reference_region"] = {"x": 10, "y": 10, "width": 50, "height": 50}
+    config["normal_waterline_guides"] = [
+        {
+            "id": "g1",
+            "label": "left bank",
+            "points": [{"x": 15.0, "y": 15.0}, {"x": 20.0, "y": 20.0}],
+            "video_id": "",
+            "video_time_seconds": 0.0,
+            "site_id": "test-river-a_sid",
+            "camera_id": CAMERA_A,
+            "status": "confirmed",
+            "normal_condition": True,
+            "notes": "",
+            "confirmed_at": "2026-09-17T00:00:00+00:00",
+            "invalidated_at": None,
+            "invalidation_reason": None,
+            "image_sequence_id": "some-sequence",
+            "image_filename": "some.jpg",
+        }
+    ]
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+
+    sequence_id = f"usgs-{CAMERA_A}-2026-06-18-2026-09-16-one_daylight_image_per_day"
+    sequence_dir = site_dir / "inputs" / "image-sequences" / sequence_id
+    sequence_dir.mkdir(parents=True)
+    (sequence_dir / "download-summary.json").write_text(
+        json.dumps(
+            {
+                "sequence_id": sequence_id,
+                "camera_url": f"https://apps.usgs.gov/hivis/camera/{CAMERA_A}",
+                "requested_start_date": "2026-06-18",
+                "requested_end_date": "2026-09-16",
+                "downloaded_count": 91,
+                "missing_count": 0,
+                "failed_count": 0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    # A stray VIDEO validation report (a different flow entirely) must not
+    # make an image-only site's progress read as "validated".
+    video_outputs = site_dir / "outputs" / "runs" / "video-run-1"
+    video_outputs.mkdir(parents=True)
+    (video_outputs / "validation-report.md").write_text("# Video report\n", encoding="utf-8")
+
+    _, rows = build_river_tracker(
+        "test-river", reference_dir=reference_dir, sites_base_dir=sites_dir
+    )
+    row = next(r for r in rows if r.camera_id == CAMERA_A)
+    assert row.baseline_selected is True
+    assert row.validation_run_count == 0
+    assert row.human_review_progress == "baseline_ready"
+
+    # Now save a real IMAGE-sequence run for this sequence — only this
+    # should flip progress to "validated".
+    run_dir = site_dir / "outputs" / "image-sequence-runs" / "run-1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "run-summary.json").write_text(
+        json.dumps({"sequence_id": sequence_id, "run_id": "run-1", "created_at": "2026-09-17"}),
+        encoding="utf-8",
+    )
+
+    _, rows = build_river_tracker(
+        "test-river", reference_dir=reference_dir, sites_base_dir=sites_dir
+    )
+    row = next(r for r in rows if r.camera_id == CAMERA_A)
+    assert row.validation_run_count == 1
+    assert row.human_review_progress == "validated"
+
+
 def test_gage_unavailable_status_reports_reason(reference_dir: Path, tmp_path: Path) -> None:
     sites_dir = tmp_path / "sites"
     sites_dir.mkdir()

@@ -31,6 +31,13 @@ PARAMETER_UNITS = {PARAMETER_GAGE_HEIGHT: "ft", PARAMETER_DISCHARGE: "ft3/s"}
 PARAMETER_LABELS = {PARAMETER_GAGE_HEIGHT: "gage height", PARAMETER_DISCHARGE: "discharge"}
 ALLOWED_GAGE_RELATIONSHIPS = {"same_site", "nearby", "unavailable"}
 DELTA_WINDOW_HOURS = (6, 12, 24)
+# The image-sequence flow samples about once per day; a gage reading found
+# more than this far from an image's capture time is not a real
+# measurement of that image's moment, just the closest one that happened
+# to exist (e.g. the gage was offline for a stretch). Treat that as no
+# coverage for the day rather than silently plotting a stale reading as
+# though it were current.
+MAX_READING_GAP_HOURS = 24
 MAX_RESPONSE_BYTES = 20 * 1024 * 1024
 REQUEST_TIMEOUT_SECONDS = 20
 
@@ -403,13 +410,25 @@ def build_daily_gage_series(
                 "captured_at_utc": captured_at,
                 "gauge_datetime_utc": nearest.datetime_utc,
                 "gauge_value": nearest.value,
+                # Carried on every row (not just a top-level summary file) so
+                # a reader of gauge-daily-series.json alone can label the
+                # value correctly — discharge (cfs) must never be shown as
+                # gage height (ft) just because that's the common case.
+                "parameter_code": series.parameter_code,
+                "parameter_label": series.parameter_label,
+                "unit": series.unit,
+                "used_fallback_discharge": series.used_fallback_discharge,
             }
         )
     return rows
 
 
 def _nearest_reading(readings: list[GageReading], target_datetime_utc: str) -> GageReading | None:
-    """Find the reading closest in time to a target (image capture) timestamp."""
+    """Find the reading closest in time to a target (image capture) timestamp.
+
+    Returns None (no coverage) rather than a distant reading when nothing
+    is within `MAX_READING_GAP_HOURS` — see the constant's docstring note.
+    """
 
     try:
         target = datetime.fromisoformat(target_datetime_utc)
@@ -426,6 +445,8 @@ def _nearest_reading(readings: list[GageReading], target_datetime_utc: str) -> G
         if best_diff is None or diff < best_diff:
             best_diff = diff
             best = reading
+    if best_diff is not None and best_diff > MAX_READING_GAP_HOURS * 3600:
+        return None
     return best
 
 
