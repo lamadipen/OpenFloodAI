@@ -176,6 +176,21 @@ function renderOverview() {
     </div>`;
 }
 
+function imageSequenceStatusLine() {
+  if (!state.sequences.length) {
+    return `<div style="font-size:12px;color:var(--ink-muted);display:flex;align-items:center;gap:6px;">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>
+      Image sequence: not set up or run yet.
+    </div>`;
+  }
+  const downloaded = state.sequences.reduce((sum, seq) => sum + (seq.downloaded_count || 0), 0);
+  return `<div style="font-size:12px;color:var(--ink-muted);display:flex;align-items:center;gap:6px;">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>
+    Image sequence: ${downloaded} image(s) downloaded, not run yet.
+    <button id="goSequencesBtn" style="border:none;background:none;padding:0;color:var(--accent);font-weight:600;font-size:12px;cursor:pointer;">Run it &rarr;</button>
+  </div>`;
+}
+
 function renderVideoOrEmptyOverview() {
   const status = state.status;
   const videoCount = status?.video_count || 0;
@@ -195,6 +210,8 @@ function renderVideoOrEmptyOverview() {
         <div style="font-size:12px;color:var(--ink-soft);margin-bottom:14px;">This site has ${videoCount} video(s) added but hasn't been validated yet.</div>
         <button id="runValidationBtn" class="btn primary">Run video validation</button>
         <div id="runValidationError" class="err" hidden style="margin-top:10px;"></div>
+        <div style="height:1px;background:var(--line-soft);margin:14px 0;"></div>
+        ${imageSequenceStatusLine()}
       </div>`;
   }
 
@@ -210,14 +227,16 @@ function renderVideoOrEmptyOverview() {
           ${metricTile("Cannot compare", counts.cannot_compare, "warn")}
         </div>
         <div style="font-size:12px;color:var(--ink-soft);margin-bottom:14px;">${escapeHtml(scorecard.summary || "")}</div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
           <a class="btn primary" href="/site-details.html?${new URLSearchParams({ site: folderName, tab: "runs" })}">
             Open report
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
           </a>
           <button id="runValidationBtn" class="btn">Run again</button>
         </div>
-        <div id="runValidationError" class="err" hidden style="margin-top:10px;"></div>
+        <div id="runValidationError" class="err" hidden style="margin-bottom:10px;"></div>
+        <div style="height:1px;background:var(--line-soft);margin-bottom:14px;"></div>
+        ${imageSequenceStatusLine()}
       </div>
       <div class="card" style="padding:18px 20px;">
         <div style="font-size:13px;font-weight:600;margin-bottom:12px;">Setup checklist</div>
@@ -322,7 +341,7 @@ function renderSequences() {
     <div class="card" style="overflow:hidden;">
       <div style="padding:14px 18px;border-bottom:1px solid var(--line-soft);font-size:13px;font-weight:600;">Image sequences</div>
       <table>
-        <thead><tr><th>Sequence</th><th>Downloaded</th><th>Missing</th><th>Failed</th></tr></thead>
+        <thead><tr><th>Sequence</th><th>Downloaded</th><th>Missing</th><th>Failed</th><th></th></tr></thead>
         <tbody>
           ${sequences
             .map(
@@ -331,11 +350,13 @@ function renderSequences() {
             <td>${seq.downloaded_count ?? 0}</td>
             <td>${seq.missing_count ?? 0}</td>
             <td>${seq.failed_count ?? 0}</td>
+            <td style="text-align:right;"><button class="btn" data-run-sequence="${escapeHtml(seq.sequence_id)}" style="font-size:12px;padding:5px 10px;">Run validation</button></td>
           </tr>`
             )
             .join("")}
         </tbody>
       </table>
+      <div id="runSequenceError" class="err" hidden style="margin:0 18px 14px;"></div>
     </div>
     <div class="card" style="overflow:hidden;">
       <div style="padding:14px 18px;border-bottom:1px solid var(--line-soft);font-size:13px;font-weight:600;">Validation runs</div>
@@ -384,6 +405,27 @@ function renderDataset() {
 function wireTabActions() {
   const runBtn = document.getElementById("runValidationBtn");
   if (runBtn) runBtn.addEventListener("click", runVideoValidation);
+  const goSequencesBtn = document.getElementById("goSequencesBtn");
+  if (goSequencesBtn) goSequencesBtn.addEventListener("click", () => { state.tab = "sequences"; render(); });
+  document.querySelectorAll("[data-run-sequence]").forEach((btn) => {
+    btn.addEventListener("click", () => runSequenceValidation(btn.dataset.runSequence, btn));
+  });
+}
+
+async function runSequenceValidation(sequenceId, btn) {
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Running…';
+  const errorBox = $("runSequenceError");
+  errorBox.hidden = true;
+  try {
+    const result = await api("/api/run-image-sequence-validation", { folder_name: folderName, sequence_id: sequenceId });
+    location.href = `/console/review.html?${new URLSearchParams({ site: folderName, run_id: result.run_id })}`;
+  } catch (error) {
+    errorBox.hidden = false;
+    errorBox.textContent = error.message;
+    btn.disabled = false;
+    btn.textContent = "Run validation";
+  }
 }
 
 main();
