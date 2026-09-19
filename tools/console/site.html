@@ -11,7 +11,7 @@
 <script src="/console/shared.js"></script>
 <script>
 const folderName = qs("site");
-let state = { tab: "overview", config: null, status: null, sequences: [], runsBySequence: {} };
+let state = { tab: "overview", config: null, status: null, sequences: [], runsBySequence: {}, manifest: [] };
 
 async function main() {
   if (!folderName) {
@@ -34,14 +34,16 @@ async function main() {
 
 async function load() {
   try {
-    const [sitesData, configData, sequenceData] = await Promise.all([
+    const [sitesData, configData, sequenceData, manifestData] = await Promise.all([
       api("/api/sites"),
       api(`/api/site-config?${new URLSearchParams({ folder_name: folderName })}`),
-      api(`/api/site-image-sequences?${new URLSearchParams({ folder_name: folderName })}`)
+      api(`/api/site-image-sequences?${new URLSearchParams({ folder_name: folderName })}`),
+      api(`/api/site-manifest?${new URLSearchParams({ folder_name: folderName })}`).catch(() => ({ records: [] }))
     ]);
     state.status = (sitesData.sites || []).find((s) => s.site_name === folderName) || null;
     state.config = configData.config || {};
     state.sequences = sequenceData.sequences || [];
+    state.manifest = manifestData.records || [];
 
     await Promise.all(
       state.sequences.map(async (seq) => {
@@ -186,10 +188,36 @@ function renderSetup() {
         <a class="btn outline-accent" href="/console/form-waterline-guide.html?${new URLSearchParams({ site: folderName })}">Open editor</a>
       </div>
       <div class="card" style="padding:18px 20px;grid-column:span 2;">
-        <div style="font-size:13px;font-weight:600;margin-bottom:12px;">Add media</div>
-        <a class="btn" href="/console/form-add-media.html?${new URLSearchParams({ site: folderName })}">+ Add media</a>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+          <div style="font-size:13px;font-weight:600;">Videos${state.manifest.length ? ` (${state.manifest.length})` : ""}</div>
+          <a class="btn" href="/console/form-add-media.html?${new URLSearchParams({ site: folderName })}">+ Add media</a>
+        </div>
+        ${renderVideoList()}
       </div>
     </div>`;
+}
+
+function renderVideoList() {
+  if (!state.manifest.length) {
+    return `<div style="font-size:12px;color:var(--ink-soft);">No video added yet.</div>`;
+  }
+  return `
+    <table>
+      <thead><tr><th>Video id</th><th>Purpose</th><th>Split</th><th>Human label</th><th>Notes</th></tr></thead>
+      <tbody>
+        ${state.manifest
+          .map(
+            (v) => `<tr class="row">
+          <td style="font-family:var(--mono);font-size:12px;">${escapeHtml(v.video_id || v.filename || "")}</td>
+          <td>${escapeHtml(v.purpose || "")}</td>
+          <td>${escapeHtml(v.split || "")}</td>
+          <td>${v.has_human_label ? '<span class="pill ok">Labeled</span>' : '<span class="pill warn">No label</span>'}</td>
+          <td style="color:var(--ink-soft);">${escapeHtml(v.notes || "")}</td>
+        </tr>`
+          )
+          .join("")}
+      </tbody>
+    </table>`;
 }
 
 function renderSequences() {
