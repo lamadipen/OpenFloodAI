@@ -21,13 +21,20 @@
       </a>
     </div>
     <div id="body" style="display:flex;min-height:0;">
-      <div style="flex-grow:1;padding:20px;display:flex;align-items:center;justify-content:center;">
+      <div style="flex-grow:1;padding:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
         <div id="stage" style="width:640px;height:400px;position:relative;border-radius:8px;overflow:hidden;background:#33444d;">
           <img id="stageImg" style="width:100%;height:100%;object-fit:cover;display:block;" alt="Baseline image">
           <div id="box" style="position:absolute;border:2px solid #f2c94c;background:rgba(242,201,76,0.16);cursor:move;">
             <div id="resizeHandle" style="position:absolute;right:-7px;bottom:-7px;width:14px;height:14px;border-radius:3px;background:#f2c94c;border:2px solid #fff;cursor:nwse-resize;"></div>
           </div>
         </div>
+        <div id="scrubRow" style="width:640px;display:flex;align-items:center;gap:10px;" hidden>
+          <span style="font-size:11px;color:var(--ink-muted);white-space:nowrap;">Video frame</span>
+          <input type="range" id="scrub" min="0" max="1" step="0.1" value="0" style="flex-grow:1;">
+          <span id="scrubTime" style="font-size:11px;color:var(--ink-muted);font-family:var(--mono);white-space:nowrap;">0.0s</span>
+        </div>
+        <video id="sourceVideo" style="display:none;" preload="metadata" muted playsinline></video>
+        <canvas id="captureCanvas" width="640" height="400" style="display:none;"></canvas>
       </div>
       <div style="width:270px;flex-shrink:0;border-left:1px solid var(--line-soft);padding:20px;display:flex;flex-direction:column;gap:14px;">
         <div>
@@ -56,8 +63,42 @@ let saved = null;
 let rect = { x: 10, y: 10, width: 60, height: 60 };
 let sequenceId = null;
 let baselineFilename = null;
+let videoId = null;
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function captureVideoFrame() {
+  const video = $("sourceVideo");
+  const canvas = $("captureCanvas");
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  $("stageImg").src = canvas.toDataURL("image/jpeg", 0.92);
+}
+
+function loadVideoSource() {
+  return new Promise((resolve) => {
+    const video = $("sourceVideo");
+    video.src = `/api/site-video?${new URLSearchParams({ folder_name: folderName, video_id: videoId })}`;
+    video.addEventListener(
+      "loadedmetadata",
+      () => {
+        $("scrub").max = video.duration || 1;
+        $("scrub").value = 0;
+        video.currentTime = 0;
+        resolve();
+      },
+      { once: true }
+    );
+    video.addEventListener("seeked", () => {
+      $("scrubTime").textContent = `${video.currentTime.toFixed(1)}s`;
+      captureVideoFrame();
+    });
+    $("scrubRow").hidden = false;
+    $("scrub").addEventListener("input", () => {
+      video.currentTime = Number($("scrub").value);
+    });
+  });
+}
 
 function paintBox() {
   const box = $("box");
@@ -113,9 +154,10 @@ async function main() {
   $("siteLabel").textContent = folderName;
 
   try {
-    const [configData, sequenceData] = await Promise.all([
+    const [configData, sequenceData, manifestData] = await Promise.all([
       api(`/api/site-config?${new URLSearchParams({ folder_name: folderName })}`),
-      api(`/api/site-image-sequences?${new URLSearchParams({ folder_name: folderName })}`)
+      api(`/api/site-image-sequences?${new URLSearchParams({ folder_name: folderName })}`),
+      api(`/api/site-manifest?${new URLSearchParams({ folder_name: folderName })}`).catch(() => ({ records: [] }))
     ]);
     const cfg = configData.config || {};
     if (cfg.reference_region) {
@@ -135,7 +177,14 @@ async function main() {
       }
     }
     if (!baselineFilename) {
-      $("body").innerHTML = `<div style="padding:24px;font-size:13px;color:var(--ink-soft);">This site has no downloaded image sequence yet, so there is no image to draw a watched area on here. Add an image sequence first from Site &rarr; Setup &rarr; Add media.</div>`;
+      const firstVideo = (manifestData.records || [])[0];
+      if (firstVideo && firstVideo.video_id) {
+        videoId = firstVideo.video_id;
+        await loadVideoSource();
+      }
+    }
+    if (!baselineFilename && !videoId) {
+      $("body").innerHTML = `<div style="padding:24px;font-size:13px;color:var(--ink-soft);">This site has no downloaded image sequence and no video yet, so there is no image to draw a watched area on here. Add media first from Site &rarr; Setup &rarr; Add media.</div>`;
       $("saveBtn").disabled = true;
     }
   } catch (error) {
@@ -148,10 +197,12 @@ $("saveBtn").addEventListener("click", async () => {
   $("saveBtn").innerHTML = '<span class="spinner"></span>Saving…';
   $("formError").hidden = true;
   try {
+    const source = baselineFilename
+      ? { sequence_id: sequenceId, image_filename: baselineFilename }
+      : { video_id: videoId };
     await api("/api/set-watched-area", {
       folder_name: folderName,
-      sequence_id: sequenceId,
-      image_filename: baselineFilename,
+      ...source,
       reference_region: rect
     });
     location.href = `/console/site.html?${new URLSearchParams({ site: folderName })}`;
