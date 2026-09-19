@@ -333,49 +333,97 @@ function renderVideoList() {
 }
 
 function renderSequences() {
+  return `
+    <div style="display:flex;flex-direction:column;gap:22px;">
+      <div>
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-muted);margin-bottom:10px;">Image sequence validation</div>
+        ${renderImageSequenceOption()}
+      </div>
+      <div>
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-muted);margin-bottom:10px;">Video validation</div>
+        ${renderVideoValidationOption()}
+      </div>
+    </div>`;
+}
+
+function renderImageSequenceOption() {
   const sequences = state.sequences;
   if (!sequences.length) {
     return `<div class="card" style="padding:18px 20px;font-size:13px;color:var(--ink-soft);">No image sequences downloaded yet. <a href="/console/form-add-media.html?${new URLSearchParams({ site: folderName })}" style="color:var(--accent);font-weight:600;">Add media</a> to start one.</div>`;
   }
   return `
+    <div style="display:flex;flex-direction:column;gap:18px;">
+      <div class="card" style="overflow:hidden;">
+        <div style="padding:14px 18px;border-bottom:1px solid var(--line-soft);font-size:13px;font-weight:600;">Image sequences</div>
+        <table>
+          <thead><tr><th>Sequence</th><th>Downloaded</th><th>Missing</th><th>Failed</th><th></th></tr></thead>
+          <tbody>
+            ${sequences
+              .map(
+                (seq) => `<tr class="row">
+              <td style="font-family:var(--mono);font-size:12px;">${escapeHtml(seq.sequence_id)}</td>
+              <td>${seq.downloaded_count ?? 0}</td>
+              <td>${seq.missing_count ?? 0}</td>
+              <td>${seq.failed_count ?? 0}</td>
+              <td style="text-align:right;"><button class="btn" data-run-sequence="${escapeHtml(seq.sequence_id)}" style="font-size:12px;padding:5px 10px;">Run validation</button></td>
+            </tr>`
+              )
+              .join("")}
+          </tbody>
+        </table>
+        <div id="runSequenceError" class="err" hidden style="margin:0 18px 14px;"></div>
+      </div>
+      <div class="card" style="overflow:hidden;">
+        <div style="padding:14px 18px;border-bottom:1px solid var(--line-soft);font-size:13px;font-weight:600;">Image-sequence runs</div>
+        <table>
+          <thead><tr><th>Run</th><th>Created</th><th>Result mix</th><th></th></tr></thead>
+          <tbody>
+            ${sequences
+              .flatMap((seq) => (state.runsBySequence[seq.sequence_id] || []).map((run) => ({ run, seq })))
+              .map(
+                ({ run }) => `<tr class="row">
+              <td style="font-family:var(--mono);font-size:12px;">${escapeHtml(run.run_id)}</td>
+              <td style="color:var(--ink-soft);">${run.created_at ? new Date(run.created_at).toLocaleString() : ""}</td>
+              <td>${run.no_water_level_change_count || 0} no-change &middot; ${run.camera_or_image_problem_count || 0} problem</td>
+              <td style="text-align:right;"><a href="/console/review.html?${new URLSearchParams({ site: folderName, run_id: run.run_id })}" style="font-size:12px;font-weight:600;color:var(--accent);">Review &rarr;</a></td>
+            </tr>`
+              )
+              .join("") || `<tr><td colspan="4" style="color:var(--ink-muted);">No runs yet for this sequence.</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function renderVideoValidationOption() {
+  const status = state.status;
+  const videoCount = status?.video_count || 0;
+  const history = status?.report_history || [];
+  if (!videoCount) {
+    return `<div class="card" style="padding:18px 20px;font-size:13px;color:var(--ink-soft);">No video added yet. <a href="/console/form-add-media.html?${new URLSearchParams({ site: folderName })}" style="color:var(--accent);font-weight:600;">Add media</a> to start one.</div>`;
+  }
+  return `
     <div class="card" style="overflow:hidden;">
-      <div style="padding:14px 18px;border-bottom:1px solid var(--line-soft);font-size:13px;font-weight:600;">Image sequences</div>
-      <table>
-        <thead><tr><th>Sequence</th><th>Downloaded</th><th>Missing</th><th>Failed</th><th></th></tr></thead>
-        <tbody>
-          ${sequences
-            .map(
-              (seq) => `<tr class="row">
-            <td style="font-family:var(--mono);font-size:12px;">${escapeHtml(seq.sequence_id)}</td>
-            <td>${seq.downloaded_count ?? 0}</td>
-            <td>${seq.missing_count ?? 0}</td>
-            <td>${seq.failed_count ?? 0}</td>
-            <td style="text-align:right;"><button class="btn" data-run-sequence="${escapeHtml(seq.sequence_id)}" style="font-size:12px;padding:5px 10px;">Run validation</button></td>
-          </tr>`
-            )
-            .join("")}
-        </tbody>
-      </table>
-      <div id="runSequenceError" class="err" hidden style="margin:0 18px 14px;"></div>
-    </div>
-    <div class="card" style="overflow:hidden;">
-      <div style="padding:14px 18px;border-bottom:1px solid var(--line-soft);font-size:13px;font-weight:600;">Validation runs</div>
+      <div style="padding:14px 18px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;">
+        <div style="font-size:13px;font-weight:600;">Video validation runs</div>
+        <button id="runValidationBtn" class="btn" style="font-size:12px;padding:5px 10px;">${history.length ? "Run again" : "Run validation"}</button>
+      </div>
       <table>
         <thead><tr><th>Run</th><th>Created</th><th>Result mix</th><th></th></tr></thead>
         <tbody>
-          ${sequences
-            .flatMap((seq) => (state.runsBySequence[seq.sequence_id] || []).map((run) => ({ run, seq })))
+          ${history
             .map(
-              ({ run }) => `<tr class="row">
-            <td style="font-family:var(--mono);font-size:12px;">${escapeHtml(run.run_id)}</td>
-            <td style="color:var(--ink-soft);">${run.created_at ? new Date(run.created_at).toLocaleString() : ""}</td>
-            <td>${run.no_water_level_change_count || 0} no-change &middot; ${run.camera_or_image_problem_count || 0} problem</td>
-            <td style="text-align:right;"><a href="/console/review.html?${new URLSearchParams({ site: folderName, run_id: run.run_id })}" style="font-size:12px;font-weight:600;color:var(--accent);">Review &rarr;</a></td>
+              (r) => `<tr class="row">
+            <td style="font-family:var(--mono);font-size:12px;">${escapeHtml(r.run_id)}</td>
+            <td style="color:var(--ink-soft);">${r.modified_time ? new Date(r.modified_time).toLocaleString() : ""}</td>
+            <td>${(r.counts && r.counts.agree) || 0} agree &middot; ${(r.counts && r.counts.disagree) || 0} disagree &middot; ${(r.counts && r.counts.cannot_compare) || 0} cannot compare</td>
+            <td style="text-align:right;"><a href="/site-details.html?${new URLSearchParams({ site: folderName, tab: "runs" })}" style="font-size:12px;font-weight:600;color:var(--accent);">Open &rarr;</a></td>
           </tr>`
             )
-            .join("") || `<tr><td colspan="4" style="color:var(--ink-muted);">No runs yet for this sequence.</td></tr>`}
+            .join("") || `<tr><td colspan="4" style="color:var(--ink-muted);">No video validation runs yet.</td></tr>`}
         </tbody>
       </table>
+      <div id="runValidationError" class="err" hidden style="margin:0 18px 14px;"></div>
     </div>`;
 }
 
