@@ -143,12 +143,7 @@ function tabLabel(t) {
 function renderOverview() {
   const allRuns = Object.values(state.runsBySequence).flat();
   const latestRun = allRuns.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""))[0];
-  if (!latestRun) {
-    return `<div class="card" style="padding:18px 20px;">
-      <div style="font-size:13px;font-weight:600;margin-bottom:6px;">No image-sequence run yet</div>
-      <div style="font-size:12px;color:var(--ink-soft);">Add media and run validation from the Sequences &amp; runs tab.</div>
-    </div>`;
-  }
+  if (!latestRun) return renderVideoOrEmptyOverview();
   const total =
     (latestRun.possible_water_level_change_count || 0) +
     (latestRun.no_water_level_change_count || 0) +
@@ -179,6 +174,76 @@ function renderOverview() {
         </div>
       </div>
     </div>`;
+}
+
+function renderVideoOrEmptyOverview() {
+  const status = state.status;
+  const videoCount = status?.video_count || 0;
+  const reportCount = status?.report_count || 0;
+
+  if (!videoCount && !state.sequences.length) {
+    return `<div class="card" style="padding:18px 20px;">
+      <div style="font-size:13px;font-weight:600;margin-bottom:6px;">No media added yet</div>
+      <div style="font-size:12px;color:var(--ink-soft);">Add a video or an image sequence from the Setup tab to run validation.</div>
+    </div>`;
+  }
+
+  if (!reportCount) {
+    return `
+      <div class="card" style="padding:18px 20px;">
+        <div style="font-size:13px;font-weight:600;margin-bottom:6px;">No video validation run yet</div>
+        <div style="font-size:12px;color:var(--ink-soft);margin-bottom:14px;">This site has ${videoCount} video(s) added but hasn't been validated yet.</div>
+        <button id="runValidationBtn" class="btn primary">Run video validation</button>
+        <div id="runValidationError" class="err" hidden style="margin-top:10px;"></div>
+      </div>`;
+  }
+
+  const counts = status.latest_report_counts || {};
+  const scorecard = status.latest_scorecard || {};
+  return `
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:18px;">
+      <div class="card" style="padding:18px 20px;">
+        <div style="font-size:13px;font-weight:600;margin-bottom:12px;">Latest video validation run</div>
+        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:14px;">
+          ${metricTile("Agree", counts.agree, "gray")}
+          ${metricTile("Disagree", counts.disagree, "bad")}
+          ${metricTile("Cannot compare", counts.cannot_compare, "warn")}
+        </div>
+        <div style="font-size:12px;color:var(--ink-soft);margin-bottom:14px;">${escapeHtml(scorecard.summary || "")}</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <a class="btn primary" href="/site-details.html?${new URLSearchParams({ site: folderName, tab: "runs" })}">
+            Open report
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+          <button id="runValidationBtn" class="btn">Run again</button>
+        </div>
+        <div id="runValidationError" class="err" hidden style="margin-top:10px;"></div>
+      </div>
+      <div class="card" style="padding:18px 20px;">
+        <div style="font-size:13px;font-weight:600;margin-bottom:12px;">Setup checklist</div>
+        <div style="display:flex;flex-direction:column;gap:10px;font-size:13px;">
+          ${checklistRow(!!(state.config && state.config.reference_region), "Watched area drawn")}
+          ${checklistRow(summarizeBaselineGuides((state.config && state.config.normal_waterline_guides) || []).ready, "Riverbank baseline ready (a guide marked normal condition)")}
+          ${checklistRow((state.status && state.status.labels_found) || false, "Human labels added")}
+        </div>
+      </div>
+    </div>`;
+}
+
+async function runVideoValidation() {
+  const btn = $("runValidationBtn");
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Running…';
+  $("runValidationError").hidden = true;
+  try {
+    await api("/api/run-validation", { folder_name: folderName });
+    await load();
+  } catch (error) {
+    $("runValidationError").hidden = false;
+    $("runValidationError").textContent = error.message;
+    btn.disabled = false;
+    btn.textContent = "Run video validation";
+  }
 }
 
 function metricTile(label, value, tone) {
@@ -316,7 +381,10 @@ function renderDataset() {
     </div>`;
 }
 
-function wireTabActions() {}
+function wireTabActions() {
+  const runBtn = document.getElementById("runValidationBtn");
+  if (runBtn) runBtn.addEventListener("click", runVideoValidation);
+}
 
 main();
 </script>
