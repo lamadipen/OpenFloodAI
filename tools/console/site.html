@@ -68,7 +68,7 @@ function render() {
   const cfg = state.config || {};
   const status = state.status;
   const guides = cfg.normal_waterline_guides || [];
-  const confirmedGuides = guides.filter((g) => g.status === "confirmed" && g.normal_condition);
+  const baseline = summarizeBaselineGuides(guides);
 
   content.innerHTML = `
     <div style="display:flex;align-items:flex-start;justify-content:space-between;">
@@ -78,7 +78,7 @@ function render() {
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
         ${cfg.reference_region ? '<span class="pill ok">Watched area set</span>' : '<span class="pill warn">Watched area not drawn</span>'}
-        ${confirmedGuides.length ? `<span class="pill ok">${confirmedGuides.length} confirmed guide(s)</span>` : '<span class="pill warn">Baseline needs review</span>'}
+        <span class="pill ${baseline.tone}">${escapeHtml(baseline.pillText)}</span>
       </div>
     </div>
 
@@ -106,6 +106,34 @@ function render() {
   else if (state.tab === "sequences") body.innerHTML = renderSequences();
   else body.innerHTML = renderDataset();
   wireTabActions();
+}
+
+function summarizeBaselineGuides(guides) {
+  const confirmed = guides.filter((g) => g.status === "confirmed");
+  const normal = confirmed.filter((g) => g.normal_condition);
+  if (!guides.length) {
+    return { tone: "warn", pillText: "No riverbank guide", ready: false, confirmedCount: 0, normalCount: 0, guideCount: 0 };
+  }
+  if (normal.length) {
+    return { tone: "ok", pillText: `${normal.length} normal-condition guide(s)`, ready: true, confirmedCount: confirmed.length, normalCount: normal.length, guideCount: guides.length };
+  }
+  if (confirmed.length) {
+    return { tone: "warn", pillText: `${confirmed.length} confirmed, none marked normal`, ready: false, confirmedCount: confirmed.length, normalCount: 0, guideCount: guides.length };
+  }
+  return { tone: "warn", pillText: `${guides.length} guide(s), not confirmed`, ready: false, confirmedCount: 0, normalCount: 0, guideCount: guides.length };
+}
+
+function renderBaselineExplanation(baseline) {
+  if (!baseline.guideCount) {
+    return "No riverbank guide yet. Draw one on a day with typical water level and mark it \"normal condition\" so it can serve as the baseline.";
+  }
+  if (baseline.normalCount) {
+    return `${baseline.normalCount} of ${baseline.guideCount} guide(s) confirmed and marked as normal condition &mdash; ready to use as a baseline.`;
+  }
+  if (baseline.confirmedCount) {
+    return `${baseline.confirmedCount} guide(s) confirmed, but none marked "normal condition" &mdash; confirming just finalizes the traced line, it doesn't mean the water level that day was typical. Edit a guide and mark it normal condition once you have one from a typical day.`;
+  }
+  return `${baseline.guideCount} guide(s) drawn but not yet confirmed.`;
 }
 
 function tabLabel(t) {
@@ -146,7 +174,7 @@ function renderOverview() {
         <div style="font-size:13px;font-weight:600;margin-bottom:12px;">Setup checklist</div>
         <div style="display:flex;flex-direction:column;gap:10px;font-size:13px;">
           ${checklistRow(!!(state.config && state.config.reference_region), "Watched area drawn")}
-          ${checklistRow(((state.config && state.config.normal_waterline_guides) || []).some((g) => g.status === "confirmed" && g.normal_condition), "Riverbank baseline confirmed")}
+          ${checklistRow(summarizeBaselineGuides((state.config && state.config.normal_waterline_guides) || []).ready, "Riverbank baseline ready (a guide marked normal condition)")}
           ${checklistRow(false, "USGS gage attached")}
         </div>
       </div>
@@ -174,7 +202,7 @@ function checklistRow(done, label) {
 function renderSetup() {
   const cfg = state.config || {};
   const guides = cfg.normal_waterline_guides || [];
-  const confirmed = guides.filter((g) => g.status === "confirmed" && g.normal_condition);
+  const baseline = summarizeBaselineGuides(guides);
   return `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
       <div class="card" style="padding:18px 20px;">
@@ -184,7 +212,7 @@ function renderSetup() {
       </div>
       <div class="card" style="padding:18px 20px;">
         <div style="font-size:13px;font-weight:600;">Riverbank baseline</div>
-        <div style="font-size:12px;color:var(--ink-soft);margin:6px 0 14px;">${confirmed.length} confirmed normal-condition guide(s). Draw a guide on a day with typical water level.</div>
+        <div style="font-size:12px;color:var(--ink-soft);margin:6px 0 14px;">${renderBaselineExplanation(baseline)}</div>
         <a class="btn outline-accent" href="/console/form-waterline-guide.html?${new URLSearchParams({ site: folderName })}">Open editor</a>
       </div>
       <div class="card" style="padding:18px 20px;grid-column:span 2;">
