@@ -21,6 +21,11 @@
     </div>
     <form id="form" style="padding:20px 24px;display:flex;flex-direction:column;">
       <div style="margin-bottom:16px;">
+        <label for="video_file">Local video <span style="color:var(--ink-muted);font-weight:400;">(optional &mdash; fills in the fields below from its filename)</span></label>
+        <input type="file" id="video_file" name="video_file" accept=".avi,.mkv,.mov,.mp4,video/*">
+        <div class="hint" id="videoHint" style="margin-top:4px;">Choose a video to auto-fill the fields below, or leave empty and fill them in by hand. Either way, add the video itself afterward from the site's "Add media" step.</div>
+      </div>
+      <div style="margin-bottom:16px;">
         <label for="folder_name">Folder name</label>
         <input id="folder_name" name="folder_name" placeholder="colorado-river-cameo" autocomplete="off">
         <div class="err" id="folderError" hidden></div>
@@ -30,10 +35,12 @@
         <div style="margin-bottom:16px;">
           <label for="camera_id">Camera id</label>
           <input id="camera_id" name="camera_id" placeholder="CO_Colorado_River_near_Cameo">
+          <div class="err" id="cameraIdError" hidden>Required.</div>
         </div>
         <div style="margin-bottom:16px;">
           <label for="site_name">Display name</label>
           <input id="site_name" name="site_name" placeholder="Colorado River near Cameo">
+          <div class="err" id="siteNameError" hidden>Required.</div>
         </div>
       </div>
       <div style="margin-bottom:16px;">
@@ -56,17 +63,49 @@
 <script>
 const pattern = /^[A-Za-z0-9_-]+$/;
 
+function fileStem(filename) {
+  return filename.replace(/\.[^/.]+$/, "");
+}
+
+function sanitizeSiteFolderName(value) {
+  return value.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9_-]/g, "");
+}
+
+$("video_file").addEventListener("change", () => {
+  const file = $("video_file").files[0];
+  if (!file) return;
+  const siteName = fileStem(file.name);
+  const folderName = sanitizeSiteFolderName(siteName);
+  $("site_name").value = siteName;
+  $("folder_name").value = folderName;
+  $("camera_id").value = `${folderName}_camid`;
+  updateFolderState();
+});
+
+const touched = { camera_id: false, site_name: false };
+
 function updateFolderState() {
   const value = $("folder_name").value.trim();
-  const ok = value.length > 0 && pattern.test(value);
-  $("folderError").hidden = value.length === 0 || ok;
-  if (!ok && value.length > 0) $("folderError").textContent = "Use only letters, numbers, dash and underscore.";
-  $("folderHint").hidden = !ok;
-  if (ok) $("folderHint").innerHTML = `Site id will be <span style="font-family:var(--mono);color:var(--ink);">${escapeHtml(value)}_sid</span>`;
-  $("submitBtn").disabled = !ok;
+  const folderOk = value.length > 0 && pattern.test(value);
+  $("folderError").hidden = value.length === 0 || folderOk;
+  if (!folderOk && value.length > 0) $("folderError").textContent = "Use only letters, numbers, dash and underscore.";
+  $("folderHint").hidden = !folderOk;
+  if (folderOk) $("folderHint").innerHTML = `Site id will be <span style="font-family:var(--mono);color:var(--ink);">${escapeHtml(value)}_sid</span>`;
+
+  const cameraOk = $("camera_id").value.trim().length > 0;
+  $("cameraIdError").hidden = cameraOk || !touched.camera_id;
+
+  const siteNameOk = $("site_name").value.trim().length > 0;
+  $("siteNameError").hidden = siteNameOk || !touched.site_name;
+
+  $("submitBtn").disabled = !(folderOk && cameraOk && siteNameOk);
 }
 
 $("folder_name").addEventListener("input", updateFolderState);
+$("camera_id").addEventListener("input", updateFolderState);
+$("site_name").addEventListener("input", updateFolderState);
+$("camera_id").addEventListener("blur", () => { touched.camera_id = true; updateFolderState(); });
+$("site_name").addEventListener("blur", () => { touched.site_name = true; updateFolderState(); });
 
 $("form").addEventListener("submit", async (event) => {
   event.preventDefault();
