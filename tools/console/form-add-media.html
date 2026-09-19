@@ -122,6 +122,20 @@ function renderSampling() {
   });
 }
 
+function fileStem(filename) {
+  return filename.replace(/\.[^/.]+$/, "");
+}
+
+function sanitizeVideoId(value) {
+  return value.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9_-]/g, "");
+}
+
+$("video_file").addEventListener("change", () => {
+  const file = $("video_file").files[0];
+  if (!file) return;
+  $("video_id").value = sanitizeVideoId(fileStem(file.name));
+});
+
 function setMode(mode) {
   document.querySelectorAll("[data-mode]").forEach((btn) => {
     const active = btn.dataset.mode === mode;
