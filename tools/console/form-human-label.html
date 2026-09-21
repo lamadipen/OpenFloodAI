@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Human label · OpenFloodAI console</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap">
+<link rel="stylesheet" href="/console/shared.css">
+</head>
+<body style="background:var(--paper);">
+<div class="modal-overlay">
+  <div class="modal-card" style="width:min(640px,92vw);">
+    <div style="padding:16px 22px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;">
+      <div>
+        <div style="font-size:15px;font-weight:600;">Human label</div>
+        <div style="font-size:12px;color:var(--ink-muted);margin-top:2px;" id="sampleLabel">&hellip;</div>
+      </div>
+      <a id="closeLink" href="#" style="width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--ink-muted);">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </a>
+    </div>
+    <div id="body" style="padding:20px 22px;display:flex;flex-direction:column;gap:20px;max-height:70vh;overflow:auto;">
+      <div id="machineNote" class="hint" style="background:var(--paper);border-radius:9px;padding:10px 12px;font-size:12px;"></div>
+
+      <div>
+        <div class="hint" style="text-transform:uppercase;letter-spacing:.03em;margin-bottom:8px;">What do you see?</div>
+        <div id="labelOptions" style="display:flex;flex-direction:column;gap:7px;"></div>
+        <div id="labelError" class="err" hidden style="margin-top:6px;">Choose a label before saving.</div>
+      </div>
+
+      <div>
+        <div class="hint" style="text-transform:uppercase;letter-spacing:.03em;margin-bottom:8px;">Confidence</div>
+        <div id="confidenceOptions" style="display:flex;gap:8px;"></div>
+      </div>
+
+      <div>
+        <div class="hint" style="text-transform:uppercase;letter-spacing:.03em;margin-bottom:8px;">Visibility &amp; quality</div>
+        <div id="tristateOptions" style="display:flex;flex-direction:column;gap:10px;"></div>
+      </div>
+
+      <div>
+        <label for="note">Notes</label>
+        <textarea id="note" rows="3" placeholder="Anything the machine result doesn't capture"></textarea>
+      </div>
+    </div>
+    <div style="padding:16px 22px;border-top:1px solid var(--line-soft);display:flex;gap:10px;">
+      <a id="skipLink" href="#" class="btn" style="flex:1;justify-content:center;">Skip for now</a>
+      <button id="saveBtn" class="btn primary" style="flex:2;justify-content:center;">Save label</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+<script src="/console/shared.js"></script>
+<script>
+const folderName = qs("site");
+const runId = qs("run_id");
+const mediaId = qs("media_id");
+const sampleKey = qs("sample_key");
+const date = qs("date");
+const time = qs("time");
+
+const LABELS = [
+  { id: "water_level_rising", text: "Water level is rising" },
+  { id: "water_level_falling", text: "Water level is falling" },
+  { id: "no_water_level_change", text: "No water level change" },
+  { id: "cannot_judge_water_level", text: "Cannot judge water level from this evidence" },
+  { id: "camera_video_problem", text: "Camera or video problem" }
+];
+const TRISTATE_FIELDS = [
+  { key: "riverbank_visible", label: "Riverbank / reference visible" },
+  { key: "stable_marker_visible", label: "Stable marker visible" },
+  { key: "water_boundary_visible", label: "Water boundary visible" },
+  { key: "camera_stable", label: "Camera stable" }
+];
+
+let state = { label: null, confidence: "medium", tristate: {}, triedSave: false };
+
+function renderLabels() {
+  $("labelOptions").innerHTML = LABELS.map((l) => {
+    const on = state.label === l.id;
+    return `<button type="button" data-label="${l.id}" style="text-align:left;border:1.5px solid ${on ? "var(--accent)" : "var(--line)"};background:${on ? "var(--accent-soft)" : "#fff"};border-radius:9px;padding:10px 12px;font-size:13px;font-weight:${on ? 600 : 500};color:${on ? "var(--accent)" : "var(--ink)"};cursor:pointer;">${l.text}</button>`;
+  }).join("");
+  $("labelOptions").querySelectorAll("[data-label]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.label = btn.dataset.label;
+      state.triedSave = false;
+      $("labelError").hidden = true;
+      renderLabels();
+    });
+  });
+}
+
+function renderConfidence() {
+  $("confidenceOptions").innerHTML = ["low", "medium", "high"].map((c) => {
+    const on = state.confidence === c;
+    return `<button type="button" data-confidence="${c}" style="flex:1;height:36px;border-radius:8px;border:1.5px solid ${on ? "var(--accent)" : "var(--line)"};background:${on ? "var(--accent-soft)" : "#fff"};font-size:12px;font-weight:600;color:${on ? "var(--accent)" : "var(--ink-soft)"};text-transform:capitalize;cursor:pointer;">${c}</button>`;
+  }).join("");
+  $("confidenceOptions").querySelectorAll("[data-confidence]").forEach((btn) => {
+    btn.addEventListener("click", () => { state.confidence = btn.dataset.confidence; renderConfidence(); });
+  });
+}
+
+function renderTristate() {
+  $("tristateOptions").innerHTML = TRISTATE_FIELDS.map((f) => `
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div style="flex:1;font-size:12px;color:var(--ink-soft);">${f.label}</div>
+      <div style="display:flex;gap:4px;">
+        ${["yes", "no", "unsure"].map((v) => {
+          const on = state.tristate[f.key] === v;
+          return `<button type="button" data-field="${f.key}" data-value="${v}" style="width:56px;height:28px;border-radius:6px;border:1px solid ${on ? "var(--accent)" : "var(--line)"};background:${on ? "var(--accent-soft)" : "#fff"};font-size:11px;font-weight:600;color:${on ? "var(--accent)" : "var(--ink-muted)"};text-transform:capitalize;cursor:pointer;">${v}</button>`;
+        }).join("")}
+      </div>
+    </div>`).join("");
+  $("tristateOptions").querySelectorAll("[data-field]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.tristate[btn.dataset.field] = btn.dataset.value;
+      renderTristate();
+    });
+  });
+}
+
+async function main() {
+  if (!folderName || !runId || !mediaId || !sampleKey) {
+    document.body.innerHTML = `<div style="padding:40px;">Missing required parameters in the URL.</div>`;
+    return;
+  }
+  const backHref = `/console/review.html?${new URLSearchParams({ site: folderName, run_id: runId })}`;
+  $("closeLink").href = backHref;
+  $("skipLink").href = backHref;
+  $("sampleLabel").textContent = `${date}${time ? ", " + time + " local" : ""} · run ${runId}`;
+  $("machineNote").innerHTML = `Nothing here changes the machine's saved result &mdash; this only records what you see.`;
+  renderLabels();
+  renderConfidence();
+  renderTristate();
+}
+
+$("saveBtn").addEventListener("click", async () => {
+  if (!state.label) {
+    state.triedSave = true;
+    $("labelError").hidden = false;
+    return;
+  }
+  $("saveBtn").disabled = true;
+  $("saveBtn").innerHTML = '<span class="spinner"></span>Saving…';
+  try {
+    const data = {
+      folder_name: folderName,
+      kind: "image",
+      run_id: runId,
+      media_id: mediaId,
+      sample_key: sampleKey,
+      human_label: state.label,
+      confidence: state.confidence,
+      note: $("note").value.trim(),
+      ...state.tristate
+    };
+    await api("/api/workspace-label", data);
+    location.href = `/console/review.html?${new URLSearchParams({ site: folderName, run_id: runId })}`;
+  } catch (error) {
+    toast(error.message);
+    $("saveBtn").disabled = false;
+    $("saveBtn").textContent = "Save label";
+  }
+});
+
+main();
+</script>
+</body>
+</html>

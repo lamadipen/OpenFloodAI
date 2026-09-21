@@ -30,10 +30,19 @@ MAX_VIDEO_SECONDS = 120
 MAX_METADATA_BYTES = 2 * 1024 * 1024
 REQUEST_TIMEOUT_SECONDS = 15
 
-ALLOWED_SEQUENCE_SAMPLING_MODES = {"one_per_day", "one_per_hour", "all"}
+ALLOWED_SEQUENCE_SAMPLING_MODES = {
+    "one_per_day",
+    "one_per_hour",
+    "all",
+    "one_daylight_image_per_day",
+}
+_DAY_BUCKET_SAMPLING_MODES = {"one_per_day", "one_daylight_image_per_day"}
 MAX_SEQUENCE_CANDIDATES = 20_000
 MAX_SEQUENCE_LISTING_PAGES = 50
 _SEQUENCE_LISTING_PAGE_SIZE = 1000
+DEFAULT_DAYLIGHT_WINDOW_START_HOUR = 10
+DEFAULT_DAYLIGHT_WINDOW_END_HOUR = 14
+_NOON_SECONDS = 12 * 3600
 _SEQUENCE_DATE_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}")
 _SEQUENCE_ID_PATTERN = re.compile(
     r"usgs-[A-Za-z0-9_-]{1,160}-\d{4}-\d{2}-\d{2}-\d{4}-\d{2}-\d{2}-"
@@ -366,7 +375,7 @@ class ImageSequenceCandidate:
 
 
 def _sequence_bucket_key(moment: datetime, mode: str) -> tuple[int, ...]:
-    if mode == "one_per_day":
+    if mode in _DAY_BUCKET_SAMPLING_MODES:
         return (moment.year, moment.month, moment.day)
     return (moment.year, moment.month, moment.day, moment.hour)
 
@@ -374,9 +383,9 @@ def _sequence_bucket_key(moment: datetime, mode: str) -> tuple[int, ...]:
 def _expected_sequence_buckets(
     start_utc: datetime, end_utc: datetime, zone: ZoneInfo, mode: str
 ) -> list[tuple[int, ...]]:
-    step = timedelta(days=1) if mode == "one_per_day" else timedelta(hours=1)
+    step = timedelta(days=1) if mode in _DAY_BUCKET_SAMPLING_MODES else timedelta(hours=1)
     current = start_utc.astimezone(zone).replace(minute=0, second=0, microsecond=0)
-    if mode == "one_per_day":
+    if mode in _DAY_BUCKET_SAMPLING_MODES:
         current = current.replace(hour=0)
     end_local = end_utc.astimezone(zone)
     buckets: list[tuple[int, ...]] = []
@@ -384,6 +393,41 @@ def _expected_sequence_buckets(
         buckets.append(_sequence_bucket_key(current, mode))
         current += step
     return buckets
+
+
+def _in_daylight_window(local: datetime, window_start_hour: int, window_end_hour: int) -> bool:
+    seconds = local.hour * 3600 + local.minute * 60 + local.second
+    return window_start_hour * 3600 <= seconds <= window_end_hour * 3600
+
+
+def _select_one_daylight_image_per_day(
+    candidates: list[ImageSequenceCandidate],
+    zone: ZoneInfo,
+    window_start_hour: int,
+    window_end_hour: int,
+) -> list[ImageSequenceCandidate]:
+    """Pick the image nearest local noon, inside the daylight window, per local day.
+
+    A day with images only outside the window (or no images at all) gets no
+    selection here — it is reported as a `missing` record by the caller
+    rather than silently substituted with a nighttime image.
+    """
+
+    by_day: dict[tuple[int, int, int], ImageSequenceCandidate] = {}
+    best_diff_by_day: dict[tuple[int, int, int], int] = {}
+    for candidate in candidates:
+        local = candidate.captured_utc.astimezone(zone)
+        if not _in_daylight_window(local, window_start_hour, window_end_hour):
+            continue
+        day_key = (local.year, local.month, local.day)
+        seconds = local.hour * 3600 + local.minute * 60 + local.second
+        diff = abs(seconds - _NOON_SECONDS)
+        # <= (not <) so an exact tie prefers the later image, matching the
+        # plan's own worked example (11:45 vs 12:15 -> 12:15).
+        if day_key not in best_diff_by_day or diff <= best_diff_by_day[day_key]:
+            best_diff_by_day[day_key] = diff
+            by_day[day_key] = candidate
+    return sorted(by_day.values(), key=lambda candidate: candidate.captured_utc)
 
 
 def parse_sequence_date_range(
@@ -467,8 +511,46 @@ def list_archive_images_between(
     return candidates
 
 
+def _utc_calendar_year_windows(
+    start_utc: datetime, end_utc: datetime
+) -> list[tuple[datetime, datetime]]:
+    """Split a UTC [start, end) range into contiguous whole-calendar-year windows."""
+
+    windows: list[tuple[datetime, datetime]] = []
+    current = start_utc
+    while current < end_utc:
+        next_year_start = datetime(current.year + 1, 1, 1, tzinfo=UTC)
+        window_end = min(next_year_start, end_utc)
+        windows.append((current, window_end))
+        current = window_end
+    return windows
+
+
+def list_archive_images_between_windowed(
+    slug: str, start_utc: datetime, end_utc: datetime
+) -> list[ImageSequenceCandidate]:
+    """List archived images across a range, chunked internally by calendar year.
+
+    A multi-year request would otherwise enumerate far more candidates in a
+    single S3 listing than MAX_SEQUENCE_CANDIDATES allows. Listing one
+    calendar year at a time keeps each underlying call's candidate count
+    bounded while still returning one combined, chronologically ordered list
+    for the full requested range.
+    """
+
+    candidates: list[ImageSequenceCandidate] = []
+    for window_start, window_end in _utc_calendar_year_windows(start_utc, end_utc):
+        candidates.extend(list_archive_images_between(slug, window_start, window_end))
+    return candidates
+
+
 def sample_image_sequence_candidates(
-    candidates: list[ImageSequenceCandidate], mode: str, *, timezone_name: str = "UTC"
+    candidates: list[ImageSequenceCandidate],
+    mode: str,
+    *,
+    timezone_name: str = "UTC",
+    daylight_window_start_hour: int = DEFAULT_DAYLIGHT_WINDOW_START_HOUR,
+    daylight_window_end_hour: int = DEFAULT_DAYLIGHT_WINDOW_END_HOUR,
 ) -> list[ImageSequenceCandidate]:
     """Reduce a chronological candidate list to one per requested time bucket."""
 
@@ -481,6 +563,14 @@ def sample_image_sequence_candidates(
         zone = ZoneInfo(timezone_name)
     except ZoneInfoNotFoundError as error:
         raise RiverImageError("Enter a valid IANA timezone.") from error
+    if mode == "one_daylight_image_per_day":
+        if not (0 <= daylight_window_start_hour < daylight_window_end_hour <= 24):
+            raise RiverImageError(
+                "The daylight window needs a start hour before an end hour, both 0-24."
+            )
+        return _select_one_daylight_image_per_day(
+            candidates, zone, daylight_window_start_hour, daylight_window_end_hour
+        )
     seen_buckets: set[tuple[int, ...]] = set()
     sampled: list[ImageSequenceCandidate] = []
     for candidate in candidates:
@@ -516,14 +606,22 @@ def preview_river_image_sequence(
     end_date: str,
     timezone_name: str,
     sampling_mode: str,
+    daylight_window_start_hour: int = DEFAULT_DAYLIGHT_WINDOW_START_HOUR,
+    daylight_window_end_hour: int = DEFAULT_DAYLIGHT_WINDOW_END_HOUR,
 ) -> ImageSequencePreview:
     """Report how many images a sequence request would fetch, without downloading."""
 
     slug = camera_slug(camera_url)
     zone_name = timezone_name.strip() or camera_timezone(slug)
     start_utc, end_utc = parse_sequence_date_range(start_date.strip(), end_date.strip(), zone_name)
-    candidates = list_archive_images_between(slug, start_utc, end_utc)
-    sampled = sample_image_sequence_candidates(candidates, sampling_mode, timezone_name=zone_name)
+    candidates = list_archive_images_between_windowed(slug, start_utc, end_utc)
+    sampled = sample_image_sequence_candidates(
+        candidates,
+        sampling_mode,
+        timezone_name=zone_name,
+        daylight_window_start_hour=daylight_window_start_hour,
+        daylight_window_end_hour=daylight_window_end_hour,
+    )
     return ImageSequencePreview(
         camera_id=slug,
         timezone=zone_name,
@@ -587,34 +685,79 @@ def download_river_image_sequence(
     site_id: str,
     site_dir: Path,
     overwrite: bool = False,
+    resume: bool = False,
+    daylight_window_start_hour: int = DEFAULT_DAYLIGHT_WINDOW_START_HOUR,
+    daylight_window_end_hour: int = DEFAULT_DAYLIGHT_WINDOW_END_HOUR,
 ) -> ImageSequenceDownloadResult:
-    """Download a sampled, date-ranged image sequence into a site folder."""
+    """Download a sampled, date-ranged image sequence into a site folder.
+
+    `overwrite` replaces an existing sequence from scratch (unchanged,
+    existing behavior). `resume` is new: when the sequence already exists
+    and `overwrite` is not set, it reuses images already saved on disk
+    (matched by source URL) and only fetches what is missing or previously
+    failed, instead of raising. Neither flag set, and an existing sequence,
+    still raises exactly as before.
+    """
 
     slug = camera_slug(camera_url)
     zone_name = timezone_name.strip() or camera_timezone(slug)
     start = start_date.strip()
     end = end_date.strip()
     start_utc, end_utc = parse_sequence_date_range(start, end, zone_name)
-    candidates = list_archive_images_between(slug, start_utc, end_utc)
-    sampled = sample_image_sequence_candidates(candidates, sampling_mode, timezone_name=zone_name)
+    candidates = list_archive_images_between_windowed(slug, start_utc, end_utc)
+    sampled = sample_image_sequence_candidates(
+        candidates,
+        sampling_mode,
+        timezone_name=zone_name,
+        daylight_window_start_hour=daylight_window_start_hour,
+        daylight_window_end_hour=daylight_window_end_hour,
+    )
     zone = ZoneInfo(zone_name)
 
     sequence_id = f"usgs-{slug}-{start}-{end}-{sampling_mode}"
     sequence_dir = (site_dir / "inputs" / "image-sequences" / sequence_id).resolve()
+    already_downloaded: dict[str, ImageSequenceRecord] = {}
     if sequence_dir.exists():
-        if not overwrite:
+        if overwrite:
+            shutil.rmtree(sequence_dir)
+        elif resume:
+            manifest_path = sequence_dir / "sequence-manifest.jsonl"
+            if manifest_path.is_file():
+                for raw_record in read_jsonl_records(manifest_path):
+                    filename = raw_record.get("filename")
+                    if (
+                        raw_record.get("download_status") == "downloaded"
+                        and isinstance(filename, str)
+                        and filename
+                        and (sequence_dir / "images" / filename).is_file()
+                    ):
+                        already_downloaded[str(raw_record.get("source_url"))] = ImageSequenceRecord(
+                            site_id=str(raw_record.get("site_id")),
+                            camera_id=str(raw_record.get("camera_id")),
+                            source_url=str(raw_record.get("source_url")),
+                            captured_at_utc=str(raw_record.get("captured_at_utc")),
+                            local_time=str(raw_record.get("local_time")),
+                            filename=filename,
+                            file_size_bytes=int(str(raw_record.get("file_size_bytes") or 0)),
+                            download_status="downloaded",
+                            source_system=str(raw_record.get("source_system", "usgs_nims")),
+                        )
+        else:
             raise RiverImageError(
                 "An image sequence already exists for this camera and date range: "
                 f"{sequence_id}. Use overwrite to replace it."
             )
-        shutil.rmtree(sequence_dir)
     images_dir = sequence_dir / "images"
-    images_dir.mkdir(parents=True, exist_ok=False)
+    images_dir.mkdir(parents=True, exist_ok=True)
 
     records: list[ImageSequenceRecord] = []
     for candidate in sampled:
         filename = candidate.source_url.rsplit("/", 1)[-1]
         local_time = candidate.captured_utc.astimezone(zone).isoformat()
+        reused = already_downloaded.get(candidate.source_url)
+        if reused is not None:
+            records.append(reused)
+            continue
         try:
             data, content_type = _fetch(candidate.source_url, limit=MAX_IMAGE_BYTES)
             if content_type != "image/jpeg" or not data.startswith(b"\xff\xd8\xff"):
@@ -674,9 +817,13 @@ def download_river_image_sequence(
             )
 
     records.sort(key=lambda record: record.captured_at_utc)
-    write_jsonl_records(
-        sequence_dir / "sequence-manifest.jsonl", [asdict(record) for record in records]
-    )
+    manifest_path = sequence_dir / "sequence-manifest.jsonl"
+    # write_jsonl_records only appends; `records` here is already the full,
+    # current manifest (including reused rows on resume), so the old file
+    # must be cleared first or every resume would duplicate every row in it.
+    if manifest_path.exists():
+        manifest_path.unlink()
+    write_jsonl_records(manifest_path, [asdict(record) for record in records])
 
     result = ImageSequenceDownloadResult(sequence_dir, sequence_id, zone_name, records)
     summary = result.to_dict() | {

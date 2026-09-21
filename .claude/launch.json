@@ -12,6 +12,12 @@
       "runtimeExecutable": "python3",
       "runtimeArgs": ["-m", "http.server", "8322", "--directory", "site"],
       "port": 8322
+    },
+    {
+      "name": "home-ui",
+      "runtimeExecutable": ".venv/bin/python3",
+      "runtimeArgs": ["scripts/run_openfloodai_home_ui.py", "--port", "8765"],
+      "port": 8765
     }
   ]
 }

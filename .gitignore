@@ -34,51 +34,56 @@ env/
 # Project artifacts
 data/*
 !data/.gitkeep
+!data/reference/
 !data/sites/
 !data/sites/README.md
-!data/sites/*/
-!data/sites/*/README.md
-!data/sites/*/configs/
-!data/sites/*/configs/.gitkeep
-!data/sites/*/inputs/
-!data/sites/*/inputs/videos/
-!data/sites/*/inputs/videos/.gitkeep
-!data/sites/*/inputs/other/
-!data/sites/*/inputs/other/.gitkeep
-!data/sites/*/labels/
-!data/sites/*/labels/.gitkeep
-!data/sites/*/labels/example-labels.jsonl
-!data/sites/*/human-evidence/
-!data/sites/*/human-evidence/flood-images/
-!data/sites/*/human-evidence/flood-images/.gitkeep
-!data/sites/*/human-evidence/notes/
-!data/sites/*/human-evidence/notes/.gitkeep
-!data/sites/*/outputs/
-!data/sites/*/outputs/.gitkeep
-!data/sites/*/outputs/review-images/
-!data/sites/*/outputs/review-images/.gitkeep
-data/sites/*/inputs/videos/*
-!data/sites/*/inputs/videos/.gitkeep
-data/sites/*/inputs/other/*
-!data/sites/*/inputs/other/.gitkeep
-data/sites/*/human-evidence/flood-images/*
-!data/sites/*/human-evidence/flood-images/.gitkeep
-data/sites/*/labels/*
-!data/sites/*/labels/.gitkeep
-!data/sites/*/labels/example-labels.jsonl
-data/sites/*/outputs/*
-!data/sites/*/outputs/.gitkeep
-!data/sites/*/outputs/review-images/
-data/sites/*/outputs/review-images/*
-!data/sites/*/outputs/review-images/.gitkeep
+
+# Every folder under data/sites/ is local-only and ignored EXCEPT
+# example-site, which stays tracked as the one committed sample fixture.
+# Any other site folder that lands here (bootstrap runs, pilot cameras,
+# local testing, etc.) is never committed.
+data/sites/*
+!data/sites/README.md
+!data/sites/example-site/
+!data/sites/example-site/README.md
+!data/sites/example-site/configs/
+!data/sites/example-site/configs/.gitkeep
+!data/sites/example-site/inputs/
+!data/sites/example-site/inputs/videos/
+!data/sites/example-site/inputs/videos/.gitkeep
+!data/sites/example-site/inputs/other/
+!data/sites/example-site/inputs/other/.gitkeep
+!data/sites/example-site/labels/
+!data/sites/example-site/labels/.gitkeep
+!data/sites/example-site/labels/example-labels.jsonl
+!data/sites/example-site/human-evidence/
+!data/sites/example-site/human-evidence/flood-images/
+!data/sites/example-site/human-evidence/flood-images/.gitkeep
+!data/sites/example-site/human-evidence/notes/
+!data/sites/example-site/human-evidence/notes/.gitkeep
+!data/sites/example-site/outputs/
+!data/sites/example-site/outputs/.gitkeep
+!data/sites/example-site/outputs/review-images/
+!data/sites/example-site/outputs/review-images/.gitkeep
+data/sites/example-site/inputs/videos/*
+!data/sites/example-site/inputs/videos/.gitkeep
+data/sites/example-site/inputs/other/*
+!data/sites/example-site/inputs/other/.gitkeep
+data/sites/example-site/human-evidence/flood-images/*
+!data/sites/example-site/human-evidence/flood-images/.gitkeep
+data/sites/example-site/labels/*
+!data/sites/example-site/labels/.gitkeep
+!data/sites/example-site/labels/example-labels.jsonl
+data/sites/example-site/outputs/*
+!data/sites/example-site/outputs/.gitkeep
+!data/sites/example-site/outputs/review-images/
+data/sites/example-site/outputs/review-images/*
+!data/sites/example-site/outputs/review-images/.gitkeep
 models/*
 !models/.gitkeep
-# Local-only site runs
-data/sites/colorado-site/
-data/sites/nuwakot-river-01-1/
-data/sites/co_colorado_river_at_windy_gap_near_granby_720/
-data/sites/co_colorado_river_near_cameo_720/
-data/sites/ut_colorado_river_near_cisco_720/
+
+# Downloaded images and their local metadata stay private, including in the fixture.
+data/sites/*/inputs/image-sequences/
 
 # Local-only project notes
 READMELOCAL.md

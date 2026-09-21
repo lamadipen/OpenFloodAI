@@ -840,7 +840,10 @@
       <div class="eyebrow">Local validation workspace</div>
       <h1>OpenFloodAI Home UI</h1>
       <nav aria-label="Workspace navigation" style="margin: 12px 0;">
+        <a href="/console/dashboard.html" style="margin-right: 14px;">Console Dashboard</a>
+        <a href="/review-workspace.html" style="margin-right: 14px;">Review Workspace</a>
         <a href="/river-images.html">Download River Images and Video</a>
+        <a href="/river-tracker.html" style="margin-left: 14px;">River Camera Tracker</a>
       </nav>
       <p class="subhead">
         Local validation readiness for site folders. This screen helps you see what is ready
@@ -1440,6 +1443,15 @@
       const labelListPanel = document.querySelector("#labelListPanel");
       const labelListContent = document.querySelector("#labelListContent");
       const isDetailsPage = window.location.pathname.endsWith("/site-details.html");
+      const workspaceEmbed = window.parent !== window &&
+        new URLSearchParams(window.location.search).get("embed") === "workspace";
+      const workspaceSiteEmbed = workspaceEmbed &&
+        new URLSearchParams(window.location.search).get("action") === "create_site";
+      if (workspaceEmbed) {
+        const style = document.createElement("style");
+        style.textContent = "body > :not(main):not(script):not(style){display:none!important} main > :not(.form-panel){display:none!important} main{max-width:none;margin:0;padding:16px} .form-panel{margin:0}";
+        document.head.appendChild(style);
+      }
       const requestedSiteName = new URLSearchParams(window.location.search).get("site");
       let latestSites = [];
       let openWorkflowForm = null;
@@ -3952,6 +3964,9 @@
       };
 
       cancelSetup.addEventListener("click", () => {
+        if (workspaceSiteEmbed) {
+          window.parent.postMessage({ type: "workspace-site-cancelled" }, window.location.origin);
+        }
         siteForm.reset();
         hideForms();
       });
@@ -4242,7 +4257,14 @@
 
           const result = await response.json();
           if (response.ok) {
-            alert(result.message);
+            if (workspaceSiteEmbed) {
+              window.parent.postMessage({
+                type: "workspace-site-created",
+                folder_name: String(formData.get("folder_name") || ""),
+              }, window.location.origin);
+            } else {
+              alert(result.message);
+            }
             siteForm.reset();
             setupVideoRegionSelector.reset();
             hideForms();
@@ -4336,6 +4358,11 @@
         const deepLinkAction = params.get("action");
         const imageSequenceId = params.get("image_sequence_id");
         const imageFilename = params.get("image_filename");
+        if (deepLinkAction === "create_site") {
+          createSiteButton.click();
+          history.replaceState(null, "", window.location.pathname);
+          return;
+        }
         if (deepLinkSite && deepLinkAction === "set_watched_area" && imageSequenceId && imageFilename) {
           window.useImageAsWatchedAreaReference(deepLinkSite, imageSequenceId, imageFilename);
           history.replaceState(null, "", window.location.pathname);

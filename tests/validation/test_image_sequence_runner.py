@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 import pytest
 
+from openfloodai.review.event_reviews import compute_evidence_key, set_event_review
 from openfloodai.validation.image_sequence_runner import (
     RESULT_CAMERA_OR_IMAGE_PROBLEM,
     RESULT_CANNOT_JUDGE_WATER_LEVEL,
@@ -287,6 +288,91 @@ def test_list_and_read_run_detail_round_trip(tmp_path: Path) -> None:
     assert detail["summary"]["run_id"] == report.run_id
     assert len(detail["records"]) == 1
     assert "Image Sequence Validation Report" in detail["report"]
+    # No gauge-daily-series.json or event-reviews.jsonl exist for this
+    # sequence yet: both keys are present but empty, never missing.
+    assert detail["gauge_series"] == []
+    assert detail["event_reviews"] == {}
+
+
+def test_read_run_detail_includes_gauge_series_and_event_reviews_when_present(
+    tmp_path: Path,
+) -> None:
+    site_dir = tmp_path / "site"
+    make_site(site_dir)
+    sequence_dir = site_dir / "inputs" / "image-sequences" / SEQUENCE_ID
+    images_dir = sequence_dir / "images"
+    write_frame(images_dir / "a.jpg", 30)
+    write_frame(images_dir / "b.jpg", 30)
+    write_manifest(
+        sequence_dir,
+        [
+            manifest_record("a.jpg", "2026-09-01T00:00:00+00:00", "downloaded"),
+            manifest_record("b.jpg", "2026-09-01T01:00:00+00:00", "downloaded"),
+        ],
+    )
+    (sequence_dir / "gauge-daily-series.json").write_text(
+        json.dumps([{"date": "2026-09-01", "gauge_value": 3.5}]), encoding="utf-8"
+    )
+
+    report = run_image_sequence_validation(site_dir, SEQUENCE_ID)
+    detail = read_image_sequence_run_detail(site_dir, report.run_id)
+    summary = detail["summary"]
+    evidence_key = compute_evidence_key(summary["baseline_filename"], summary["watched_area_used"])
+    set_event_review(
+        sequence_dir,
+        event_key="2026-09-01-2026-09-01-P",
+        status="confirmed_real",
+        evidence_key=evidence_key,
+    )
+
+    detail = read_image_sequence_run_detail(site_dir, report.run_id)
+
+    assert detail["gauge_series"] == [{"date": "2026-09-01", "gauge_value": 3.5}]
+    assert detail["event_reviews"] == {"2026-09-01-2026-09-01-P": "confirmed_real"}
+
+
+def test_a_review_does_not_carry_over_when_the_watched_area_changes(tmp_path: Path) -> None:
+    site_dir = tmp_path / "site"
+    make_site(site_dir, reference_region=FULL_REGION)
+    sequence_dir = site_dir / "inputs" / "image-sequences" / SEQUENCE_ID
+    images_dir = sequence_dir / "images"
+    write_frame(images_dir / "a.jpg", 30)
+    write_frame(images_dir / "b.jpg", 30)
+    write_manifest(
+        sequence_dir,
+        [
+            manifest_record("a.jpg", "2026-09-01T00:00:00+00:00", "downloaded"),
+            manifest_record("b.jpg", "2026-09-01T01:00:00+00:00", "downloaded"),
+        ],
+    )
+
+    first_report = run_image_sequence_validation(site_dir, SEQUENCE_ID)
+    first_detail = read_image_sequence_run_detail(site_dir, first_report.run_id)
+    first_evidence_key = compute_evidence_key(
+        first_detail["summary"]["baseline_filename"],
+        first_detail["summary"]["watched_area_used"],
+    )
+    set_event_review(
+        sequence_dir,
+        event_key="k1",
+        status="confirmed_real",
+        evidence_key=first_evidence_key,
+    )
+    assert read_image_sequence_run_detail(site_dir, first_report.run_id)["event_reviews"] == {
+        "k1": "confirmed_real"
+    }
+
+    # Narrow the watched area and rerun on the same downloaded images. Even
+    # though the event_key ("k1") is unchanged, the evidence behind it is
+    # not the same comparison a human actually reviewed.
+    config_path = site_dir / "configs" / "site.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["reference_region"] = {"x": 0, "y": 0, "width": 40, "height": 40}
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    second_report = run_image_sequence_validation(site_dir, SEQUENCE_ID)
+    second_detail = read_image_sequence_run_detail(site_dir, second_report.run_id)
+
+    assert second_detail["event_reviews"] == {}
 
 
 def test_list_image_sequence_runs_ignores_other_sequences(tmp_path: Path) -> None:
@@ -442,3 +528,53 @@ def test_classify_comparison_falls_back_to_cannot_judge_for_an_unknown_state() -
 def test_classify_comparison_still_maps_useful_evidence_to_possible_change() -> None:
     result, _ = _classify_comparison("useful_water_level_evidence", brightness_score=0.5)
     assert result == RESULT_POSSIBLE_WATER_LEVEL_CHANGE
+
+
+def test_workspace_image_review_preserves_pair_and_saved_machine_records(tmp_path: Path) -> None:
+    from openfloodai.contracts import read_jsonl_records
+    from openfloodai.review.workspace import evidence, media_path, save_group, save_observation
+
+    site = tmp_path / "site"
+    make_site(site)
+    sequence = site / "inputs" / "image-sequences" / SEQUENCE_ID
+    baseline = "camera___2026-09-01T00-00-00Z.jpg"
+    selected = "camera___2026-09-01T01-00-00Z.jpg"
+    for filename in (baseline, selected):
+        write_frame(sequence / "images" / filename, 100)
+    write_manifest(
+        sequence,
+        [
+            manifest_record(baseline, "2026-09-01T00:00:00+00:00", "downloaded"),
+            manifest_record(selected, "2026-09-01T01:00:00+00:00", "downloaded"),
+        ],
+    )
+    report = run_image_sequence_validation(site, SEQUENCE_ID)
+    records = report.run_dir / "image-sequence-records.jsonl"
+    before = records.read_bytes()
+    payload = evidence(site, "image", report.run_id, SEQUENCE_ID)
+    point = payload["points"][0]
+    assert point["comparison"]["result"] == "cannot_compare"
+    request = {
+        "kind": "image",
+        "run_id": report.run_id,
+        "media_id": SEQUENCE_ID,
+        "sample_key": point["key"],
+        "human_label": "no_water_level_change",
+    }
+    save_observation(site, request)
+    updated = evidence(site, "image", report.run_id, SEQUENCE_ID)
+    assert updated["points"][0]["comparison"]["result"] == "agree"
+    saved = read_jsonl_records(report.run_dir / "human-review" / "observations.jsonl")[0]
+    assert saved["filename"] == selected
+    assert saved["baseline_filename"] == baseline
+    assert isinstance(saved["label"], dict)
+    assert "time_window_seconds" not in saved["label"]
+    assert records.read_bytes() == before
+    save_group(site, {**request, "group": "practice"})
+    save_group(site, {**request, "group": "practice"})
+    assert len(evidence(site, "image", report.run_id, SEQUENCE_ID)["groups"]) == 1
+    with pytest.raises(ValueError):
+        media_path(site, "image", "../escape", SEQUENCE_ID, selected)
+    (sequence / "images" / selected).write_bytes(b"replacement")
+    with pytest.raises(ValueError, match="changed since analysis"):
+        save_observation(site, request)

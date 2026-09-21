@@ -30,6 +30,7 @@ from openfloodai.contracts import read_jsonl_records
 from openfloodai.ingestion.image_video import create_image_test_video
 from openfloodai.ingestion.live_camera import LiveCameraError, capture_live_clip
 from openfloodai.ingestion.live_camera_schedule import read_schedule, write_schedule
+from openfloodai.ingestion.river_bootstrap import preview_bootstrap_run, run_bootstrap
 from openfloodai.ingestion.river_images import (
     RiverImageError,
     download_latest_timelapse,
@@ -41,19 +42,31 @@ from openfloodai.ingestion.river_images import (
     resolve_downloaded_video,
     resolve_sequence_image,
 )
+from openfloodai.ingestion.river_registry import RiverRegistryError
 from openfloodai.review import (
     ALLOWED_CONFIDENCE_LEVELS,
     ALLOWED_HUMAN_LABELS,
     ALLOWED_TRISTATE_VALUES,
     ALLOWED_VISIBILITY_CONDITIONS,
+    ReviewImageError,
     compute_failure_reason,
     create_human_label_record,
+    encode_png,
     friendly_failure_reason,
     is_baseline_ready,
     is_normal_baseline_confirmed,
+    render_pair_comparison_overlay,
     repair_manifest_from_local_videos,
 )
 from openfloodai.review.dataset_manifest import HARD_CASE_TYPE_OPTIONS, MANIFEST_PURPOSE_OPTIONS
+from openfloodai.review.event_reviews import (
+    EventReviewError,
+    compute_evidence_key,
+    list_event_reviews,
+    set_event_review,
+)
+from openfloodai.review.river_tracker import build_river_tracker
+from openfloodai.ui import review_workspace
 from openfloodai.validation import (
     build_export_all,
     build_run_export,
@@ -69,6 +82,7 @@ from openfloodai.validation.image_sequence_runner import (
     list_image_sequence_runs,
     read_image_sequence_run_detail,
     resolve_image_sequence_run_image,
+    resolve_run_config_snapshot,
     run_image_sequence_validation,
 )
 from openfloodai.validation.input_snapshot import read_input_snapshot
@@ -79,6 +93,12 @@ VIDEO_CONTENT_TYPES = {
     ".mkv": "video/x-matroska",
     ".mov": "video/quicktime",
     ".mp4": "video/mp4",
+}
+
+_CONSOLE_CONTENT_TYPES = {
+    ".html": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
 }
 
 
@@ -92,6 +112,11 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         """Serve site-status JSON or the static local UI."""
 
         path = urlsplit(self.path).path
+        if path.startswith("/console/"):
+            self._send_console_file(path[len("/console/") :])
+            return
+        if review_workspace.handle_get(self, path):
+            return
         if path == "/river-images.html":
             self._send_river_images_page()
             return
@@ -140,6 +165,9 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         if path == "/api/image-sequence-image":
             self._send_image_sequence_image()
             return
+        if path == "/api/image-sequence-comparison":
+            self._send_image_sequence_comparison()
+            return
         if path == "/api/image-sequence-runs":
             self._send_image_sequence_runs()
             return
@@ -151,6 +179,12 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             return
         if path == "/site-details.html":
             self._send_site_details_page()
+            return
+        if path == "/river-tracker.html":
+            self._send_river_tracker_page()
+            return
+        if path == "/api/river-tracker":
+            self._send_river_tracker_json()
             return
         if path in {"/", "/openfloodai-home-ui.html"}:
             self._send_file(self.ui_path, content_type="text/html; charset=utf-8")
@@ -304,6 +338,59 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         except (OSError, ValueError, RiverImageError):
             self.send_error(404, "Image not found")
 
+    def _send_image_sequence_comparison(self) -> None:
+        """Render an on-demand baseline-vs-selected comparison, watched area boxed.
+
+        Unlike a run's saved review images (fixed to that run's single
+        biggest-change day), this builds the comparison for whichever two
+        images the caller names, so a reviewer stepping through days or
+        events sees the right pair every time, not just one fixed pair.
+
+        Always renders using the CONFIG SNAPSHOT SAVED WITH `run_id`, never
+        the site's current live config — otherwise editing the watched area
+        after a run would silently change what an old run's comparison
+        shows, disagreeing with the score that run actually computed.
+        """
+
+        query = parse_qs(urlsplit(self.path).query)
+        try:
+            site_dir = self._resolve_site_dir(query.get("folder_name", [""])[0])
+            sequence_id = query.get("sequence_id", [""])[0]
+            baseline_path = resolve_sequence_image(
+                site_dir, sequence_id, query.get("baseline_filename", [""])[0]
+            )
+            selected_path = resolve_sequence_image(
+                site_dir, sequence_id, query.get("filename", [""])[0]
+            )
+            config_snapshot = resolve_run_config_snapshot(
+                site_dir, query.get("run_id", [""])[0], expected_sequence_id=sequence_id
+            )
+            baseline_frame = cv2.imread(str(baseline_path))
+            selected_frame = cv2.imread(str(selected_path))
+            if baseline_frame is None or selected_frame is None:
+                raise RiverImageError("Could not read one of the images to compare.")
+            overlay = render_pair_comparison_overlay(
+                baseline_frame,
+                selected_frame,
+                reference_region=config_snapshot.get("reference_region"),
+                normal_waterline_guides=config_snapshot.get("normal_waterline_guides"),
+            )
+            body = encode_png(overlay)
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except (
+            OSError,
+            ValueError,
+            RiverImageError,
+            SiteConfigError,
+            ReviewImageError,
+            ImageSequenceValidationError,
+        ):
+            self.send_error(404, "Comparison image not found")
+
     def _send_image_sequence_runs(self) -> None:
         """List saved image-sequence validation runs for one sequence."""
 
@@ -380,6 +467,48 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_river_tracker_page(self) -> None:
+        source = self.ui_path.parent / "openfloodai-river-tracker.html"
+        if source.is_file():
+            self._send_file(source, content_type="text/html; charset=utf-8")
+            return
+        # Wheel and desktop builds carry the page as a package resource.
+        page = resources.files("openfloodai.ui") / "static" / "openfloodai-river-tracker.html"
+        if not page.is_file():
+            self.send_error(404, "River tracker page not found")
+            return
+        body = page.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _reference_dir(self) -> Path:
+        return self.sites_dir.resolve().parent / "reference"
+
+    def _send_river_tracker_json(self) -> None:
+        query = parse_qs(urlsplit(self.path).query)
+        river_id = (query.get("river") or [""])[0].strip()
+        if not river_id:
+            self._send_json({"message": "Missing required query parameter: river"}, status_code=400)
+            return
+        try:
+            registry, rows = build_river_tracker(
+                river_id, reference_dir=self._reference_dir(), sites_base_dir=self.sites_dir
+            )
+        except RiverRegistryError as error:
+            self._send_json({"message": str(error)}, status_code=404)
+            return
+        self._send_json(
+            {
+                "river_id": registry.river_id,
+                "river_display_name": registry.display_name,
+                "sites": [row.to_dict() for row in rows],
+            },
+            status_code=200,
+        )
+
     def _send_review_images(self, *, single_image: bool) -> None:
         """Expose only generated review images inside the configured local sites."""
 
@@ -438,6 +567,8 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
     def do_POST(self) -> None:
         """Handle site setup and video intake requests."""
 
+        if review_workspace.handle_post(self, self.path):
+            return
         if self.path == "/api/download-river-images":
             self._handle_download_river_images()
             return
@@ -500,6 +631,12 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             return
         if self.path == "/api/run-image-sequence-validation":
             self._handle_run_image_sequence_validation()
+            return
+        if self.path == "/api/set-image-sequence-event-review":
+            self._handle_set_image_sequence_event_review()
+            return
+        if self.path == "/api/bootstrap-river-sites":
+            self._handle_bootstrap_river_sites()
             return
         self.send_error(404, "Not found")
 
@@ -694,6 +831,134 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             },
             status_code=200,
         )
+
+    def _handle_set_image_sequence_event_review(self) -> None:
+        """Mark (or clear) a review status for one machine-detected event.
+
+        Stored per sequence, not per run, so a mark survives re-running
+        validation on the same downloaded images. Every review is stamped
+        with an evidence fingerprint (baseline image + watched area) taken
+        from the run's OWN saved summary — never from the request body —
+        so a stale or forged client value can't make a review outlive the
+        evidence it was actually made against.
+        """
+
+        data = self._read_json_body()
+        if data is None:
+            return
+        try:
+            site_dir = self._resolve_site_dir(str(data.get("folder_name", "")).strip())
+        except ValueError:
+            self._send_json(
+                {
+                    "success": False,
+                    "message": (
+                        "Invalid folder_name: site folder must stay inside the sites directory."
+                    ),
+                },
+                status_code=400,
+            )
+            return
+        sequences_root = (site_dir / "inputs" / "image-sequences").resolve()
+        sequence_dir = (sequences_root / str(data.get("sequence_id", "")).strip()).resolve()
+        try:
+            sequence_dir.relative_to(sequences_root)
+        except ValueError:
+            self._send_json({"success": False, "message": "Invalid sequence_id."}, status_code=400)
+            return
+        requested_sequence_id = str(data.get("sequence_id", "")).strip()
+        try:
+            detail = read_image_sequence_run_detail(site_dir, str(data.get("run_id", "")).strip())
+        except (OSError, ValueError, ImageSequenceValidationError):
+            self._send_json({"success": False, "message": "Run not found."}, status_code=404)
+            return
+        summary = detail["summary"] if isinstance(detail["summary"], dict) else {}
+        if summary.get("sequence_id") != requested_sequence_id:
+            # The run_id and sequence_id are two independent client-supplied
+            # values; without this check a request could store a review
+            # under one sequence while stamping it with a different run's
+            # (wrong) evidence fingerprint.
+            self._send_json(
+                {"success": False, "message": "run_id does not belong to sequence_id."},
+                status_code=400,
+            )
+            return
+        evidence_key = compute_evidence_key(
+            summary.get("baseline_filename"), summary.get("watched_area_used")
+        )
+        event_key = str(data.get("event_key", "")).strip()
+        raw_status = data.get("status")
+        status = str(raw_status).strip() if isinstance(raw_status, str) and raw_status else None
+        try:
+            set_event_review(
+                sequence_dir, event_key=event_key, status=status, evidence_key=evidence_key
+            )
+        except EventReviewError as error:
+            self._send_json({"success": False, "message": str(error)}, status_code=400)
+            return
+        self._send_json(
+            {
+                "success": True,
+                "event_reviews": list_event_reviews(sequence_dir, evidence_key=evidence_key),
+            },
+            status_code=200,
+        )
+
+    def _handle_bootstrap_river_sites(self) -> None:
+        """Run (or preview) a registry-driven camera bootstrap, from the tracker page's form.
+
+        Mirrors scripts/bootstrap_river_sites.py exactly, so the form is a
+        thin front-end for the same CLI behavior, not a separate code path.
+        A real (non-preview) run can take a while, since it downloads
+        images and gage data; there is no request timeout here for that
+        reason.
+        """
+
+        data = self._reject_untrusted_json_post()
+        if data is None:
+            return
+        river_id = str(data.get("river", "")).strip()
+        start_date = str(data.get("start_date", "")).strip()
+        end_date = str(data.get("end_date", "")).strip()
+        sampling_mode = str(data.get("sampling_mode") or "one_daylight_image_per_day").strip()
+        raw_cameras = data.get("cameras")
+        camera_ids = (
+            [str(camera).strip() for camera in raw_cameras if str(camera).strip()]
+            if isinstance(raw_cameras, list)
+            else []
+        )
+        preview = bool(data.get("preview"))
+        replace_sequence = bool(data.get("replace_sequence"))
+
+        try:
+            if preview:
+                result = preview_bootstrap_run(
+                    reference_dir=self._reference_dir(),
+                    sites_base_dir=self.sites_dir,
+                    river_id=river_id,
+                    camera_ids=camera_ids,
+                    start_date=start_date,
+                    end_date=end_date,
+                    sampling_mode=sampling_mode,
+                )
+                self._send_json({"success": True, "preview": result.to_dict()}, status_code=200)
+                return
+            outcomes = run_bootstrap(
+                reference_dir=self._reference_dir(),
+                sites_base_dir=self.sites_dir,
+                river_id=river_id,
+                camera_ids=camera_ids,
+                start_date=start_date,
+                end_date=end_date,
+                sampling_mode=sampling_mode,
+                replace_sequence=replace_sequence,
+            )
+            self._send_json(
+                {"success": True, "outcomes": [outcome.to_dict() for outcome in outcomes]},
+                status_code=200,
+            )
+        except (RiverRegistryError, RiverImageError, ValueError) as error:
+            self._send_json({"success": False, "message": str(error)}, status_code=400)
 
     def _send_river_image(self) -> None:
         query = parse_qs(urlsplit(self.path).query)
@@ -1648,6 +1913,38 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         body = json.dumps(payload, indent=2).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_console_file(self, relative: str) -> None:
+        """Serve only console HTML/CSS/JS from source or packaged resources."""
+        name = unquote(relative) or "dashboard.html"
+        if (
+            "/" in name
+            or "\\" in name
+            or "%" in name
+            or Path(name).suffix.lower() not in _CONSOLE_CONTENT_TYPES
+        ):
+            self.send_error(404, "Not found")
+            return
+        console_root = (self.ui_path.parent / "console").resolve()
+        candidate = console_root / name
+        try:
+            if console_root.is_dir():
+                if candidate.is_symlink() or not candidate.is_file():
+                    self.send_error(404, "Not found")
+                    return
+                body = candidate.read_bytes()
+            else:
+                body = (
+                    resources.files("openfloodai.ui") / "static" / "console" / name
+                ).read_bytes()
+        except (OSError, ValueError):
+            self.send_error(404, "Not found")
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", _CONSOLE_CONTENT_TYPES[Path(name).suffix.lower()])
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)

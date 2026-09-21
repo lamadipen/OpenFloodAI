@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Add media · OpenFloodAI console</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap">
+<link rel="stylesheet" href="/console/shared.css">
+</head>
+<body style="background:var(--paper);">
+<div class="modal-overlay">
+  <div class="modal-card" style="width:min(720px,94vw);">
+    <div style="padding:18px 24px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;">
+      <div>
+        <div style="font-size:15px;font-weight:600;">Add media</div>
+        <div style="font-size:12px;color:var(--ink-muted);margin-top:2px;" id="siteLabel">&hellip;</div>
+      </div>
+      <a id="closeLink" href="#" style="width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--ink-muted);">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </a>
+    </div>
+
+    <div style="display:flex;gap:4px;padding:14px 24px 0;border-bottom:1px solid var(--line);">
+      <button data-mode="video" style="border:none;background:none;padding:8px 14px;font-size:13px;font-weight:600;color:var(--accent);border-bottom:2px solid var(--accent);cursor:pointer;">Local video</button>
+      <button data-mode="images" style="border:none;background:none;padding:8px 14px;font-size:13px;font-weight:500;color:var(--ink-soft);border-bottom:2px solid transparent;cursor:pointer;">Timestamped images</button>
+    </div>
+
+    <div style="padding:20px 24px;max-height:60vh;overflow:auto;">
+      <div id="videoPanel">
+        <form id="videoForm">
+          <div style="margin-bottom:14px;">
+            <label for="video_file">Video file</label>
+            <input type="file" id="video_file" name="video" accept=".mp4,.mov,.avi,.mkv" required>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
+            <div>
+              <label for="video_id">Video id</label>
+              <input id="video_id" placeholder="auto from filename">
+            </div>
+            <div>
+              <label for="split">Split</label>
+              <select id="split">
+                <option value="practice">practice</option>
+                <option value="locked_validation">locked_validation</option>
+              </select>
+            </div>
+          </div>
+          <div style="margin-bottom:14px;">
+            <label for="purpose">Purpose</label>
+            <select id="purpose">
+              <option value="practice_normal_water">practice_normal_water</option>
+              <option value="possible_rising_water">possible_rising_water</option>
+            </select>
+          </div>
+          <div style="margin-bottom:14px;">
+            <label for="notes">Notes</label>
+            <textarea id="notes" rows="2"></textarea>
+          </div>
+          <div id="videoError" class="err" hidden style="margin-bottom:12px;"></div>
+          <button type="submit" id="videoSubmit" class="btn primary" style="width:100%;justify-content:center;">Add video</button>
+        </form>
+      </div>
+
+      <div id="imagesPanel" hidden>
+        <form id="imagesForm">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
+            <div>
+              <label for="start_date">Start date</label>
+              <input type="date" id="start_date" required>
+            </div>
+            <div>
+              <label for="end_date">End date</label>
+              <input type="date" id="end_date" required>
+            </div>
+          </div>
+          <div style="margin-bottom:14px;">
+            <label for="camera_url">Camera URL</label>
+            <input id="camera_url" placeholder="https://apps.usgs.gov/hivis/camera/...">
+          </div>
+          <div style="margin-bottom:8px;">Sampling mode</div>
+          <div id="samplingOptions" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;"></div>
+          <div style="background:var(--warn-soft);border:1px solid #ebd3a0;border-radius:9px;padding:11px 14px;font-size:12px;color:#6b4a12;display:flex;gap:8px;margin-bottom:16px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="2" style="flex-shrink:0;margin-top:1px;"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L2.5 17a2 2 0 001.7 3h15.6a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+            <span>Two of the three image-sequence sites reviewed this month used <code>one_per_day</code> and ended up with 66&ndash;118 "camera or image problem" results out of ~122 &mdash; the sampled frame landed at dawn or local midnight almost every day. Prefer daylight sampling.</span>
+          </div>
+          <div id="imagesError" class="err" hidden style="margin-bottom:12px;"></div>
+          <button type="submit" id="imagesSubmit" class="btn primary" style="width:100%;justify-content:center;">Start download</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="/console/shared.js"></script>
+<script>
+const folderName = qs("site");
+let sampling = "one_daylight_image_per_day";
+
+const SAMPLING_MODES = [
+  { id: "one_daylight_image_per_day", note: "One frame per day, nearest to local solar noon", recommended: true },
+  { id: "one_per_day", note: "First frame available each day — can land at dawn or midnight", recommended: false },
+  { id: "one_per_hour", note: "Dense hourly coverage, larger download", recommended: false },
+  { id: "all", note: "Every archived frame in the range", recommended: false }
+];
+
+function renderSampling() {
+  $("samplingOptions").innerHTML = SAMPLING_MODES.map((s) => {
+    const active = sampling === s.id;
+    return `<button type="button" data-sampling="${s.id}" style="text-align:left;border:1.5px solid ${active ? "var(--accent)" : "var(--line)"};background:${active ? "var(--accent-soft)" : "#fff"};border-radius:9px;padding:10px 12px;display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
+      <div style="width:16px;height:16px;border-radius:50%;border:1.5px solid ${active ? "var(--accent)" : "var(--line)"};background:${active ? "var(--accent)" : "transparent"};flex-shrink:0;margin-top:1px;"></div>
+      <div>
+        <div style="font-size:12px;font-weight:600;font-family:var(--mono);">${s.id}</div>
+        <div style="font-size:11px;color:var(--ink-muted);margin-top:2px;">${s.note}</div>
+      </div>
+      ${s.recommended ? '<span class="pill ok" style="margin-left:auto;white-space:nowrap;">Recommended</span>' : ""}
+    </button>`;
+  }).join("");
+  $("samplingOptions").querySelectorAll("[data-sampling]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      sampling = btn.dataset.sampling;
+      renderSampling();
+    });
+  });
+}
+
+function setMode(mode) {
+  document.querySelectorAll("[data-mode]").forEach((btn) => {
+    const active = btn.dataset.mode === mode;
+    btn.style.color = active ? "var(--accent)" : "var(--ink-soft)";
+    btn.style.fontWeight = active ? 600 : 500;
+    btn.style.borderBottomColor = active ? "var(--accent)" : "transparent";
+  });
+  $("videoPanel").hidden = mode !== "video";
+  $("imagesPanel").hidden = mode !== "images";
+}
+document.querySelectorAll("[data-mode]").forEach((btn) => btn.addEventListener("click", () => setMode(btn.dataset.mode)));
+
+async function main() {
+  if (!folderName) {
+    document.body.innerHTML = `<div style="padding:40px;">Missing <code>?site=</code> in the URL.</div>`;
+    return;
+  }
+  $("closeLink").href = `/console/site.html?${new URLSearchParams({ site: folderName })}`;
+  $("siteLabel").textContent = `${folderName} · watched area and guides stay in place`;
+  renderSampling();
+
+  try {
+    const configData = await api(`/api/site-config?${new URLSearchParams({ folder_name: folderName })}`);
+    const cameraId = configData.config?.camera_id;
+    if (cameraId) $("camera_url").value = `https://apps.usgs.gov/hivis/camera/${cameraId}`;
+  } catch (error) {
+    // Leave camera_url blank; the field is still editable by hand.
+  }
+}
+
+$("videoForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const file = $("video_file").files[0];
+  if (!file) return;
+  const submitBtn = $("videoSubmit");
+  submitBtn.disabled = true;
+  submitBtn.innerHTML = '<span class="spinner"></span>Adding…';
+  $("videoError").hidden = true;
+  const formData = new FormData();
+  formData.append("video", file);
+  formData.append("folder_name", folderName);
+  formData.append("video_id", $("video_id").value.trim());
+  formData.append("purpose", $("purpose").value);
+  formData.append("split", $("split").value);
+  formData.append("notes", $("notes").value.trim());
+  try {
+    const response = await fetch("/api/intake-video", { method: "POST", body: formData });
+    const data = await response.json();
+    if (!response.ok || data.success === false) throw new Error(data.message || "Request failed.");
+    location.href = `/console/site.html?${new URLSearchParams({ site: folderName })}`;
+  } catch (error) {
+    $("videoError").hidden = false;
+    $("videoError").textContent = error.message;
+    submitBtn.disabled = false;
+    submitBtn.textContent = "Add video";
+  }
+});
+
+$("imagesForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const submitBtn = $("imagesSubmit");
+  submitBtn.disabled = true;
+  submitBtn.innerHTML = '<span class="spinner"></span>Downloading…';
+  $("imagesError").hidden = true;
+  try {
+    await api("/api/download-image-sequence", {
+      folder_name: folderName,
+      camera_url: $("camera_url").value.trim(),
+      start_date: $("start_date").value,
+      end_date: $("end_date").value,
+      timezone: "America/Denver",
+      sampling_mode: sampling
+    });
+    location.href = `/console/site.html?${new URLSearchParams({ site: folderName })}`;
+  } catch (error) {
+    $("imagesError").hidden = false;
+    $("imagesError").textContent = error.message;
+    submitBtn.disabled = false;
+    submitBtn.textContent = "Start download";
+  }
+});
+
+main();
+</script>
+</body>
+</html>

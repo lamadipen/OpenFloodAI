@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Assign dataset group · OpenFloodAI console</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap">
+<link rel="stylesheet" href="/console/shared.css">
+</head>
+<body style="background:var(--paper);">
+<div class="modal-overlay">
+  <div class="modal-card" style="width:min(640px,92vw);">
+    <div style="padding:16px 22px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;">
+      <div>
+        <div style="font-size:15px;font-weight:600;">Assign dataset group</div>
+        <div style="font-size:12px;color:var(--ink-muted);margin-top:2px;" id="siteLabel">&hellip;</div>
+      </div>
+      <a id="closeLink" href="#" style="width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--ink-muted);">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </a>
+    </div>
+    <div style="padding:20px 22px;display:flex;flex-direction:column;gap:16px;">
+      <div style="background:var(--paper);border-radius:8px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div class="hint" style="text-transform:uppercase;letter-spacing:.03em;margin-bottom:4px;">Applies to</div>
+          <div style="font-size:13px;font-weight:600;font-family:var(--mono);" id="rangeLabel">&hellip;</div>
+          <div class="hint" style="margin-top:2px;">The whole sequence's date range. Not editable here; assignment is always sequence-wide.</div>
+        </div>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink-muted)" stroke-width="1.8" style="flex-shrink:0;"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg>
+      </div>
+
+      <div>
+        <div style="margin-bottom:8px;">Group</div>
+        <div id="groupOptions" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;"></div>
+      </div>
+
+      <div>
+        <label for="note">Reason</label>
+        <textarea id="note" rows="2" placeholder="Why does this period belong in this group?"></textarea>
+      </div>
+
+      <div id="overlapWarning" class="hint" style="background:var(--bad-soft);color:var(--bad);border-radius:8px;padding:10px 12px;" hidden>
+        <code>excluded</code> is only for a range that fully replaces an existing assignment for these same dates.
+      </div>
+      <div id="formError" class="err" hidden></div>
+    </div>
+    <div style="padding:16px 22px;border-top:1px solid var(--line-soft);display:flex;gap:10px;">
+      <a id="cancelLink" href="#" class="btn" style="flex:1;justify-content:center;">Cancel</a>
+      <button id="saveBtn" class="btn primary" style="flex:1;justify-content:center;" disabled>Save assignment</button>
+    </div>
+  </div>
+</div>
+<script src="/console/shared.js"></script>
+<script>
+const folderName = qs("site");
+const sequenceId = qs("sequence_id");
+const runId = qs("run_id");
+const GROUPS = ["development_candidate", "practice", "locked_validation", "excluded"];
+let selectedGroup = null;
+
+function renderGroups() {
+  $("groupOptions").innerHTML = GROUPS.map((g) => {
+    const on = selectedGroup === g;
+    return `<button type="button" data-group="${g}" style="height:42px;border-radius:8px;border:1.5px solid ${on ? "var(--accent)" : "var(--line)"};background:${on ? "var(--accent-soft)" : "#fff"};font-size:11px;font-weight:600;color:${on ? "var(--accent)" : "var(--ink-soft)"};padding:0 4px;cursor:pointer;">${g.replace(/_/g, " ")}</button>`;
+  }).join("");
+  $("groupOptions").querySelectorAll("[data-group]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      selectedGroup = btn.dataset.group;
+      $("overlapWarning").hidden = selectedGroup !== "excluded";
+      $("saveBtn").disabled = false;
+      renderGroups();
+    });
+  });
+}
+
+async function main() {
+  if (!folderName || !sequenceId || !runId) {
+    document.body.innerHTML = `<div style="padding:40px;">Missing required parameters in the URL.</div>`;
+    return;
+  }
+  const backHref = `/console/site.html?${new URLSearchParams({ site: folderName })}`;
+  $("closeLink").href = backHref;
+  $("cancelLink").href = backHref;
+  $("siteLabel").textContent = `${folderName} · whole image sequence`;
+  renderGroups();
+
+  try {
+    const data = await api(`/api/site-image-sequences?${new URLSearchParams({ folder_name: folderName })}`);
+    const seq = (data.sequences || []).find((s) => s.sequence_id === sequenceId);
+    if (seq) $("rangeLabel").textContent = `${seq.requested_start_date} → ${seq.requested_end_date}`;
+  } catch (error) {
+    $("rangeLabel").textContent = "Unknown range";
+  }
+}
+
+$("saveBtn").addEventListener("click", async () => {
+  if (!selectedGroup) return;
+  $("saveBtn").disabled = true;
+  $("saveBtn").innerHTML = '<span class="spinner"></span>Saving…';
+  $("formError").hidden = true;
+  try {
+    await api("/api/workspace-group", {
+      folder_name: folderName,
+      kind: "image",
+      run_id: runId,
+      media_id: sequenceId,
+      group: selectedGroup,
+      note: $("note").value.trim()
+    });
+    location.href = `/console/site.html?${new URLSearchParams({ site: folderName })}`;
+  } catch (error) {
+    $("formError").hidden = false;
+    $("formError").textContent = error.message;
+    $("saveBtn").disabled = false;
+    $("saveBtn").textContent = "Save assignment";
+  }
+});
+
+main();
+</script>
+</body>
+</html>
