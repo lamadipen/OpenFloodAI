@@ -252,19 +252,70 @@ function render() {
 }
 
 function scoreChartSvg() {
-  const scored = points.filter((p) => typeof p.score === "number");
+  const scored = points.filter((p) => typeof p.score === "number").sort((a, b) => a.start - b.start);
   if (!scored.length) return `<div class="hint">No scores available.</div>`;
+
+  const W = 1040, H = 220, padL = 56, padR = 20, padT = 16, padB = 34;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
   const maxTime = Math.max(1, ...points.map((p) => p.end));
-  const maxScore = Math.max(0.05, ...scored.map((p) => p.score));
-  const x = (seconds) => 30 + (seconds / maxTime) * 1000;
-  const y = (score) => 100 - (score / maxScore) * 85;
+  const rawMaxScore = Math.max(...scored.map((p) => p.score));
+  const maxScore = Math.max(0.05, rawMaxScore * 1.15);
+  const x = (seconds) => padL + (seconds / maxTime) * plotW;
+  const y = (score) => padT + plotH - (score / maxScore) * plotH;
+  const colorFor = (p) => (p.machine === "possible_water_level_change" ? "#b5750b" : p.machine === "cannot_judge_water_level" ? "#8b98a5" : "#2456c9");
+
+  const GRID_STEPS = 4;
+  const gridLines = Array.from({ length: GRID_STEPS + 1 }, (_, i) => {
+    const value = (maxScore / GRID_STEPS) * i;
+    const gy = y(value);
+    return `
+      <line x1="${padL}" y1="${gy}" x2="${W - padR}" y2="${gy}" stroke="var(--line-soft)" stroke-width="1"/>
+      <text x="${padL - 8}" y="${gy + 3}" text-anchor="end" font-size="10" fill="var(--ink-muted)" font-family="var(--mono)">${value.toFixed(3)}</text>`;
+  }).join("");
+
+  const TIME_TICKS = 5;
+  const timeTicks = Array.from({ length: TIME_TICKS + 1 }, (_, i) => {
+    const seconds = (maxTime / TIME_TICKS) * i;
+    const tx = x(seconds);
+    return `
+      <line x1="${tx}" y1="${padT}" x2="${tx}" y2="${H - padB}" stroke="var(--line-soft)" stroke-width="1"/>
+      <text x="${tx}" y="${H - padB + 16}" text-anchor="middle" font-size="10" fill="var(--ink-muted)" font-family="var(--mono)">${seconds.toFixed(0)}s</text>`;
+  }).join("");
+
+  const linePoints = scored.map((p) => `${x((p.start + p.end) / 2)},${y(p.score)}`).join(" ");
+
   const dots = scored
-    .map((p) => `<circle cx="${x((p.start + p.end) / 2)}" cy="${y(p.score)}" r="${p.key === state.selectedKey ? 5 : 3}" fill="${p.machine === "possible_water_level_change" ? "#9a5b13" : "#98a2b3"}" data-act="select-point" data-key="${escapeHtml(p.key)}" style="cursor:pointer;"/>`)
+    .map((p) => {
+      const isSelected = p.key === state.selectedKey;
+      const cx = x((p.start + p.end) / 2), cy = y(p.score);
+      return `<g data-act="select-point" data-key="${escapeHtml(p.key)}" style="cursor:pointer;">
+        <circle cx="${cx}" cy="${cy}" r="12" fill="transparent"/>
+        ${isSelected ? `<circle cx="${cx}" cy="${cy}" r="9" fill="none" stroke="${colorFor(p)}" stroke-width="2" opacity="0.4"/>` : ""}
+        <circle cx="${cx}" cy="${cy}" r="${isSelected ? 5.5 : 4}" fill="${colorFor(p)}" stroke="#fff" stroke-width="1.5"/>
+      </g>`;
+    })
     .join("");
-  return `<svg viewBox="0 0 1040 110" style="width:100%;height:90px;display:block;">
-    <line x1="30" y1="100" x2="1040" y2="100" stroke="var(--line)" stroke-width="1"/>
-    ${dots}
-  </svg>`;
+
+  return `
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H * 0.85}px;display:block;">
+      ${gridLines}
+      ${timeTicks}
+      <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}" stroke="var(--line)" stroke-width="1.5"/>
+      <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${H - padB}" stroke="var(--line)" stroke-width="1.5"/>
+      <polyline points="${linePoints}" fill="none" stroke="var(--ink-muted)" stroke-width="1.5" opacity="0.5"/>
+      ${dots}
+    </svg>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;padding-left:${padL}px;">
+      ${legendItem("#b5750b", "Possible change")}
+      ${legendItem("#2456c9", "No change")}
+      ${legendItem("#8b98a5", "Cannot judge")}
+    </div>`;
+}
+
+function legendItem(color, label) {
+  return `<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-soft);">
+    <span style="width:8px;height:8px;border-radius:50%;background:${color};display:inline-block;"></span>${label}
+  </div>`;
 }
 
 function paintOverlay() {
