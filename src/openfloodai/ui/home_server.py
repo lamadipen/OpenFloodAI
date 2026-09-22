@@ -810,8 +810,10 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             payload = result.to_dict()
             payload["gage_available"] = (
                 self._write_gage_data_if_camera_registered(
-                    result.directory, site_config.camera_id, str(data.get("start_date", "")),
-                    str(data.get("end_date", ""))
+                    result.directory,
+                    site_config.camera_id,
+                    str(data.get("start_date", "")),
+                    str(data.get("end_date", "")),
                 )
                 if _as_bool(data.get("fetch_gage_data"), default=True)
                 else None
