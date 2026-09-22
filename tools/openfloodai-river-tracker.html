@@ -40,6 +40,14 @@
       select { box-sizing: border-box; padding: 11px; margin: 7px 0; border: 1px solid #7a9586; border-radius: 6px; font: inherit; }
       .checkbox-row { display: flex; align-items: center; gap: 8px; flex-direction: row !important; }
       .checkbox-row input { margin: 0; width: auto; }
+      .camera-picker { border: 1px solid #7a9586; border-radius: 6px; padding: 6px; margin: 7px 0; max-height: 220px; overflow: auto; background: #fff; }
+      .camera-picker .camera-row { display: flex; align-items: baseline; gap: 8px; padding: 7px 8px; border-radius: 5px; }
+      .camera-picker .camera-row:hover { background: #f2f6f3; }
+      .camera-picker .camera-row input { margin: 2px 0 0; width: auto; flex-shrink: 0; }
+      .camera-picker .camera-row .camera-id { margin: 0; }
+      .camera-picker-empty { padding: 10px 8px; color: #425a50; }
+      .camera-picker-actions { display: flex; gap: 14px; margin: 6px 0 0; }
+      .camera-picker-actions button { background: none; border: none; color: #12644f; text-decoration: underline; cursor: pointer; padding: 0; font: inherit; }
       small { display: block; line-height: 1.5; color: #425a50; }
       .bootstrap-actions { margin-top: 16px; display: flex; gap: 12px; align-items: center; }
       .spinner { display: inline-block; width: 1em; height: 1em; border: 2px solid #a4b8af; border-top-color: #12644f; border-radius: 50%; animation: spin 1s linear infinite; margin-right: 8px; }
@@ -71,11 +79,8 @@
         <summary>Run bootstrap (download images and gage data)</summary>
         <p>Same command as <code>scripts/bootstrap_river_sites.py</code>. Always try "Preview only" first — it reports what a real run would do without downloading anything.</p>
         <form id="bootstrapForm">
+          <p class="notice" style="margin: 0 0 14px;">Uses the same river as loaded above (<strong id="bootstrapRiverLabel">colorado-river</strong>). Load a different river up there first if you need one.</p>
           <div class="bootstrap-fields">
-            <div>
-              <label for="bootstrapRiver">River id</label>
-              <input id="bootstrapRiver" value="colorado-river" required>
-            </div>
             <div>
               <label for="bootstrapStartDate">Start date</label>
               <input id="bootstrapStartDate" type="date" required>
@@ -94,11 +99,15 @@
               </select>
             </div>
           </div>
-          <label for="bootstrapCameras" style="margin-top: 14px;">Cameras (one per line; leave empty for every camera in the registry)</label>
-          <textarea id="bootstrapCameras" rows="3">CO_Colorado_River_at_Windy_Gap_near_Granby
-CO_Colorado_River_near_Cameo
-UT_Colorado_River_near_Cisco</textarea>
-          <small id="bootstrapHelp">A real run creates or reuses one site per camera and downloads images and gage data. It can take a few minutes.</small>
+          <label style="margin-top: 14px;">Cameras</label>
+          <div class="camera-picker" id="bootstrapCameraPicker">
+            <div class="camera-picker-empty">Load a river above to choose its cameras.</div>
+          </div>
+          <div class="camera-picker-actions">
+            <button type="button" id="selectAllCameras">Select all</button>
+            <button type="button" id="selectNoneCameras">Select none</button>
+          </div>
+          <small id="bootstrapHelp">A real run creates or reuses one site per checked camera and downloads images and gage data. It can take a few minutes.</small>
           <div class="bootstrap-fields" style="margin-top: 10px;">
             <div class="checkbox-row">
               <input id="bootstrapPreview" type="checkbox" checked>
@@ -170,6 +179,33 @@ UT_Colorado_River_near_Cisco</textarea>
         }[c]));
       }
 
+      let loadedRiverId = "";
+      let loadedCameras = [];
+
+      function renderCameraPicker() {
+        const picker = document.getElementById("bootstrapCameraPicker");
+        document.getElementById("bootstrapRiverLabel").textContent = loadedRiverId || "—";
+        if (!loadedCameras.length) {
+          picker.innerHTML = `<div class="camera-picker-empty">Load a river above to choose its cameras.</div>`;
+          return;
+        }
+        picker.innerHTML = loadedCameras.map((camera, index) => `
+          <label class="camera-row">
+            <input type="checkbox" class="camera-checkbox" value="${escapeHtml(camera.camera_id)}" data-index="${index}" checked>
+            <span>
+              <div>${escapeHtml(camera.display_name)}</div>
+              <div class="camera-id">${escapeHtml(camera.camera_id)}</div>
+            </span>
+          </label>`).join("");
+      }
+
+      document.getElementById("selectAllCameras").addEventListener("click", () => {
+        document.querySelectorAll(".camera-checkbox").forEach((box) => { box.checked = true; });
+      });
+      document.getElementById("selectNoneCameras").addEventListener("click", () => {
+        document.querySelectorAll(".camera-checkbox").forEach((box) => { box.checked = false; });
+      });
+
       async function loadTracker(riverId) {
         loadButton.disabled = true;
         helpText.textContent = "Loading…";
@@ -180,6 +216,9 @@ UT_Colorado_River_near_Cisco</textarea>
           if (!response.ok) throw new Error(payload.message || "Could not load the tracker.");
           helpText.textContent = `${payload.river_display_name} · ${payload.sites.length} camera(s) in the registry.`;
           cards.innerHTML = payload.sites.map(renderSite).join("");
+          loadedRiverId = riverId;
+          loadedCameras = payload.sites.map((site) => ({ camera_id: site.camera_id, display_name: site.display_name }));
+          renderCameraPicker();
         } catch (error) {
           helpText.textContent = `Could not load the tracker: ${error.message}`;
         } finally {
@@ -243,7 +282,18 @@ UT_Colorado_River_near_Cisco</textarea>
 
         const preview = document.getElementById("bootstrapPreview").checked;
         const replaceSequence = document.getElementById("bootstrapReplaceSequence").checked;
-        if (!preview && !confirm("This downloads real images and gage data now. Continue?")) return;
+
+        const cameras = Array.from(document.querySelectorAll(".camera-checkbox"))
+          .filter((box) => box.checked).map((box) => box.value);
+        if (!loadedRiverId) {
+          bootstrapStatus.textContent = "Load a river above first.";
+          return;
+        }
+        if (!cameras.length) {
+          bootstrapStatus.textContent = "Check at least one camera.";
+          return;
+        }
+        if (!preview && !confirm(`This downloads real images and gage data for ${cameras.length} camera(s) now. Continue?`)) return;
 
         bootstrapRunning = true;
         bootstrapButton.disabled = true;
@@ -251,15 +301,12 @@ UT_Colorado_River_near_Cisco</textarea>
         bootstrapStatus.textContent = preview ? "Previewing…" : "Running (this can take a few minutes)…";
         bootstrapResult.replaceChildren();
 
-        const cameras = document.getElementById("bootstrapCameras").value
-          .split("\n").map((line) => line.trim()).filter(Boolean);
-
         try {
           const response = await fetch("/api/bootstrap-river-sites", {
             method: "POST",
             headers: {"Content-Type": "application/json"},
             body: JSON.stringify({
-              river: document.getElementById("bootstrapRiver").value.trim(),
+              river: loadedRiverId,
               start_date: document.getElementById("bootstrapStartDate").value,
               end_date: document.getElementById("bootstrapEndDate").value,
               sampling_mode: document.getElementById("bootstrapSamplingMode").value,
