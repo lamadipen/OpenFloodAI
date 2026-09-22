@@ -205,7 +205,7 @@ $("imagesForm").addEventListener("submit", async (event) => {
   submitBtn.innerHTML = '<span class="spinner"></span>Downloading…';
   $("imagesError").hidden = true;
   try {
-    await api("/api/download-image-sequence", {
+    const result = await api("/api/download-image-sequence", {
       folder_name: folderName,
       camera_url: $("camera_url").value.trim(),
       start_date: $("start_date").value,
@@ -213,7 +213,10 @@ $("imagesForm").addEventListener("submit", async (event) => {
       timezone: "America/Denver",
       sampling_mode: sampling
     });
-    location.href = `/console/site.html?${new URLSearchParams({ site: folderName })}`;
+    const params = { site: folderName };
+    if (result.gage_available === true) params.gage = "found";
+    else if (result.gage_available === false) params.gage = "unavailable";
+    location.href = `/console/site.html?${new URLSearchParams(params)}`;
   } catch (error) {
     $("imagesError").hidden = false;
     $("imagesError").textContent = error.message;

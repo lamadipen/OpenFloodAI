@@ -30,6 +30,10 @@ async function main() {
   $("refreshBtn").addEventListener("click", load);
   content.innerHTML = `<div class="card" style="padding:24px;color:var(--ink-muted);font-size:13px;">Loading site&hellip;</div>`;
   await load();
+
+  const gageResult = qs("gage");
+  if (gageResult === "found") toast("Gage data found for this camera and added alongside the images.");
+  else if (gageResult === "unavailable") toast("This camera is registered, but USGS had no gage readings for this date range.");
 }
 
 async function load() {
