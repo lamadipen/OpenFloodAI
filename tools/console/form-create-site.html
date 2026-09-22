@@ -101,7 +101,13 @@ function updateFolderState() {
   $("submitBtn").disabled = !(folderOk && cameraOk && siteNameOk);
 }
 
-$("folder_name").addEventListener("input", updateFolderState);
+$("folder_name").addEventListener("input", () => {
+  const el = $("folder_name");
+  const cursor = el.selectionStart;
+  el.value = el.value.toLowerCase();
+  el.setSelectionRange(cursor, cursor);
+  updateFolderState();
+});
 $("camera_id").addEventListener("input", updateFolderState);
 $("site_name").addEventListener("input", updateFolderState);
 $("camera_id").addEventListener("blur", () => { touched.camera_id = true; updateFolderState(); });
