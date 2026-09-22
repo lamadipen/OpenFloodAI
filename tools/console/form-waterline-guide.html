@@ -24,9 +24,12 @@
       <div style="flex-grow:1;padding:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
         <svg id="stage" viewBox="0 0 640 400" style="width:640px;height:400px;border-radius:8px;cursor:crosshair;background:#33444d;">
           <image id="stageImg" x="0" y="0" width="640" height="400" preserveAspectRatio="xMidYMid slice"></image>
+          <rect id="watchedAreaBox" fill="none" stroke="#f2c94c" stroke-width="1.5" stroke-dasharray="6,4" style="pointer-events:none;" hidden></rect>
+          <text id="watchedAreaLabel" fill="#f2c94c" font-size="11" font-family="var(--mono)" style="pointer-events:none;" hidden>Watched area</text>
           <polyline id="line" fill="none" stroke="#7fe0b4" stroke-width="2.5"></polyline>
           <g id="dots"></g>
         </svg>
+        <div id="regionHint" class="hint" style="width:640px;" hidden></div>
         <div id="scrubRow" style="width:640px;display:flex;align-items:center;gap:10px;" hidden>
           <span style="font-size:11px;color:var(--ink-muted);white-space:nowrap;">Video frame</span>
           <input type="range" id="scrub" min="0" max="1" step="0.1" value="0" style="flex-grow:1;">
@@ -70,6 +73,41 @@ let sequenceId = null;
 let baselineFilename = null;
 let videoId = null;
 let videoTimeSeconds = 0;
+let watchedArea = null;
+
+function paintWatchedArea() {
+  if (!watchedArea) {
+    $("watchedAreaBox").hidden = true;
+    $("watchedAreaLabel").hidden = true;
+    $("regionHint").hidden = true;
+    return;
+  }
+  const x = (watchedArea.x / 100) * 640;
+  const y = (watchedArea.y / 100) * 400;
+  const w = (watchedArea.width / 100) * 640;
+  const h = (watchedArea.height / 100) * 400;
+  $("watchedAreaBox").setAttribute("x", x);
+  $("watchedAreaBox").setAttribute("y", y);
+  $("watchedAreaBox").setAttribute("width", w);
+  $("watchedAreaBox").setAttribute("height", h);
+  $("watchedAreaBox").hidden = false;
+  $("watchedAreaLabel").setAttribute("x", x + 4);
+  $("watchedAreaLabel").setAttribute("y", Math.max(y - 6, 10));
+  $("watchedAreaLabel").hidden = false;
+  $("regionHint").hidden = false;
+  $("regionHint").textContent = "Points are kept inside the dashed watched area, since that's the only part of the frame validation looks at.";
+}
+
+function clampToWatchedArea(x, y) {
+  if (!watchedArea) return { x: clamp(x, 0, 640), y: clamp(y, 0, 400) };
+  const minX = (watchedArea.x / 100) * 640;
+  const minY = (watchedArea.y / 100) * 400;
+  const maxX = minX + (watchedArea.width / 100) * 640;
+  const maxY = minY + (watchedArea.height / 100) * 400;
+  return { x: clamp(x, minX, maxX), y: clamp(y, minY, maxY) };
+}
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
 function captureVideoFrame() {
   const video = $("sourceVideo");
@@ -90,9 +128,9 @@ function render() {
 
 $("stage").addEventListener("click", (event) => {
   const rect = $("stage").getBoundingClientRect();
-  const x = ((event.clientX - rect.left) / rect.width) * 640;
-  const y = ((event.clientY - rect.top) / rect.height) * 400;
-  points.push({ x, y });
+  const rawX = ((event.clientX - rect.left) / rect.width) * 640;
+  const rawY = ((event.clientY - rect.top) / rect.height) * 400;
+  points.push(clampToWatchedArea(rawX, rawY));
   render();
 });
 $("clearBtn").addEventListener("click", () => { points = []; render(); });
@@ -116,10 +154,17 @@ async function main() {
   render();
 
   try {
-    const [sequenceData, manifestData] = await Promise.all([
+    const [sequenceData, manifestData, configData] = await Promise.all([
       api(`/api/site-image-sequences?${new URLSearchParams({ folder_name: folderName })}`),
-      api(`/api/site-manifest?${new URLSearchParams({ folder_name: folderName })}`).catch(() => ({ records: [] }))
+      api(`/api/site-manifest?${new URLSearchParams({ folder_name: folderName })}`).catch(() => ({ records: [] })),
+      api(`/api/site-config?${new URLSearchParams({ folder_name: folderName })}`).catch(() => ({ config: {} }))
     ]);
+    const cfg = configData.config || {};
+    if (cfg.reference_region) {
+      watchedArea = { x: cfg.reference_region.x, y: cfg.reference_region.y, width: cfg.reference_region.width, height: cfg.reference_region.height };
+    }
+    paintWatchedArea();
+
     const sequences = sequenceData.sequences || [];
     if (sequences.length) {
       const seq = sequences[sequences.length - 1];
