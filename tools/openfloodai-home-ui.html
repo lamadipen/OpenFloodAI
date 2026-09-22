@@ -149,6 +149,41 @@
         display: none;
       }
 
+      .workspace-nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin: 16px 0 4px;
+        padding: 0;
+        list-style: none;
+      }
+
+      .workspace-nav a {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 14px;
+        border-radius: 9px;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--ink);
+        font-weight: 650;
+        font-size: 14px;
+        text-decoration: none;
+        transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+      }
+
+      .workspace-nav a:hover {
+        border-color: var(--accent);
+        background: var(--surface-blue);
+        transform: translateY(-1px);
+      }
+
+      .workspace-nav a svg {
+        flex-shrink: 0;
+        color: var(--accent-strong);
+      }
+
       .details-back {
         display: none;
       }
@@ -839,11 +874,23 @@
     <header>
       <div class="eyebrow">Local validation workspace</div>
       <h1>OpenFloodAI Home UI</h1>
-      <nav aria-label="Workspace navigation" style="margin: 12px 0;">
-        <a href="/console/dashboard.html" style="margin-right: 14px;">Console Dashboard</a>
-        <a href="/review-workspace.html" style="margin-right: 14px;">Review Workspace</a>
-        <a href="/river-images.html">Download River Images and Video</a>
-        <a href="/river-tracker.html" style="margin-left: 14px;">River Camera Tracker</a>
+      <nav class="workspace-nav" aria-label="Workspace navigation">
+        <a href="/console/dashboard.html">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+          Console Dashboard
+        </a>
+        <a href="/review-workspace.html">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+          Review Workspace
+        </a>
+        <a href="/river-images.html">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>
+          Download River Images and Video
+        </a>
+        <a href="/river-tracker.html">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12c2-4 5-6 8-6s6 4 8 8 6 2 6 2"/></svg>
+          River Camera Tracker
+        </a>
       </nav>
       <p class="subhead">
         Local validation readiness for site folders. This screen helps you see what is ready

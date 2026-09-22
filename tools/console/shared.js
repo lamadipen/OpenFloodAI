@@ -81,6 +81,10 @@ function mountShell({ active, activeSiteFolder, crumbs }) {
         </div>
         <div class="rail-foot">
           <div style="height:1px;background:var(--rail-line);margin:0 0 14px;"></div>
+          <a href="/" style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--rail-text);text-decoration:none;margin-bottom:12px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+            Home UI
+          </a>
           <div style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--rail-text-dim);">
             <span style="width:6px;height:6px;border-radius:50%;background:#3fae68;flex-shrink:0;"></span>
             Local media &middot; no public upload
