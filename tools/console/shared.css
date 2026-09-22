@@ -160,6 +160,11 @@ label {
   color: var(--ink-soft);
 }
 
+.pill.info {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
 table {
   width: 100%;
   border-collapse: collapse;

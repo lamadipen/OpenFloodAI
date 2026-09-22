@@ -42,7 +42,8 @@ from openfloodai.ingestion.river_images import (
     resolve_downloaded_video,
     resolve_sequence_image,
 )
-from openfloodai.ingestion.river_registry import RiverRegistryError
+from openfloodai.ingestion.river_registry import RiverRegistryError, find_camera
+from openfloodai.ingestion.usgs_gage_data import GageDataError, write_gauge_readings_summary
 from openfloodai.review import (
     ALLOWED_CONFIDENCE_LEVELS,
     ALLOWED_HUMAN_LABELS,
@@ -737,6 +738,40 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         except RiverImageError as error:
             self._send_json({"success": False, "message": str(error)}, status_code=400)
 
+    def _write_gage_data_if_camera_registered(
+        self, sequence_dir: Path, camera_id: str, start_date: str, end_date: str
+    ) -> bool | None:
+        """Best-effort gage-data enrichment for a freshly downloaded image sequence.
+
+        A site's camera_id only maps to a USGS gage when that camera is
+        registered in a river registry (River Camera Tracker's bootstrap
+        source of truth) -- a site created by hand through the console has
+        no gage id anywhere in its own config. Returns None (not found or
+        the fetch failed) rather than raising: gage enrichment must never
+        block or fail the image download itself.
+        """
+
+        camera = find_camera(camera_id, self._reference_dir())
+        if camera is None:
+            return None
+        try:
+            manifest_records = read_jsonl_records(sequence_dir / "sequence-manifest.jsonl")
+        except ValueError:
+            return None
+        try:
+            summary = write_gauge_readings_summary(
+                sequence_dir,
+                nwis_site_id=camera.nwis_id,
+                start_date=start_date,
+                end_date=end_date,
+                gage_relationship=camera.gage_relationship,
+                gage_relationship_note=camera.gage_relationship_note,
+                manifest_records=manifest_records,
+            )
+            return summary.available
+        except GageDataError:
+            return None
+
     def _handle_download_image_sequence(self) -> None:
         """Download a sampled, date-ranged USGS image sequence into a site folder."""
 
@@ -772,7 +807,18 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
                 site_dir=site_dir,
                 overwrite=bool(data.get("overwrite", False)),
             )
-            self._send_json(result.to_dict(), status_code=200)
+            payload = result.to_dict()
+            payload["gage_available"] = (
+                self._write_gage_data_if_camera_registered(
+                    result.directory,
+                    site_config.camera_id,
+                    str(data.get("start_date", "")),
+                    str(data.get("end_date", "")),
+                )
+                if _as_bool(data.get("fetch_gage_data"), default=True)
+                else None
+            )
+            self._send_json(payload, status_code=200)
         except RiverImageError as error:
             self._send_json({"success": False, "message": str(error)}, status_code=400)
         except OSError:

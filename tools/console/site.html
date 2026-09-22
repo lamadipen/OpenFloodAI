@@ -11,7 +11,7 @@
 <script src="/console/shared.js"></script>
 <script>
 const folderName = qs("site");
-let state = { tab: "overview", config: null, status: null, sequences: [], runsBySequence: {} };
+let state = { tab: "overview", config: null, status: null, sequences: [], runsBySequence: {}, manifest: [] };
 
 async function main() {
   if (!folderName) {
@@ -30,18 +30,24 @@ async function main() {
   $("refreshBtn").addEventListener("click", load);
   content.innerHTML = `<div class="card" style="padding:24px;color:var(--ink-muted);font-size:13px;">Loading site&hellip;</div>`;
   await load();
+
+  const gageResult = qs("gage");
+  if (gageResult === "found") toast("Gage data found for this camera and added alongside the images.");
+  else if (gageResult === "unavailable") toast("This camera is registered, but USGS had no gage readings for this date range.");
 }
 
 async function load() {
   try {
-    const [sitesData, configData, sequenceData] = await Promise.all([
+    const [sitesData, configData, sequenceData, manifestData] = await Promise.all([
       api("/api/sites"),
       api(`/api/site-config?${new URLSearchParams({ folder_name: folderName })}`),
-      api(`/api/site-image-sequences?${new URLSearchParams({ folder_name: folderName })}`)
+      api(`/api/site-image-sequences?${new URLSearchParams({ folder_name: folderName })}`),
+      api(`/api/site-manifest?${new URLSearchParams({ folder_name: folderName })}`).catch(() => ({ records: [] }))
     ]);
     state.status = (sitesData.sites || []).find((s) => s.site_name === folderName) || null;
     state.config = configData.config || {};
     state.sequences = sequenceData.sequences || [];
+    state.manifest = manifestData.records || [];
 
     await Promise.all(
       state.sequences.map(async (seq) => {
@@ -66,7 +72,7 @@ function render() {
   const cfg = state.config || {};
   const status = state.status;
   const guides = cfg.normal_waterline_guides || [];
-  const confirmedGuides = guides.filter((g) => g.status === "confirmed" && g.normal_condition);
+  const baseline = summarizeBaselineGuides(guides);
 
   content.innerHTML = `
     <div style="display:flex;align-items:flex-start;justify-content:space-between;">
@@ -76,7 +82,7 @@ function render() {
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
         ${cfg.reference_region ? '<span class="pill ok">Watched area set</span>' : '<span class="pill warn">Watched area not drawn</span>'}
-        ${confirmedGuides.length ? `<span class="pill ok">${confirmedGuides.length} confirmed guide(s)</span>` : '<span class="pill warn">Baseline needs review</span>'}
+        <span class="pill ${baseline.tone}">${escapeHtml(baseline.pillText)}</span>
       </div>
     </div>
 
@@ -106,6 +112,34 @@ function render() {
   wireTabActions();
 }
 
+function summarizeBaselineGuides(guides) {
+  const confirmed = guides.filter((g) => g.status === "confirmed");
+  const normal = confirmed.filter((g) => g.normal_condition);
+  if (!guides.length) {
+    return { tone: "warn", pillText: "No riverbank guide", ready: false, confirmedCount: 0, normalCount: 0, guideCount: 0 };
+  }
+  if (normal.length) {
+    return { tone: "ok", pillText: `${normal.length} normal-condition guide(s)`, ready: true, confirmedCount: confirmed.length, normalCount: normal.length, guideCount: guides.length };
+  }
+  if (confirmed.length) {
+    return { tone: "warn", pillText: `${confirmed.length} confirmed, none marked normal`, ready: false, confirmedCount: confirmed.length, normalCount: 0, guideCount: guides.length };
+  }
+  return { tone: "warn", pillText: `${guides.length} guide(s), not confirmed`, ready: false, confirmedCount: 0, normalCount: 0, guideCount: guides.length };
+}
+
+function renderBaselineExplanation(baseline) {
+  if (!baseline.guideCount) {
+    return "No riverbank guide yet. Draw one on a day with typical water level and mark it \"normal condition\" so it can serve as the baseline.";
+  }
+  if (baseline.normalCount) {
+    return `${baseline.normalCount} of ${baseline.guideCount} guide(s) confirmed and marked as normal condition &mdash; ready to use as a baseline.`;
+  }
+  if (baseline.confirmedCount) {
+    return `${baseline.confirmedCount} guide(s) confirmed, but none marked "normal condition" &mdash; confirming just finalizes the traced line, it doesn't mean the water level that day was typical. Edit a guide and mark it normal condition once you have one from a typical day.`;
+  }
+  return `${baseline.guideCount} guide(s) drawn but not yet confirmed.`;
+}
+
 function tabLabel(t) {
   return { overview: "Overview", setup: "Setup", sequences: "Sequences & runs", dataset: "Dataset tags" }[t];
 }
@@ -113,12 +147,7 @@ function tabLabel(t) {
 function renderOverview() {
   const allRuns = Object.values(state.runsBySequence).flat();
   const latestRun = allRuns.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""))[0];
-  if (!latestRun) {
-    return `<div class="card" style="padding:18px 20px;">
-      <div style="font-size:13px;font-weight:600;margin-bottom:6px;">No image-sequence run yet</div>
-      <div style="font-size:12px;color:var(--ink-soft);">Add media and run validation from the Sequences &amp; runs tab.</div>
-    </div>`;
-  }
+  if (!latestRun) return renderVideoOrEmptyOverview();
   const total =
     (latestRun.possible_water_level_change_count || 0) +
     (latestRun.no_water_level_change_count || 0) +
@@ -144,11 +173,100 @@ function renderOverview() {
         <div style="font-size:13px;font-weight:600;margin-bottom:12px;">Setup checklist</div>
         <div style="display:flex;flex-direction:column;gap:10px;font-size:13px;">
           ${checklistRow(!!(state.config && state.config.reference_region), "Watched area drawn")}
-          ${checklistRow(((state.config && state.config.normal_waterline_guides) || []).some((g) => g.status === "confirmed" && g.normal_condition), "Riverbank baseline confirmed")}
+          ${checklistRow(summarizeBaselineGuides((state.config && state.config.normal_waterline_guides) || []).ready, "Riverbank baseline ready (a guide marked normal condition)")}
           ${checklistRow(false, "USGS gage attached")}
         </div>
       </div>
     </div>`;
+}
+
+function imageSequenceStatusLine() {
+  if (!state.sequences.length) {
+    return `<div style="font-size:12px;color:var(--ink-muted);display:flex;align-items:center;gap:6px;">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>
+      Image sequence: not set up or run yet.
+    </div>`;
+  }
+  const downloaded = state.sequences.reduce((sum, seq) => sum + (seq.downloaded_count || 0), 0);
+  return `<div style="font-size:12px;color:var(--ink-muted);display:flex;align-items:center;gap:6px;">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>
+    Image sequence: ${downloaded} image(s) downloaded, not run yet.
+    <button id="goSequencesBtn" style="border:none;background:none;padding:0;color:var(--accent);font-weight:600;font-size:12px;cursor:pointer;">Run it &rarr;</button>
+  </div>`;
+}
+
+function renderVideoOrEmptyOverview() {
+  const status = state.status;
+  const videoCount = status?.video_count || 0;
+  const reportCount = status?.report_count || 0;
+
+  if (!videoCount && !state.sequences.length) {
+    return `<div class="card" style="padding:18px 20px;">
+      <div style="font-size:13px;font-weight:600;margin-bottom:6px;">No media added yet</div>
+      <div style="font-size:12px;color:var(--ink-soft);">Add a video or an image sequence from the Setup tab to run validation.</div>
+    </div>`;
+  }
+
+  if (!reportCount) {
+    return `
+      <div class="card" style="padding:18px 20px;">
+        <div style="font-size:13px;font-weight:600;margin-bottom:6px;">No video validation run yet</div>
+        <div style="font-size:12px;color:var(--ink-soft);margin-bottom:14px;">This site has ${videoCount} video(s) added but hasn't been validated yet.</div>
+        <button id="runValidationBtn" class="btn primary">Run video validation</button>
+        <div id="runValidationError" class="err" hidden style="margin-top:10px;"></div>
+        <div style="height:1px;background:var(--line-soft);margin:14px 0;"></div>
+        ${imageSequenceStatusLine()}
+      </div>`;
+  }
+
+  const counts = status.latest_report_counts || {};
+  const scorecard = status.latest_scorecard || {};
+  return `
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:18px;">
+      <div class="card" style="padding:18px 20px;">
+        <div style="font-size:13px;font-weight:600;margin-bottom:12px;">Latest video validation run</div>
+        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:14px;">
+          ${metricTile("Agree", counts.agree, "gray")}
+          ${metricTile("Disagree", counts.disagree, "bad")}
+          ${metricTile("Cannot compare", counts.cannot_compare, "warn")}
+        </div>
+        <div style="font-size:12px;color:var(--ink-soft);margin-bottom:14px;">${escapeHtml(scorecard.summary || "")}</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
+          <a class="btn primary" href="/console/review-video.html?${new URLSearchParams({ site: folderName })}">
+            Review video
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+          <button id="runValidationBtn" class="btn">Run again</button>
+        </div>
+        <div id="runValidationError" class="err" hidden style="margin-bottom:10px;"></div>
+        <div style="height:1px;background:var(--line-soft);margin-bottom:14px;"></div>
+        ${imageSequenceStatusLine()}
+      </div>
+      <div class="card" style="padding:18px 20px;">
+        <div style="font-size:13px;font-weight:600;margin-bottom:12px;">Setup checklist</div>
+        <div style="display:flex;flex-direction:column;gap:10px;font-size:13px;">
+          ${checklistRow(!!(state.config && state.config.reference_region), "Watched area drawn")}
+          ${checklistRow(summarizeBaselineGuides((state.config && state.config.normal_waterline_guides) || []).ready, "Riverbank baseline ready (a guide marked normal condition)")}
+          ${checklistRow((state.status && state.status.labels_found) || false, "Human labels added")}
+        </div>
+      </div>
+    </div>`;
+}
+
+async function runVideoValidation() {
+  const btn = $("runValidationBtn");
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Running…';
+  $("runValidationError").hidden = true;
+  try {
+    await api("/api/run-validation", { folder_name: folderName });
+    await load();
+  } catch (error) {
+    $("runValidationError").hidden = false;
+    $("runValidationError").textContent = error.message;
+    btn.disabled = false;
+    btn.textContent = "Run video validation";
+  }
 }
 
 function metricTile(label, value, tone) {
@@ -172,7 +290,7 @@ function checklistRow(done, label) {
 function renderSetup() {
   const cfg = state.config || {};
   const guides = cfg.normal_waterline_guides || [];
-  const confirmed = guides.filter((g) => g.status === "confirmed" && g.normal_condition);
+  const baseline = summarizeBaselineGuides(guides);
   return `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
       <div class="card" style="padding:18px 20px;">
@@ -182,62 +300,152 @@ function renderSetup() {
       </div>
       <div class="card" style="padding:18px 20px;">
         <div style="font-size:13px;font-weight:600;">Riverbank baseline</div>
-        <div style="font-size:12px;color:var(--ink-soft);margin:6px 0 14px;">${confirmed.length} confirmed normal-condition guide(s). Draw a guide on a day with typical water level.</div>
+        <div style="font-size:12px;color:var(--ink-soft);margin:6px 0 14px;">${renderBaselineExplanation(baseline)}</div>
         <a class="btn outline-accent" href="/console/form-waterline-guide.html?${new URLSearchParams({ site: folderName })}">Open editor</a>
       </div>
       <div class="card" style="padding:18px 20px;grid-column:span 2;">
-        <div style="font-size:13px;font-weight:600;margin-bottom:12px;">Add media</div>
-        <a class="btn" href="/console/form-add-media.html?${new URLSearchParams({ site: folderName })}">+ Add media</a>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+          <div style="font-size:13px;font-weight:600;">Videos${state.manifest.length ? ` (${state.manifest.length})` : ""}</div>
+          <a class="btn" href="/console/form-add-media.html?${new URLSearchParams({ site: folderName })}">+ Add media</a>
+        </div>
+        ${renderVideoList()}
       </div>
     </div>`;
 }
 
+function renderVideoList() {
+  if (!state.manifest.length) {
+    return `<div style="font-size:12px;color:var(--ink-soft);">No video added yet.</div>`;
+  }
+  return `
+    <table>
+      <thead><tr><th>Video id</th><th>Purpose</th><th>Split</th><th>Human label</th><th>Notes</th></tr></thead>
+      <tbody>
+        ${state.manifest
+          .map(
+            (v) => `<tr class="row">
+          <td style="font-family:var(--mono);font-size:12px;">${escapeHtml(v.video_id || v.filename || "")}</td>
+          <td>${escapeHtml(v.purpose || "")}</td>
+          <td>${escapeHtml(v.split || "")}</td>
+          <td>${v.has_human_label ? '<span class="pill ok">Labeled</span>' : '<span class="pill warn">No label</span>'}</td>
+          <td style="color:var(--ink-soft);">${escapeHtml(v.notes || "")}</td>
+        </tr>`
+          )
+          .join("")}
+      </tbody>
+    </table>`;
+}
+
 function renderSequences() {
+  return `
+    <div style="display:flex;flex-direction:column;gap:22px;">
+      <div>
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-muted);margin-bottom:10px;">Image sequence validation</div>
+        ${renderImageSequenceOption()}
+      </div>
+      <div>
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-muted);margin-bottom:10px;">Video validation</div>
+        ${renderVideoValidationOption()}
+      </div>
+    </div>`;
+}
+
+function renderImageSequenceOption() {
   const sequences = state.sequences;
   if (!sequences.length) {
     return `<div class="card" style="padding:18px 20px;font-size:13px;color:var(--ink-soft);">No image sequences downloaded yet. <a href="/console/form-add-media.html?${new URLSearchParams({ site: folderName })}" style="color:var(--accent);font-weight:600;">Add media</a> to start one.</div>`;
   }
   return `
+    <div style="display:flex;flex-direction:column;gap:18px;">
+      <div class="card" style="overflow:hidden;">
+        <div style="padding:14px 18px;border-bottom:1px solid var(--line-soft);font-size:13px;font-weight:600;">Image sequences</div>
+        <table>
+          <thead><tr><th>Sequence</th><th>Downloaded</th><th>Missing</th><th>Failed</th><th></th></tr></thead>
+          <tbody>
+            ${sequences
+              .map(
+                (seq) => `<tr class="row">
+              <td style="font-family:var(--mono);font-size:12px;">${escapeHtml(seq.sequence_id)}</td>
+              <td>${seq.downloaded_count ?? 0}</td>
+              <td>${seq.missing_count ?? 0}</td>
+              <td>${seq.failed_count ?? 0}</td>
+              <td style="text-align:right;"><button class="btn" data-run-sequence="${escapeHtml(seq.sequence_id)}" style="font-size:12px;padding:5px 10px;">Run validation</button></td>
+            </tr>`
+              )
+              .join("")}
+          </tbody>
+        </table>
+        <div id="runSequenceError" class="err" hidden style="margin:0 18px 14px;"></div>
+      </div>
+      <div class="card" style="overflow:hidden;">
+        <div style="padding:14px 18px;border-bottom:1px solid var(--line-soft);font-size:13px;font-weight:600;">Image-sequence runs</div>
+        <table>
+          <thead><tr><th>Run</th><th>Created</th><th>Result mix</th><th></th></tr></thead>
+          <tbody>
+            ${sequences
+              .flatMap((seq) => (state.runsBySequence[seq.sequence_id] || []).map((run) => ({ run, seq })))
+              .map(
+                ({ run }) => `<tr class="row">
+              <td style="font-family:var(--mono);font-size:12px;">${escapeHtml(run.run_id)}</td>
+              <td style="color:var(--ink-soft);">${run.created_at ? new Date(run.created_at).toLocaleString() : ""}</td>
+              <td>${run.no_water_level_change_count || 0} no-change &middot; ${run.camera_or_image_problem_count || 0} problem</td>
+              <td style="text-align:right;"><a href="/console/review.html?${new URLSearchParams({ site: folderName, run_id: run.run_id })}" style="font-size:12px;font-weight:600;color:var(--accent);">Review &rarr;</a></td>
+            </tr>`
+              )
+              .join("") || `<tr><td colspan="4" style="color:var(--ink-muted);">No runs yet for this sequence.</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function renderVideoValidationOption() {
+  const status = state.status;
+  const videoCount = status?.video_count || 0;
+  const history = status?.report_history || [];
+  if (!videoCount) {
+    return `<div class="card" style="padding:18px 20px;font-size:13px;color:var(--ink-soft);">No video added yet. <a href="/console/form-add-media.html?${new URLSearchParams({ site: folderName })}" style="color:var(--accent);font-weight:600;">Add media</a> to start one.</div>`;
+  }
+  return `
     <div class="card" style="overflow:hidden;">
-      <div style="padding:14px 18px;border-bottom:1px solid var(--line-soft);font-size:13px;font-weight:600;">Image sequences</div>
-      <table>
-        <thead><tr><th>Sequence</th><th>Downloaded</th><th>Missing</th><th>Failed</th></tr></thead>
-        <tbody>
-          ${sequences
-            .map(
-              (seq) => `<tr class="row">
-            <td style="font-family:var(--mono);font-size:12px;">${escapeHtml(seq.sequence_id)}</td>
-            <td>${seq.downloaded_count ?? 0}</td>
-            <td>${seq.missing_count ?? 0}</td>
-            <td>${seq.failed_count ?? 0}</td>
-          </tr>`
-            )
-            .join("")}
-        </tbody>
-      </table>
-    </div>
-    <div class="card" style="overflow:hidden;">
-      <div style="padding:14px 18px;border-bottom:1px solid var(--line-soft);font-size:13px;font-weight:600;">Validation runs</div>
+      <div style="padding:14px 18px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;">
+        <div style="font-size:13px;font-weight:600;">Video validation runs</div>
+        <button id="runValidationBtn" class="btn" style="font-size:12px;padding:5px 10px;">${history.length ? "Run again" : "Run validation"}</button>
+      </div>
       <table>
         <thead><tr><th>Run</th><th>Created</th><th>Result mix</th><th></th></tr></thead>
         <tbody>
-          ${sequences
-            .flatMap((seq) => (state.runsBySequence[seq.sequence_id] || []).map((run) => ({ run, seq })))
+          ${history
             .map(
-              ({ run }) => `<tr class="row">
-            <td style="font-family:var(--mono);font-size:12px;">${escapeHtml(run.run_id)}</td>
-            <td style="color:var(--ink-soft);">${run.created_at ? new Date(run.created_at).toLocaleString() : ""}</td>
-            <td>${run.no_water_level_change_count || 0} no-change &middot; ${run.camera_or_image_problem_count || 0} problem</td>
-            <td style="text-align:right;"><a href="/console/review.html?${new URLSearchParams({ site: folderName, run_id: run.run_id })}" style="font-size:12px;font-weight:600;color:var(--accent);">Review &rarr;</a></td>
+              (r) => `<tr class="row">
+            <td style="font-family:var(--mono);font-size:12px;">${escapeHtml(r.run_id)}</td>
+            <td style="color:var(--ink-soft);">${r.modified_time ? new Date(r.modified_time).toLocaleString() : ""}</td>
+            <td>${(r.counts && r.counts.agree) || 0} agree &middot; ${(r.counts && r.counts.disagree) || 0} disagree &middot; ${(r.counts && r.counts.cannot_compare) || 0} cannot compare</td>
+            <td style="text-align:right;"><a href="/console/review-video.html?${new URLSearchParams({ site: folderName, run_id: r.run_id })}" style="font-size:12px;font-weight:600;color:var(--accent);">Review &rarr;</a></td>
           </tr>`
             )
-            .join("") || `<tr><td colspan="4" style="color:var(--ink-muted);">No runs yet for this sequence.</td></tr>`}
+            .join("") || `<tr><td colspan="4" style="color:var(--ink-muted);">No video validation runs yet.</td></tr>`}
         </tbody>
       </table>
+      <div id="runValidationError" class="err" hidden style="margin:0 18px 14px;"></div>
     </div>`;
 }
 
 function renderDataset() {
+  return `
+    <div style="display:flex;flex-direction:column;gap:22px;">
+      <div>
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-muted);margin-bottom:10px;">Image sequence dataset group</div>
+        ${renderImageDatasetOption()}
+      </div>
+      <div>
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-muted);margin-bottom:10px;">Video dataset split</div>
+        ${renderVideoDatasetOption()}
+      </div>
+    </div>`;
+}
+
+function renderImageDatasetOption() {
   const seq = state.sequences[0];
   if (!seq) {
     return `<div class="card" style="padding:18px 20px;font-size:13px;color:var(--ink-soft);">Add an image sequence before assigning a dataset group.</div>`;
@@ -254,13 +462,69 @@ function renderDataset() {
           <div style="font-size:13px;font-weight:600;font-family:var(--mono);">${escapeHtml(seq.requested_start_date || "?")} &rarr; ${escapeHtml(seq.requested_end_date || "?")}</div>
         </div>
         ${latestRunId
-          ? `<a class="btn primary" href="/console/form-dataset-group.html?${new URLSearchParams({ site: folderName, sequence_id: seq.sequence_id, run_id: latestRunId })}">Assign group</a>`
+          ? `<a class="btn primary" href="/console/form-dataset-group.html?${new URLSearchParams({ site: folderName, kind: "image", sequence_id: seq.sequence_id, run_id: latestRunId })}">Assign group</a>`
           : `<span style="font-size:12px;color:var(--ink-muted);">Run validation first</span>`}
       </div>
     </div>`;
 }
 
-function wireTabActions() {}
+function renderVideoDatasetOption() {
+  if (!state.manifest.length) {
+    return `<div class="card" style="padding:18px 20px;font-size:13px;color:var(--ink-soft);">No video added yet.</div>`;
+  }
+  const latestVideoRunId = (state.status?.report_history || [])[0]?.run_id || "";
+  return `
+    <div class="card" style="overflow:hidden;">
+      <div style="padding:14px 18px;border-bottom:1px solid var(--line-soft);font-size:13px;font-weight:600;">Video split assignments</div>
+      ${!latestVideoRunId
+        ? `<div style="padding:12px 18px;font-size:12px;color:var(--ink-soft);">Run video validation at least once before changing a video's split &mdash; the change is recorded against that run's evidence.</div>`
+        : ""}
+      <table>
+        <thead><tr><th>Video id</th><th>Split</th><th></th></tr></thead>
+        <tbody>
+          ${state.manifest
+            .map(
+              (v) => `<tr class="row">
+            <td style="font-family:var(--mono);font-size:12px;">${escapeHtml(v.video_id || "")}</td>
+            <td><span class="pill ${v.split === "locked_validation" ? "ok" : "gray"}">${escapeHtml(v.split || "unset")}</span></td>
+            <td style="text-align:right;">
+              ${latestVideoRunId
+                ? `<a class="btn" style="font-size:12px;padding:5px 10px;" href="/console/form-dataset-group.html?${new URLSearchParams({ site: folderName, kind: "video", video_id: v.video_id, run_id: latestVideoRunId })}">Change</a>`
+                : `<span style="font-size:12px;color:var(--ink-muted);">Run validation first</span>`}
+            </td>
+          </tr>`
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function wireTabActions() {
+  const runBtn = document.getElementById("runValidationBtn");
+  if (runBtn) runBtn.addEventListener("click", runVideoValidation);
+  const goSequencesBtn = document.getElementById("goSequencesBtn");
+  if (goSequencesBtn) goSequencesBtn.addEventListener("click", () => { state.tab = "sequences"; render(); });
+  document.querySelectorAll("[data-run-sequence]").forEach((btn) => {
+    btn.addEventListener("click", () => runSequenceValidation(btn.dataset.runSequence, btn));
+  });
+}
+
+async function runSequenceValidation(sequenceId, btn) {
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Running…';
+  const errorBox = $("runSequenceError");
+  errorBox.hidden = true;
+  try {
+    const result = await api("/api/run-image-sequence-validation", { folder_name: folderName, sequence_id: sequenceId });
+    location.href = `/console/review.html?${new URLSearchParams({ site: folderName, run_id: result.run_id })}`;
+  } catch (error) {
+    errorBox.hidden = false;
+    errorBox.textContent = error.message;
+    btn.disabled = false;
+    btn.textContent = "Run validation";
+  }
+}
 
 main();
 </script>

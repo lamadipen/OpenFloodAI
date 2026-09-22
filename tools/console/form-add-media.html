@@ -48,8 +48,12 @@
           <div style="margin-bottom:14px;">
             <label for="purpose">Purpose</label>
             <select id="purpose">
-              <option value="practice_normal_water">practice_normal_water</option>
-              <option value="possible_rising_water">possible_rising_water</option>
+              <option value="practice_normal_water">Practice: normal water</option>
+              <option value="possible_rising_water">Possible rising water</option>
+              <option value="possible_falling_water">Possible falling water</option>
+              <option value="no_clear_change">No clear change</option>
+              <option value="hard_case_review">Hard case review</option>
+              <option value="camera_video_problem">Camera/video problem</option>
             </select>
           </div>
           <div style="margin-bottom:14px;">
@@ -79,6 +83,10 @@
           </div>
           <div style="margin-bottom:8px;">Sampling mode</div>
           <div id="samplingOptions" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;"></div>
+          <label style="display:flex;align-items:center;gap:8px;margin-bottom:16px;cursor:pointer;">
+            <input type="checkbox" id="fetchGageData" checked>
+            <span>Also fetch USGS gage data for this date range, if this camera is a registered river camera</span>
+          </label>
           <div style="background:var(--warn-soft);border:1px solid #ebd3a0;border-radius:9px;padding:11px 14px;font-size:12px;color:#6b4a12;display:flex;gap:8px;margin-bottom:16px;">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="2" style="flex-shrink:0;margin-top:1px;"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L2.5 17a2 2 0 001.7 3h15.6a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
             <span>Two of the three image-sequence sites reviewed this month used <code>one_per_day</code> and ended up with 66&ndash;118 "camera or image problem" results out of ~122 &mdash; the sampled frame landed at dawn or local midnight almost every day. Prefer daylight sampling.</span>
@@ -121,6 +129,20 @@ function renderSampling() {
     });
   });
 }
+
+function fileStem(filename) {
+  return filename.replace(/\.[^/.]+$/, "");
+}
+
+function sanitizeVideoId(value) {
+  return value.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9_-]/g, "");
+}
+
+$("video_file").addEventListener("change", () => {
+  const file = $("video_file").files[0];
+  if (!file) return;
+  $("video_id").value = sanitizeVideoId(fileStem(file.name));
+});
 
 function setMode(mode) {
   document.querySelectorAll("[data-mode]").forEach((btn) => {
@@ -187,15 +209,19 @@ $("imagesForm").addEventListener("submit", async (event) => {
   submitBtn.innerHTML = '<span class="spinner"></span>Downloading…';
   $("imagesError").hidden = true;
   try {
-    await api("/api/download-image-sequence", {
+    const result = await api("/api/download-image-sequence", {
       folder_name: folderName,
       camera_url: $("camera_url").value.trim(),
       start_date: $("start_date").value,
       end_date: $("end_date").value,
       timezone: "America/Denver",
-      sampling_mode: sampling
+      sampling_mode: sampling,
+      fetch_gage_data: $("fetchGageData").checked
     });
-    location.href = `/console/site.html?${new URLSearchParams({ site: folderName })}`;
+    const params = { site: folderName };
+    if (result.gage_available === true) params.gage = "found";
+    else if (result.gage_available === false) params.gage = "unavailable";
+    location.href = `/console/site.html?${new URLSearchParams(params)}`;
   } catch (error) {
     $("imagesError").hidden = false;
     $("imagesError").textContent = error.message;

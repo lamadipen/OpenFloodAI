@@ -21,13 +21,20 @@
       </a>
     </div>
     <div id="body" style="display:flex;min-height:0;">
-      <div style="flex-grow:1;padding:20px;display:flex;align-items:center;justify-content:center;">
+      <div style="flex-grow:1;padding:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
         <div id="stage" style="width:640px;height:400px;position:relative;border-radius:8px;overflow:hidden;background:#33444d;">
           <img id="stageImg" style="width:100%;height:100%;object-fit:cover;display:block;" alt="Baseline image">
           <div id="box" style="position:absolute;border:2px solid #f2c94c;background:rgba(242,201,76,0.16);cursor:move;">
             <div id="resizeHandle" style="position:absolute;right:-7px;bottom:-7px;width:14px;height:14px;border-radius:3px;background:#f2c94c;border:2px solid #fff;cursor:nwse-resize;"></div>
           </div>
         </div>
+        <div id="scrubRow" style="width:640px;display:flex;align-items:center;gap:10px;" hidden>
+          <span style="font-size:11px;color:var(--ink-muted);white-space:nowrap;">Video frame</span>
+          <input type="range" id="scrub" min="0" max="1" step="0.1" value="0" style="flex-grow:1;">
+          <span id="scrubTime" style="font-size:11px;color:var(--ink-muted);font-family:var(--mono);white-space:nowrap;">0.0s</span>
+        </div>
+        <video id="sourceVideo" style="display:none;" preload="metadata" muted playsinline></video>
+        <canvas id="captureCanvas" width="640" height="400" style="display:none;"></canvas>
       </div>
       <div style="width:270px;flex-shrink:0;border-left:1px solid var(--line-soft);padding:20px;display:flex;flex-direction:column;gap:14px;">
         <div>
@@ -39,8 +46,9 @@
             <div style="background:var(--paper);border-radius:7px;padding:8px 10px;"><div style="font-size:10px;color:var(--ink-muted);">height</div><div id="hOut" style="font-size:14px;font-weight:600;font-family:var(--mono);">&mdash;</div></div>
           </div>
         </div>
-        <div style="font-size:12px;color:var(--ink-soft);line-height:1.5;">Drag the box to move it, drag the corner handle to resize.</div>
+        <div style="font-size:12px;color:var(--ink-soft);line-height:1.5;">Drag the box to move it, drag the corner handle to resize, or drag anywhere on the empty image to draw a brand new area.</div>
         <button id="resetBtn" class="btn">Reset to saved value</button>
+        <button id="clearBtn" class="btn">Clear and redraw</button>
         <div style="flex-grow:1;"></div>
         <div id="formError" class="err" hidden></div>
         <button id="saveBtn" class="btn primary" style="justify-content:center;">Save watched area</button>
@@ -56,8 +64,42 @@ let saved = null;
 let rect = { x: 10, y: 10, width: 60, height: 60 };
 let sequenceId = null;
 let baselineFilename = null;
+let videoId = null;
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function captureVideoFrame() {
+  const video = $("sourceVideo");
+  const canvas = $("captureCanvas");
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  $("stageImg").src = canvas.toDataURL("image/jpeg", 0.92);
+}
+
+function loadVideoSource() {
+  return new Promise((resolve) => {
+    const video = $("sourceVideo");
+    video.src = `/api/site-video?${new URLSearchParams({ folder_name: folderName, video_id: videoId })}`;
+    video.addEventListener(
+      "loadedmetadata",
+      () => {
+        $("scrub").max = video.duration || 1;
+        $("scrub").value = 0;
+        video.currentTime = 0;
+        resolve();
+      },
+      { once: true }
+    );
+    video.addEventListener("seeked", () => {
+      $("scrubTime").textContent = `${video.currentTime.toFixed(1)}s`;
+      captureVideoFrame();
+    });
+    $("scrubRow").hidden = false;
+    $("scrub").addEventListener("input", () => {
+      video.currentTime = Number($("scrub").value);
+    });
+  });
+}
 
 function paintBox() {
   const box = $("box");
@@ -71,8 +113,25 @@ function paintBox() {
   $("hOut").textContent = rect.height.toFixed(1);
 }
 
-let dragMode = null, startX = 0, startY = 0, startRect = null;
+let dragMode = null, startX = 0, startY = 0, startRect = null, drawOrigin = null;
+function stagePointPct(event) {
+  const stageRect = $("stage").getBoundingClientRect();
+  return {
+    x: clamp(((event.clientX - stageRect.left) / stageRect.width) * 100, 0, 100),
+    y: clamp(((event.clientY - stageRect.top) / stageRect.height) * 100, 0, 100)
+  };
+}
 function onDrag(event) {
+  if (dragMode === "draw") {
+    const point = stagePointPct(event);
+    const x0 = Math.min(drawOrigin.x, point.x);
+    const y0 = Math.min(drawOrigin.y, point.y);
+    const x1 = Math.max(drawOrigin.x, point.x);
+    const y1 = Math.max(drawOrigin.y, point.y);
+    rect = { x: x0, y: y0, width: Math.max(x1 - x0, 1), height: Math.max(y1 - y0, 1) };
+    paintBox();
+    return;
+  }
   const dxPct = ((event.clientX - startX) / stageW) * 100;
   const dyPct = ((event.clientY - startY) / stageH) * 100;
   if (dragMode === "move") {
@@ -83,7 +142,12 @@ function onDrag(event) {
   paintBox();
 }
 function onDragEnd() {
+  if (dragMode === "draw" && (rect.width < 3 || rect.height < 3)) {
+    rect = { ...(startRect || { x: 10, y: 10, width: 60, height: 60 }) };
+    paintBox();
+  }
   dragMode = null;
+  drawOrigin = null;
   window.removeEventListener("mousemove", onDrag);
   window.removeEventListener("mouseup", onDragEnd);
 }
@@ -100,8 +164,23 @@ $("resizeHandle").addEventListener("mousedown", (event) => {
   window.addEventListener("mousemove", onDrag);
   window.addEventListener("mouseup", onDragEnd);
 });
+$("stage").addEventListener("mousedown", (event) => {
+  if (event.target !== $("stage") && event.target !== $("stageImg")) return;
+  event.preventDefault();
+  startRect = { ...rect };
+  dragMode = "draw";
+  drawOrigin = stagePointPct(event);
+  rect = { x: drawOrigin.x, y: drawOrigin.y, width: 0, height: 0 };
+  paintBox();
+  window.addEventListener("mousemove", onDrag);
+  window.addEventListener("mouseup", onDragEnd);
+});
 $("resetBtn").addEventListener("click", () => {
   if (saved) { rect = { ...saved }; paintBox(); }
+});
+$("clearBtn").addEventListener("click", () => {
+  rect = { x: 30, y: 30, width: 40, height: 40 };
+  paintBox();
 });
 
 async function main() {
@@ -113,9 +192,10 @@ async function main() {
   $("siteLabel").textContent = folderName;
 
   try {
-    const [configData, sequenceData] = await Promise.all([
+    const [configData, sequenceData, manifestData] = await Promise.all([
       api(`/api/site-config?${new URLSearchParams({ folder_name: folderName })}`),
-      api(`/api/site-image-sequences?${new URLSearchParams({ folder_name: folderName })}`)
+      api(`/api/site-image-sequences?${new URLSearchParams({ folder_name: folderName })}`),
+      api(`/api/site-manifest?${new URLSearchParams({ folder_name: folderName })}`).catch(() => ({ records: [] }))
     ]);
     const cfg = configData.config || {};
     if (cfg.reference_region) {
@@ -135,7 +215,14 @@ async function main() {
       }
     }
     if (!baselineFilename) {
-      $("body").innerHTML = `<div style="padding:24px;font-size:13px;color:var(--ink-soft);">This site has no downloaded image sequence yet, so there is no image to draw a watched area on here. Add an image sequence first from Site &rarr; Setup &rarr; Add media.</div>`;
+      const firstVideo = (manifestData.records || [])[0];
+      if (firstVideo && firstVideo.video_id) {
+        videoId = firstVideo.video_id;
+        await loadVideoSource();
+      }
+    }
+    if (!baselineFilename && !videoId) {
+      $("body").innerHTML = `<div style="padding:24px;font-size:13px;color:var(--ink-soft);">This site has no downloaded image sequence and no video yet, so there is no image to draw a watched area on here. Add media first from Site &rarr; Setup &rarr; Add media.</div>`;
       $("saveBtn").disabled = true;
     }
   } catch (error) {
@@ -148,10 +235,12 @@ $("saveBtn").addEventListener("click", async () => {
   $("saveBtn").innerHTML = '<span class="spinner"></span>Saving…';
   $("formError").hidden = true;
   try {
+    const source = baselineFilename
+      ? { sequence_id: sequenceId, image_filename: baselineFilename }
+      : { video_id: videoId };
     await api("/api/set-watched-area", {
       folder_name: folderName,
-      sequence_id: sequenceId,
-      image_filename: baselineFilename,
+      ...source,
       reference_region: rect
     });
     location.href = `/console/site.html?${new URLSearchParams({ site: folderName })}`;

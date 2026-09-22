@@ -161,3 +161,27 @@ def load_river_registry(river_id: str, reference_dir: Path) -> RiverRegistry:
         notes=notes if isinstance(notes, str) else "",
         cameras=tuple(cameras),
     )
+
+
+def find_camera(camera_id: str, reference_dir: Path) -> CameraRecord | None:
+    """Search every river registry under reference_dir for one camera, by id.
+
+    Best-effort: a camera_id belongs to at most one registry, but which
+    river it's under isn't known to a caller that only has a site's
+    camera_id (e.g. a site created outside the River Camera Tracker's
+    bootstrap flow). Skips any registry file that fails to parse rather
+    than raising, since most sites are never registered at all.
+    """
+
+    rivers_dir = reference_dir / "rivers"
+    if not rivers_dir.is_dir():
+        return None
+    for path in sorted(rivers_dir.glob("*.json")):
+        try:
+            registry = load_river_registry(path.stem, reference_dir)
+        except RiverRegistryError:
+            continue
+        camera = registry.camera(camera_id)
+        if camera is not None:
+            return camera
+    return None
