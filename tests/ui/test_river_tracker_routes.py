@@ -74,6 +74,29 @@ def test_api_river_tracker_returns_rows_for_registry_cameras(tmp_path: Path) -> 
     assert row["camera_availability"] == "not_created"
 
 
+def test_api_rivers_lists_available_registries(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    sites_dir.mkdir()
+    _write_registry(tmp_path / "reference")
+
+    with serve_home_ui(sites_dir) as base_url:
+        payload = get_json(f"{base_url}/api/rivers")
+
+    assert payload["rivers"] == [
+        {"river_id": "test-river", "display_name": "Test River", "camera_count": 1}
+    ]
+
+
+def test_api_rivers_returns_empty_list_when_no_registries_exist(tmp_path: Path) -> None:
+    sites_dir = tmp_path / "sites"
+    sites_dir.mkdir()
+
+    with serve_home_ui(sites_dir) as base_url:
+        payload = get_json(f"{base_url}/api/rivers")
+
+    assert payload["rivers"] == []
+
+
 def test_api_river_tracker_requires_river_param(tmp_path: Path) -> None:
     sites_dir = tmp_path / "sites"
     sites_dir.mkdir()

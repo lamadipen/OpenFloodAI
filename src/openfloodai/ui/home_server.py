@@ -42,7 +42,11 @@ from openfloodai.ingestion.river_images import (
     resolve_downloaded_video,
     resolve_sequence_image,
 )
-from openfloodai.ingestion.river_registry import RiverRegistryError, find_camera
+from openfloodai.ingestion.river_registry import (
+    RiverRegistryError,
+    find_camera,
+    list_river_registries,
+)
 from openfloodai.ingestion.usgs_gage_data import GageDataError, write_gauge_readings_summary
 from openfloodai.review import (
     ALLOWED_CONFIDENCE_LEVELS,
@@ -186,6 +190,9 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             return
         if path == "/api/river-tracker":
             self._send_river_tracker_json()
+            return
+        if path == "/api/rivers":
+            self._send_rivers_json()
             return
         if path in {"/", "/openfloodai-home-ui.html"}:
             self._send_file(self.ui_path, content_type="text/html; charset=utf-8")
@@ -509,6 +516,11 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             },
             status_code=200,
         )
+
+    def _send_rivers_json(self) -> None:
+        """List every river registry on disk, for populating a river picker."""
+
+        self._send_json({"rivers": list_river_registries(self._reference_dir())}, status_code=200)
 
     def _send_review_images(self, *, single_image: bool) -> None:
         """Expose only generated review images inside the configured local sites."""

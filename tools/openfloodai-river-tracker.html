@@ -67,8 +67,10 @@
       <p class="notice">This page only reads local files and calls local endpoints. It does not download images, change site configuration, or run validation.</p>
       <form class="controls" id="trackerForm">
         <div>
-          <label for="riverId">River id</label>
-          <input id="riverId" name="river" value="colorado-river" required aria-describedby="riverHelp">
+          <label for="riverId">River</label>
+          <select id="riverId" name="river" required aria-describedby="riverHelp">
+            <option value="">Loading rivers…</option>
+          </select>
         </div>
         <button type="submit" id="loadButton">Load tracker</button>
       </form>
@@ -228,10 +230,32 @@
 
       form.addEventListener("submit", (event) => {
         event.preventDefault();
-        loadTracker(riverIdInput.value.trim());
+        loadTracker(riverIdInput.value);
       });
 
-      loadTracker(riverIdInput.value.trim());
+      async function initRiverPicker() {
+        try {
+          const response = await fetch("/api/rivers");
+          const payload = await response.json();
+          const rivers = payload.rivers || [];
+          if (!rivers.length) {
+            riverIdInput.innerHTML = `<option value="">No river registries found</option>`;
+            helpText.textContent = "No river registries found under data/reference/rivers/.";
+            return;
+          }
+          riverIdInput.innerHTML = rivers.map((r) =>
+            `<option value="${escapeHtml(r.river_id)}">${escapeHtml(r.display_name)} (${r.camera_count})</option>`
+          ).join("");
+          const preferred = rivers.some((r) => r.river_id === "colorado-river") ? "colorado-river" : rivers[0].river_id;
+          riverIdInput.value = preferred;
+          loadTracker(preferred);
+        } catch (error) {
+          riverIdInput.innerHTML = `<option value="">Could not load rivers</option>`;
+          helpText.textContent = `Could not load the river list: ${error.message}`;
+        }
+      }
+
+      initRiverPicker();
 
       const bootstrapForm = document.getElementById("bootstrapForm");
       const bootstrapButton = document.getElementById("bootstrapButton");
