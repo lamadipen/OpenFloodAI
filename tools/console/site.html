@@ -228,8 +228,8 @@ function renderVideoOrEmptyOverview() {
         </div>
         <div style="font-size:12px;color:var(--ink-soft);margin-bottom:14px;">${escapeHtml(scorecard.summary || "")}</div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
-          <a class="btn primary" href="/site-details.html?${new URLSearchParams({ site: folderName, tab: "runs" })}">
-            Open report
+          <a class="btn primary" href="/console/review-video.html?${new URLSearchParams({ site: folderName })}">
+            Review video
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
           </a>
           <button id="runValidationBtn" class="btn">Run again</button>
@@ -417,7 +417,7 @@ function renderVideoValidationOption() {
             <td style="font-family:var(--mono);font-size:12px;">${escapeHtml(r.run_id)}</td>
             <td style="color:var(--ink-soft);">${r.modified_time ? new Date(r.modified_time).toLocaleString() : ""}</td>
             <td>${(r.counts && r.counts.agree) || 0} agree &middot; ${(r.counts && r.counts.disagree) || 0} disagree &middot; ${(r.counts && r.counts.cannot_compare) || 0} cannot compare</td>
-            <td style="text-align:right;"><a href="/site-details.html?${new URLSearchParams({ site: folderName, tab: "runs" })}" style="font-size:12px;font-weight:600;color:var(--accent);">Open &rarr;</a></td>
+            <td style="text-align:right;"><a href="/console/review-video.html?${new URLSearchParams({ site: folderName, run_id: r.run_id })}" style="font-size:12px;font-weight:600;color:var(--accent);">Review &rarr;</a></td>
           </tr>`
             )
             .join("") || `<tr><td colspan="4" style="color:var(--ink-muted);">No video validation runs yet.</td></tr>`}

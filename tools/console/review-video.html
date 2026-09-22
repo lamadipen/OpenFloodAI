@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Review video · OpenFloodAI console</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap">
+<link rel="stylesheet" href="/console/shared.css">
+</head>
+<body>
+<script src="/console/shared.js"></script>
+<script>
+const MACHINE_LABEL = {
+  possible_water_level_change: "Possible water level change",
+  no_water_level_change: "No water level change",
+  cannot_judge_water_level: "Cannot judge"
+};
+const MACHINE_TONE = {
+  possible_water_level_change: "warn",
+  no_water_level_change: "gray",
+  cannot_judge_water_level: "gray"
+};
+const LABELS = [
+  { id: "water_level_rising", text: "Water level is rising" },
+  { id: "water_level_falling", text: "Water level is falling" },
+  { id: "no_water_level_change", text: "No water level change" },
+  { id: "cannot_judge_water_level", text: "Cannot judge water level from this evidence" },
+  { id: "camera_video_problem", text: "Camera or video problem" }
+];
+const TRISTATE_FIELDS = [
+  { key: "riverbank_visible", label: "Riverbank / reference visible" },
+  { key: "stable_marker_visible", label: "Stable marker visible" },
+  { key: "water_boundary_visible", label: "Water boundary visible" },
+  { key: "camera_stable", label: "Camera stable" }
+];
+
+const folderName = qs("site");
+let runId = qs("run_id");
+let mediaId = qs("media_id");
+let runs = [];
+let points = [];
+let comparisons = [];
+let groups = [];
+let state = { filter: "all", selectedKey: null, draftLabel: null, draftConfidence: "medium", draftTristate: {}, draftNote: "" };
+
+function selectedPoint() {
+  return points.find((p) => p.key === state.selectedKey) || null;
+}
+
+function comparisonForPoint(point) {
+  if (!point || !point.label || !point.label.time_window_seconds) return null;
+  const window = JSON.stringify(point.label.time_window_seconds);
+  return comparisons.find((c) => JSON.stringify(c.time_window_seconds) === window) || null;
+}
+
+function pointStatus(point) {
+  if (!point.label) return "needs_label";
+  if (point.machine === "possible_water_level_change") return "flagged";
+  return "reviewed";
+}
+
+function visiblePoints() {
+  if (state.filter === "all") return points;
+  return points.filter((p) => pointStatus(p) === state.filter);
+}
+
+async function main() {
+  if (!folderName) {
+    document.body.innerHTML = `<div style="padding:40px;">Missing <code>?site=</code> in the URL.</div>`;
+    return;
+  }
+  const content = mountShell({
+    active: "sites",
+    activeSiteFolder: folderName,
+    crumbs: [
+      { label: "Sites", href: "/console/dashboard.html" },
+      { label: folderName, href: `/console/site.html?${new URLSearchParams({ site: folderName })}` },
+      { label: "Review video" }
+    ]
+  });
+  content.innerHTML = `<div class="card" style="padding:24px;color:var(--ink-muted);font-size:13px;">Loading&hellip;</div>`;
+
+  try {
+    const runsData = await api(`/api/workspace-runs?${new URLSearchParams({ folder_name: folderName })}`);
+    runs = (runsData.runs || []).filter((r) => r.kind === "video").sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+    if (!runId) runId = runs[0]?.run_id;
+    if (!mediaId) mediaId = runs.find((r) => r.run_id === runId)?.media_id || runs[0]?.media_id;
+    if (!runId || !mediaId) {
+      content.innerHTML = `<div class="card" style="padding:24px;font-size:13px;color:var(--ink-soft);">No saved video runs for this site yet. Run video validation from Site &rarr; Overview first.</div>`;
+      return;
+    }
+    await loadEvidence();
+  } catch (error) {
+    content.innerHTML = `<div class="card" style="padding:24px;color:var(--bad);font-size:13px;">Could not load this run: ${escapeHtml(error.message)}</div>`;
+  }
+}
+
+async function loadEvidence() {
+  const data = await api(`/api/workspace-evidence?${new URLSearchParams({ folder_name: folderName, kind: "video", run_id: runId, media_id: mediaId })}`);
+  points = (data.points || []).slice().sort((a, b) => a.start - b.start);
+  comparisons = data.comparisons || [];
+  groups = data.groups || [];
+  if (!state.selectedKey || !points.find((p) => p.key === state.selectedKey)) {
+    const needsLabel = points.find((p) => !p.label);
+    state.selectedKey = (needsLabel || points[0] || {}).key || null;
+  }
+  resetDraft();
+  render();
+}
+
+function resetDraft() {
+  const point = selectedPoint();
+  const label = point && point.label;
+  state.draftLabel = label ? label.human_label : null;
+  state.draftConfidence = (label && label.confidence) || "medium";
+  state.draftTristate = {};
+  TRISTATE_FIELDS.forEach((f) => {
+    if (label && label[f.key]) state.draftTristate[f.key] = label[f.key];
+  });
+  state.draftNote = (label && label.note) || "";
+}
+
+function counts() {
+  const c = { needs_label: 0, reviewed: 0, flagged: 0 };
+  points.forEach((p) => { c[pointStatus(p)] = (c[pointStatus(p)] || 0) + 1; });
+  return c;
+}
+
+function render() {
+  const content = $("content");
+  const c = counts();
+  const point = selectedPoint();
+  const split = groups.find((g) => g.video_id === mediaId);
+
+  content.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+      <div style="font-size:13px;color:var(--ink-soft);">Video <span style="font-family:var(--mono);">${escapeHtml(mediaId)}</span></div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span class="hint">Run</span>
+        <select id="runSelect" style="font-size:12px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;">
+          ${runs.map((r) => `<option value="${escapeHtml(r.run_id)}" ${r.run_id === runId ? "selected" : ""}>${escapeHtml(r.run_id)}</option>`).join("")}
+        </select>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;flex-grow:1;min-height:0;">
+      <div style="display:flex;flex-direction:column;gap:16px;min-width:0;">
+        <div class="card" style="padding:16px 18px;">
+          <div style="font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:10px;">${point ? escapeHtml(point.title) : "No window selected"}</div>
+          <video id="previewVideo" controls style="width:100%;border-radius:8px;background:#182b35;display:block;"></video>
+        </div>
+
+        <div class="card" style="padding:16px 18px;">
+          <div style="font-size:11px;font-weight:600;color:var(--ink-muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:8px;">What the machine saw</div>
+          ${point ? `
+          <span class="pill ${MACHINE_TONE[point.machine] || "gray"}">${escapeHtml(MACHINE_LABEL[point.machine] || point.machine)}</span>
+          <div style="font-size:12px;color:var(--ink-soft);margin-top:10px;">${escapeHtml(point.reason || "")}</div>
+          <div style="font-size:11px;color:var(--ink-muted);margin-top:8px;font-family:var(--mono);">Visual-change score: ${typeof point.score === "number" ? point.score.toFixed(4) : "n/a"}</div>
+          ${comparisonForPoint(point) ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line-soft);"><span class="pill ${comparisonForPoint(point).result === "agree" ? "ok" : comparisonForPoint(point).result === "disagree" ? "bad" : "gray"}">${escapeHtml(comparisonForPoint(point).result.replace(/_/g, " "))}</span><div style="font-size:11px;color:var(--ink-muted);margin-top:6px;">${escapeHtml(comparisonForPoint(point).note || "")}</div></div>` : ""}
+          ` : `<div class="hint">Choose a window from the queue.</div>`}
+        </div>
+
+        <div class="card" style="padding:16px 18px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+            <div style="font-size:11px;font-weight:600;color:var(--ink-muted);text-transform:uppercase;letter-spacing:.03em;">Video dataset split</div>
+            ${runs.length ? `<a class="btn" style="font-size:11px;padding:4px 9px;" href="/console/form-dataset-group.html?${new URLSearchParams({ site: folderName, kind: "video", video_id: mediaId, run_id: runId })}">Change</a>` : ""}
+          </div>
+          <span class="pill ${split && split.split === "locked_validation" ? "ok" : "gray"}">${escapeHtml((split && split.split) || "unset")}</span>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:16px;min-width:0;">
+        <div class="card" style="overflow:hidden;">
+          <div style="padding:12px 16px;border-bottom:1px solid var(--line-soft);display:flex;gap:6px;flex-wrap:wrap;">
+            ${filterChip("all", "All", points.length)}
+            ${filterChip("needs_label", "Needs label", c.needs_label)}
+            ${filterChip("reviewed", "Reviewed", c.reviewed)}
+            ${filterChip("flagged", "Flagged", c.flagged)}
+          </div>
+          <div style="max-height:360px;overflow:auto;">
+            ${visiblePoints()
+              .map((p) => `<button data-act="select-point" data-key="${escapeHtml(p.key)}" style="width:100%;text-align:left;border:none;background:${state.selectedKey === p.key ? "var(--accent-soft)" : "transparent"};border-bottom:1px solid var(--line-soft);padding:11px 16px;display:flex;flex-direction:column;gap:3px;cursor:pointer;">
+                <div style="display:flex;align-items:center;justify-content:space-between;">
+                  <span style="font-size:12px;font-weight:600;font-family:var(--mono);">${escapeHtml(p.title)}</span>
+                  <span class="pill ${MACHINE_TONE[p.machine] || "gray"}" style="font-size:10px;">${escapeHtml(MACHINE_LABEL[p.machine] || p.machine)}</span>
+                </div>
+                <span style="font-size:11px;color:var(--ink-muted);">${p.label ? "&#10003; Labelled &mdash; " + escapeHtml((p.label.human_label || "").replace(/_/g, " ")) : "Needs a human label"}</span>
+              </button>`)
+              .join("") || `<div style="padding:16px;font-size:12px;color:var(--ink-muted);">No windows match this filter.</div>`}
+          </div>
+        </div>
+
+        <div class="card" style="padding:16px 18px;">
+          <div class="hint" style="text-transform:uppercase;letter-spacing:.03em;margin-bottom:8px;">What do you see?</div>
+          <div id="labelOptions" style="display:flex;flex-direction:column;gap:7px;margin-bottom:14px;"></div>
+          <div class="hint" style="text-transform:uppercase;letter-spacing:.03em;margin-bottom:8px;">Confidence</div>
+          <div id="confidenceOptions" style="display:flex;gap:8px;margin-bottom:14px;"></div>
+          <div class="hint" style="text-transform:uppercase;letter-spacing:.03em;margin-bottom:8px;">Visibility &amp; quality</div>
+          <div id="tristateOptions" style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px;"></div>
+          <label for="noteInput">Notes</label>
+          <textarea id="noteInput" rows="2" placeholder="Anything the machine result doesn't capture" style="width:100%;margin-bottom:12px;">${escapeHtml(state.draftNote)}</textarea>
+          <div id="saveError" class="err" hidden style="margin-bottom:10px;"></div>
+          <button id="saveLabelBtn" class="btn primary" style="width:100%;justify-content:center;" ${point ? "" : "disabled"}>Save label</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  renderLabelOptions();
+  renderConfidenceOptions();
+  renderTristateOptions();
+  wireActions();
+  loadPreviewVideo();
+}
+
+function renderLabelOptions() {
+  $("labelOptions").innerHTML = LABELS.map((l) => {
+    const on = state.draftLabel === l.id;
+    return `<button type="button" data-label="${l.id}" style="text-align:left;border:1.5px solid ${on ? "var(--accent)" : "var(--line)"};background:${on ? "var(--accent-soft)" : "#fff"};border-radius:9px;padding:9px 11px;font-size:12px;font-weight:${on ? 600 : 500};color:${on ? "var(--accent)" : "var(--ink)"};cursor:pointer;">${l.text}</button>`;
+  }).join("");
+  $("labelOptions").querySelectorAll("[data-label]").forEach((btn) => {
+    btn.addEventListener("click", () => { state.draftLabel = btn.dataset.label; render(); });
+  });
+}
+
+function renderConfidenceOptions() {
+  $("confidenceOptions").innerHTML = ["low", "medium", "high"].map((c) => {
+    const on = state.draftConfidence === c;
+    return `<button type="button" data-confidence="${c}" style="flex:1;height:32px;border-radius:8px;border:1.5px solid ${on ? "var(--accent)" : "var(--line)"};background:${on ? "var(--accent-soft)" : "#fff"};font-size:11px;font-weight:600;color:${on ? "var(--accent)" : "var(--ink-soft)"};text-transform:capitalize;cursor:pointer;">${c}</button>`;
+  }).join("");
+  $("confidenceOptions").querySelectorAll("[data-confidence]").forEach((btn) => {
+    btn.addEventListener("click", () => { state.draftConfidence = btn.dataset.confidence; render(); });
+  });
+}
+
+function renderTristateOptions() {
+  $("tristateOptions").innerHTML = TRISTATE_FIELDS.map((f) => `
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div style="flex:1;font-size:12px;color:var(--ink-soft);">${f.label}</div>
+      <div style="display:flex;gap:4px;">
+        ${["yes", "no", "unsure"].map((v) => {
+          const on = state.draftTristate[f.key] === v;
+          return `<button type="button" data-field="${f.key}" data-value="${v}" style="width:52px;height:26px;border-radius:6px;border:1px solid ${on ? "var(--accent)" : "var(--line)"};background:${on ? "var(--accent-soft)" : "#fff"};font-size:10px;font-weight:600;color:${on ? "var(--accent)" : "var(--ink-muted)"};text-transform:capitalize;cursor:pointer;">${v}</button>`;
+        }).join("")}
+      </div>
+    </div>`).join("");
+  $("tristateOptions").querySelectorAll("[data-field]").forEach((btn) => {
+    btn.addEventListener("click", () => { state.draftTristate[btn.dataset.field] = btn.dataset.value; render(); });
+  });
+}
+
+function filterChip(key, label, count) {
+  const active = state.filter === key;
+  return `<button data-act="filter" data-filter="${key}" style="border:1px solid ${active ? "var(--accent)" : "var(--line)"};background:${active ? "var(--accent-soft)" : "#fff"};color:${active ? "var(--accent)" : "var(--ink-soft)"};border-radius:7px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer;">${label} (${count})</button>`;
+}
+
+function loadPreviewVideo() {
+  const point = selectedPoint();
+  const video = $("previewVideo");
+  if (!video || !point) return;
+  const src = `/api/workspace-media?${new URLSearchParams({ folder_name: folderName, kind: "video", run_id: runId, media_id: mediaId })}`;
+  if (video.dataset.src !== src) {
+    video.src = src;
+    video.dataset.src = src;
+  }
+  video.addEventListener("loadedmetadata", () => { video.currentTime = point.start; }, { once: true });
+  if (video.readyState >= 1) video.currentTime = point.start;
+}
+
+function wireActions() {
+  const runSelect = $("runSelect");
+  if (runSelect) {
+    runSelect.addEventListener("change", async () => {
+      runId = runSelect.value;
+      mediaId = runs.find((r) => r.run_id === runId)?.media_id || mediaId;
+      state.selectedKey = null;
+      await loadEvidence();
+    });
+  }
+  $("noteInput").addEventListener("input", () => { state.draftNote = $("noteInput").value; });
+  $("content").querySelectorAll("[data-act]").forEach((el) => {
+    el.addEventListener("click", () => {
+      const act = el.dataset.act;
+      if (act === "filter") {
+        state.filter = el.dataset.filter;
+        render();
+      } else if (act === "select-point") {
+        state.selectedKey = el.dataset.key;
+        resetDraft();
+        render();
+      }
+    });
+  });
+  const saveBtn = $("saveLabelBtn");
+  if (saveBtn) saveBtn.addEventListener("click", saveLabel);
+}
+
+async function saveLabel() {
+  const point = selectedPoint();
+  if (!point) return;
+  if (!state.draftLabel) {
+    $("saveError").hidden = false;
+    $("saveError").textContent = "Choose a label before saving.";
+    return;
+  }
+  const btn = $("saveLabelBtn");
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Saving…';
+  $("saveError").hidden = true;
+  try {
+    await api("/api/workspace-label", {
+      folder_name: folderName,
+      kind: "video",
+      run_id: runId,
+      media_id: mediaId,
+      sample_key: point.key,
+      start_second: point.start,
+      end_second: point.end,
+      human_label: state.draftLabel,
+      confidence: state.draftConfidence,
+      note: state.draftNote.trim(),
+      overwrite: true,
+      ...state.draftTristate
+    });
+    toast("Label saved.");
+    await loadEvidence();
+  } catch (error) {
+    $("saveError").hidden = false;
+    $("saveError").textContent = error.message;
+    btn.disabled = false;
+    btn.textContent = "Save label";
+  }
+}
+
+main();
+</script>
+</body>
+</html>
