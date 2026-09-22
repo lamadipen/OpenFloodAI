@@ -101,6 +101,14 @@ function paintWatchedArea() {
   $("watchedAreaLabel").hidden = false;
 }
 
+function toPixelPoint(pct) {
+  return { x: (pct.x / 100) * 640, y: (pct.y / 100) * 400 };
+}
+
+function toPercentPoint(px) {
+  return { x: (px.x / 640) * 100, y: (px.y / 400) * 100 };
+}
+
 function clampToWatchedArea(x, y) {
   if (!watchedArea) return { x: clamp(x, 0, 640), y: clamp(y, 0, 400) };
   const minX = (watchedArea.x / 100) * 640;
@@ -342,7 +350,7 @@ async function main() {
       addRow({
         id: guide.id,
         existingOnServer: true,
-        points: (guide.points || []).slice(),
+        points: (guide.points || []).map(toPixelPoint),
         label: guide.label || "",
         status: guide.status || "draft",
         invalidationReason: guide.invalidation_reason,
@@ -410,11 +418,12 @@ $("saveBtn").addEventListener("click", async () => {
       guides: rows.map((row) => ({
         id: row.id,
         label: row.fields.label.value.trim(),
-        points: row.points.map((p) => ({ x: p.x, y: p.y })),
+        points: row.points.map(toPercentPoint),
         status: row.fields.status.value,
         invalidation_reason: row.fields.status.value === "invalid" ? row.fields.invalidationReason.value : null,
         normal_condition: row.fields.normalCondition.checked,
-        notes: row.fields.notes.value.trim()
+        notes: row.fields.notes.value.trim(),
+        video_time_seconds: videoTimeSeconds
       }))
     });
     location.href = `/console/site.html?${new URLSearchParams({ site: folderName })}`;
