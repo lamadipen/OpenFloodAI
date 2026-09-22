@@ -1,0 +1,45 @@
+{
+  "river_id": "susquehanna-river",
+  "display_name": "Susquehanna River",
+  "source": "https://api.waterdata.usgs.gov/nims/v0/cameras?enabled=true",
+  "source_checked": "2026-09-22",
+  "notes": "Cameras with real, paired USGS gage data as of source_checked, sourced from the public NIMS camera API.",
+  "cameras": [
+    {
+      "river_id": "susquehanna-river",
+      "camera_id": "MD_SUSQUEHANNA_RIVER_NEAR_DARLINGTON",
+      "nwis_id": "01579550",
+      "state": "MD",
+      "latitude": 39.626056,
+      "longitude": -76.15775,
+      "display_name": "Susquehanna River near Darlington",
+      "folder_name": "susquehanna-river-md-darlington",
+      "gage_relationship": "same_site",
+      "timezone": "America/New_York"
+    },
+    {
+      "river_id": "susquehanna-river",
+      "camera_id": "PA_Susquehanna_River_at_Towanda",
+      "nwis_id": "01531500",
+      "state": "PA",
+      "latitude": 41.765353,
+      "longitude": -76.440774,
+      "display_name": "Susquehanna River at Towanda",
+      "folder_name": "susquehanna-river-pa-towanda",
+      "gage_relationship": "same_site",
+      "timezone": "America/New_York"
+    },
+    {
+      "river_id": "susquehanna-river",
+      "camera_id": "PA_West_Branch_Susquehanna_River_at_Lewisburg",
+      "nwis_id": "01553500",
+      "state": "PA",
+      "latitude": 40.967585,
+      "longitude": -76.876354,
+      "display_name": "West Branch Susquehanna River at Lewisburg",
+      "folder_name": "susquehanna-river-pa-lewisburg",
+      "gage_relationship": "same_site",
+      "timezone": "America/New_York"
+    }
+  ]
+}

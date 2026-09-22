@@ -1,0 +1,33 @@
+{
+  "river_id": "snake-river",
+  "display_name": "Snake River",
+  "source": "https://api.waterdata.usgs.gov/nims/v0/cameras?enabled=true",
+  "source_checked": "2026-09-22",
+  "notes": "Cameras with real, paired USGS gage data as of source_checked, sourced from the public NIMS camera API.",
+  "cameras": [
+    {
+      "river_id": "snake-river",
+      "camera_id": "MN_Snake_River_above_Warren",
+      "nwis_id": "05085450",
+      "state": "MN",
+      "latitude": 48.209722,
+      "longitude": -96.718056,
+      "display_name": "Snake River above Warren",
+      "folder_name": "snake-river-mn-warren",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    },
+    {
+      "river_id": "snake-river",
+      "camera_id": "MN_Snake_River_near_Pine_City",
+      "nwis_id": "05338500",
+      "state": "MN",
+      "latitude": 45.841622,
+      "longitude": -92.933541,
+      "display_name": "Snake River near Pine City",
+      "folder_name": "snake-river-mn-pine-city",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    }
+  ]
+}

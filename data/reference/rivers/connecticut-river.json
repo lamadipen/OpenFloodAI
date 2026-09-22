@@ -1,0 +1,45 @@
+{
+  "river_id": "connecticut-river",
+  "display_name": "Connecticut River",
+  "source": "https://api.waterdata.usgs.gov/nims/v0/cameras?enabled=true",
+  "source_checked": "2026-09-22",
+  "notes": "Cameras with real, paired USGS gage data as of source_checked, sourced from the public NIMS camera API.",
+  "cameras": [
+    {
+      "river_id": "connecticut-river",
+      "camera_id": "MA_Connecticut_River_near_Northfield",
+      "nwis_id": "01161280",
+      "state": "MA",
+      "latitude": 42.683333,
+      "longitude": -72.471944,
+      "display_name": "Connecticut River near Northfield",
+      "folder_name": "connecticut-river-ma-northfield",
+      "gage_relationship": "same_site",
+      "timezone": "America/New_York"
+    },
+    {
+      "river_id": "connecticut-river",
+      "camera_id": "CT_Connecticut_River_at_Old_Lyme",
+      "nwis_id": "01194796",
+      "state": "CT",
+      "latitude": 41.312487,
+      "longitude": -72.3459,
+      "display_name": "Connecticut River at Old Lyme",
+      "folder_name": "connecticut-river-ct-old-lyme",
+      "gage_relationship": "same_site",
+      "timezone": "America/New_York"
+    },
+    {
+      "river_id": "connecticut-river",
+      "camera_id": "CT_Connecticut_River_at_Thompsonville",
+      "nwis_id": "01184000",
+      "state": "CT",
+      "latitude": 41.987319,
+      "longitude": -72.605367,
+      "display_name": "Connecticut River at Thompsonville",
+      "folder_name": "connecticut-river-ct-thompsonville",
+      "gage_relationship": "same_site",
+      "timezone": "America/New_York"
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "river_id": "wisconsin-river",
+  "display_name": "Wisconsin River",
+  "source": "https://api.waterdata.usgs.gov/nims/v0/cameras?enabled=true",
+  "source_checked": "2026-09-22",
+  "notes": "Cameras with real, paired USGS gage data as of source_checked, sourced from the public NIMS camera API.",
+  "cameras": [
+    {
+      "river_id": "wisconsin-river",
+      "camera_id": "WI_Wisconsin_River_at_Rainbow_Lake_nr_Lake_Tomahawk",
+      "nwis_id": "05391000",
+      "state": "WI",
+      "latitude": 45.830509,
+      "longitude": -89.552364,
+      "display_name": "Wisconsin River at Rainbow Lake nr Lake Tomahawk",
+      "folder_name": "wisconsin-river-wi-rainbow-lake-nr-lake-tomahawk",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    },
+    {
+      "river_id": "wisconsin-river",
+      "camera_id": "WI_Wisconsin_River_near_Wisconsin_Dells",
+      "nwis_id": "05404000",
+      "state": "WI",
+      "latitude": 43.605,
+      "longitude": -89.756667,
+      "display_name": "Wisconsin River near Wisconsin Dells",
+      "folder_name": "wisconsin-river-wi-wisconsin-dells",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    },
+    {
+      "river_id": "wisconsin-river",
+      "camera_id": "WI_Wisconsin_River_at_Muscoda",
+      "nwis_id": "05407000",
+      "state": "WI",
+      "latitude": 43.198056,
+      "longitude": -90.443333,
+      "display_name": "Wisconsin River at Muscoda",
+      "folder_name": "wisconsin-river-wi-muscoda",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    },
+    {
+      "river_id": "wisconsin-river",
+      "camera_id": "WI_Wisconsin_River_at_Wisconsin_Rapids",
+      "nwis_id": "05400760",
+      "state": "WI",
+      "latitude": 44.392159,
+      "longitude": -89.827125,
+      "display_name": "Wisconsin River at Wisconsin Rapids",
+      "folder_name": "wisconsin-river-wi-wisconsin-rapids",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    }
+  ]
+}

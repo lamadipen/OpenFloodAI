@@ -1,0 +1,45 @@
+{
+  "river_id": "white-river",
+  "display_name": "White River",
+  "source": "https://api.waterdata.usgs.gov/nims/v0/cameras?enabled=true",
+  "source_checked": "2026-09-22",
+  "notes": "Cameras with real, paired USGS gage data as of source_checked, sourced from the public NIMS camera API.",
+  "cameras": [
+    {
+      "river_id": "white-river",
+      "camera_id": "CO_White_River_below_Boise_Creek_near_Rangely",
+      "nwis_id": "09306290",
+      "state": "CO",
+      "latitude": 40.179693,
+      "longitude": -108.565377,
+      "display_name": "White River below Boise Creek near Rangely",
+      "folder_name": "white-river-co-boise-creek-near-rangely",
+      "gage_relationship": "same_site",
+      "timezone": "America/Denver"
+    },
+    {
+      "river_id": "white-river",
+      "camera_id": "SD_White_River_near_White_River",
+      "nwis_id": "06447450",
+      "state": "SD",
+      "latitude": 43.713048,
+      "longitude": -100.685053,
+      "display_name": "White River near White River",
+      "folder_name": "white-river-sd-white-river",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    },
+    {
+      "river_id": "white-river",
+      "camera_id": "IN_White_River_at_Michigan_Street_at_Indianapolis",
+      "nwis_id": "03352953",
+      "state": "IN",
+      "latitude": 39.774758,
+      "longitude": -86.189691,
+      "display_name": "White River at Michigan Street at Indianapolis",
+      "folder_name": "white-river-in-michigan-street-at-indianapolis",
+      "gage_relationship": "same_site",
+      "timezone": "America/New_York"
+    }
+  ]
+}

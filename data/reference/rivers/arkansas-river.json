@@ -1,0 +1,57 @@
+{
+  "river_id": "arkansas-river",
+  "display_name": "Arkansas River",
+  "source": "https://api.waterdata.usgs.gov/nims/v0/cameras?enabled=true",
+  "source_checked": "2026-09-22",
+  "notes": "Cameras with real, paired USGS gage data as of source_checked, sourced from the public NIMS camera API. Excluded (hideCam:true): CO_Arkansas_River_at_Moffat_Street_at_Pueblo (nwis_id 07099970) is marked hideCam:true by USGS.",
+  "cameras": [
+    {
+      "river_id": "arkansas-river",
+      "camera_id": "CO_Right_Channel_of_Arkansas_River_at_Las_Animas",
+      "nwis_id": "07124000",
+      "state": "CO",
+      "latitude": 38.083109,
+      "longitude": -103.220194,
+      "display_name": "Left Channel of the Arkansas River at Las Animas",
+      "folder_name": "arkansas-river-co-las-animas",
+      "gage_relationship": "same_site",
+      "timezone": "America/Denver"
+    },
+    {
+      "river_id": "arkansas-river",
+      "camera_id": "CO_Arkansas_River_near_Nathrop",
+      "nwis_id": "07091200",
+      "state": "CO",
+      "latitude": 38.652219,
+      "longitude": -106.051126,
+      "display_name": "Arkansas River near Nathrop",
+      "folder_name": "arkansas-river-co-nathrop",
+      "gage_relationship": "same_site",
+      "timezone": "America/Denver"
+    },
+    {
+      "river_id": "arkansas-river",
+      "camera_id": "CO_Main_Channel_of_the_Arkansas_River_at_Las_Animas",
+      "nwis_id": "07124000",
+      "state": "CO",
+      "latitude": 38.08193,
+      "longitude": -103.219885,
+      "display_name": "Main Channel of the Arkansas River at Las Animas",
+      "folder_name": "arkansas-river-co-las-animas-2",
+      "gage_relationship": "same_site",
+      "timezone": "America/Denver"
+    },
+    {
+      "river_id": "arkansas-river",
+      "camera_id": "CO_Left_Channel_of_the_Arkansas_River_at_Las_Animas",
+      "nwis_id": "07124000",
+      "state": "CO",
+      "latitude": 38.081153,
+      "longitude": -103.219707,
+      "display_name": "RIght Channel of the Arkansas River at Las Animas",
+      "folder_name": "arkansas-river-co-las-animas-3",
+      "gage_relationship": "same_site",
+      "timezone": "America/Denver"
+    }
+  ]
+}
