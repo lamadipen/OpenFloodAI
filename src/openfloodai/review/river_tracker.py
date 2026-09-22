@@ -62,9 +62,39 @@ def build_river_tracker(
     return registry, rows
 
 
+def _find_site_dir(camera: CameraRecord, sites_base_dir: Path) -> Path | None:
+    """Return the local site folder for one registry camera, if any exists.
+
+    Prefers the registry's own folder_name convention (the fast, common
+    case for tracker-bootstrapped sites). Falls back to scanning every
+    site folder's config for a matching camera_id, since a site created
+    by hand elsewhere in the app (e.g. the console) is never required to
+    use the registry's folder-naming convention -- without this fallback
+    such a site is invisible to the tracker even though it exists.
+    """
+
+    fast_path = (sites_base_dir / camera.folder_name).resolve()
+    if fast_path.is_dir():
+        return fast_path
+
+    if not sites_base_dir.is_dir():
+        return None
+    for candidate in sorted(sites_base_dir.iterdir()):
+        if not candidate.is_dir():
+            continue
+        config_path = candidate / "configs" / f"{candidate.name}.json"
+        try:
+            config = load_site_config(config_path)
+        except SiteConfigError:
+            continue
+        if config.camera_id == camera.camera_id:
+            return candidate
+    return None
+
+
 def _build_row(camera: CameraRecord, registry: RiverRegistry, sites_base_dir: Path) -> TrackerRow:
-    site_dir = (sites_base_dir / camera.folder_name).resolve()
-    if not site_dir.is_dir():
+    site_dir = _find_site_dir(camera, sites_base_dir)
+    if site_dir is None:
         return TrackerRow(
             river_id=registry.river_id,
             river_display_name=registry.display_name,
@@ -87,8 +117,12 @@ def _build_row(camera: CameraRecord, registry: RiverRegistry, sites_base_dir: Pa
 
     known_problems: list[str] = []
 
+    # site_dir.name, not camera.folder_name: _find_site_dir's camera_id
+    # fallback can resolve to a folder whose own name differs from the
+    # registry's convention, and a site's config file is always named
+    # after its own folder.
     watched_area_status, riverbank_guide_status, baseline_selected = _read_config_progress(
-        site_dir, camera.folder_name, known_problems
+        site_dir, site_dir.name, known_problems
     )
 
     sequences = list_site_image_sequences(site_dir)

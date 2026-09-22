@@ -107,6 +107,34 @@ def test_site_with_sequence_and_gage_data_reports_progress(
     assert row.gage_data_status == "available (gage height)"
     assert row.watched_area_status == "not_drawn"
     assert row.human_review_progress == "images_downloaded"
+
+
+def test_site_under_a_different_folder_name_is_still_found_by_camera_id(
+    reference_dir: Path, tmp_path: Path
+) -> None:
+    """A site created outside the registry's own folder-naming convention.
+
+    e.g. one created by hand through the console, using a folder name that
+    has nothing to do with the registry's `folder_name` for that camera --
+    must still be recognized, by matching on camera_id instead.
+    """
+
+    sites_dir = tmp_path / "sites"
+    sites_dir.mkdir()
+    setup_validation_site(
+        sites_base_dir=sites_dir,
+        folder_name="totally-unrelated-folder-name",
+        site_id="unrelated_sid",
+        camera_id=CAMERA_A,
+        site_name="Test Camera A",
+    )
+
+    registry, rows = build_river_tracker(
+        "test-river", reference_dir=reference_dir, sites_base_dir=sites_dir
+    )
+    row = next(r for r in rows if r.camera_id == CAMERA_A)
+
+    assert row.camera_availability == "created_no_downloads_yet"
     # An image-sequence-only site never has manifest.jsonl; that must not
     # be reported as a known problem.
     assert row.known_problems == []
