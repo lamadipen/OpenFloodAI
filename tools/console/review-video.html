@@ -21,9 +21,14 @@ const MACHINE_LABEL = {
   cannot_judge_water_level: "Cannot judge"
 };
 const MACHINE_TONE = {
-  possible_water_level_change: "warn",
-  no_water_level_change: "gray",
-  cannot_judge_water_level: "gray"
+  possible_water_level_change: "bad",
+  no_water_level_change: "ok",
+  cannot_judge_water_level: "info"
+};
+const MACHINE_COLOR = {
+  possible_water_level_change: "#c22f2f",
+  no_water_level_change: "#1f7a4d",
+  cannot_judge_water_level: "#2456c9"
 };
 const LABELS = [
   { id: "water_level_rising", text: "Water level is rising" },
@@ -262,7 +267,7 @@ function scoreChartSvg() {
   const maxScore = Math.max(0.05, rawMaxScore * 1.15);
   const x = (seconds) => padL + (seconds / maxTime) * plotW;
   const y = (score) => padT + plotH - (score / maxScore) * plotH;
-  const colorFor = (p) => (p.machine === "possible_water_level_change" ? "#b5750b" : p.machine === "cannot_judge_water_level" ? "#8b98a5" : "#2456c9");
+  const colorFor = (p) => MACHINE_COLOR[p.machine] || "#8b98a5";
 
   const GRID_STEPS = 4;
   const gridLines = Array.from({ length: GRID_STEPS + 1 }, (_, i) => {
@@ -306,9 +311,9 @@ function scoreChartSvg() {
       ${dots}
     </svg>
     <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;padding-left:${padL}px;">
-      ${legendItem("#b5750b", "Possible change")}
-      ${legendItem("#2456c9", "No change")}
-      ${legendItem("#8b98a5", "Cannot judge")}
+      ${legendItem(MACHINE_COLOR.possible_water_level_change, "Possible change")}
+      ${legendItem(MACHINE_COLOR.no_water_level_change, "No change")}
+      ${legendItem(MACHINE_COLOR.cannot_judge_water_level, "Cannot judge")}
     </div>`;
 }
 
@@ -331,9 +336,13 @@ function paintOverlay() {
     markup += `<rect x="${watchedArea.x}" y="${watchedArea.y}" width="${watchedArea.width}" height="${watchedArea.height}" fill="none" stroke="#f2c94c" stroke-width="0.8" stroke-dasharray="1.8,1.2"/>`;
   }
   guides.forEach((g) => {
-    const stroke = g.status === "confirmed" && g.normal_condition ? "#7fe0b4" : "#c7d0d8";
+    const isBaseline = g.status === "confirmed" && g.normal_condition;
     const pts = (g.points || []).map((p) => `${p.x},${p.y}`).join(" ");
-    markup += `<polyline points="${pts}" fill="none" stroke="${stroke}" stroke-width="0.9" stroke-linecap="round" stroke-linejoin="round"/>`;
+    const dash = isBaseline ? "" : ` stroke-dasharray="1.2,1"`;
+    // A dark outline underneath keeps the green line legible over bright
+    // water or pale gravel, not just over dark bank shadow.
+    markup += `<polyline points="${pts}" fill="none" stroke="#0b3d24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.55"/>`;
+    markup += `<polyline points="${pts}" fill="none" stroke="#22e07a" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"${dash}/>`;
   });
   svg.innerHTML = markup;
 }
