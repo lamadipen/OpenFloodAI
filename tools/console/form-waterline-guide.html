@@ -10,10 +10,10 @@
 </head>
 <body style="background:var(--paper);">
 <div class="modal-overlay">
-  <div class="modal-card" style="width:min(900px,96vw);">
+  <div class="modal-card" style="width:min(1040px,97vw);">
     <div style="padding:16px 22px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;">
       <div>
-        <div style="font-size:15px;font-weight:600;">Riverbank baseline guide</div>
+        <div style="font-size:15px;font-weight:600;">Riverbank baseline guides</div>
         <div style="font-size:12px;color:var(--ink-muted);margin-top:2px;" id="siteLabel">&hellip;</div>
       </div>
       <a id="closeLink" href="#" style="width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--ink-muted);">
@@ -26,10 +26,9 @@
           <image id="stageImg" x="0" y="0" width="640" height="400" preserveAspectRatio="xMidYMid slice"></image>
           <rect id="watchedAreaBox" fill="none" stroke="#f2c94c" stroke-width="1.5" stroke-dasharray="6,4" style="pointer-events:none;" hidden></rect>
           <text id="watchedAreaLabel" fill="#f2c94c" font-size="11" font-family="var(--mono)" style="pointer-events:none;" hidden>Watched area</text>
-          <polyline id="line" fill="none" stroke="#7fe0b4" stroke-width="2.5"></polyline>
-          <g id="dots"></g>
+          <g id="lines"></g>
         </svg>
-        <div id="regionHint" class="hint" style="width:640px;" hidden></div>
+        <div id="statusLine" class="hint" style="width:640px;"></div>
         <div id="scrubRow" style="width:640px;display:flex;align-items:center;gap:10px;" hidden>
           <span style="font-size:11px;color:var(--ink-muted);white-space:nowrap;">Video frame</span>
           <input type="range" id="scrub" min="0" max="1" step="0.1" value="0" style="flex-grow:1;">
@@ -38,28 +37,15 @@
         <video id="sourceVideo" style="display:none;" preload="metadata" muted playsinline></video>
         <canvas id="captureCanvas" width="640" height="400" style="display:none;"></canvas>
       </div>
-      <div style="width:270px;flex-shrink:0;border-left:1px solid var(--line-soft);padding:20px;display:flex;flex-direction:column;gap:14px;">
-        <div>
-          <div class="hint" style="text-transform:uppercase;letter-spacing:.03em;margin-bottom:8px;">Points &middot; <span id="pointCount">0</span></div>
-          <div style="font-size:12px;color:var(--ink-soft);line-height:1.5;">Click on the image to add a point along the waterline. Need at least 2 to save.</div>
+      <div style="width:330px;flex-shrink:0;border-left:1px solid var(--line-soft);padding:16px;display:flex;flex-direction:column;gap:10px;max-height:640px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div class="hint" style="text-transform:uppercase;letter-spacing:.03em;">Lines &middot; <span id="lineCount">0</span></div>
+          <button id="addLineBtn" class="btn" style="font-size:11px;padding:5px 10px;">+ Add line</button>
         </div>
-        <button id="clearBtn" class="btn">Clear points</button>
-        <div style="height:1px;background:var(--line-soft);"></div>
-        <div>
-          <div class="hint" style="text-transform:uppercase;letter-spacing:.03em;margin-bottom:8px;">Condition</div>
-          <button id="normalToggle" style="width:100%;text-align:left;border:1.5px solid var(--ok);background:var(--ok-soft);border-radius:9px;padding:11px 12px;display:flex;align-items:center;gap:10px;cursor:pointer;">
-            <div id="normalDot" style="width:16px;height:16px;border-radius:4px;border:1.5px solid var(--ok);background:var(--ok);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>
-            </div>
-            <div>
-              <div style="font-size:12px;font-weight:600;">Mark as normal condition</div>
-              <div style="font-size:11px;color:var(--ink-muted);">Typical, non-flood water level</div>
-            </div>
-          </button>
-        </div>
-        <div style="flex-grow:1;"></div>
+        <div id="rowsContainer" style="flex-grow:1;overflow:auto;display:flex;flex-direction:column;gap:10px;padding-right:2px;"></div>
+        <div id="emptyRows" class="hint" style="padding:8px 0;">No lines yet. Click "+ Add line" to trace the first bank.</div>
         <div id="formError" class="err" hidden></div>
-        <button id="saveBtn" class="btn primary" style="justify-content:center;" disabled>Save guide</button>
+        <button id="saveBtn" class="btn primary" style="justify-content:center;" disabled>Save all guides</button>
       </div>
     </div>
   </div>
@@ -67,19 +53,38 @@
 <script src="/console/shared.js"></script>
 <script>
 const folderName = qs("site");
-let points = [];
-let normalCondition = true;
 let sequenceId = null;
 let baselineFilename = null;
 let videoId = null;
 let videoTimeSeconds = 0;
 let watchedArea = null;
+let rows = [];
+let activeUid = null;
+
+const INVALIDATION_REASONS = [
+  ["camera_moved", "Camera moved"],
+  ["view_changed", "View changed"],
+  ["bank_changed", "Bank changed"],
+  ["visibility_unreliable", "Visibility no longer reliable"],
+  ["other", "Other"]
+];
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function uid() { return `row-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`; }
+function generateGuideId() { return `line-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`; }
+
+function captureVideoFrame() {
+  const video = $("sourceVideo");
+  const canvas = $("captureCanvas");
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  $("stageImg").setAttribute("href", canvas.toDataURL("image/jpeg", 0.92));
+}
 
 function paintWatchedArea() {
   if (!watchedArea) {
     $("watchedAreaBox").hidden = true;
     $("watchedAreaLabel").hidden = true;
-    $("regionHint").hidden = true;
     return;
   }
   const x = (watchedArea.x / 100) * 640;
@@ -94,8 +99,6 @@ function paintWatchedArea() {
   $("watchedAreaLabel").setAttribute("x", x + 4);
   $("watchedAreaLabel").setAttribute("y", Math.max(y - 6, 10));
   $("watchedAreaLabel").hidden = false;
-  $("regionHint").hidden = false;
-  $("regionHint").textContent = "Points are kept inside the dashed watched area, since that's the only part of the frame validation looks at.";
 }
 
 function clampToWatchedArea(x, y) {
@@ -107,41 +110,185 @@ function clampToWatchedArea(x, y) {
   return { x: clamp(x, minX, maxX), y: clamp(y, minY, maxY) };
 }
 
-function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
-
-function captureVideoFrame() {
-  const video = $("sourceVideo");
-  const canvas = $("captureCanvas");
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  $("stageImg").setAttribute("href", canvas.toDataURL("image/jpeg", 0.92));
+function activeRow() {
+  return rows.find((r) => r.uid === activeUid) || null;
 }
 
-function render() {
-  $("pointCount").textContent = points.length;
-  $("line").setAttribute("points", points.map((p) => `${p.x},${p.y}`).join(" "));
-  $("line").setAttribute("stroke", normalCondition ? "#7fe0b4" : "#f2c94c");
-  $("line").setAttribute("stroke-dasharray", normalCondition ? "0" : "4,3");
-  $("dots").innerHTML = points.map((p) => `<circle cx="${p.x}" cy="${p.y}" r="5" fill="${normalCondition ? "#7fe0b4" : "#f2c94c"}" stroke="#fff" stroke-width="1.5"/>`).join("");
-  $("saveBtn").disabled = points.length < 2;
+function statusLineText() {
+  const active = activeRow();
+  if (!rows.length) return 'Click "+ Add line" to start tracing the first bank.';
+  if (!active) return "Choose a line on the right (or add another) to keep drawing.";
+  if (active.points.length === 0) return "Click inside the dashed watched area to start this line.";
+  if (active.points.length === 1) return "1 point added. Click to add another point along the bank.";
+  return `${active.points.length} points on this line. Keep clicking to follow the curve, or draw another line.`;
 }
+
+function drawLines() {
+  $("lines").innerHTML = rows
+    .map((row) => {
+      if (!row.points.length) return "";
+      const isActive = row.uid === activeUid;
+      const stroke = isActive ? "#7fe0b4" : "#9fb0bd";
+      const width = isActive ? 2.5 : 1.5;
+      const dash = row.status === "invalid" ? ' stroke-dasharray="3,3"' : "";
+      const poly = `<polyline points="${row.points.map((p) => `${p.x},${p.y}`).join(" ")}" fill="none" stroke="${stroke}" stroke-width="${width}"${dash}/>`;
+      const dots = row.points.map((p) => `<circle cx="${p.x}" cy="${p.y}" r="${isActive ? 5 : 3.5}" fill="${stroke}" stroke="#fff" stroke-width="1.2"/>`).join("");
+      return poly + dots;
+    })
+    .join("");
+  $("statusLine").textContent = statusLineText();
+}
+
+function updateSaveState() {
+  $("lineCount").textContent = rows.length;
+  $("emptyRows").hidden = rows.length > 0;
+  $("saveBtn").disabled = rows.length === 0;
+}
+
+function setActiveRow(rowUid) {
+  activeUid = rowUid;
+  rows.forEach((row) => {
+    if (!row.el) return;
+    row.el.style.borderColor = row.uid === rowUid ? "var(--accent)" : "var(--line)";
+    if (row.fields) row.fields.drawButton.textContent = row.uid === rowUid ? "Drawing…" : "Draw";
+  });
+  drawLines();
+}
+
+function styleSelect(el) {
+  el.style.cssText = "width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:12px;font-family:var(--sans);";
+}
+
+function buildRowElement(row, initial) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "card";
+  wrapper.style.cssText = "padding:10px 12px;border-width:1.5px;display:flex;flex-direction:column;gap:8px;";
+
+  const header = document.createElement("div");
+  header.style.cssText = "display:flex;gap:6px;align-items:center;";
+
+  const labelInput = document.createElement("input");
+  labelInput.placeholder = "e.g. left bank";
+  labelInput.value = initial.label || "";
+  labelInput.style.cssText = "flex:1;min-width:0;padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:12px;";
+
+  const drawButton = document.createElement("button");
+  drawButton.type = "button";
+  drawButton.className = "btn";
+  drawButton.style.cssText = "font-size:11px;padding:5px 9px;white-space:nowrap;";
+  drawButton.textContent = "Draw";
+  drawButton.addEventListener("click", () => setActiveRow(row.uid));
+
+  const deleteButton = document.createElement("button");
+  deleteButton.type = "button";
+  deleteButton.className = "btn";
+  deleteButton.style.cssText = "font-size:11px;padding:5px 9px;color:var(--bad);white-space:nowrap;";
+  deleteButton.textContent = "Delete";
+  deleteButton.addEventListener("click", async () => {
+    const name = labelInput.value.trim() || "this line";
+    if (!confirm(`Delete "${name}"? This removes it permanently and cannot be undone.`)) return;
+    if (row.existingOnServer) {
+      deleteButton.disabled = true;
+      deleteButton.textContent = "Deleting…";
+      try {
+        await api("/api/delete-normal-waterline-guide", { folder_name: folderName, guide_id: row.id });
+      } catch (error) {
+        alert(`Could not delete: ${error.message}`);
+        deleteButton.disabled = false;
+        deleteButton.textContent = "Delete";
+        return;
+      }
+    }
+    rows = rows.filter((r) => r.uid !== row.uid);
+    wrapper.remove();
+    if (activeUid === row.uid) setActiveRow(rows.length ? rows[rows.length - 1].uid : null);
+    else drawLines();
+    updateSaveState();
+  });
+
+  header.append(labelInput, drawButton, deleteButton);
+
+  const controlsRow = document.createElement("div");
+  controlsRow.style.cssText = "display:flex;gap:6px;align-items:center;";
+
+  const statusSelect = document.createElement("select");
+  styleSelect(statusSelect);
+  statusSelect.style.flex = "1";
+  [["draft", "Draft"], ["confirmed", "Confirmed"], ["invalid", "Invalid"]].forEach(([value, text]) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = text;
+    statusSelect.append(option);
+  });
+  statusSelect.value = initial.status || "draft";
+
+  const normalLabel = document.createElement("label");
+  normalLabel.style.cssText = "display:flex;align-items:center;gap:5px;font-size:11px;color:var(--ink-soft);white-space:nowrap;";
+  const normalCheckbox = document.createElement("input");
+  normalCheckbox.type = "checkbox";
+  normalCheckbox.checked = Boolean(initial.normalCondition);
+  normalLabel.append(normalCheckbox, document.createTextNode("Normal condition"));
+
+  controlsRow.append(statusSelect, normalLabel);
+
+  const reasonWrap = document.createElement("div");
+  reasonWrap.hidden = statusSelect.value !== "invalid";
+  const reasonSelect = document.createElement("select");
+  styleSelect(reasonSelect);
+  INVALIDATION_REASONS.forEach(([value, text]) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = text;
+    reasonSelect.append(option);
+  });
+  reasonSelect.value = initial.invalidationReason || "camera_moved";
+  reasonWrap.append(reasonSelect);
+  statusSelect.addEventListener("change", () => {
+    reasonWrap.hidden = statusSelect.value !== "invalid";
+  });
+
+  const notesInput = document.createElement("textarea");
+  notesInput.rows = 1;
+  notesInput.placeholder = "Notes (optional)";
+  notesInput.value = initial.notes || "";
+  notesInput.style.cssText = "width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:12px;resize:vertical;";
+
+  const pointCount = document.createElement("div");
+  pointCount.className = "hint";
+  pointCount.textContent = `${row.points.length} point(s) traced.`;
+
+  wrapper.append(header, controlsRow, reasonWrap, notesInput, pointCount);
+
+  row.el = wrapper;
+  row.fields = { label: labelInput, drawButton, status: statusSelect, invalidationReason: reasonSelect, normalCondition: normalCheckbox, notes: notesInput, pointCount };
+  return wrapper;
+}
+
+function addRow(initial) {
+  const row = { uid: uid(), id: initial.id, existingOnServer: Boolean(initial.existingOnServer), points: initial.points || [], status: initial.status || "draft", el: null, fields: null };
+  rows.push(row);
+  $("rowsContainer").append(buildRowElement(row, initial));
+  updateSaveState();
+  return row;
+}
+
+$("addLineBtn").addEventListener("click", () => {
+  const row = addRow({ id: generateGuideId(), existingOnServer: false, points: [], label: "", status: "draft", normalCondition: false, notes: "" });
+  setActiveRow(row.uid);
+});
 
 $("stage").addEventListener("click", (event) => {
+  const active = activeRow();
+  if (!active) {
+    $("statusLine").textContent = 'Choose a line on the right (or click "+ Add line") before clicking the image.';
+    return;
+  }
   const rect = $("stage").getBoundingClientRect();
   const rawX = ((event.clientX - rect.left) / rect.width) * 640;
   const rawY = ((event.clientY - rect.top) / rect.height) * 400;
-  points.push(clampToWatchedArea(rawX, rawY));
-  render();
-});
-$("clearBtn").addEventListener("click", () => { points = []; render(); });
-$("normalToggle").addEventListener("click", () => {
-  normalCondition = !normalCondition;
-  $("normalToggle").style.borderColor = normalCondition ? "var(--ok)" : "var(--line)";
-  $("normalToggle").style.background = normalCondition ? "var(--ok-soft)" : "#fff";
-  $("normalDot").style.borderColor = normalCondition ? "var(--ok)" : "var(--line)";
-  $("normalDot").style.background = normalCondition ? "var(--ok)" : "transparent";
-  $("normalDot").innerHTML = normalCondition ? '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>' : "";
-  render();
+  active.points.push(clampToWatchedArea(rawX, rawY));
+  drawLines();
+  if (active.fields) active.fields.pointCount.textContent = `${active.points.length} point(s) traced.`;
 });
 
 async function main() {
@@ -151,7 +298,7 @@ async function main() {
   }
   $("closeLink").href = `/console/site.html?${new URLSearchParams({ site: folderName })}`;
   $("siteLabel").textContent = folderName;
-  render();
+  $("statusLine").textContent = statusLineText();
 
   try {
     const [sequenceData, manifestData, configData] = await Promise.all([
@@ -187,7 +334,24 @@ async function main() {
     }
     if (!baselineFilename && !videoId) {
       $("body").innerHTML = `<div style="padding:24px;font-size:13px;color:var(--ink-soft);">This site has no downloaded image sequence and no video yet. Add media first from Site &rarr; Setup &rarr; Add media.</div>`;
+      return;
     }
+
+    const existingGuides = cfg.normal_waterline_guides || [];
+    existingGuides.forEach((guide) => {
+      addRow({
+        id: guide.id,
+        existingOnServer: true,
+        points: (guide.points || []).slice(),
+        label: guide.label || "",
+        status: guide.status || "draft",
+        invalidationReason: guide.invalidation_reason,
+        normalCondition: Boolean(guide.normal_condition),
+        notes: guide.notes || ""
+      });
+    });
+    if (rows.length) setActiveRow(rows[0].uid);
+    else drawLines();
   } catch (error) {
     $("body").innerHTML = `<div style="padding:24px;font-size:13px;color:var(--bad);">Could not load this site: ${escapeHtml(error.message)}</div>`;
   }
@@ -207,15 +371,11 @@ function loadVideoSource() {
       },
       { once: true }
     );
-    video.addEventListener(
-      "seeked",
-      () => {
-        videoTimeSeconds = video.currentTime;
-        $("scrubTime").textContent = `${videoTimeSeconds.toFixed(1)}s`;
-        captureVideoFrame();
-      },
-      { once: false }
-    );
+    video.addEventListener("seeked", () => {
+      videoTimeSeconds = video.currentTime;
+      $("scrubTime").textContent = `${videoTimeSeconds.toFixed(1)}s`;
+      captureVideoFrame();
+    });
     $("scrubRow").hidden = false;
     $("scrub").addEventListener("input", () => {
       video.currentTime = Number($("scrub").value);
@@ -224,6 +384,19 @@ function loadVideoSource() {
 }
 
 $("saveBtn").addEventListener("click", async () => {
+  for (const row of rows) {
+    const label = row.fields.label.value.trim();
+    if (!label) {
+      $("formError").hidden = false;
+      $("formError").textContent = "Every line needs a label before saving.";
+      return;
+    }
+    if (row.points.length < 2) {
+      $("formError").hidden = false;
+      $("formError").textContent = `"${label}" needs at least 2 points before saving.`;
+      return;
+    }
+  }
   $("saveBtn").disabled = true;
   $("saveBtn").innerHTML = '<span class="spinner"></span>Saving…';
   $("formError").hidden = true;
@@ -231,22 +404,25 @@ $("saveBtn").addEventListener("click", async () => {
     const source = baselineFilename
       ? { sequence_id: sequenceId, image_filename: baselineFilename }
       : { video_id: videoId, video_time_seconds: videoTimeSeconds };
-    await api("/api/set-normal-waterline-guide", {
+    await api("/api/set-normal-waterline-guides", {
       folder_name: folderName,
       ...source,
-      id: `guide-${Date.now()}`,
-      label: normalCondition ? "Normal waterline" : "Waterline (draft)",
-      points: points.map((p) => ({ x: p.x, y: p.y })),
-      status: "confirmed",
-      normal_condition: normalCondition,
-      notes: ""
+      guides: rows.map((row) => ({
+        id: row.id,
+        label: row.fields.label.value.trim(),
+        points: row.points.map((p) => ({ x: p.x, y: p.y })),
+        status: row.fields.status.value,
+        invalidation_reason: row.fields.status.value === "invalid" ? row.fields.invalidationReason.value : null,
+        normal_condition: row.fields.normalCondition.checked,
+        notes: row.fields.notes.value.trim()
+      }))
     });
     location.href = `/console/site.html?${new URLSearchParams({ site: folderName })}`;
   } catch (error) {
     $("formError").hidden = false;
     $("formError").textContent = error.message;
     $("saveBtn").disabled = false;
-    $("saveBtn").textContent = "Save guide";
+    $("saveBtn").textContent = "Save all guides";
   }
 });
 
