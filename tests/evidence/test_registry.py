@@ -70,6 +70,45 @@ class _RaisingCollectAdapter:
         raise RuntimeError("collection blew up")
 
 
+class _BadMetadataRaisingAdapter:
+    """An adapter whose declared plugin_family isn't a real one, and whose collect() fails.
+
+    Exercises the case the review flagged: the fallback that builds a
+    status="failed" record for a raising adapter must survive metadata
+    that would itself fail the contract's validation, without raising
+    into the caller's loop and blocking adapters after it.
+    """
+
+    plugin_id = "bad-metadata-adapter"
+    plugin_version = "1.0.0"
+    plugin_family = "not-a-real-family"
+    site_id = "site-3"
+    camera_id = "cam-3"
+
+    def check_ready(self) -> tuple[bool, str]:
+        return True, "ready"
+
+    def collect(self) -> EvidenceRecord:
+        raise RuntimeError("collect blew up with bad metadata")
+
+
+class _AttributeAccessRaisesAdapter:
+    """An adapter whose plugin_id property itself raises when read."""
+
+    plugin_version = "1.0.0"
+    plugin_family = "observation"
+
+    @property
+    def plugin_id(self) -> str:
+        raise RuntimeError("boom-on-attribute-access")
+
+    def check_ready(self) -> tuple[bool, str]:
+        return True, "ready"
+
+    def collect(self) -> EvidenceRecord:
+        raise RuntimeError("never reached in these tests")
+
+
 def test_check_capabilities_reports_each_adapter_independently() -> None:
     statuses = check_capabilities([_WorkingAdapter(), _NeverReadyAdapter()])
 
@@ -115,3 +154,41 @@ def test_collect_evidence_isolates_a_failing_adapter_from_a_working_one() -> Non
     assert failed.site_id == "site-2"
     assert failed.camera_id == "cam-2"
     assert any("RuntimeError" in code for code in failed.reason_codes)
+
+
+def test_check_capabilities_survives_an_attribute_that_raises_on_access() -> None:
+    statuses = check_capabilities([_AttributeAccessRaisesAdapter(), _WorkingAdapter()])
+
+    assert len(statuses) == 2
+    assert statuses[0].plugin_id == "unknown"
+    assert statuses[0].ready is True
+    assert statuses[1].plugin_id == "working-adapter"
+    assert statuses[1].ready is True
+
+
+def test_collect_evidence_survives_an_adapter_with_an_invalid_plugin_family() -> None:
+    """A raising adapter whose OWN metadata is invalid must not block later adapters."""
+
+    records = collect_evidence([_WorkingAdapter(), _BadMetadataRaisingAdapter(), _WorkingAdapter()])
+
+    assert len(records) == 3
+    assert records[0].status == "available"
+
+    failed = records[1]
+    assert failed.status == "failed"
+    assert failed.plugin_family == "observation"  # safe fallback, not the invalid value
+    assert failed.value is None
+    assert any("RuntimeError" in code for code in failed.reason_codes)
+
+    # The adapter after the malformed one still ran and produced real evidence.
+    assert records[2].status == "available"
+    assert records[2].value == 1.0
+
+
+def test_collect_evidence_survives_an_adapter_whose_metadata_access_itself_raises() -> None:
+    records = collect_evidence([_AttributeAccessRaisesAdapter(), _WorkingAdapter()])
+
+    assert len(records) == 2
+    assert records[0].status == "failed"
+    assert records[0].plugin_id == "unknown"
+    assert records[1].status == "available"

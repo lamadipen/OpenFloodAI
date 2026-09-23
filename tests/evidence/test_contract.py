@@ -4,6 +4,7 @@ import pytest
 
 from openfloodai.evidence.contract import (
     EvidenceContractError,
+    EvidenceRecord,
     build_evidence_record,
     build_unavailable_evidence,
 )
@@ -120,3 +121,101 @@ def test_build_unavailable_evidence_rejects_available_status() -> None:
             status="available",
             reason_codes=("SOME_REASON",),
         )
+
+
+def test_direct_construction_cannot_bypass_the_status_value_invariant() -> None:
+    """EvidenceRecord(...) directly, not just build_evidence_record, must be validated."""
+
+    with pytest.raises(EvidenceContractError):
+        EvidenceRecord(
+            plugin_id="test-plugin",
+            plugin_version="1.0.0",
+            plugin_family="observation",
+            site_id="site-1",
+            camera_id="cam-1",
+            timestamp="2026-06-18T00:00:00+00:00",
+            evidence_type="region_pixel_change_score",
+            status="failed",
+            value=1.0,
+        )
+
+
+def test_direct_construction_rejects_an_unknown_plugin_family() -> None:
+    with pytest.raises(EvidenceContractError):
+        EvidenceRecord(
+            plugin_id="test-plugin",
+            plugin_version="1.0.0",
+            plugin_family="not-a-real-family",
+            site_id="site-1",
+            camera_id="cam-1",
+            timestamp="2026-06-18T00:00:00+00:00",
+            evidence_type="region_pixel_change_score",
+            status="available",
+            value=1.0,
+        )
+
+
+def test_timestamp_without_a_time_zone_is_rejected() -> None:
+    with pytest.raises(EvidenceContractError):
+        build_evidence_record(
+            plugin_id="test-plugin",
+            plugin_version="1.0.0",
+            plugin_family="observation",
+            site_id="site-1",
+            camera_id="cam-1",
+            timestamp="2026-06-18T00:00:00",
+            evidence_type="region_pixel_change_score",
+            status="available",
+            value=0.1,
+        )
+
+
+def test_timestamp_that_is_not_a_real_datetime_is_rejected() -> None:
+    with pytest.raises(EvidenceContractError):
+        build_evidence_record(
+            plugin_id="test-plugin",
+            plugin_version="1.0.0",
+            plugin_family="observation",
+            site_id="site-1",
+            camera_id="cam-1",
+            timestamp="not-a-time",
+            evidence_type="region_pixel_change_score",
+            status="available",
+            value=0.1,
+        )
+
+
+def test_window_start_after_window_end_is_rejected() -> None:
+    with pytest.raises(EvidenceContractError):
+        build_evidence_record(
+            plugin_id="test-plugin",
+            plugin_version="1.0.0",
+            plugin_family="observation",
+            site_id="site-1",
+            camera_id="cam-1",
+            timestamp="2026-06-18T00:00:00+00:00",
+            evidence_type="region_pixel_change_score",
+            status="available",
+            value=0.1,
+            window_start="2026-06-18T12:00:00+00:00",
+            window_end="2026-06-18T06:00:00+00:00",
+        )
+
+
+def test_window_start_before_window_end_is_accepted() -> None:
+    record = build_evidence_record(
+        plugin_id="test-plugin",
+        plugin_version="1.0.0",
+        plugin_family="observation",
+        site_id="site-1",
+        camera_id="cam-1",
+        timestamp="2026-06-18T00:00:00+00:00",
+        evidence_type="region_pixel_change_score",
+        status="available",
+        value=0.1,
+        window_start="2026-06-18T06:00:00+00:00",
+        window_end="2026-06-18T12:00:00+00:00",
+    )
+
+    assert record.window_start == "2026-06-18T06:00:00+00:00"
+    assert record.window_end == "2026-06-18T12:00:00+00:00"

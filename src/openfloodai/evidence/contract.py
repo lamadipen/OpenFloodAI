@@ -5,6 +5,11 @@ so the core pipeline can consume plugins uniformly instead of reading each
 one's raw output by hardcoded field name. Enforces the doc's central
 invariant: missing evidence is not normal evidence -- an envelope whose
 status isn't "available" can never carry a fabricated value or confidence.
+
+Validation lives in EvidenceRecord.__post_init__, not just in the
+build_* helpers below, so it applies no matter how a record is
+constructed -- a caller cannot bypass the contract by calling the
+dataclass directly.
 """
 
 from __future__ import annotations
@@ -22,6 +27,25 @@ EVIDENCE_STATUSES = frozenset(
 
 class EvidenceContractError(ValueError):
     """Raised when an evidence record does not satisfy the common contract."""
+
+
+def _require_non_empty(value: str, field_name: str) -> None:
+    if not value:
+        raise EvidenceContractError(f"{field_name} must be non-empty")
+
+
+def _require_timezone_aware(value: str, field_name: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as error:
+        raise EvidenceContractError(
+            f"{field_name} must be an ISO 8601 datetime, got {value!r}"
+        ) from error
+    if parsed.tzinfo is None:
+        raise EvidenceContractError(
+            f"{field_name} must include an explicit time zone, got {value!r}"
+        )
+    return parsed
 
 
 @dataclass(frozen=True)
@@ -48,6 +72,55 @@ class EvidenceRecord:
     contract_version: str = "v1"
     record_id: str = field(default_factory=lambda: f"evidence-{uuid4()}")
     record_type: str = "evidence_record"
+
+    def __post_init__(self) -> None:
+        _require_non_empty(self.plugin_id, "plugin_id")
+        _require_non_empty(self.plugin_version, "plugin_version")
+        if self.plugin_family not in PLUGIN_FAMILIES:
+            raise EvidenceContractError(
+                f"plugin_family must be one of {sorted(PLUGIN_FAMILIES)}, "
+                f"got {self.plugin_family!r}"
+            )
+        _require_non_empty(self.site_id, "site_id")
+        _require_non_empty(self.evidence_type, "evidence_type")
+        if self.status not in EVIDENCE_STATUSES:
+            raise EvidenceContractError(
+                f"status must be one of {sorted(EVIDENCE_STATUSES)}, got {self.status!r}"
+            )
+
+        if self.status == "available":
+            if self.value is None:
+                raise EvidenceContractError(
+                    "status='available' requires a real value -- "
+                    "an unavailable/failed/etc. outcome must use status!='available' instead"
+                )
+        elif self.value is not None or self.confidence is not None:
+            raise EvidenceContractError(
+                f"status={self.status!r} must not carry a value or confidence "
+                "-- missing evidence is not normal evidence, so no measurement may be fabricated"
+            )
+
+        _require_non_empty(self.timestamp, "timestamp")
+        _require_timezone_aware(self.timestamp, "timestamp")
+        if self.produced_at is not None:
+            _require_timezone_aware(self.produced_at, "produced_at")
+
+        window_start_dt = (
+            _require_timezone_aware(self.window_start, "window_start")
+            if self.window_start is not None
+            else None
+        )
+        window_end_dt = (
+            _require_timezone_aware(self.window_end, "window_end")
+            if self.window_end is not None
+            else None
+        )
+        if (
+            window_start_dt is not None
+            and window_end_dt is not None
+            and window_start_dt > window_end_dt
+        ):
+            raise EvidenceContractError("window_start must not be after window_end")
 
     def to_dict(self) -> dict[str, object]:
         """Return a JSON-serializable dict matching the doc's contract field table."""
@@ -96,43 +169,7 @@ def build_evidence_record(
     window_end: str | None = None,
     produced_at: str | None = None,
 ) -> EvidenceRecord:
-    """Build and validate one evidence envelope.
-
-    Raises EvidenceContractError rather than returning a record that could
-    be mistaken by a consumer for a real, "available" measurement.
-    """
-
-    if not plugin_id:
-        raise EvidenceContractError("plugin_id must be non-empty")
-    if not plugin_version:
-        raise EvidenceContractError("plugin_version must be non-empty")
-    if plugin_family not in PLUGIN_FAMILIES:
-        raise EvidenceContractError(
-            f"plugin_family must be one of {sorted(PLUGIN_FAMILIES)}, got {plugin_family!r}"
-        )
-    if not site_id:
-        raise EvidenceContractError("site_id must be non-empty")
-    if not timestamp:
-        raise EvidenceContractError("timestamp must be non-empty")
-    if not evidence_type:
-        raise EvidenceContractError("evidence_type must be non-empty")
-    if status not in EVIDENCE_STATUSES:
-        raise EvidenceContractError(
-            f"status must be one of {sorted(EVIDENCE_STATUSES)}, got {status!r}"
-        )
-
-    if status == "available":
-        if value is None:
-            raise EvidenceContractError(
-                "status='available' requires a real value -- "
-                "an unavailable/failed/etc. outcome must use build_unavailable_evidence instead"
-            )
-    else:
-        if value is not None or confidence is not None:
-            raise EvidenceContractError(
-                f"status={status!r} must not carry a value or confidence "
-                "-- missing evidence is not normal evidence, so no measurement may be fabricated"
-            )
+    """Build one evidence envelope. Validation happens in EvidenceRecord itself."""
 
     return EvidenceRecord(
         plugin_id=plugin_id,
