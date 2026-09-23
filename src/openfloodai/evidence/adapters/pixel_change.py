@@ -80,4 +80,3 @@ class PixelChangeObservationAdapter:
                 "source_record_id": signal["record_id"],
             },
         )
-
