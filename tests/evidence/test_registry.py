@@ -109,6 +109,62 @@ class _AttributeAccessRaisesAdapter:
         raise RuntimeError("never reached in these tests")
 
 
+class _RaisingCameraIdAdapter:
+    """An adapter whose collect() fails AND whose camera_id property also raises.
+
+    Exercises the review's second finding: the failure fallback used a raw
+    getattr() for camera_id, so a raising camera_id property would escape
+    the per-adapter boundary and stop every adapter after it.
+    """
+
+    plugin_id = "raising-camera-id-adapter"
+    plugin_version = "1.0.0"
+    plugin_family = "observation"
+    site_id = "site-4"
+
+    @property
+    def camera_id(self) -> str:
+        raise RuntimeError("boom-on-camera-id-access")
+
+    def check_ready(self) -> tuple[bool, str]:
+        return True, "ready"
+
+    def collect(self) -> EvidenceRecord:
+        raise RuntimeError("collect blew up")
+
+
+class _WrongReturnTypeAdapter:
+    """A well-behaved-looking adapter whose collect() returns the wrong type."""
+
+    plugin_id = "wrong-return-type-adapter"
+    plugin_version = "1.0.0"
+    plugin_family = "observation"
+    site_id = "site-5"
+    camera_id = "cam-5"
+
+    def check_ready(self) -> tuple[bool, str]:
+        return True, "ready"
+
+    def collect(self) -> EvidenceRecord:
+        return {"status": "available", "value": 1.0}  # type: ignore[return-value]
+
+
+class _WrongCheckReadyShapeAdapter:
+    """An adapter whose check_ready() doesn't return (bool, str)."""
+
+    plugin_id = "wrong-check-ready-shape-adapter"
+    plugin_version = "1.0.0"
+    plugin_family = "observation"
+    site_id = "site-6"
+    camera_id = "cam-6"
+
+    def check_ready(self) -> tuple[bool, str]:
+        return "yes", 123  # type: ignore[return-value]
+
+    def collect(self) -> EvidenceRecord:
+        raise AssertionError("collect() should not be called in this test")
+
+
 def test_check_capabilities_reports_each_adapter_independently() -> None:
     statuses = check_capabilities([_WorkingAdapter(), _NeverReadyAdapter()])
 
@@ -196,3 +252,48 @@ def test_collect_evidence_survives_an_adapter_whose_metadata_access_itself_raise
     assert records[0].status == "failed"
     assert records[0].plugin_id == "unknown"
     assert records[1].status == "available"
+
+
+def test_collect_evidence_survives_a_raising_camera_id_property() -> None:
+    """A failing adapter whose camera_id property ALSO raises must not block later adapters."""
+
+    records = collect_evidence([_RaisingCameraIdAdapter(), _WorkingAdapter()])
+
+    assert len(records) == 2
+    failed = records[0]
+    assert failed.status == "failed"
+    assert failed.plugin_id == "raising-camera-id-adapter"
+    assert failed.camera_id is None
+    assert any("RuntimeError" in code for code in failed.reason_codes)
+
+    assert records[1].status == "available"
+    assert records[1].value == 1.0
+
+
+def test_collect_evidence_converts_a_wrong_return_type_into_failed_evidence() -> None:
+    """collect() returning something other than an EvidenceRecord must not be trusted as-is."""
+
+    records = collect_evidence([_WrongReturnTypeAdapter(), _WorkingAdapter()])
+
+    assert len(records) == 2
+    invalid = records[0]
+    assert isinstance(invalid, EvidenceRecord)
+    assert invalid.status == "failed"
+    assert invalid.plugin_id == "wrong-return-type-adapter"
+    assert invalid.value is None
+    assert any("TypeError" in code for code in invalid.reason_codes)
+
+    assert records[1].status == "available"
+
+
+def test_check_capabilities_normalizes_a_malformed_check_ready_return() -> None:
+    """check_ready() not returning (bool, str) must be treated as not ready, not trusted."""
+
+    statuses = check_capabilities([_WrongCheckReadyShapeAdapter(), _WorkingAdapter()])
+
+    assert len(statuses) == 2
+    assert statuses[0].plugin_id == "wrong-check-ready-shape-adapter"
+    assert statuses[0].ready is False
+    assert "TypeError" in statuses[0].reason
+
+    assert statuses[1].ready is True

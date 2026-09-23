@@ -64,13 +64,26 @@ def _safe_str_attr(adapter: object, name: str) -> str:
     return value if isinstance(value, str) and value else _UNKNOWN
 
 
+def _safe_optional_str_attr(adapter: object, name: str) -> str | None:
+    """Read an optional string attribute off an adapter, never raising."""
+
+    try:
+        value = getattr(adapter, name, None)
+    except Exception:  # noqa: BLE001 -- a property getter's own bug must not propagate
+        return None
+    return value if isinstance(value, str) else None
+
+
 def _check_one_capability(adapter: EvidenceAdapter) -> CapabilityStatus:
     """Report one adapter's readiness. Never raises, regardless of adapter behavior."""
 
     plugin_id = _safe_str_attr(adapter, "plugin_id")
     plugin_family = _safe_str_attr(adapter, "plugin_family")
     try:
-        ready, reason = adapter.check_ready()
+        result = adapter.check_ready()
+        ready, reason = result
+        if not isinstance(ready, bool) or not isinstance(reason, str):
+            raise TypeError(f"check_ready() must return (bool, str), got {result!r}")
     except Exception as error:  # noqa: BLE001 -- an adapter's own bug must not propagate
         return CapabilityStatus(
             plugin_id=plugin_id,
@@ -105,9 +118,7 @@ def _failed_evidence_fallback(adapter: EvidenceAdapter, error: Exception) -> Evi
     if plugin_family not in PLUGIN_FAMILIES:
         plugin_family = "observation"
     site_id = _safe_str_attr(adapter, "site_id")
-    camera_id = getattr(adapter, "camera_id", None)
-    if not isinstance(camera_id, str):
-        camera_id = None
+    camera_id = _safe_optional_str_attr(adapter, "camera_id")
     reason_codes = (f"ADAPTER_RAISED_{type(error).__name__}",)
 
     try:
@@ -138,19 +149,34 @@ def _failed_evidence_fallback(adapter: EvidenceAdapter, error: Exception) -> Evi
         )
 
 
+def _collect_one(adapter: EvidenceAdapter) -> EvidenceRecord:
+    """Collect one adapter's evidence. Never raises, and never trusts collect()'s return type.
+
+    Type hints don't protect a plugin boundary at runtime: a malformed
+    adapter could return anything from collect(). A non-EvidenceRecord
+    result is treated the same as a raised exception.
+    """
+
+    try:
+        result = adapter.collect()
+    except Exception as error:  # noqa: BLE001 -- isolate this adapter's failure
+        return _failed_evidence_fallback(adapter, error)
+    if not isinstance(result, EvidenceRecord):
+        return _failed_evidence_fallback(
+            adapter,
+            TypeError(f"collect() must return an EvidenceRecord, got {type(result).__name__}"),
+        )
+    return result
+
+
 def collect_evidence(adapters: Sequence[EvidenceAdapter]) -> list[EvidenceRecord]:
     """Collect one EvidenceRecord per adapter, in order, isolating adapter failures.
 
-    A raising adapter never stops the others: it's converted into a
-    status="failed" envelope carrying the exception as a reason code, so
-    the caller still gets one record per adapter, never a missing one that
-    could be mistaken for silently-normal.
+    A raising adapter -- or one returning something other than an
+    EvidenceRecord -- never stops the others: it's converted into a
+    status="failed" envelope carrying the problem as a reason code, so
+    the caller still gets one record per adapter, never a missing one
+    that could be mistaken for silently-normal.
     """
 
-    records: list[EvidenceRecord] = []
-    for adapter in adapters:
-        try:
-            records.append(adapter.collect())
-        except Exception as error:  # noqa: BLE001 -- isolate this adapter's failure
-            records.append(_failed_evidence_fallback(adapter, error))
-    return records
+    return [_collect_one(adapter) for adapter in adapters]
