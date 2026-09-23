@@ -25,6 +25,9 @@ import cv2
 
 from openfloodai.config import load_site_config, reference_region_to_dict
 from openfloodai.contracts import read_jsonl_records, write_jsonl_records
+from openfloodai.evidence.adapters.pixel_change import evidence_from_pixel_change_signal
+from openfloodai.evidence.contract import EvidenceRecord, build_unavailable_evidence
+from openfloodai.evidence.settings import resolve_effective_adapter_settings
 from openfloodai.review.event_reviews import (
     EventReviewError,
     compute_evidence_key,
@@ -36,6 +39,8 @@ from openfloodai.vision.simple_signals import (
     compare_region_signals,
     extract_region_signals,
 )
+
+_PIXEL_CHANGE_PLUGIN_ID = "pixel_change_region_v1"
 
 RESULT_POSSIBLE_WATER_LEVEL_CHANGE = "possible_water_level_change"
 RESULT_NO_WATER_LEVEL_CHANGE = "no_water_level_change"
@@ -153,6 +158,44 @@ def run_image_sequence_validation(
             "normal baseline. Choose a different, clearer baseline image."
         )
 
+    # Additive evidence-envelope side channel (docs/architecture/plugin-evidence-architecture.md,
+    # issue #193): one EvidenceRecord per image row, written to a sibling file. Nothing above
+    # or below this reads it yet -- it never changes ImageSequenceRecord, the report, or
+    # image-sequence-records.jsonl. site_config's per-site override, if any, wins over the
+    # global setting.
+    reference_dir = site_dir.parent / "reference"
+    pixel_change_enabled = resolve_effective_adapter_settings(
+        reference_dir, site_overrides=site_config.evidence_adapter_overrides
+    )[_PIXEL_CHANGE_PLUGIN_ID]
+    evidence_records: list[EvidenceRecord] = []
+
+    def _disabled_or_unavailable_evidence(
+        *, timestamp: str, evidence_type: str, reason_codes: tuple[str, ...]
+    ) -> EvidenceRecord:
+        if pixel_change_enabled:
+            return build_unavailable_evidence(
+                plugin_id=_PIXEL_CHANGE_PLUGIN_ID,
+                plugin_version="1.0.0",
+                plugin_family="observation",
+                site_id=site_config.site_id,
+                camera_id=site_config.camera_id,
+                evidence_type=evidence_type,
+                status="unavailable",
+                reason_codes=reason_codes,
+                timestamp=timestamp or None,
+            )
+        return build_unavailable_evidence(
+            plugin_id=_PIXEL_CHANGE_PLUGIN_ID,
+            plugin_version="1.0.0",
+            plugin_family="observation",
+            site_id=site_config.site_id,
+            camera_id=site_config.camera_id,
+            evidence_type=evidence_type,
+            status="disabled",
+            reason_codes=("ADAPTER_DISABLED",),
+            timestamp=timestamp or None,
+        )
+
     records: list[ImageSequenceRecord] = []
     best_score = -1.0
     best_filename: str | None = None
@@ -177,6 +220,13 @@ def run_image_sequence_validation(
                     reason=f"Image was not downloaded ({download_status}); cannot judge.",
                 )
             )
+            evidence_records.append(
+                _disabled_or_unavailable_evidence(
+                    timestamp=captured_at_utc,
+                    evidence_type="region_pixel_change_score",
+                    reason_codes=("IMAGE_NOT_DOWNLOADED",),
+                )
+            )
             continue
 
         current_frame = cv2.imread(str(images_dir / filename))
@@ -189,6 +239,13 @@ def run_image_sequence_validation(
                     download_status=download_status,
                     result=RESULT_CAMERA_OR_IMAGE_PROBLEM,
                     reason="Image file could not be read.",
+                )
+            )
+            evidence_records.append(
+                _disabled_or_unavailable_evidence(
+                    timestamp=captured_at_utc,
+                    evidence_type="region_pixel_change_score",
+                    reason_codes=("IMAGE_FILE_UNREADABLE",),
                 )
             )
             continue
@@ -213,6 +270,13 @@ def run_image_sequence_validation(
                     reason=f"Could not compare this image with the baseline: {error}",
                 )
             )
+            evidence_records.append(
+                _disabled_or_unavailable_evidence(
+                    timestamp=captured_at_utc,
+                    evidence_type="region_pixel_change_score",
+                    reason_codes=("VISUAL_COMPARISON_FAILED",),
+                )
+            )
             continue
 
         change_score = cast(float, signals["region_change_score"])
@@ -231,6 +295,20 @@ def run_image_sequence_validation(
                 region_brightness_score=brightness_score,
             )
         )
+        if pixel_change_enabled:
+            evidence_records.append(
+                evidence_from_pixel_change_signal(
+                    signals, site_id=site_config.site_id, camera_id=site_config.camera_id
+                )
+            )
+        else:
+            evidence_records.append(
+                _disabled_or_unavailable_evidence(
+                    timestamp=captured_at_utc,
+                    evidence_type="region_pixel_change_score",
+                    reason_codes=("ADAPTER_DISABLED",),
+                )
+            )
         if result != RESULT_CAMERA_OR_IMAGE_PROBLEM and change_score > best_score:
             best_score = change_score
             best_filename = filename
@@ -271,6 +349,10 @@ def run_image_sequence_validation(
     write_jsonl_records(
         run_dir / "image-sequence-records.jsonl",
         [asdict(record) for record in records],
+    )
+    write_jsonl_records(
+        run_dir / "evidence-records.jsonl",
+        [evidence_record.to_dict() for evidence_record in evidence_records],
     )
     _write_run_summary(
         run_dir=run_dir,

@@ -10,6 +10,8 @@ import cv2
 import numpy as np
 import pytest
 
+from openfloodai.config import write_evidence_adapter_override
+from openfloodai.evidence.settings import write_global_adapter_setting
 from openfloodai.review.event_reviews import compute_evidence_key, set_event_review
 from openfloodai.validation.image_sequence_runner import (
     RESULT_CAMERA_OR_IMAGE_PROBLEM,
@@ -157,6 +159,87 @@ def test_run_classifies_all_four_result_states_and_writes_outputs(tmp_path: Path
 
     records_lines = (run_dir / "image-sequence-records.jsonl").read_text().splitlines()
     assert len(records_lines) == 5
+
+    evidence_lines = (run_dir / "evidence-records.jsonl").read_text().splitlines()
+    assert len(evidence_lines) == 5
+    evidence_rows = [json.loads(line) for line in evidence_lines]
+    statuses = [row["status"] for row in evidence_rows]
+    # no-change/possible-change/camera-problem/dark all reach a real
+    # compare_region_signals() call (camera-problem and dark are still
+    # readable images -- they're only judged a "camera or image problem"
+    # by brightness, not by a failed comparison), so those 4 rows carry a
+    # real measurement. Only "missing.jpg" never got downloaded, so it's
+    # the one "unavailable" row -- no fabricated score for a missing image.
+    assert statuses.count("available") == 4
+    assert statuses.count("unavailable") == 1
+    for row in evidence_rows:
+        assert row["plugin_id"] == "pixel_change_region_v1"
+        if row["status"] == "available":
+            assert isinstance(row["value"], float)
+        else:
+            assert row["value"] is None
+
+
+def test_run_writes_disabled_evidence_when_the_adapter_is_disabled_globally(
+    tmp_path: Path,
+) -> None:
+    site_dir = tmp_path / "site"
+    make_site(site_dir)
+    write_global_adapter_setting(tmp_path / "reference", "pixel_change_region_v1", False)
+    sequence_dir = site_dir / "inputs" / "image-sequences" / SEQUENCE_ID
+    images_dir = sequence_dir / "images"
+
+    write_frame(images_dir / "baseline.jpg", 30)
+    write_frame(images_dir / "no-change.jpg", 30)
+
+    write_manifest(
+        sequence_dir,
+        [
+            manifest_record("baseline.jpg", "2026-09-01T00:00:00+00:00", "downloaded"),
+            manifest_record("no-change.jpg", "2026-09-01T01:00:00+00:00", "downloaded"),
+        ],
+    )
+
+    report = run_image_sequence_validation(site_dir, SEQUENCE_ID)
+
+    # The regular flow is completely unaffected by the adapter being disabled.
+    assert report.records[0].result == RESULT_NO_WATER_LEVEL_CHANGE
+
+    evidence_lines = (report.run_dir / "evidence-records.jsonl").read_text().splitlines()
+    assert len(evidence_lines) == 1
+    row = json.loads(evidence_lines[0])
+    assert row["status"] == "disabled"
+    assert row["value"] is None
+    assert "ADAPTER_DISABLED" in row["reason_codes"]
+
+
+def test_run_site_override_re_enables_an_adapter_disabled_globally(tmp_path: Path) -> None:
+    site_dir = tmp_path / "site"
+    make_site(site_dir)
+    write_global_adapter_setting(tmp_path / "reference", "pixel_change_region_v1", False)
+    write_evidence_adapter_override(
+        site_dir / "configs" / "site.json", "pixel_change_region_v1", True
+    )
+    sequence_dir = site_dir / "inputs" / "image-sequences" / SEQUENCE_ID
+    images_dir = sequence_dir / "images"
+
+    write_frame(images_dir / "baseline.jpg", 30)
+    write_frame(images_dir / "no-change.jpg", 30)
+
+    write_manifest(
+        sequence_dir,
+        [
+            manifest_record("baseline.jpg", "2026-09-01T00:00:00+00:00", "downloaded"),
+            manifest_record("no-change.jpg", "2026-09-01T01:00:00+00:00", "downloaded"),
+        ],
+    )
+
+    report = run_image_sequence_validation(site_dir, SEQUENCE_ID)
+
+    evidence_lines = (report.run_dir / "evidence-records.jsonl").read_text().splitlines()
+    row = json.loads(evidence_lines[0])
+    assert row["status"] == "available"
+    assert row["value"] == 0.0
 
 
 def test_run_marks_a_too_small_watched_area_as_cannot_judge(tmp_path: Path) -> None:

@@ -13,6 +13,7 @@ from openfloodai.config import (
     delete_normal_waterline_guide,
     invalidate_normal_waterline_guide,
     load_site_config,
+    write_evidence_adapter_override,
     write_normal_waterline_guide,
     write_normal_waterline_guides,
     write_reference_region,
@@ -563,3 +564,37 @@ def test_example_config_does_not_commit_private_fields() -> None:
     ]
 
     assert all(term not in text for term in private_terms)
+
+
+def test_evidence_adapter_overrides_defaults_to_empty(tmp_path: Path) -> None:
+    config_path = write_config(tmp_path / "site.json", valid_config_payload())
+
+    assert load_site_config(config_path).evidence_adapter_overrides == {}
+
+
+def test_write_evidence_adapter_override_sets_and_reads_back(tmp_path: Path) -> None:
+    config_path = write_config(tmp_path / "site.json", valid_config_payload())
+
+    write_evidence_adapter_override(config_path, "pixel_change_region_v1", False)
+
+    config = load_site_config(config_path)
+    assert config.evidence_adapter_overrides == {"pixel_change_region_v1": False}
+    assert config.site_id == "site-demo-01"  # other fields untouched
+
+
+def test_write_evidence_adapter_override_can_clear_a_setting(tmp_path: Path) -> None:
+    config_path = write_config(tmp_path / "site.json", valid_config_payload())
+    write_evidence_adapter_override(config_path, "pixel_change_region_v1", False)
+
+    write_evidence_adapter_override(config_path, "pixel_change_region_v1", None)
+
+    assert load_site_config(config_path).evidence_adapter_overrides == {}
+
+
+def test_evidence_adapter_overrides_rejects_non_boolean_value(tmp_path: Path) -> None:
+    payload = valid_config_payload()
+    payload["evidence_adapter_overrides"] = {"pixel_change_region_v1": "yes"}
+    config_path = write_config(tmp_path / "site.json", payload)
+
+    with pytest.raises(SiteConfigError, match="must be a boolean"):
+        load_site_config(config_path)

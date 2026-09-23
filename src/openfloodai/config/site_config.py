@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -22,6 +22,7 @@ OPTIONAL_FIELDS = {
     "reference_region",
     "privacy_notes",
     "normal_waterline_guides",
+    "evidence_adapter_overrides",
 }
 ALLOWED_FIELDS = REQUIRED_FIELDS | OPTIONAL_FIELDS
 
@@ -99,6 +100,7 @@ class SiteCameraConfig:
     reference_region: ReferenceRegion | None = None
     privacy_notes: str | None = None
     normal_waterline_guides: tuple[NormalWaterlineGuide, ...] = ()
+    evidence_adapter_overrides: dict[str, bool] = field(default_factory=dict)
 
 
 def load_site_config(config_path: Path) -> SiteCameraConfig:
@@ -131,6 +133,9 @@ def load_site_config(config_path: Path) -> SiteCameraConfig:
         normal_waterline_guides=_load_normal_waterline_guides(
             config.get("normal_waterline_guides"),
             parent_region=reference_region,
+        ),
+        evidence_adapter_overrides=_load_evidence_adapter_overrides(
+            config.get("evidence_adapter_overrides")
         ),
     )
 
@@ -410,6 +415,51 @@ def _load_optional_text(value: object, field_name: str) -> str | None:
     if not isinstance(value, str) or not value.strip():
         raise SiteConfigError(f"Site config field '{field_name}' must be a non-empty string")
     return value.strip()
+
+
+def _load_evidence_adapter_overrides(value: object) -> dict[str, bool]:
+    """Load a site's per-adapter enable/disable overrides.
+
+    Doesn't check plugin_id against the known-adapter catalog -- config
+    loading deliberately doesn't depend on the evidence package. An
+    unknown plugin_id here is simply ignored when settings are resolved.
+    """
+
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise SiteConfigError("Site config field 'evidence_adapter_overrides' must be an object")
+    overrides: dict[str, bool] = {}
+    for plugin_id, enabled in value.items():
+        if not isinstance(plugin_id, str) or not plugin_id.strip():
+            raise SiteConfigError(
+                "Site config field 'evidence_adapter_overrides' keys must be non-empty strings"
+            )
+        if not isinstance(enabled, bool):
+            raise SiteConfigError(
+                f"Site config field 'evidence_adapter_overrides.{plugin_id}' must be a boolean"
+            )
+        overrides[plugin_id] = enabled
+    return overrides
+
+
+def write_evidence_adapter_override(
+    config_path: Path, plugin_id: str, enabled: bool | None
+) -> None:
+    """Set (or, with enabled=None, clear) one adapter's override for this site."""
+
+    if not plugin_id.strip():
+        raise SiteConfigError("plugin_id must be non-empty")
+
+    raw_config = _read_config_json(config_path)
+    existing = raw_config.get("evidence_adapter_overrides")
+    overrides = dict(existing) if isinstance(existing, dict) else {}
+    if enabled is None:
+        overrides.pop(plugin_id, None)
+    else:
+        overrides[plugin_id] = bool(enabled)
+    raw_config["evidence_adapter_overrides"] = overrides
+    config_path.write_text(json.dumps(raw_config, indent=2) + "\n", encoding="utf-8")
 
 
 def _load_input_type(value: object) -> InputType:
