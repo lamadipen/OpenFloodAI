@@ -157,7 +157,11 @@ def test_collect_evidence_isolates_a_failing_adapter_from_a_working_one() -> Non
 
 
 def test_check_capabilities_survives_an_attribute_that_raises_on_access() -> None:
-    statuses = check_capabilities([_AttributeAccessRaisesAdapter(), _WorkingAdapter()])
+    # _AttributeAccessRaisesAdapter deliberately exposes plugin_id as a read-only
+    # property (to simulate an attribute that raises on access), which doesn't
+    # structurally satisfy the Protocol's settable-attribute shape -- the
+    # mismatch is the point of this test, not a real typing bug.
+    statuses = check_capabilities([_AttributeAccessRaisesAdapter(), _WorkingAdapter()])  # type: ignore[list-item]
 
     assert len(statuses) == 2
     assert statuses[0].plugin_id == "unknown"
@@ -186,7 +190,7 @@ def test_collect_evidence_survives_an_adapter_with_an_invalid_plugin_family() ->
 
 
 def test_collect_evidence_survives_an_adapter_whose_metadata_access_itself_raises() -> None:
-    records = collect_evidence([_AttributeAccessRaisesAdapter(), _WorkingAdapter()])
+    records = collect_evidence([_AttributeAccessRaisesAdapter(), _WorkingAdapter()])  # type: ignore[list-item]
 
     assert len(records) == 2
     assert records[0].status == "failed"
