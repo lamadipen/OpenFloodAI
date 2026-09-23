@@ -1,0 +1,33 @@
+{
+  "river_id": "willamette-river",
+  "display_name": "Willamette River",
+  "source": "https://api.waterdata.usgs.gov/nims/v0/cameras?enabled=true",
+  "source_checked": "2026-09-22",
+  "notes": "Cameras with real, paired USGS gage data as of source_checked, sourced from the public NIMS camera API. Excluded (hideCam:true): OR_Willamette_River_below_Falls_at_Oregon_City (nwis_id 14207770) is marked hideCam:true by USGS.",
+  "cameras": [
+    {
+      "river_id": "willamette-river",
+      "camera_id": "OR_Willamette_River_at_Harrisburg",
+      "nwis_id": "14166000",
+      "state": "OR",
+      "latitude": 44.270401,
+      "longitude": -123.173704,
+      "display_name": "Willamette River at Harrisburg",
+      "folder_name": "willamette-river-or-harrisburg",
+      "gage_relationship": "same_site",
+      "timezone": "America/Los_Angeles"
+    },
+    {
+      "river_id": "willamette-river",
+      "camera_id": "OR_Middle_Fork_Willamette_River_at_Jasper",
+      "nwis_id": "14152000",
+      "state": "OR",
+      "latitude": 43.998182,
+      "longitude": -122.905913,
+      "display_name": "Middle Fork Willamette River at Jasper",
+      "folder_name": "willamette-river-or-jasper",
+      "gage_relationship": "same_site",
+      "timezone": "America/Los_Angeles"
+    }
+  ]
+}

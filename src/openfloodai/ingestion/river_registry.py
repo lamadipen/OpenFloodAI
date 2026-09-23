@@ -163,6 +163,34 @@ def load_river_registry(river_id: str, reference_dir: Path) -> RiverRegistry:
     )
 
 
+def list_river_registries(reference_dir: Path) -> list[dict[str, Any]]:
+    """Return {river_id, display_name, camera_count} for every registry on disk.
+
+    Lightweight by design (no camera-level detail) -- for populating a
+    river picker, not for tracking progress. Skips any file that fails to
+    parse rather than raising, so one bad registry can't take down the
+    whole list.
+    """
+
+    rivers_dir = reference_dir / "rivers"
+    if not rivers_dir.is_dir():
+        return []
+    rivers: list[dict[str, Any]] = []
+    for path in sorted(rivers_dir.glob("*.json")):
+        try:
+            registry = load_river_registry(path.stem, reference_dir)
+        except RiverRegistryError:
+            continue
+        rivers.append(
+            {
+                "river_id": registry.river_id,
+                "display_name": registry.display_name,
+                "camera_count": len(registry.cameras),
+            }
+        )
+    return sorted(rivers, key=lambda r: r["display_name"])
+
+
 def find_camera(camera_id: str, reference_dir: Path) -> CameraRecord | None:
     """Search every river registry under reference_dir for one camera, by id.
 

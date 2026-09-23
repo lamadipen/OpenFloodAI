@@ -1,0 +1,69 @@
+{
+  "river_id": "mississippi-river",
+  "display_name": "Mississippi River",
+  "source": "https://api.waterdata.usgs.gov/nims/v0/cameras?enabled=true",
+  "source_checked": "2026-09-22",
+  "notes": "Cameras with real, paired USGS gage data as of source_checked, sourced from the public NIMS camera API. Excluded (hideCam:true): MN_MISSISSIPPI_RIVER_AT_HWY_610_IN_BROOKLYN_PARK_MN (duplicate of MN_Mississippi_River_at_HWY_610_in_Brooklyn_Park, same nwis_id 05288500).",
+  "cameras": [
+    {
+      "river_id": "mississippi-river",
+      "camera_id": "MN_Mississippi_River_Abv_37th_Ave_NE_in_Fridley",
+      "nwis_id": "05288670",
+      "state": "MN",
+      "latitude": 45.043278,
+      "longitude": -93.279389,
+      "display_name": "Mississippi River Abv 37th Ave NE in Fridley",
+      "folder_name": "mississippi-river-mn-fridley",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    },
+    {
+      "river_id": "mississippi-river",
+      "camera_id": "MN_Mississippi_River_below_Lock_and_Dam_2_at_Hastings",
+      "nwis_id": "05331580",
+      "state": "MN",
+      "latitude": 44.745833,
+      "longitude": -92.847778,
+      "display_name": "Mississippi River below Lock and Dam 2 at Hastings",
+      "folder_name": "mississippi-river-mn-lock-and-dam-2-at-hastings",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    },
+    {
+      "river_id": "mississippi-river",
+      "camera_id": "MN_Mississippi_River_at_Red_Wing",
+      "nwis_id": "05355250",
+      "state": "MN",
+      "latitude": 44.565306,
+      "longitude": -92.542444,
+      "display_name": "Mississippi River at Red Wing",
+      "folder_name": "mississippi-river-mn-red-wing",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    },
+    {
+      "river_id": "mississippi-river",
+      "camera_id": "MN_Mississippi_River_at_St_Paul",
+      "nwis_id": "05331000",
+      "state": "MN",
+      "latitude": 44.944444,
+      "longitude": -93.088111,
+      "display_name": "Mississippi River at St Paul",
+      "folder_name": "mississippi-river-mn-st-paul",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    },
+    {
+      "river_id": "mississippi-river",
+      "camera_id": "MN_Mississippi_River_at_HWY_610_in_Brooklyn_Park",
+      "nwis_id": "05288500",
+      "state": "MN",
+      "latitude": 45.128801,
+      "longitude": -93.299273,
+      "display_name": "Mississippi River at HWY 610 in Brooklyn Park",
+      "folder_name": "mississippi-river-mn-hwy-610-in-brooklyn-park",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "river_id": "red-river",
+  "display_name": "Red River",
+  "source": "https://api.waterdata.usgs.gov/nims/v0/cameras?enabled=true",
+  "source_checked": "2026-09-22",
+  "notes": "Cameras with real, paired USGS gage data as of source_checked, sourced from the public NIMS camera API.",
+  "cameras": [
+    {
+      "river_id": "red-river",
+      "camera_id": "WI_RED_RIVER_AT_MORGAN_ROAD_NEAR_MORGAN",
+      "nwis_id": "04077630",
+      "state": "WI",
+      "latitude": 44.898031,
+      "longitude": -88.844273,
+      "display_name": "Red River at Morgan Road near Morgan",
+      "folder_name": "red-river-wi-morgan-road-near-morgan",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    },
+    {
+      "river_id": "red-river",
+      "camera_id": "ND_Red_River_of_the_North_at_Fargo",
+      "nwis_id": "05054000",
+      "state": "ND",
+      "latitude": 46.872111,
+      "longitude": -96.783043,
+      "display_name": "Red River of the North at Fargo",
+      "folder_name": "red-river-nd-fargo",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    },
+    {
+      "river_id": "red-river",
+      "camera_id": "LA_Red_River_at_Alexandria",
+      "nwis_id": "07355500",
+      "state": "LA",
+      "latitude": 31.310278,
+      "longitude": -92.438833,
+      "display_name": "Red River at Alexandria",
+      "folder_name": "red-river-la-alexandria",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    }
+  ]
+}

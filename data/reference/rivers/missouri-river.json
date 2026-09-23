@@ -1,0 +1,105 @@
+{
+  "river_id": "missouri-river",
+  "display_name": "Missouri River",
+  "source": "https://api.waterdata.usgs.gov/nims/v0/cameras?enabled=true",
+  "source_checked": "2026-09-22",
+  "notes": "Cameras with real, paired USGS gage data as of source_checked, sourced from the public NIMS camera API.",
+  "cameras": [
+    {
+      "river_id": "missouri-river",
+      "camera_id": "NE_Missouri_River_at_Blair",
+      "nwis_id": "06609100",
+      "state": "NE",
+      "latitude": 41.550556,
+      "longitude": -96.096389,
+      "display_name": "Missouri River at Blair",
+      "folder_name": "missouri-river-ne-blair",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    },
+    {
+      "river_id": "missouri-river",
+      "camera_id": "NE_Missouri_River_at_Decatur",
+      "nwis_id": "06601200",
+      "state": "NE",
+      "latitude": 42.007833,
+      "longitude": -96.242917,
+      "display_name": "Missouri River at Decatur",
+      "folder_name": "missouri-river-ne-decatur",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    },
+    {
+      "river_id": "missouri-river",
+      "camera_id": "MO_Missouri_River_at_Hermann",
+      "nwis_id": "06934500",
+      "state": "MO",
+      "latitude": 38.709806,
+      "longitude": -91.4385,
+      "display_name": "Missouri River at Hermann",
+      "folder_name": "missouri-river-mo-hermann",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    },
+    {
+      "river_id": "missouri-river",
+      "camera_id": "ND_Missouri_River_below_Mandan",
+      "nwis_id": "06349070",
+      "state": "ND",
+      "latitude": 46.75,
+      "longitude": -100.838611,
+      "display_name": "Missouri River below Mandan",
+      "folder_name": "missouri-river-nd-mandan",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    },
+    {
+      "river_id": "missouri-river",
+      "camera_id": "ND_Missouri_River_at_Bismarck",
+      "nwis_id": "06342500",
+      "state": "ND",
+      "latitude": 46.814167,
+      "longitude": -100.821389,
+      "display_name": "Missouri River at Bismarck",
+      "folder_name": "missouri-river-nd-bismarck",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    },
+    {
+      "river_id": "missouri-river",
+      "camera_id": "ND_Little_Missouri_River_at_Marmarth",
+      "nwis_id": "06335500",
+      "state": "ND",
+      "latitude": 46.297778,
+      "longitude": -103.9175,
+      "display_name": "Little Missouri River at Marmarth",
+      "folder_name": "missouri-river-nd-marmarth",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    },
+    {
+      "river_id": "missouri-river",
+      "camera_id": "ND_Little_Missouri_River_at_Medora",
+      "nwis_id": "06336000",
+      "state": "ND",
+      "latitude": 46.916842,
+      "longitude": -103.532283,
+      "display_name": "Little Missouri River at Medora",
+      "folder_name": "missouri-river-nd-medora",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    },
+    {
+      "river_id": "missouri-river",
+      "camera_id": "ND_Little_Missouri_River_near_Watford_City",
+      "nwis_id": "06337000",
+      "state": "ND",
+      "latitude": 47.591406,
+      "longitude": -103.252667,
+      "display_name": "Little Missouri River near Watford City",
+      "folder_name": "missouri-river-nd-watford-city",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    }
+  ]
+}

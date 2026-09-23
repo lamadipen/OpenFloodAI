@@ -1,0 +1,33 @@
+{
+  "river_id": "yellowstone-river",
+  "display_name": "Yellowstone River",
+  "source": "https://api.waterdata.usgs.gov/nims/v0/cameras?enabled=true",
+  "source_checked": "2026-09-22",
+  "notes": "Cameras with real, paired USGS gage data as of source_checked, sourced from the public NIMS camera API.",
+  "cameras": [
+    {
+      "river_id": "yellowstone-river",
+      "camera_id": "MT_Yellowstone_River_Fish_Bypass_Channel_near_Intake",
+      "nwis_id": "06328495",
+      "state": "MT",
+      "latitude": 47.263722,
+      "longitude": -104.539667,
+      "display_name": "Yellowstone River Fish Bypass Channel near Intake",
+      "folder_name": "yellowstone-river-mt-intake",
+      "gage_relationship": "same_site",
+      "timezone": "America/Denver"
+    },
+    {
+      "river_id": "yellowstone-river",
+      "camera_id": "MT_Yellowstone_River_at_Miles_City",
+      "nwis_id": "06309000",
+      "state": "MT",
+      "latitude": 46.420772,
+      "longitude": -105.860033,
+      "display_name": "Yellowstone River at Miles City",
+      "folder_name": "yellowstone-river-mt-miles-city",
+      "gage_relationship": "same_site",
+      "timezone": "America/Denver"
+    }
+  ]
+}

@@ -5,7 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from openfloodai.ingestion.river_registry import RiverRegistryError, load_river_registry
+from openfloodai.ingestion.river_registry import (
+    RiverRegistryError,
+    list_river_registries,
+    load_river_registry,
+)
 
 VALID_CAMERA = {
     "river_id": "test-river",
@@ -136,3 +140,61 @@ def test_real_colorado_river_registry_loads() -> None:
     assert registry.river_id == "colorado-river"
     assert len(registry.cameras) == 10
     assert all(camera.gage_relationship == "same_site" for camera in registry.cameras)
+
+
+def test_list_river_registries_returns_id_display_name_and_camera_count(tmp_path: Path) -> None:
+    _write_registry(
+        tmp_path,
+        "test-river",
+        {
+            "river_id": "test-river",
+            "display_name": "Test River",
+            "cameras": [VALID_CAMERA],
+        },
+    )
+    _write_registry(
+        tmp_path,
+        "another-river",
+        {
+            "river_id": "another-river",
+            "display_name": "Another River",
+            "cameras": [VALID_CAMERA, {**VALID_CAMERA, "camera_id": "TEST_CAMERA_TWO"}],
+        },
+    )
+
+    rivers = list_river_registries(tmp_path)
+
+    assert rivers == [
+        {"river_id": "another-river", "display_name": "Another River", "camera_count": 2},
+        {"river_id": "test-river", "display_name": "Test River", "camera_count": 1},
+    ]
+
+
+def test_list_river_registries_skips_an_unreadable_file_and_handles_no_rivers_dir(
+    tmp_path: Path,
+) -> None:
+    assert list_river_registries(tmp_path) == []
+
+    _write_registry(
+        tmp_path,
+        "good-river",
+        {"river_id": "good-river", "display_name": "Good River", "cameras": [VALID_CAMERA]},
+    )
+    (tmp_path / "rivers" / "broken-river.json").write_text("not json", encoding="utf-8")
+
+    rivers = list_river_registries(tmp_path)
+
+    assert rivers == [{"river_id": "good-river", "display_name": "Good River", "camera_count": 1}]
+
+
+def test_all_real_river_registries_load(tmp_path: Path) -> None:
+    """Every shipped registry (not just colorado-river) must parse cleanly."""
+
+    reference_dir = Path(__file__).resolve().parents[2] / "data" / "reference"
+    rivers = list_river_registries(reference_dir)
+
+    assert len(rivers) >= 17
+    for row in rivers:
+        registry = load_river_registry(row["river_id"], reference_dir)
+        assert len(registry.cameras) == row["camera_count"] >= 2
+        assert len({camera.folder_name for camera in registry.cameras}) == len(registry.cameras)

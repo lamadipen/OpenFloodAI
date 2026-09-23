@@ -1,0 +1,57 @@
+{
+  "river_id": "james-river",
+  "display_name": "James River",
+  "source": "https://api.waterdata.usgs.gov/nims/v0/cameras?enabled=true",
+  "source_checked": "2026-09-22",
+  "notes": "Cameras with real, paired USGS gage data as of source_checked, sourced from the public NIMS camera API.",
+  "cameras": [
+    {
+      "river_id": "james-river",
+      "camera_id": "SD_James_River_at_Columbia",
+      "nwis_id": "06471000",
+      "state": "SD",
+      "latitude": 45.60358,
+      "longitude": -98.310376,
+      "display_name": "James River at Columbia",
+      "folder_name": "james-river-sd-columbia",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    },
+    {
+      "river_id": "james-river",
+      "camera_id": "SD_James_River_near_Forestburg",
+      "nwis_id": "06477000",
+      "state": "SD",
+      "latitude": 43.973872,
+      "longitude": -98.070916,
+      "display_name": "James River near Forestburg",
+      "folder_name": "james-river-sd-forestburg",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    },
+    {
+      "river_id": "james-river",
+      "camera_id": "SD_James_River_at_Huron",
+      "nwis_id": "06476000",
+      "state": "SD",
+      "latitude": 44.363595,
+      "longitude": -98.199257,
+      "display_name": "James River at Huron",
+      "folder_name": "james-river-sd-huron",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    },
+    {
+      "river_id": "james-river",
+      "camera_id": "VA_James_River_at_Buchanan",
+      "nwis_id": "02019500",
+      "state": "VA",
+      "latitude": 37.53069,
+      "longitude": -79.678928,
+      "display_name": "James River at Buchanan",
+      "folder_name": "james-river-va-buchanan",
+      "gage_relationship": "same_site",
+      "timezone": "America/New_York"
+    }
+  ]
+}

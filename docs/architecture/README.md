@@ -12,6 +12,7 @@ evidence, plus an overall QA recommendation on production-readiness. Each
 document's own section covers only what is specific to that document.
 
 - [V1 Architecture](v1-architecture.md)
+- [Modular Evidence and Plugin Architecture](plugin-evidence-architecture.md)
 - [Dependency Map](dependencies.md)
 - [Windowed Video Evidence](windowed-video-evidence.md)
 - [Validation Input Snapshots](validation-input-snapshots.md)

@@ -1,0 +1,45 @@
+{
+  "river_id": "hudson-river",
+  "display_name": "Hudson River",
+  "source": "https://api.waterdata.usgs.gov/nims/v0/cameras?enabled=true",
+  "source_checked": "2026-09-22",
+  "notes": "Cameras with real, paired USGS gage data as of source_checked, sourced from the public NIMS camera API.",
+  "cameras": [
+    {
+      "river_id": "hudson-river",
+      "camera_id": "NY_Hudson_River_near_Newcomb",
+      "nwis_id": "01312000",
+      "state": "NY",
+      "latitude": 43.966028,
+      "longitude": -74.131389,
+      "display_name": "Hudson River near Newcomb",
+      "folder_name": "hudson-river-ny-newcomb",
+      "gage_relationship": "same_site",
+      "timezone": "America/New_York"
+    },
+    {
+      "river_id": "hudson-river",
+      "camera_id": "NY_Hudson_River_at_Fort_Edward",
+      "nwis_id": "01327750",
+      "state": "NY",
+      "latitude": 43.269389,
+      "longitude": -73.595833,
+      "display_name": "Hudson River at Fort Edward",
+      "folder_name": "hudson-river-ny-fort-edward",
+      "gage_relationship": "same_site",
+      "timezone": "America/New_York"
+    },
+    {
+      "river_id": "hudson-river",
+      "camera_id": "NY_Hudson_River_below_Poughkeepsie",
+      "nwis_id": "01372058",
+      "state": "NY",
+      "latitude": 41.652194,
+      "longitude": -73.949222,
+      "display_name": "Hudson River below Poughkeepsie",
+      "folder_name": "hudson-river-ny-poughkeepsie",
+      "gage_relationship": "same_site",
+      "timezone": "America/New_York"
+    }
+  ]
+}

@@ -1,0 +1,69 @@
+{
+  "river_id": "illinois-river",
+  "display_name": "Illinois River",
+  "source": "https://api.waterdata.usgs.gov/nims/v0/cameras?enabled=true",
+  "source_checked": "2026-09-22",
+  "notes": "Cameras with real, paired USGS gage data as of source_checked, sourced from the public NIMS camera API.",
+  "cameras": [
+    {
+      "river_id": "illinois-river",
+      "camera_id": "IL_ILLINOIS_RIVER_AT_SENECA",
+      "nwis_id": "05543010",
+      "state": "IL",
+      "latitude": 41.299889,
+      "longitude": -88.614194,
+      "display_name": "Illinois River at Seneca",
+      "folder_name": "illinois-river-il-seneca",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    },
+    {
+      "river_id": "illinois-river",
+      "camera_id": "OK_Illinois_River_near_Moodys",
+      "nwis_id": "07196320",
+      "state": "OK",
+      "latitude": 36.031757,
+      "longitude": -94.910788,
+      "display_name": "Illinois River near Moodys",
+      "folder_name": "illinois-river-ok-moodys",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    },
+    {
+      "river_id": "illinois-river",
+      "camera_id": "IL_Illinois_River_at_Florence",
+      "nwis_id": "05586300",
+      "state": "IL",
+      "latitude": 39.632778,
+      "longitude": -90.607778,
+      "display_name": "Illinois River at Florence",
+      "folder_name": "illinois-river-il-florence",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    },
+    {
+      "river_id": "illinois-river",
+      "camera_id": "IL_Illinois_River_at_Henry",
+      "nwis_id": "05558300",
+      "state": "IL",
+      "latitude": 41.107278,
+      "longitude": -89.356222,
+      "display_name": "Illinois River at Henry",
+      "folder_name": "illinois-river-il-henry",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    },
+    {
+      "river_id": "illinois-river",
+      "camera_id": "IL_Illinois_River_at_Starved_Rock",
+      "nwis_id": "05553700",
+      "state": "IL",
+      "latitude": 41.324756,
+      "longitude": -88.983969,
+      "display_name": "Illinois River at Starved Rock",
+      "folder_name": "illinois-river-il-starved-rock",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    }
+  ]
+}
