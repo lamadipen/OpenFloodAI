@@ -158,39 +158,44 @@ def run_image_sequence_validation(
             "normal baseline. Choose a different, clearer baseline image."
         )
 
-    # Additive evidence-envelope side channel (docs/architecture/plugin-evidence-architecture.md,
-    # issue #193): one EvidenceRecord per image row, written to a sibling file. Nothing above
-    # or below this reads it yet -- it never changes ImageSequenceRecord, the report, or
-    # image-sequence-records.jsonl. site_config's per-site override, if any, wins over the
-    # global setting.
-    reference_dir = site_dir.parent / "reference"
+    # The pixel-change adapter now drives this row's actual classification, not just a
+    # side-channel evidence-records.jsonl (docs/architecture/plugin-evidence-architecture.md,
+    # issue #193): build the evidence record once from compare_region_signals()'s output, then
+    # classify from that record instead of re-reading the raw signals dict a second time. When
+    # the adapter is disabled for this site (site override wins over the global setting), no
+    # comparison is attempted at all -- the row becomes "cannot judge", not a silently-normal
+    # result, matching "missing evidence is not normal evidence".
+    # site_dir is always <sites_dir>/<folder_name> (see home_server.py's
+    # _resolve_site_dir), and the reference directory is a sibling of
+    # sites_dir itself, matching home_server.py's own _reference_dir() --
+    # i.e. two levels up from an individual site, not one.
+    reference_dir = site_dir.parent.parent / "reference"
     pixel_change_enabled = resolve_effective_adapter_settings(
         reference_dir, site_overrides=site_config.evidence_adapter_overrides
     )[_PIXEL_CHANGE_PLUGIN_ID]
     evidence_records: list[EvidenceRecord] = []
 
-    def _disabled_or_unavailable_evidence(
-        *, timestamp: str, evidence_type: str, reason_codes: tuple[str, ...]
-    ) -> EvidenceRecord:
-        if pixel_change_enabled:
-            return build_unavailable_evidence(
-                plugin_id=_PIXEL_CHANGE_PLUGIN_ID,
-                plugin_version="1.0.0",
-                plugin_family="observation",
-                site_id=site_config.site_id,
-                camera_id=site_config.camera_id,
-                evidence_type=evidence_type,
-                status="unavailable",
-                reason_codes=reason_codes,
-                timestamp=timestamp or None,
-            )
+    def _unavailable_evidence(*, timestamp: str, reason_codes: tuple[str, ...]) -> EvidenceRecord:
         return build_unavailable_evidence(
             plugin_id=_PIXEL_CHANGE_PLUGIN_ID,
             plugin_version="1.0.0",
             plugin_family="observation",
             site_id=site_config.site_id,
             camera_id=site_config.camera_id,
-            evidence_type=evidence_type,
+            evidence_type="region_pixel_change_score",
+            status="unavailable",
+            reason_codes=reason_codes,
+            timestamp=timestamp or None,
+        )
+
+    def _disabled_evidence(*, timestamp: str) -> EvidenceRecord:
+        return build_unavailable_evidence(
+            plugin_id=_PIXEL_CHANGE_PLUGIN_ID,
+            plugin_version="1.0.0",
+            plugin_family="observation",
+            site_id=site_config.site_id,
+            camera_id=site_config.camera_id,
+            evidence_type="region_pixel_change_score",
             status="disabled",
             reason_codes=("ADAPTER_DISABLED",),
             timestamp=timestamp or None,
@@ -209,6 +214,23 @@ def run_image_sequence_validation(
         local_time = str(record.get("local_time", captured_at_utc))
         download_status = str(record.get("download_status", "missing"))
 
+        if not pixel_change_enabled:
+            records.append(
+                ImageSequenceRecord(
+                    filename=filename,
+                    captured_at_utc=captured_at_utc,
+                    local_time=local_time,
+                    download_status=download_status,
+                    result=RESULT_CANNOT_JUDGE_WATER_LEVEL,
+                    reason=(
+                        "The pixel-change signal is turned off for this site, "
+                        "so water-level change cannot be judged."
+                    ),
+                )
+            )
+            evidence_records.append(_disabled_evidence(timestamp=captured_at_utc))
+            continue
+
         if download_status != "downloaded":
             records.append(
                 ImageSequenceRecord(
@@ -221,10 +243,8 @@ def run_image_sequence_validation(
                 )
             )
             evidence_records.append(
-                _disabled_or_unavailable_evidence(
-                    timestamp=captured_at_utc,
-                    evidence_type="region_pixel_change_score",
-                    reason_codes=("IMAGE_NOT_DOWNLOADED",),
+                _unavailable_evidence(
+                    timestamp=captured_at_utc, reason_codes=("IMAGE_NOT_DOWNLOADED",)
                 )
             )
             continue
@@ -242,10 +262,8 @@ def run_image_sequence_validation(
                 )
             )
             evidence_records.append(
-                _disabled_or_unavailable_evidence(
-                    timestamp=captured_at_utc,
-                    evidence_type="region_pixel_change_score",
-                    reason_codes=("IMAGE_FILE_UNREADABLE",),
+                _unavailable_evidence(
+                    timestamp=captured_at_utc, reason_codes=("IMAGE_FILE_UNREADABLE",)
                 )
             )
             continue
@@ -271,17 +289,23 @@ def run_image_sequence_validation(
                 )
             )
             evidence_records.append(
-                _disabled_or_unavailable_evidence(
-                    timestamp=captured_at_utc,
-                    evidence_type="region_pixel_change_score",
-                    reason_codes=("VISUAL_COMPARISON_FAILED",),
+                _unavailable_evidence(
+                    timestamp=captured_at_utc, reason_codes=("VISUAL_COMPARISON_FAILED",)
                 )
             )
             continue
 
-        change_score = cast(float, signals["region_change_score"])
-        brightness_score = cast(float, signals["region_brightness_score"])
-        evidence_state = str(signals["water_level_evidence_state"])
+        # Build the evidence record once, then classify FROM it -- not from a second,
+        # independent read of the same raw `signals` dict. This is the one thing that
+        # changed here: same numbers, same rules, one source of truth for both this row's
+        # result and its entry in evidence-records.jsonl.
+        pixel_change_evidence = evidence_from_pixel_change_signal(
+            signals, site_id=site_config.site_id, camera_id=site_config.camera_id
+        )
+        change_score = cast(float, pixel_change_evidence.value)
+        quality = pixel_change_evidence.quality or {}
+        brightness_score = cast(float, quality["region_brightness_score"])
+        evidence_state = pixel_change_evidence.reason_codes[0]
         result, reason = _classify_comparison(evidence_state, brightness_score)
         records.append(
             ImageSequenceRecord(
@@ -295,20 +319,7 @@ def run_image_sequence_validation(
                 region_brightness_score=brightness_score,
             )
         )
-        if pixel_change_enabled:
-            evidence_records.append(
-                evidence_from_pixel_change_signal(
-                    signals, site_id=site_config.site_id, camera_id=site_config.camera_id
-                )
-            )
-        else:
-            evidence_records.append(
-                _disabled_or_unavailable_evidence(
-                    timestamp=captured_at_utc,
-                    evidence_type="region_pixel_change_score",
-                    reason_codes=("ADAPTER_DISABLED",),
-                )
-            )
+        evidence_records.append(pixel_change_evidence)
         if result != RESULT_CAMERA_OR_IMAGE_PROBLEM and change_score > best_score:
             best_score = change_score
             best_filename = filename

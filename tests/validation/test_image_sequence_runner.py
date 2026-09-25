@@ -180,10 +180,22 @@ def test_run_classifies_all_four_result_states_and_writes_outputs(tmp_path: Path
             assert row["value"] is None
 
 
-def test_run_writes_disabled_evidence_when_the_adapter_is_disabled_globally(
+def test_run_marks_the_row_cannot_judge_when_the_adapter_is_disabled_globally(
     tmp_path: Path,
 ) -> None:
-    site_dir = tmp_path / "site"
+    """Disabling the only signal source must show up in the real result too.
+
+    Classification is now driven by the adapter's evidence, not a parallel
+    read of the same raw dict -- so turning the adapter off has to mean
+    something for the actual row, not just the evidence side channel. It
+    must never silently keep reporting "no change" with no real signal
+    behind it.
+    """
+
+    # site_dir must be nested as <sites_dir>/<folder_name>, matching real
+    # production layout (home_server.py's _resolve_site_dir) -- the
+    # reference directory is a sibling of sites_dir, not of the site itself.
+    site_dir = tmp_path / "sites" / "site"
     make_site(site_dir)
     write_global_adapter_setting(tmp_path / "reference", "pixel_change_region_v1", False)
     sequence_dir = site_dir / "inputs" / "image-sequences" / SEQUENCE_ID
@@ -202,8 +214,8 @@ def test_run_writes_disabled_evidence_when_the_adapter_is_disabled_globally(
 
     report = run_image_sequence_validation(site_dir, SEQUENCE_ID)
 
-    # The regular flow is completely unaffected by the adapter being disabled.
-    assert report.records[0].result == RESULT_NO_WATER_LEVEL_CHANGE
+    assert report.records[0].result == RESULT_CANNOT_JUDGE_WATER_LEVEL
+    assert report.records[0].region_change_score is None
 
     evidence_lines = (report.run_dir / "evidence-records.jsonl").read_text().splitlines()
     assert len(evidence_lines) == 1
@@ -214,7 +226,7 @@ def test_run_writes_disabled_evidence_when_the_adapter_is_disabled_globally(
 
 
 def test_run_site_override_re_enables_an_adapter_disabled_globally(tmp_path: Path) -> None:
-    site_dir = tmp_path / "site"
+    site_dir = tmp_path / "sites" / "site"
     make_site(site_dir)
     write_global_adapter_setting(tmp_path / "reference", "pixel_change_region_v1", False)
     write_evidence_adapter_override(
