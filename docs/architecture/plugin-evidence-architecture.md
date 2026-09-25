@@ -273,6 +273,14 @@ never a silently-normal result -- the "missing evidence is not normal
 evidence" rule from this document, enforced in the real pipeline output, not
 just in the evidence contract's own validation.
 
+**Before** (original flow -- no adapter, no evidence record, nothing to
+enable or disable; kept here as a historical reference):
+
+![Image-sequence validation flow before the evidence adapter](image-sequence-validation-flow-before-adapter.svg)
+
+**After** (current flow -- classification is driven by the adapter's
+evidence, and can be turned off per site):
+
 ![Image-sequence validation flow](image-sequence-validation-flow.svg)
 
 This is the first of the Steps 00-05 slices this document defers to; the
