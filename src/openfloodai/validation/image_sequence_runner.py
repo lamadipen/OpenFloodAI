@@ -483,6 +483,10 @@ def read_image_sequence_run_detail(site_dir: Path, run_id: str) -> dict[str, Any
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     records_path = run_dir / "image-sequence-records.jsonl"
     records = read_jsonl_records(records_path) if records_path.is_file() else []
+    evidence_records_path = run_dir / "evidence-records.jsonl"
+    evidence_records = (
+        read_jsonl_records(evidence_records_path) if evidence_records_path.is_file() else []
+    )
     report_path = run_dir / "image-sequence-report.md"
     report_text = report_path.read_text(encoding="utf-8") if report_path.is_file() else ""
     review_images: list[str] = []
@@ -519,6 +523,7 @@ def read_image_sequence_run_detail(site_dir: Path, run_id: str) -> dict[str, Any
         "review_images": review_images,
         "gauge_series": gauge_series,
         "event_reviews": event_reviews,
+        "evidence_records": evidence_records,
     }
 
 

@@ -49,6 +49,7 @@ function buildDays(records) {
       return {
         date: capturedAtUtc.slice(0, 10),
         time: localTime.length >= 16 ? localTime.slice(11, 16) : localTime,
+        capturedAtUtc,
         score: typeof record.region_change_score === "number" ? record.region_change_score : null,
         code,
         filename: record.filename || "",
@@ -58,6 +59,41 @@ function buildDays(records) {
     })
     .filter((d) => d.date)
     .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+}
+
+// Evidence records (evidence-records.jsonl, one per image row) are a
+// separate, additive side channel from the machine's result/score above --
+// see docs/architecture/plugin-evidence-architecture.md. They join to a day
+// by exact timestamp match, not by array position, since either list could
+// grow independently in the future (e.g. a second adapter).
+function evidenceForDay(evidenceRecords, day) {
+  return (evidenceRecords || []).find((row) => row.timestamp === day.capturedAtUtc) || null;
+}
+
+function evidenceStatusPillClass(status) {
+  return { available: "ok", disabled: "gray", unavailable: "warn", failed: "bad" }[status] || "gray";
+}
+
+function evidencePanelHtml(evidenceRecords, day) {
+  const row = evidenceForDay(evidenceRecords, day);
+  if (!row) {
+    return `<div class="hint">No evidence adapter ran for this day.</div>`;
+  }
+  const valueText = typeof row.value === "number" ? row.value.toFixed(3) + (row.units ? ` ${row.units}` : "") : "&mdash;";
+  const reasons = (row.reason_codes || []).join(", ");
+  return `
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <span class="pill ${evidenceStatusPillClass(row.status)}" style="text-transform:capitalize;">${escapeHtml(row.status)}</span>
+      <span style="font-size:12px;font-family:var(--mono);color:var(--ink-soft);">${escapeHtml(row.plugin_id)}</span>
+    </div>
+    <div style="font-size:12px;color:var(--ink-soft);margin-top:6px;">
+      Value: <strong>${valueText}</strong>
+      ${reasons ? `&middot; ${escapeHtml(reasons)}` : ""}
+    </div>
+    ${row.status !== "available"
+      ? `<div class="hint" style="margin-top:4px;">${row.status === "disabled" ? "This signal is turned off for this site -- its absence means nothing." : "No measurement could be taken for this day -- this is not the same as a real \"no change\" reading."}</div>`
+      : ""}
+  `;
 }
 
 function buildGaugeByDate(gaugeSeries) {
@@ -238,6 +274,11 @@ function render() {
           </div>
           <div class="hint" style="margin-bottom:6px;">Side-by-side comparison, watched area outlined</div>
           ${comparisonQuery ? `<img src="/api/image-sequence-comparison?${comparisonQuery}" style="width:100%;border-radius:8px;display:block;" alt="Side-by-side comparison">` : `<div class="hint">No comparison for this day.</div>`}
+        </div>
+
+        <div class="card" style="padding:14px 18px;">
+          <div style="font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:8px;">Evidence</div>
+          ${evidencePanelHtml(detail.evidence_records, sel)}
         </div>
       </div>
 

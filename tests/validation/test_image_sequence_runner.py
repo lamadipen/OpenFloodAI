@@ -375,6 +375,10 @@ def test_list_and_read_run_detail_round_trip(tmp_path: Path) -> None:
     # sequence yet: both keys are present but empty, never missing.
     assert detail["gauge_series"] == []
     assert detail["event_reviews"] == {}
+    assert len(detail["evidence_records"]) == 1
+    evidence_row = detail["evidence_records"][0]
+    assert evidence_row["plugin_id"] == "pixel_change_region_v1"
+    assert evidence_row["timestamp"] == "2026-09-01T01:00:00+00:00"
 
 
 def test_read_run_detail_includes_gauge_series_and_event_reviews_when_present(
