@@ -11,6 +11,8 @@ uniform envelopes instead of raw dicts.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from openfloodai.evidence.contract import EvidenceRecord, build_evidence_record
 from openfloodai.vision.simple_signals import (
     FrameArray,
@@ -21,6 +23,40 @@ from openfloodai.vision.simple_signals import (
 PLUGIN_ID = "pixel_change_region_v1"
 PLUGIN_VERSION = "1.0.0"
 PLUGIN_FAMILY = "observation"
+
+
+def evidence_from_pixel_change_signal(
+    signal: Mapping[str, object], *, site_id: str, camera_id: str
+) -> EvidenceRecord:
+    """Wrap an already-computed compare_region_signals() result as an EvidenceRecord.
+
+    Shared by the adapter below and by any caller (e.g.
+    image_sequence_runner.py) that already has a `signals` dict from its
+    own call to compare_region_signals -- so wiring this in never requires
+    running the comparison twice.
+    """
+
+    return build_evidence_record(
+        plugin_id=PLUGIN_ID,
+        plugin_version=PLUGIN_VERSION,
+        plugin_family=PLUGIN_FAMILY,
+        site_id=site_id,
+        camera_id=camera_id,
+        timestamp=str(signal["timestamp"]),
+        evidence_type="region_pixel_change_score",
+        status="available",
+        value=float(signal["region_change_score"]),  # type: ignore[arg-type]
+        units="normalized_change_ratio",
+        quality={
+            "region_brightness_score": signal["region_brightness_score"],
+            "region_sharpness_score": signal["region_sharpness_score"],
+        },
+        reason_codes=(str(signal["water_level_evidence_state"]),),
+        provenance={
+            "source_function": "openfloodai.vision.simple_signals.compare_region_signals",
+            "source_record_id": signal["record_id"],
+        },
+    )
 
 
 class PixelChangeObservationAdapter:
@@ -59,24 +95,6 @@ class PixelChangeObservationAdapter:
             self.camera_id,
             timestamp=self._timestamp,
         )
-        return build_evidence_record(
-            plugin_id=self.plugin_id,
-            plugin_version=self.plugin_version,
-            plugin_family=self.plugin_family,
-            site_id=self.site_id,
-            camera_id=self.camera_id,
-            timestamp=str(signal["timestamp"]),
-            evidence_type="region_pixel_change_score",
-            status="available",
-            value=float(signal["region_change_score"]),  # type: ignore[arg-type]
-            units="normalized_change_ratio",
-            quality={
-                "region_brightness_score": signal["region_brightness_score"],
-                "region_sharpness_score": signal["region_sharpness_score"],
-            },
-            reason_codes=(str(signal["water_level_evidence_state"]),),
-            provenance={
-                "source_function": "openfloodai.vision.simple_signals.compare_region_signals",
-                "source_record_id": signal["record_id"],
-            },
+        return evidence_from_pixel_change_signal(
+            signal, site_id=self.site_id, camera_id=self.camera_id
         )

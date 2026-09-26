@@ -1,0 +1,97 @@
+<svg width="680" height="660" viewBox="0 0 680 660" xmlns="http://www.w3.org/2000/svg" role="img">
+<title>Flow triggered by clicking Run validation for an image sequence</title>
+<desc>User clicks Run validation in site.html, which posts to the home server, which runs run_image_sequence_validation. For each image it checks whether the pixel-change adapter is enabled. If disabled, the row is marked cannot judge with a disabled evidence record. If enabled, it compares the images, builds an evidence record, and classifies the row from that evidence. Both paths converge to write image-sequence-records.jsonl and evidence-records.jsonl, then the review page loads and shows the result and evidence together.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<style>
+  text { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #1a1a1a; }
+  .th { font-size: 14px; font-weight: 600; }
+  .ts { font-size: 12px; fill: #555; }
+  .arr { stroke: #888; stroke-width: 1.5; }
+  .box-gray { fill: #f1efe8; stroke: #888780; stroke-width: 0.5; }
+  .box-coral { fill: #faece7; stroke: #d85a30; stroke-width: 0.5; }
+  .box-teal { fill: #e1f5ee; stroke: #1d9e75; stroke-width: 0.5; }
+</style>
+
+<g>
+  <rect class="box-gray" x="180" y="40" width="320" height="44" rx="4"/>
+  <text x="340" y="58" text-anchor="middle" class="th">Click "Run validation"</text>
+  <text x="340" y="76" text-anchor="middle" class="ts">site.html button</text>
+</g>
+<line x1="340" y1="84" x2="340" y2="104" class="arr" marker-end="url(#arrow)"/>
+
+<g>
+  <rect class="box-gray" x="180" y="104" width="320" height="44" rx="4"/>
+  <text x="340" y="122" text-anchor="middle" class="th">Home server receives it</text>
+  <text x="340" y="140" text-anchor="middle" class="ts">POST /api/run-image-sequence-validation</text>
+</g>
+<line x1="340" y1="148" x2="340" y2="168" class="arr" marker-end="url(#arrow)"/>
+
+<g>
+  <rect class="box-gray" x="180" y="168" width="320" height="44" rx="4"/>
+  <text x="340" y="186" text-anchor="middle" class="th">run_image_sequence_validation()</text>
+  <text x="340" y="204" text-anchor="middle" class="ts">for each image in the sequence</text>
+</g>
+
+<line x1="300" y1="212" x2="190" y2="232" stroke="#D85A30" stroke-width="1.5" marker-end="url(#arrow)"/>
+<line x1="380" y1="212" x2="490" y2="232" stroke="#1D9E75" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<g>
+  <rect class="box-coral" x="60" y="232" width="260" height="44" rx="4"/>
+  <text x="190" y="250" text-anchor="middle" class="th">Adapter disabled</text>
+  <text x="190" y="268" text-anchor="middle" class="ts">checked in Settings</text>
+</g>
+<line x1="190" y1="276" x2="190" y2="296" stroke="#D85A30" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<g>
+  <rect class="box-teal" x="360" y="232" width="260" height="44" rx="4"/>
+  <text x="490" y="250" text-anchor="middle" class="th">Adapter enabled</text>
+  <text x="490" y="268" text-anchor="middle" class="ts">checked in Settings</text>
+</g>
+<line x1="490" y1="276" x2="490" y2="296" stroke="#1D9E75" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<g>
+  <rect class="box-coral" x="60" y="296" width="260" height="44" rx="4"/>
+  <text x="190" y="314" text-anchor="middle" class="th">Result: cannot judge</text>
+  <text x="190" y="332" text-anchor="middle" class="ts">+ disabled evidence row</text>
+</g>
+
+<g>
+  <rect class="box-teal" x="360" y="296" width="260" height="44" rx="4"/>
+  <text x="490" y="314" text-anchor="middle" class="th">compare_region_signals()</text>
+  <text x="490" y="332" text-anchor="middle" class="ts">measures pixel change</text>
+</g>
+<line x1="490" y1="340" x2="490" y2="360" stroke="#1D9E75" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<g>
+  <rect class="box-teal" x="360" y="360" width="260" height="44" rx="4"/>
+  <text x="490" y="378" text-anchor="middle" class="th">Build EvidenceRecord</text>
+  <text x="490" y="396" text-anchor="middle" class="ts">value, status, reason codes</text>
+</g>
+<line x1="490" y1="404" x2="490" y2="424" stroke="#1D9E75" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<g>
+  <rect class="box-teal" x="360" y="424" width="260" height="44" rx="4"/>
+  <text x="490" y="442" text-anchor="middle" class="th">Classify from evidence</text>
+  <text x="490" y="460" text-anchor="middle" class="ts">same rules, one source</text>
+</g>
+
+<path d="M190 340 L340 488" fill="none" stroke="#D85A30" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M490 468 L340 488" fill="none" stroke="#1D9E75" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<g>
+  <rect class="box-gray" x="180" y="488" width="320" height="64" rx="4"/>
+  <text x="340" y="506" text-anchor="middle" class="th">Write two JSONL files</text>
+  <text x="340" y="524" text-anchor="middle" class="ts">image-sequence-records.jsonl</text>
+  <text x="340" y="540" text-anchor="middle" class="ts">evidence-records.jsonl</text>
+</g>
+<line x1="340" y1="552" x2="340" y2="572" class="arr" marker-end="url(#arrow)"/>
+
+<g>
+  <rect class="box-gray" x="180" y="572" width="320" height="44" rx="4"/>
+  <text x="340" y="590" text-anchor="middle" class="th">Review page shows the run</text>
+  <text x="340" y="608" text-anchor="middle" class="ts">result and evidence together</text>
+</g>
+
+<text x="340" y="644" text-anchor="middle" class="ts">Gray = pipeline step &#183; Coral = adapter disabled &#183; Teal = adapter enabled</text>
+</svg>

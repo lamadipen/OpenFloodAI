@@ -25,6 +25,9 @@ import cv2
 
 from openfloodai.config import load_site_config, reference_region_to_dict
 from openfloodai.contracts import read_jsonl_records, write_jsonl_records
+from openfloodai.evidence.adapters.pixel_change import evidence_from_pixel_change_signal
+from openfloodai.evidence.contract import EvidenceRecord, build_unavailable_evidence
+from openfloodai.evidence.settings import resolve_effective_adapter_settings
 from openfloodai.review.event_reviews import (
     EventReviewError,
     compute_evidence_key,
@@ -36,6 +39,8 @@ from openfloodai.vision.simple_signals import (
     compare_region_signals,
     extract_region_signals,
 )
+
+_PIXEL_CHANGE_PLUGIN_ID = "pixel_change_region_v1"
 
 RESULT_POSSIBLE_WATER_LEVEL_CHANGE = "possible_water_level_change"
 RESULT_NO_WATER_LEVEL_CHANGE = "no_water_level_change"
@@ -153,6 +158,49 @@ def run_image_sequence_validation(
             "normal baseline. Choose a different, clearer baseline image."
         )
 
+    # The pixel-change adapter now drives this row's actual classification, not just a
+    # side-channel evidence-records.jsonl (docs/architecture/plugin-evidence-architecture.md,
+    # issue #193): build the evidence record once from compare_region_signals()'s output, then
+    # classify from that record instead of re-reading the raw signals dict a second time. When
+    # the adapter is disabled for this site (site override wins over the global setting), no
+    # comparison is attempted at all -- the row becomes "cannot judge", not a silently-normal
+    # result, matching "missing evidence is not normal evidence".
+    # site_dir is always <sites_dir>/<folder_name> (see home_server.py's
+    # _resolve_site_dir), and the reference directory is a sibling of
+    # sites_dir itself, matching home_server.py's own _reference_dir() --
+    # i.e. two levels up from an individual site, not one.
+    reference_dir = site_dir.parent.parent / "reference"
+    pixel_change_enabled = resolve_effective_adapter_settings(
+        reference_dir, site_overrides=site_config.evidence_adapter_overrides
+    )[_PIXEL_CHANGE_PLUGIN_ID]
+    evidence_records: list[EvidenceRecord] = []
+
+    def _unavailable_evidence(*, timestamp: str, reason_codes: tuple[str, ...]) -> EvidenceRecord:
+        return build_unavailable_evidence(
+            plugin_id=_PIXEL_CHANGE_PLUGIN_ID,
+            plugin_version="1.0.0",
+            plugin_family="observation",
+            site_id=site_config.site_id,
+            camera_id=site_config.camera_id,
+            evidence_type="region_pixel_change_score",
+            status="unavailable",
+            reason_codes=reason_codes,
+            timestamp=timestamp or None,
+        )
+
+    def _disabled_evidence(*, timestamp: str) -> EvidenceRecord:
+        return build_unavailable_evidence(
+            plugin_id=_PIXEL_CHANGE_PLUGIN_ID,
+            plugin_version="1.0.0",
+            plugin_family="observation",
+            site_id=site_config.site_id,
+            camera_id=site_config.camera_id,
+            evidence_type="region_pixel_change_score",
+            status="disabled",
+            reason_codes=("ADAPTER_DISABLED",),
+            timestamp=timestamp or None,
+        )
+
     records: list[ImageSequenceRecord] = []
     best_score = -1.0
     best_filename: str | None = None
@@ -166,6 +214,23 @@ def run_image_sequence_validation(
         local_time = str(record.get("local_time", captured_at_utc))
         download_status = str(record.get("download_status", "missing"))
 
+        if not pixel_change_enabled:
+            records.append(
+                ImageSequenceRecord(
+                    filename=filename,
+                    captured_at_utc=captured_at_utc,
+                    local_time=local_time,
+                    download_status=download_status,
+                    result=RESULT_CANNOT_JUDGE_WATER_LEVEL,
+                    reason=(
+                        "The pixel-change signal is turned off for this site, "
+                        "so water-level change cannot be judged."
+                    ),
+                )
+            )
+            evidence_records.append(_disabled_evidence(timestamp=captured_at_utc))
+            continue
+
         if download_status != "downloaded":
             records.append(
                 ImageSequenceRecord(
@@ -175,6 +240,11 @@ def run_image_sequence_validation(
                     download_status=download_status,
                     result=RESULT_CAMERA_OR_IMAGE_PROBLEM,
                     reason=f"Image was not downloaded ({download_status}); cannot judge.",
+                )
+            )
+            evidence_records.append(
+                _unavailable_evidence(
+                    timestamp=captured_at_utc, reason_codes=("IMAGE_NOT_DOWNLOADED",)
                 )
             )
             continue
@@ -189,6 +259,11 @@ def run_image_sequence_validation(
                     download_status=download_status,
                     result=RESULT_CAMERA_OR_IMAGE_PROBLEM,
                     reason="Image file could not be read.",
+                )
+            )
+            evidence_records.append(
+                _unavailable_evidence(
+                    timestamp=captured_at_utc, reason_codes=("IMAGE_FILE_UNREADABLE",)
                 )
             )
             continue
@@ -213,11 +288,24 @@ def run_image_sequence_validation(
                     reason=f"Could not compare this image with the baseline: {error}",
                 )
             )
+            evidence_records.append(
+                _unavailable_evidence(
+                    timestamp=captured_at_utc, reason_codes=("VISUAL_COMPARISON_FAILED",)
+                )
+            )
             continue
 
-        change_score = cast(float, signals["region_change_score"])
-        brightness_score = cast(float, signals["region_brightness_score"])
-        evidence_state = str(signals["water_level_evidence_state"])
+        # Build the evidence record once, then classify FROM it -- not from a second,
+        # independent read of the same raw `signals` dict. This is the one thing that
+        # changed here: same numbers, same rules, one source of truth for both this row's
+        # result and its entry in evidence-records.jsonl.
+        pixel_change_evidence = evidence_from_pixel_change_signal(
+            signals, site_id=site_config.site_id, camera_id=site_config.camera_id
+        )
+        change_score = cast(float, pixel_change_evidence.value)
+        quality = pixel_change_evidence.quality or {}
+        brightness_score = cast(float, quality["region_brightness_score"])
+        evidence_state = pixel_change_evidence.reason_codes[0]
         result, reason = _classify_comparison(evidence_state, brightness_score)
         records.append(
             ImageSequenceRecord(
@@ -231,6 +319,7 @@ def run_image_sequence_validation(
                 region_brightness_score=brightness_score,
             )
         )
+        evidence_records.append(pixel_change_evidence)
         if result != RESULT_CAMERA_OR_IMAGE_PROBLEM and change_score > best_score:
             best_score = change_score
             best_filename = filename
@@ -271,6 +360,10 @@ def run_image_sequence_validation(
     write_jsonl_records(
         run_dir / "image-sequence-records.jsonl",
         [asdict(record) for record in records],
+    )
+    write_jsonl_records(
+        run_dir / "evidence-records.jsonl",
+        [evidence_record.to_dict() for evidence_record in evidence_records],
     )
     _write_run_summary(
         run_dir=run_dir,
@@ -401,6 +494,10 @@ def read_image_sequence_run_detail(site_dir: Path, run_id: str) -> dict[str, Any
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     records_path = run_dir / "image-sequence-records.jsonl"
     records = read_jsonl_records(records_path) if records_path.is_file() else []
+    evidence_records_path = run_dir / "evidence-records.jsonl"
+    evidence_records = (
+        read_jsonl_records(evidence_records_path) if evidence_records_path.is_file() else []
+    )
     report_path = run_dir / "image-sequence-report.md"
     report_text = report_path.read_text(encoding="utf-8") if report_path.is_file() else ""
     review_images: list[str] = []
@@ -437,6 +534,7 @@ def read_image_sequence_run_detail(site_dir: Path, run_id: str) -> dict[str, Any
         "review_images": review_images,
         "gauge_series": gauge_series,
         "event_reviews": event_reviews,
+        "evidence_records": evidence_records,
     }
 
 

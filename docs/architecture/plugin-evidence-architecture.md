@@ -254,6 +254,40 @@ calibration must still be compatible. New evidence semantics can require a
 reviewed contract or risk-policy revision, but should not require a core rewrite.
 Keep the previous implementation/configuration available for rollback.
 
+## Implemented slice: image-sequence validation (issue #193)
+
+The pixel-change adapter described above is implemented
+(`src/openfloodai/evidence/adapters/pixel_change.py`) and drives image-sequence
+validation's actual row classification, not just a side-channel evidence log.
+`run_image_sequence_validation()`
+(`src/openfloodai/validation/image_sequence_runner.py`) builds one
+`EvidenceRecord` per image from `compare_region_signals()`'s output, then
+classifies that row from the evidence record instead of re-reading the raw
+signals dict a second time -- one source of truth for both the row's result
+and its entry in `evidence-records.jsonl`.
+
+The adapter can be turned on or off globally or per site (console Settings
+page, `src/openfloodai/evidence/settings.py`). Disabling it is not
+cosmetic: the row becomes `cannot_judge_water_level` with an explicit reason,
+never a silently-normal result -- the "missing evidence is not normal
+evidence" rule from this document, enforced in the real pipeline output, not
+just in the evidence contract's own validation.
+
+**Before** (original flow -- no adapter, no evidence record, nothing to
+enable or disable; kept here as a historical reference):
+
+![Image-sequence validation flow before the evidence adapter](image-sequence-validation-flow-before-adapter.svg)
+
+**After** (current flow -- classification is driven by the adapter's
+evidence, and can be turned off per site):
+
+![Image-sequence validation flow](image-sequence-validation-flow.svg)
+
+This is the first of the Steps 00-05 slices this document defers to; the
+video-validation path (`pipeline/local_poc.py` -> `risk_engine.evaluate_risk_state()`)
+still reads raw signal dicts directly and has not been switched to this
+pattern yet.
+
 ## Consequences, risks, and validation evidence required
 
 The benefit is independent evolution and graceful degradation. The cost is

@@ -12,7 +12,7 @@ from email.policy import HTTP
 from http.server import SimpleHTTPRequestHandler
 from importlib import resources
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import parse_qs, unquote, urlencode, urlsplit
 
 import cv2
@@ -22,11 +22,17 @@ from openfloodai.config import (
     delete_normal_waterline_guide,
     invalidate_normal_waterline_guide,
     load_site_config,
+    write_evidence_adapter_override,
     write_normal_waterline_guide,
     write_normal_waterline_guides,
     write_reference_region,
 )
 from openfloodai.contracts import read_jsonl_records
+from openfloodai.evidence.settings import (
+    EvidenceSettingsError,
+    describe_adapters_for_settings_ui,
+    write_global_adapter_setting,
+)
 from openfloodai.ingestion.image_video import create_image_test_video
 from openfloodai.ingestion.live_camera import LiveCameraError, capture_live_clip
 from openfloodai.ingestion.live_camera_schedule import read_schedule, write_schedule
@@ -193,6 +199,9 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             return
         if path == "/api/rivers":
             self._send_rivers_json()
+            return
+        if path == "/api/evidence-adapters":
+            self._send_evidence_adapters_json()
             return
         if path in {"/", "/openfloodai-home-ui.html"}:
             self._send_file(self.ui_path, content_type="text/html; charset=utf-8")
@@ -522,6 +531,28 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
 
         self._send_json({"rivers": list_river_registries(self._reference_dir())}, status_code=200)
 
+    def _send_evidence_adapters_json(self) -> None:
+        """List every known evidence adapter, its global setting, and (if given) a site's.
+
+        `folder_name` is optional: without it, only global state is reported
+        and `site_override`/`effective_enabled` reflect no per-site override.
+        """
+
+        query = parse_qs(urlsplit(self.path).query)
+        folder_name = query.get("folder_name", [""])[0]
+        site_overrides: dict[str, bool] | None = None
+        if folder_name:
+            try:
+                site_dir = self._resolve_site_dir(folder_name)
+                config_path = _find_site_config(site_dir)
+                site_overrides = load_site_config(config_path).evidence_adapter_overrides
+            except (SiteConfigError, ValueError, OSError):
+                self._send_json({"message": "Site not found."}, status_code=404)
+                return
+
+        rows = describe_adapters_for_settings_ui(self._reference_dir(), site_overrides)
+        self._send_json({"adapters": rows}, status_code=200)
+
     def _send_review_images(self, *, single_image: bool) -> None:
         """Expose only generated review images inside the configured local sites."""
 
@@ -650,6 +681,9 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             return
         if self.path == "/api/bootstrap-river-sites":
             self._handle_bootstrap_river_sites()
+            return
+        if self.path == "/api/set-evidence-adapter-enabled":
+            self._handle_set_evidence_adapter_enabled()
             return
         self.send_error(404, "Not found")
 
@@ -1017,6 +1051,64 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             )
         except (RiverRegistryError, RiverImageError, ValueError) as error:
             self._send_json({"success": False, "message": str(error)}, status_code=400)
+
+    def _handle_set_evidence_adapter_enabled(self) -> None:
+        """Enable, disable, or (site scope only) clear one evidence adapter's setting.
+
+        Body: {"scope": "global"|"site", "plugin_id": str, "enabled":
+        bool|null, "folder_name": str (required when scope is "site")}.
+        `enabled: null` is only valid for scope "site" -- it clears that
+        site's override so it goes back to following the global default.
+        Returns the same shape as GET /api/evidence-adapters so the
+        settings page can just replace its state with the response.
+        """
+
+        data = self._reject_untrusted_json_post()
+        if data is None:
+            return
+
+        scope = str(data.get("scope", "")).strip()
+        plugin_id = str(data.get("plugin_id", "")).strip()
+        enabled = data.get("enabled")
+        valid_enabled = isinstance(enabled, bool) or (enabled is None and scope == "site")
+        if scope not in {"global", "site"} or not plugin_id or not valid_enabled:
+            self._send_json(
+                {
+                    "success": False,
+                    "message": (
+                        "scope must be 'global' or 'site'; plugin_id is required; "
+                        "enabled must be a boolean (or null, to clear a site override)."
+                    ),
+                },
+                status_code=400,
+            )
+            return
+
+        folder_name = str(data.get("folder_name", "")).strip()
+        try:
+            if scope == "global":
+                write_global_adapter_setting(self._reference_dir(), plugin_id, cast(bool, enabled))
+            else:
+                if not folder_name:
+                    raise EvidenceSettingsError("folder_name is required when scope is 'site'.")
+                site_dir = self._resolve_site_dir(folder_name)
+                config_path = _find_site_config(site_dir)
+                write_evidence_adapter_override(config_path, plugin_id, enabled)
+        except (EvidenceSettingsError, SiteConfigError, ValueError, OSError) as error:
+            self._send_json({"success": False, "message": str(error)}, status_code=400)
+            return
+
+        site_overrides = None
+        if folder_name:
+            try:
+                site_dir = self._resolve_site_dir(folder_name)
+                config_path = _find_site_config(site_dir)
+                site_overrides = load_site_config(config_path).evidence_adapter_overrides
+            except (SiteConfigError, ValueError, OSError):
+                site_overrides = None
+
+        rows = describe_adapters_for_settings_ui(self._reference_dir(), site_overrides)
+        self._send_json({"success": True, "adapters": rows}, status_code=200)
 
     def _send_river_image(self) -> None:
         query = parse_qs(urlsplit(self.path).query)
