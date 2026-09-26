@@ -198,6 +198,24 @@ function granularityLabelSuffix() {
   return state.granularity === "daily" ? "every day" : `by ${state.granularity.replace("ly", "")}`;
 }
 
+// The selected day's own numbers, in one line, right above the chart it
+// summarizes -- date/time, the raw change score (not the bucket mean,
+// since this always describes one specific day regardless of granularity),
+// gage height that day if known, and the machine's result label.
+function selectedDaySummaryHtml() {
+  const sel = days[state.selectedIndex];
+  const selGauge = gaugeByDate.get(sel.date);
+  const gaugeUnitSuffix = gaugeMeta.unit ? ` ${gaugeMeta.unit}` : "";
+  const scoreText = sel.score == null ? "no image, not compared" : sel.score.toFixed(4);
+  const gaugeText = selGauge != null ? ` &middot; ${escapeHtml(gaugeMeta.label.toLowerCase())} ${selGauge.toFixed(2)}${escapeHtml(gaugeUnitSuffix)}` : "";
+  return `
+    <div style="background:var(--paper);border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px;color:var(--ink-soft);">
+      <strong style="color:var(--ink);">${escapeHtml(sel.date)}, ${escapeHtml(sel.time)} local</strong>
+      &middot; change score ${scoreText}${gaugeText}
+      &middot; <span style="color:${CODE_COLOR[sel.code]};font-weight:700;">${escapeHtml(sel.resultLabel)}</span>
+    </div>`;
+}
+
 function granularityButtonsHtml() {
   return `
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
@@ -349,6 +367,7 @@ function render() {
 
         <div class="card" style="padding:16px 18px;">
           <div style="font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:8px;">Region change score, ${granularityLabelSuffix()}</div>
+          ${selectedDaySummaryHtml()}
           ${scoreChartSvg()}
         </div>
 
