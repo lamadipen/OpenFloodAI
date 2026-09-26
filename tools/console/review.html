@@ -23,6 +23,8 @@ const CODE_LABEL = {
   U: "Cannot judge",
   M: "No image available"
 };
+const CODE_COLOR = { C: "#9b1c31", P: "#9a5b13", U: "#9a5b13", N: "#98a2b3", M: "#98a2b3" };
+const GRANULARITY_LABEL = { hourly: "Hourly", daily: "Daily", weekly: "Weekly", monthly: "Monthly", yearly: "Yearly" };
 
 const folderName = qs("site");
 const runId = qs("run_id");
@@ -33,7 +35,7 @@ let changeInfo = null;
 let gaugeByDate = new Map();
 let gaugeMeta = { label: "Gage height", unit: "", usedFallbackDischarge: false };
 let evidencePoints = [];
-let state = { filter: null, selectedIndex: 0, eventCursor: -1 };
+let state = { filter: null, selectedIndex: 0, eventCursor: -1, granularity: "daily" };
 
 function isoMean(values) {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
@@ -112,6 +114,102 @@ function buildGaugeMeta(gaugeSeries) {
     unit: row.unit || "",
     usedFallbackDischarge: !!row.used_fallback_discharge
   };
+}
+
+// Granularity bucketing for the two charts -- daily is the trivial case of
+// this (bucketKey returns the date unchanged), so every granularity goes
+// through the same summarization instead of a separate code path.
+function isoWeekStart(dateStr) {
+  const parsed = new Date(dateStr + "T00:00:00Z");
+  const day = parsed.getUTCDay();
+  parsed.setUTCDate(parsed.getUTCDate() + (day === 0 ? -6 : 1 - day));
+  return parsed.toISOString().slice(0, 10);
+}
+
+function bucketKey(dateStr, granularity) {
+  if (granularity === "weekly") return isoWeekStart(dateStr);
+  if (granularity === "monthly") return dateStr.slice(0, 7);
+  if (granularity === "yearly") return dateStr.slice(0, 4);
+  return dateStr;
+}
+
+function buildBuckets(rows, granularity) {
+  const map = new Map();
+  rows.forEach((row, index) => {
+    const key = bucketKey(row.date, granularity);
+    if (!map.has(key)) map.set(key, { key, indices: [] });
+    map.get(key).indices.push(index);
+  });
+  return Array.from(map.values());
+}
+
+function summarizeBucket(bucket, rows, gaugeByDateMap) {
+  const codes = bucket.indices.map((i) => rows[i].code);
+  const validScoreIdx = bucket.indices.filter((i) => rows[i].score != null);
+  const meanScore = validScoreIdx.length ? isoMean(validScoreIdx.map((i) => rows[i].score)) : null;
+  const gaugeValues = bucket.indices.map((i) => gaugeByDateMap.get(rows[i].date)).filter((v) => v != null);
+  const meanGauge = gaugeValues.length ? isoMean(gaugeValues) : null;
+  const hasPossible = codes.some((code) => code === "P" || code === "U");
+  const hasCamera = codes.some((code) => code === "C");
+  const dominant = hasPossible ? "P" : hasCamera ? "C" : "N";
+  let repIndex = bucket.indices[0];
+  if (hasPossible) repIndex = bucket.indices.find((i) => rows[i].code === "P" || rows[i].code === "U");
+  else if (hasCamera) repIndex = bucket.indices.find((i) => rows[i].code === "C");
+  return {
+    dateForTick: rows[bucket.indices[0]].date,
+    meanScore,
+    meanGauge,
+    color: CODE_COLOR[dominant],
+    dayCount: bucket.indices.length,
+    repIndex,
+    indices: bucket.indices
+  };
+}
+
+// Month/year x-axis ticks for the region-change chart, one per granularity
+// boundary crossed -- e.g. one tick each time the month changes for daily
+// or weekly buckets, one per year for yearly buckets.
+function monthTicksFor(buckets) {
+  const ticks = [];
+  let lastTick = "";
+  buckets.forEach((bucket) => {
+    const tickKey = state.granularity === "yearly" ? bucket.dateForTick.slice(0, 4) : bucket.dateForTick.slice(0, 7);
+    if (tickKey !== lastTick) {
+      ticks.push({
+        x: bucket.x,
+        label: bucket.dateForTick.slice(state.granularity === "yearly" ? 0 : 5, state.granularity === "yearly" ? 4 : 7)
+      });
+      lastTick = tickKey;
+    }
+  });
+  return ticks;
+}
+
+// x position (already assigned onto each bucket by the caller) of the
+// bucket containing the detected change-start day, so both charts can mark
+// where that flagged period falls against gage height, not just score.
+function changeXPosition(buckets) {
+  if (!changeInfo || changeInfo.index < 0) return null;
+  const bucket = buckets.find((b) => b.indices.includes(changeInfo.index));
+  return bucket ? bucket.x : null;
+}
+
+function granularityLabelSuffix() {
+  return state.granularity === "daily" ? "every day" : `by ${state.granularity.replace("ly", "")}`;
+}
+
+function granularityButtonsHtml() {
+  return `
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+      <span style="font-size:12px;font-weight:700;color:var(--ink-muted);">View by:</span>
+      ${Object.keys(GRANULARITY_LABEL)
+        .map((g) => {
+          const active = state.granularity === g;
+          const disabled = g === "hourly";
+          return `<button type="button" data-act="granularity" data-value="${g}" class="btn" style="font-size:12px;padding:0 12px;height:28px;${active ? "background:var(--ink);color:#fff;border-color:var(--ink);" : ""}" ${disabled ? 'disabled title="This sampling mode captures one image per day; there is no hourly resolution yet."' : ""}>${GRANULARITY_LABEL[g]}</button>`;
+        })
+        .join("")}
+    </div>`;
 }
 
 function findChangeStart(rows) {
@@ -244,12 +342,13 @@ function render() {
       <div style="display:flex;flex-direction:column;gap:16px;min-width:0;">
 
         <div class="card" style="padding:14px 18px;">
-          <div style="font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:6px;">${escapeHtml(gaugeMeta.label)}${gaugeMeta.unit ? ` (${escapeHtml(gaugeMeta.unit)})` : ""} &middot; per day</div>
+          ${granularityButtonsHtml()}
+          <div style="font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:6px;">${escapeHtml(gaugeMeta.label)}${gaugeMeta.unit ? ` (${escapeHtml(gaugeMeta.unit)})` : ""}, ${granularityLabelSuffix()}</div>
           ${gaugeDates.length ? gaugeChartSvg() : `<div style="height:44px;display:flex;align-items:center;font-size:12px;color:var(--ink-muted);">No gage data is available for this sequence yet.</div>`}
         </div>
 
         <div class="card" style="padding:16px 18px;">
-          <div style="font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:8px;">Region change score &middot; per day</div>
+          <div style="font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:8px;">Region change score, ${granularityLabelSuffix()}</div>
           ${scoreChartSvg()}
         </div>
 
@@ -355,36 +454,101 @@ function pillHtml(code, label, count, tone) {
   </button>`;
 }
 
+function currentBuckets() {
+  return buildBuckets(days, state.granularity).map((b) => summarizeBucket(b, days, gaugeByDate));
+}
+
+function assignBucketX(buckets, leftPad) {
+  const usableW = 1040 - leftPad;
+  const n = buckets.length;
+  buckets.forEach((b, i) => {
+    b.x = n <= 1 ? leftPad + usableW / 2 : leftPad + (i / (n - 1)) * usableW;
+  });
+  return buckets;
+}
+
 function scoreChartSvg() {
-  const points = days.map((d, i) => ({ d, i })).filter((p) => p.d.score != null);
+  const daily = state.granularity === "daily";
+  const leftPad = 34;
+  const topY = 4;
+  const chartH = 178;
+  const bottomY = topY + chartH;
+  const buckets = assignBucketX(currentBuckets(), leftPad);
+  const points = buckets.map((b, i) => ({ b, i })).filter((p) => p.b.meanScore != null);
   if (!points.length) return `<div class="hint">No scores available.</div>`;
-  const max = Math.max(0.1, ...points.map((p) => p.d.score));
-  const x = (i) => 30 + (i / Math.max(1, days.length - 1)) * 1000;
-  const y = (score) => 100 - (score / max) * 85;
+  const max = Math.max(0.1, Math.ceil(Math.max(...points.map((p) => p.b.meanScore)) * 100) / 100 + 0.02);
+  const y = (score) => topY + chartH - (Math.max(0, score) / max) * chartH;
+
+  const segments = [];
+  let seg = [];
+  buckets.forEach((b) => {
+    if (b.meanScore == null) {
+      if (seg.length) {
+        segments.push(seg.join(" "));
+        seg = [];
+      }
+    } else {
+      seg.push(`${b.x.toFixed(1)},${y(b.meanScore).toFixed(1)}`);
+    }
+  });
+  if (seg.length) segments.push(seg.join(" "));
+
   const dots = points
-    .map((p) => `<circle cx="${x(p.i)}" cy="${y(p.d.score)}" r="${p.i === state.selectedIndex ? 5 : 3}" fill="${p.d.code === "C" ? "#9b1c31" : p.d.code === "P" ? "#9a5b13" : "#98a2b3"}" data-act="select-day" data-index="${p.i}" style="cursor:pointer;"/>`)
+    .map((p) => {
+      const r = daily ? (p.b.repIndex === state.selectedIndex ? 5 : 3) : Math.min(9, 4 + p.b.dayCount / 4);
+      return `<circle cx="${p.b.x.toFixed(1)}" cy="${y(p.b.meanScore).toFixed(1)}" r="${r}" fill="${p.b.color}" stroke="#fff" stroke-width="1" data-act="select-day" data-index="${p.b.repIndex}" style="cursor:pointer;"/>`;
+    })
     .join("");
   const thresholdY = changeInfo.threshold != null ? y(changeInfo.threshold) : null;
-  return `<svg viewBox="0 0 1040 110" style="width:100%;height:90px;display:block;">
-    <line x1="30" y1="100" x2="1040" y2="100" stroke="var(--line)" stroke-width="1"/>
-    ${thresholdY != null ? `<line x1="30" y1="${thresholdY}" x2="1040" y2="${thresholdY}" stroke="#1769aa" stroke-width="1" stroke-dasharray="4,3" opacity="0.7"/>` : ""}
-    ${dots}
-  </svg>`;
+  const changeX = changeXPosition(buckets);
+  const ticks = monthTicksFor(buckets);
+
+  return `
+    <svg viewBox="0 0 1040 200" style="width:100%;height:170px;display:block;">
+      <text x="4" y="${(topY + 6).toFixed(1)}" font-size="10" fill="var(--ink-muted)">${max.toFixed(2)}</text>
+      <line x1="${leftPad}" y1="${topY}" x2="1040" y2="${topY}" stroke="var(--line)" stroke-width="1"/>
+      <text x="4" y="${(topY + chartH / 2 + 4).toFixed(1)}" font-size="10" fill="var(--ink-muted)">${(max / 2).toFixed(2)}</text>
+      <line x1="${leftPad}" y1="${(topY + bottomY) / 2}" x2="1040" y2="${(topY + bottomY) / 2}" stroke="var(--line)" stroke-width="1"/>
+      <text x="4" y="${(bottomY + 4).toFixed(1)}" font-size="10" fill="var(--ink-muted)">0</text>
+      <line x1="${leftPad}" y1="${bottomY}" x2="1040" y2="${bottomY}" stroke="var(--line)" stroke-width="1"/>
+      ${thresholdY != null ? `<line x1="${leftPad}" y1="${thresholdY.toFixed(1)}" x2="1040" y2="${thresholdY.toFixed(1)}" stroke="#1769aa" stroke-width="1" stroke-dasharray="4,3" opacity="0.7"/><text x="1036" y="${Math.max(topY + 10, thresholdY - 6).toFixed(1)}" font-size="10" fill="#1769aa" text-anchor="end">typical range ends ${changeInfo.threshold.toFixed(3)}</text>` : ""}
+      ${changeX != null ? `<line x1="${changeX.toFixed(1)}" y1="${topY}" x2="${changeX.toFixed(1)}" y2="${bottomY}" stroke="#9a5b13" stroke-width="1.5" stroke-dasharray="2,3"/>` : ""}
+      ${segments.map((s) => `<polyline points="${s}" fill="none" stroke="#c3c2b7" stroke-width="1.5"/>`).join("")}
+      ${dots}
+      ${ticks.map((t) => `<text x="${t.x.toFixed(1)}" y="${(bottomY + 18).toFixed(1)}" font-size="11" fill="var(--ink-muted)" text-anchor="middle">${escapeHtml(t.label)}</text>`).join("")}
+    </svg>
+    <div style="display:flex;gap:16px;margin-top:8px;font-size:12px;color:var(--ink-soft);flex-wrap:wrap;">
+      <span style="display:flex;align-items:center;gap:6px;"><span style="width:9px;height:9px;border-radius:50%;background:${CODE_COLOR.N};display:inline-block;"></span>No change</span>
+      <span style="display:flex;align-items:center;gap:6px;"><span style="width:9px;height:9px;border-radius:50%;background:${CODE_COLOR.P};display:inline-block;"></span>Needs a look</span>
+      <span style="display:flex;align-items:center;gap:6px;"><span style="width:9px;height:9px;border-radius:50%;background:${CODE_COLOR.C};display:inline-block;"></span>Camera or image issue</span>
+    </div>`;
 }
 
 function gaugeChartSvg() {
-  const rows = days.map((d) => gaugeByDate.get(d.date)).filter((v) => v != null);
-  if (!rows.length) return `<div class="hint">No gage data available.</div>`;
-  const min = Math.min(...rows);
-  const max = Math.max(...rows);
+  const leftPad = 50;
+  const topY = 4;
+  const chartH = 118;
+  const bottomY = topY + chartH;
+  const buckets = assignBucketX(currentBuckets(), leftPad);
+  const points = buckets.map((b, i) => ({ v: b.meanGauge, i, b })).filter((p) => p.v != null);
+  if (!points.length) return `<div class="hint">No gage data available.</div>`;
+  const values = points.map((p) => p.v);
+  const min = Math.floor(Math.min(...values) * 10) / 10 - 0.1;
+  const max = Math.ceil(Math.max(...values) * 10) / 10 + 0.1;
   const range = Math.max(0.001, max - min);
-  const points = days
-    .map((d, i) => ({ v: gaugeByDate.get(d.date), i }))
-    .filter((p) => p.v != null)
-    .map((p) => `${30 + (p.i / Math.max(1, days.length - 1)) * 1000},${58 - ((p.v - min) / range) * 44}`)
-    .join(" ");
-  return `<svg viewBox="0 0 1040 60" style="width:100%;height:50px;display:block;">
-    <polyline points="${points}" fill="none" stroke="#1769aa" stroke-width="1.6"/>
+  const y = (v) => topY + chartH - ((v - min) / range) * chartH;
+  const polyline = points.map((p) => `${p.b.x.toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
+  const changeX = changeXPosition(buckets);
+
+  return `<svg viewBox="0 0 1040 130" style="width:100%;height:110px;display:block;">
+    <text x="4" y="${(topY + 6).toFixed(1)}" font-size="10" fill="var(--ink-muted)">${max.toFixed(1)}</text>
+    <line x1="${leftPad}" y1="${topY}" x2="1040" y2="${topY}" stroke="var(--line)" stroke-width="1"/>
+    <text x="4" y="${(topY + chartH / 2 + 4).toFixed(1)}" font-size="10" fill="var(--ink-muted)">${((max + min) / 2).toFixed(1)}</text>
+    <line x1="${leftPad}" y1="${(topY + bottomY) / 2}" x2="1040" y2="${(topY + bottomY) / 2}" stroke="var(--line)" stroke-width="1"/>
+    <text x="4" y="${(bottomY + 4).toFixed(1)}" font-size="10" fill="var(--ink-muted)">${min.toFixed(1)}</text>
+    <line x1="${leftPad}" y1="${bottomY}" x2="1040" y2="${bottomY}" stroke="var(--line)" stroke-width="1"/>
+    ${changeX != null ? `<line x1="${changeX.toFixed(1)}" y1="${topY}" x2="${changeX.toFixed(1)}" y2="${bottomY}" stroke="#9a5b13" stroke-width="1.5" stroke-dasharray="2,3"/>` : ""}
+    <polyline points="${polyline}" fill="none" stroke="#1769aa" stroke-width="1.6"/>
   </svg>`;
 }
 
@@ -396,6 +560,9 @@ function wireActions() {
       if (act === "filter") {
         const code = el.dataset.code;
         state.filter = state.filter === code ? null : code;
+        render();
+      } else if (act === "granularity") {
+        state.granularity = el.dataset.value;
         render();
       } else if (act === "select-day") {
         state.selectedIndex = Number(el.dataset.index);
