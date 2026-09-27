@@ -550,7 +550,11 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
                 self._send_json({"message": "Site not found."}, status_code=404)
                 return
 
-        rows = describe_adapters_for_settings_ui(self._reference_dir(), site_overrides)
+        try:
+            rows = describe_adapters_for_settings_ui(self._reference_dir(), site_overrides)
+        except EvidenceSettingsError as error:
+            self._send_json({"message": str(error)}, status_code=500)
+            return
         self._send_json({"adapters": rows}, status_code=200)
 
     def _send_review_images(self, *, single_image: bool) -> None:
@@ -1107,7 +1111,11 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             except (SiteConfigError, ValueError, OSError):
                 site_overrides = None
 
-        rows = describe_adapters_for_settings_ui(self._reference_dir(), site_overrides)
+        try:
+            rows = describe_adapters_for_settings_ui(self._reference_dir(), site_overrides)
+        except EvidenceSettingsError as error:
+            self._send_json({"success": False, "message": str(error)}, status_code=500)
+            return
         self._send_json({"success": True, "adapters": rows}, status_code=200)
 
     def _send_river_image(self) -> None:

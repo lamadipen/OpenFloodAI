@@ -34,14 +34,58 @@ def test_write_global_adapter_setting_rejects_unknown_plugin_id(tmp_path: Path) 
         write_global_adapter_setting(tmp_path, "not-a-real-adapter", True)
 
 
+def test_write_global_adapter_setting_leaves_no_temp_file_behind(tmp_path: Path) -> None:
+    write_global_adapter_setting(tmp_path, _PLUGIN_ID, False)
+
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["evidence-adapter-settings.json"]
+
+
 def test_read_global_adapter_overrides_ignores_a_missing_file(tmp_path: Path) -> None:
     assert read_global_adapter_overrides(tmp_path) == {}
 
 
-def test_read_global_adapter_overrides_ignores_malformed_json(tmp_path: Path) -> None:
+def test_read_global_adapter_overrides_raises_on_malformed_json(tmp_path: Path) -> None:
+    """An existing-but-corrupt file must not silently fall back to defaults.
+
+    A previously disabled adapter could otherwise appear re-enabled the
+    moment its settings file gets corrupted -- this must fail loudly
+    instead of guessing.
+    """
+
     (tmp_path / "evidence-adapter-settings.json").write_text("not json", encoding="utf-8")
 
-    assert read_global_adapter_overrides(tmp_path) == {}
+    with pytest.raises(EvidenceSettingsError):
+        read_global_adapter_overrides(tmp_path)
+
+
+def test_read_global_adapter_overrides_raises_when_not_a_json_object(tmp_path: Path) -> None:
+    (tmp_path / "evidence-adapter-settings.json").write_text("[1, 2, 3]", encoding="utf-8")
+
+    with pytest.raises(EvidenceSettingsError):
+        read_global_adapter_overrides(tmp_path)
+
+
+def test_read_global_adapter_overrides_raises_when_adapters_key_missing(tmp_path: Path) -> None:
+    (tmp_path / "evidence-adapter-settings.json").write_text("{}", encoding="utf-8")
+
+    with pytest.raises(EvidenceSettingsError):
+        read_global_adapter_overrides(tmp_path)
+
+
+def test_read_global_adapter_overrides_raises_on_non_boolean_value(tmp_path: Path) -> None:
+    (tmp_path / "evidence-adapter-settings.json").write_text(
+        '{"adapters": {"pixel_change_region_v1": "yes"}}', encoding="utf-8"
+    )
+
+    with pytest.raises(EvidenceSettingsError):
+        read_global_adapter_overrides(tmp_path)
+
+
+def test_resolve_global_adapter_settings_propagates_a_corrupt_file(tmp_path: Path) -> None:
+    (tmp_path / "evidence-adapter-settings.json").write_text("not json", encoding="utf-8")
+
+    with pytest.raises(EvidenceSettingsError):
+        resolve_global_adapter_settings(tmp_path)
 
 
 def test_read_global_adapter_overrides_ignores_unknown_plugin_ids(tmp_path: Path) -> None:

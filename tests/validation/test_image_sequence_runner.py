@@ -152,6 +152,14 @@ def test_run_classifies_all_four_result_states_and_writes_outputs(tmp_path: Path
     assert summary["sequence_id"] == SEQUENCE_ID
     assert summary["biggest_change_filename"] == "possible-change.jpg"
     assert summary["review_images_generated"] is True
+    assert summary["effective_evidence_adapters"] == [
+        {
+            "plugin_id": "pixel_change_region_v1",
+            "plugin_version": "1.0.0",
+            "enabled": True,
+            "source": "global",
+        }
+    ]
 
     report_text = (run_dir / "image-sequence-report.md").read_text()
     assert "Safety Boundary" in report_text
@@ -225,6 +233,54 @@ def test_run_marks_the_row_cannot_judge_when_the_adapter_is_disabled_globally(
     assert "ADAPTER_DISABLED" in row["reason_codes"]
 
 
+def test_disabled_adapter_does_not_hide_a_missing_or_unreadable_image(tmp_path: Path) -> None:
+    """A missing/unreadable image is a fact about the image, not the adapter.
+
+    Dataset-quality counts (camera_or_image_problem) must stay accurate
+    even when the adapter is off -- disabling a signal must never make a
+    real data-quality problem disappear into "cannot judge".
+    """
+
+    site_dir = tmp_path / "sites" / "site"
+    make_site(site_dir)
+    write_global_adapter_setting(tmp_path / "reference", "pixel_change_region_v1", False)
+    sequence_dir = site_dir / "inputs" / "image-sequences" / SEQUENCE_ID
+    images_dir = sequence_dir / "images"
+
+    write_frame(images_dir / "baseline.jpg", 30)
+    write_frame(images_dir / "no-change.jpg", 30)
+    # "missing.jpg" is deliberately never written -- download_status says
+    # downloaded, but the file isn't there, so this is an unreadable image.
+
+    write_manifest(
+        sequence_dir,
+        [
+            manifest_record("baseline.jpg", "2026-09-01T00:00:00+00:00", "downloaded"),
+            manifest_record("no-change.jpg", "2026-09-01T01:00:00+00:00", "downloaded"),
+            manifest_record("missing.jpg", "2026-09-01T02:00:00+00:00", "missing"),
+            manifest_record("unreadable.jpg", "2026-09-01T03:00:00+00:00", "downloaded"),
+        ],
+    )
+
+    report = run_image_sequence_validation(site_dir, SEQUENCE_ID)
+
+    results_by_filename = {record.filename: record.result for record in report.records}
+    assert results_by_filename["missing.jpg"] == RESULT_CAMERA_OR_IMAGE_PROBLEM
+    assert results_by_filename["unreadable.jpg"] == RESULT_CAMERA_OR_IMAGE_PROBLEM
+    # The only genuinely valid, readable image still gets the disabled treatment.
+    assert results_by_filename["no-change.jpg"] == RESULT_CANNOT_JUDGE_WATER_LEVEL
+
+    evidence_by_status: dict[str, list[list[str]]] = {}
+    for line in (report.run_dir / "evidence-records.jsonl").read_text().splitlines():
+        row = json.loads(line)
+        evidence_by_status.setdefault(row["status"], []).append(row["reason_codes"])
+    assert evidence_by_status["unavailable"] == [
+        ["IMAGE_NOT_DOWNLOADED"],
+        ["IMAGE_FILE_UNREADABLE"],
+    ]
+    assert evidence_by_status["disabled"] == [["ADAPTER_DISABLED"]]
+
+
 def test_run_site_override_re_enables_an_adapter_disabled_globally(tmp_path: Path) -> None:
     site_dir = tmp_path / "sites" / "site"
     make_site(site_dir)
@@ -252,6 +308,16 @@ def test_run_site_override_re_enables_an_adapter_disabled_globally(tmp_path: Pat
     row = json.loads(evidence_lines[0])
     assert row["status"] == "available"
     assert row["value"] == 0.0
+
+    summary = json.loads((report.run_dir / "run-summary.json").read_text())
+    assert summary["effective_evidence_adapters"] == [
+        {
+            "plugin_id": "pixel_change_region_v1",
+            "plugin_version": "1.0.0",
+            "enabled": True,
+            "source": "site_override",
+        }
+    ]
 
 
 def test_run_marks_a_too_small_watched_area_as_cannot_judge(tmp_path: Path) -> None:

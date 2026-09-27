@@ -25,9 +25,15 @@ import cv2
 
 from openfloodai.config import load_site_config, reference_region_to_dict
 from openfloodai.contracts import read_jsonl_records, write_jsonl_records
+from openfloodai.evidence.adapters.pixel_change import (
+    PLUGIN_ID as _PIXEL_CHANGE_PLUGIN_ID,
+)
+from openfloodai.evidence.adapters.pixel_change import (
+    PLUGIN_VERSION as _PIXEL_CHANGE_PLUGIN_VERSION,
+)
 from openfloodai.evidence.adapters.pixel_change import evidence_from_pixel_change_signal
 from openfloodai.evidence.contract import EvidenceRecord, build_unavailable_evidence
-from openfloodai.evidence.settings import resolve_effective_adapter_settings
+from openfloodai.evidence.settings import EvidenceSettingsError, resolve_effective_adapter_settings
 from openfloodai.review.event_reviews import (
     EventReviewError,
     compute_evidence_key,
@@ -39,8 +45,6 @@ from openfloodai.vision.simple_signals import (
     compare_region_signals,
     extract_region_signals,
 )
-
-_PIXEL_CHANGE_PLUGIN_ID = "pixel_change_region_v1"
 
 RESULT_POSSIBLE_WATER_LEVEL_CHANGE = "possible_water_level_change"
 RESULT_NO_WATER_LEVEL_CHANGE = "no_water_level_change"
@@ -170,15 +174,20 @@ def run_image_sequence_validation(
     # sites_dir itself, matching home_server.py's own _reference_dir() --
     # i.e. two levels up from an individual site, not one.
     reference_dir = site_dir.parent.parent / "reference"
-    pixel_change_enabled = resolve_effective_adapter_settings(
-        reference_dir, site_overrides=site_config.evidence_adapter_overrides
-    )[_PIXEL_CHANGE_PLUGIN_ID]
+    try:
+        pixel_change_enabled = resolve_effective_adapter_settings(
+            reference_dir, site_overrides=site_config.evidence_adapter_overrides
+        )[_PIXEL_CHANGE_PLUGIN_ID]
+    except EvidenceSettingsError as error:
+        raise ImageSequenceValidationError(
+            f"Could not read evidence adapter settings: {error}"
+        ) from error
     evidence_records: list[EvidenceRecord] = []
 
     def _unavailable_evidence(*, timestamp: str, reason_codes: tuple[str, ...]) -> EvidenceRecord:
         return build_unavailable_evidence(
             plugin_id=_PIXEL_CHANGE_PLUGIN_ID,
-            plugin_version="1.0.0",
+            plugin_version=_PIXEL_CHANGE_PLUGIN_VERSION,
             plugin_family="observation",
             site_id=site_config.site_id,
             camera_id=site_config.camera_id,
@@ -191,7 +200,7 @@ def run_image_sequence_validation(
     def _disabled_evidence(*, timestamp: str) -> EvidenceRecord:
         return build_unavailable_evidence(
             plugin_id=_PIXEL_CHANGE_PLUGIN_ID,
-            plugin_version="1.0.0",
+            plugin_version=_PIXEL_CHANGE_PLUGIN_VERSION,
             plugin_family="observation",
             site_id=site_config.site_id,
             camera_id=site_config.camera_id,
@@ -213,23 +222,6 @@ def run_image_sequence_validation(
         captured_at_utc = str(record.get("captured_at_utc", ""))
         local_time = str(record.get("local_time", captured_at_utc))
         download_status = str(record.get("download_status", "missing"))
-
-        if not pixel_change_enabled:
-            records.append(
-                ImageSequenceRecord(
-                    filename=filename,
-                    captured_at_utc=captured_at_utc,
-                    local_time=local_time,
-                    download_status=download_status,
-                    result=RESULT_CANNOT_JUDGE_WATER_LEVEL,
-                    reason=(
-                        "The pixel-change signal is turned off for this site, "
-                        "so water-level change cannot be judged."
-                    ),
-                )
-            )
-            evidence_records.append(_disabled_evidence(timestamp=captured_at_utc))
-            continue
 
         if download_status != "downloaded":
             records.append(
@@ -266,6 +258,28 @@ def run_image_sequence_validation(
                     timestamp=captured_at_utc, reason_codes=("IMAGE_FILE_UNREADABLE",)
                 )
             )
+            continue
+
+        # The adapter-enabled check comes after download/readability, not before:
+        # a missing or unreadable image is a fact about the IMAGE, not the adapter,
+        # and must still count as camera_or_image_problem regardless of whether the
+        # adapter is on. Only once an image is confirmed valid and readable does
+        # "the adapter is off" become the reason nothing was measured.
+        if not pixel_change_enabled:
+            records.append(
+                ImageSequenceRecord(
+                    filename=filename,
+                    captured_at_utc=captured_at_utc,
+                    local_time=local_time,
+                    download_status=download_status,
+                    result=RESULT_CANNOT_JUDGE_WATER_LEVEL,
+                    reason=(
+                        "The pixel-change signal is turned off for this site, "
+                        "so water-level change cannot be judged."
+                    ),
+                )
+            )
+            evidence_records.append(_disabled_evidence(timestamp=captured_at_utc))
             continue
 
         try:
@@ -371,6 +385,7 @@ def run_image_sequence_validation(
         site_config=site_config,
         best_filename=best_filename,
         review_images_generated=review_images_generated,
+        pixel_change_enabled=pixel_change_enabled,
     )
     _write_report_markdown(
         run_dir=run_dir, report=report, review_images_generated=review_images_generated
@@ -612,7 +627,13 @@ def _write_run_summary(
     site_config: Any,
     best_filename: str | None,
     review_images_generated: bool,
+    pixel_change_enabled: bool,
 ) -> None:
+    adapter_source = (
+        "site_override"
+        if _PIXEL_CHANGE_PLUGIN_ID in site_config.evidence_adapter_overrides
+        else "global"
+    )
     summary = {
         "run_id": report.run_id,
         "sequence_id": report.sequence_id,
@@ -629,6 +650,17 @@ def _write_run_summary(
         "confirmed_riverbank_guide_ids": _confirmed_riverbank_guide_ids(site_config),
         "biggest_change_filename": best_filename,
         "review_images_generated": review_images_generated,
+        # The resolved adapter configuration this run actually used, so a
+        # historical run stays reproducible/auditable even after Settings
+        # change later -- see docs/architecture/plugin-evidence-architecture.md.
+        "effective_evidence_adapters": [
+            {
+                "plugin_id": _PIXEL_CHANGE_PLUGIN_ID,
+                "plugin_version": _PIXEL_CHANGE_PLUGIN_VERSION,
+                "enabled": pixel_change_enabled,
+                "source": adapter_source,
+            }
+        ],
         "created_at": datetime.now(tz=UTC).isoformat(),
     }
     (run_dir / "run-summary.json").write_text(
