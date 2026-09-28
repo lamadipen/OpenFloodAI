@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings · OpenFloodAI console</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap">
+<link rel="stylesheet" href="/console/shared.css">
+</head>
+<body>
+<script src="/console/shared.js"></script>
+<script>
+let adapters = [];
+
+async function main() {
+  const content = mountShell({ active: "settings", crumbs: [{ label: "Settings" }, { label: "Evidence adapters" }] });
+  content.innerHTML = `<div class="card" style="padding:24px;color:var(--ink-muted);font-size:13px;">Loading adapters&hellip;</div>`;
+  await load();
+}
+
+async function load() {
+  try {
+    const data = await api("/api/evidence-adapters");
+    adapters = data.adapters || [];
+    render();
+  } catch (error) {
+    $("content").innerHTML = `<div class="card" style="padding:24px;color:var(--bad);font-size:13px;">Could not load adapters: ${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function familyPillClass(family) {
+  return { observation: "info", quality: "warn", context: "gray" }[family] || "gray";
+}
+
+function render() {
+  const content = $("content");
+  content.innerHTML = `
+    <div style="font-size:22px;font-weight:600;">Evidence adapters</div>
+    <div style="font-size:13px;color:var(--ink-muted);margin-top:2px;max-width:640px;">
+      These settings control this system's global default. Enabling or disabling an adapter here
+      changes every site that hasn't set its own override. Visit a site's Settings tab to override
+      one adapter for that site only.
+    </div>
+
+    <div class="card" style="margin-top:18px;overflow:hidden;">
+      ${adapters.map(rowHtml).join("")}
+    </div>
+  `;
+
+  content.querySelectorAll("[data-toggle-plugin]").forEach((btn) => {
+    btn.addEventListener("click", () => toggleGlobal(btn.dataset.togglePlugin, btn.dataset.nextState === "true"));
+  });
+}
+
+function rowHtml(adapter) {
+  const enabled = adapter.global_enabled;
+  return `
+    <div style="padding:16px 18px;border-bottom:1px solid var(--line-soft);display:flex;align-items:flex-start;justify-content:space-between;gap:16px;">
+      <div style="min-width:0;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span style="font-size:14px;font-weight:600;">${escapeHtml(adapter.display_name)}</span>
+          <span class="pill ${familyPillClass(adapter.plugin_family)}">${escapeHtml(adapter.plugin_family)}</span>
+          ${adapter.is_default ? '<span class="pill ok">Default</span>' : ""}
+        </div>
+        <div style="font-size:12px;color:var(--ink-soft);margin-top:4px;max-width:520px;">${escapeHtml(adapter.description)}</div>
+        <div style="font-size:11px;color:var(--ink-muted);margin-top:6px;font-family:var(--mono);">${escapeHtml(adapter.plugin_id)}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
+        <span class="pill ${enabled ? "ok" : "gray"}">${enabled ? "Enabled" : "Disabled"}</span>
+        <button class="btn ${enabled ? "" : "primary"}" data-toggle-plugin="${escapeHtml(adapter.plugin_id)}" data-next-state="${!enabled}">
+          ${enabled ? "Disable" : "Enable"}
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+async function toggleGlobal(pluginId, nextState) {
+  try {
+    const data = await api("/api/set-evidence-adapter-enabled", {
+      scope: "global",
+      plugin_id: pluginId,
+      enabled: nextState
+    });
+    adapters = data.adapters || adapters;
+    render();
+    toast(`${pluginId} ${nextState ? "enabled" : "disabled"} globally.`);
+  } catch (error) {
+    toast(`Could not update this setting: ${error.message}`);
+  }
+}
+
+main();
+</script>
+</body>
+</html>

@@ -46,7 +46,9 @@ function svgIcon(name) {
     river:
       '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12c2-4 5-6 8-6s6 4 8 8 6 2 6 2"/></svg>',
     download:
-      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>'
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>',
+    settings:
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33h0a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82v0a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>'
   };
   return icons[name] || "";
 }
@@ -74,6 +76,7 @@ function mountShell({ active, activeSiteFolder, crumbs }) {
         <nav class="rail-nav">
           <a class="rail-item ${active === "dashboard" ? "active" : ""}" href="/console/dashboard.html">${svgIcon("dashboard")}Dashboard</a>
           <a class="rail-item ${active === "sites" ? "active" : ""}" href="/console/dashboard.html#sites">${svgIcon("sites")}Sites</a>
+          <a class="rail-item ${active === "settings" ? "active" : ""}" href="/console/settings.html">${svgIcon("settings")}Settings</a>
         </nav>
         <div class="rail-sites">
           <div class="rail-sites-label">Your sites</div>

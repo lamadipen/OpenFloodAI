@@ -1,0 +1,168 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from openfloodai.evidence.settings import (
+    EvidenceSettingsError,
+    describe_adapters_for_settings_ui,
+    read_global_adapter_overrides,
+    resolve_adapter_setting_source,
+    resolve_effective_adapter_settings,
+    resolve_global_adapter_settings,
+    write_global_adapter_setting,
+)
+
+_PLUGIN_ID = "pixel_change_region_v1"
+
+
+def test_resolve_global_adapter_settings_defaults_to_catalog(tmp_path: Path) -> None:
+    resolved = resolve_global_adapter_settings(tmp_path)
+
+    assert resolved[_PLUGIN_ID] is True
+
+
+def test_write_global_adapter_setting_persists_and_reads_back(tmp_path: Path) -> None:
+    write_global_adapter_setting(tmp_path, _PLUGIN_ID, False)
+
+    assert read_global_adapter_overrides(tmp_path) == {_PLUGIN_ID: False}
+    assert resolve_global_adapter_settings(tmp_path)[_PLUGIN_ID] is False
+
+
+def test_write_global_adapter_setting_rejects_unknown_plugin_id(tmp_path: Path) -> None:
+    with pytest.raises(EvidenceSettingsError):
+        write_global_adapter_setting(tmp_path, "not-a-real-adapter", True)
+
+
+def test_write_global_adapter_setting_leaves_no_temp_file_behind(tmp_path: Path) -> None:
+    write_global_adapter_setting(tmp_path, _PLUGIN_ID, False)
+
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["evidence-adapter-settings.json"]
+
+
+def test_read_global_adapter_overrides_ignores_a_missing_file(tmp_path: Path) -> None:
+    assert read_global_adapter_overrides(tmp_path) == {}
+
+
+def test_read_global_adapter_overrides_raises_on_malformed_json(tmp_path: Path) -> None:
+    """An existing-but-corrupt file must not silently fall back to defaults.
+
+    A previously disabled adapter could otherwise appear re-enabled the
+    moment its settings file gets corrupted -- this must fail loudly
+    instead of guessing.
+    """
+
+    (tmp_path / "evidence-adapter-settings.json").write_text("not json", encoding="utf-8")
+
+    with pytest.raises(EvidenceSettingsError):
+        read_global_adapter_overrides(tmp_path)
+
+
+def test_read_global_adapter_overrides_raises_when_not_a_json_object(tmp_path: Path) -> None:
+    (tmp_path / "evidence-adapter-settings.json").write_text("[1, 2, 3]", encoding="utf-8")
+
+    with pytest.raises(EvidenceSettingsError):
+        read_global_adapter_overrides(tmp_path)
+
+
+def test_read_global_adapter_overrides_raises_when_adapters_key_missing(tmp_path: Path) -> None:
+    (tmp_path / "evidence-adapter-settings.json").write_text("{}", encoding="utf-8")
+
+    with pytest.raises(EvidenceSettingsError):
+        read_global_adapter_overrides(tmp_path)
+
+
+def test_read_global_adapter_overrides_raises_on_non_boolean_value(tmp_path: Path) -> None:
+    (tmp_path / "evidence-adapter-settings.json").write_text(
+        '{"adapters": {"pixel_change_region_v1": "yes"}}', encoding="utf-8"
+    )
+
+    with pytest.raises(EvidenceSettingsError):
+        read_global_adapter_overrides(tmp_path)
+
+
+def test_resolve_global_adapter_settings_propagates_a_corrupt_file(tmp_path: Path) -> None:
+    (tmp_path / "evidence-adapter-settings.json").write_text("not json", encoding="utf-8")
+
+    with pytest.raises(EvidenceSettingsError):
+        resolve_global_adapter_settings(tmp_path)
+
+
+def test_read_global_adapter_overrides_ignores_unknown_plugin_ids(tmp_path: Path) -> None:
+    (tmp_path / "evidence-adapter-settings.json").write_text(
+        '{"adapters": {"not-a-real-adapter": true, "pixel_change_region_v1": false}}',
+        encoding="utf-8",
+    )
+
+    assert read_global_adapter_overrides(tmp_path) == {_PLUGIN_ID: False}
+
+
+def test_resolve_effective_adapter_settings_site_override_wins_over_global(tmp_path: Path) -> None:
+    write_global_adapter_setting(tmp_path, _PLUGIN_ID, False)
+
+    effective = resolve_effective_adapter_settings(tmp_path, site_overrides={_PLUGIN_ID: True})
+
+    assert effective[_PLUGIN_ID] is True
+
+
+def test_resolve_effective_adapter_settings_falls_back_to_global_without_a_site_override(
+    tmp_path: Path,
+) -> None:
+    write_global_adapter_setting(tmp_path, _PLUGIN_ID, False)
+
+    assert resolve_effective_adapter_settings(tmp_path)[_PLUGIN_ID] is False
+
+
+def test_describe_adapters_for_settings_ui_reports_identity_and_effective_state(
+    tmp_path: Path,
+) -> None:
+    rows = describe_adapters_for_settings_ui(tmp_path, site_overrides={_PLUGIN_ID: False})
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["plugin_id"] == _PLUGIN_ID
+    assert row["is_default"] is True
+    assert row["global_enabled"] is True
+    assert row["site_override"] is False
+    assert row["effective_enabled"] is False
+
+
+def test_describe_adapters_for_settings_ui_without_a_site_override(tmp_path: Path) -> None:
+    rows = describe_adapters_for_settings_ui(tmp_path)
+
+    row = rows[0]
+    assert row["site_override"] is None
+    assert row["effective_enabled"] is True
+
+
+def test_resolve_adapter_setting_source_is_catalog_default_when_untouched(
+    tmp_path: Path,
+) -> None:
+    assert resolve_adapter_setting_source(tmp_path, _PLUGIN_ID) == "catalog_default"
+
+
+def test_resolve_adapter_setting_source_is_global_override_once_set(tmp_path: Path) -> None:
+    write_global_adapter_setting(tmp_path, _PLUGIN_ID, False)
+
+    assert resolve_adapter_setting_source(tmp_path, _PLUGIN_ID) == "global_override"
+
+
+def test_resolve_adapter_setting_source_is_global_override_even_when_set_to_the_default(
+    tmp_path: Path,
+) -> None:
+    """Explicitly setting the same value as the default is still an override, not untouched."""
+
+    write_global_adapter_setting(tmp_path, _PLUGIN_ID, True)
+
+    assert resolve_adapter_setting_source(tmp_path, _PLUGIN_ID) == "global_override"
+
+
+def test_resolve_adapter_setting_source_site_override_wins_regardless_of_global_state(
+    tmp_path: Path,
+) -> None:
+    write_global_adapter_setting(tmp_path, _PLUGIN_ID, False)
+
+    source = resolve_adapter_setting_source(tmp_path, _PLUGIN_ID, site_overrides={_PLUGIN_ID: True})
+
+    assert source == "site_override"

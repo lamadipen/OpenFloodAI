@@ -10,6 +10,8 @@ import cv2
 import numpy as np
 import pytest
 
+from openfloodai.config import write_evidence_adapter_override
+from openfloodai.evidence.settings import write_global_adapter_setting
 from openfloodai.review.event_reviews import compute_evidence_key, set_event_review
 from openfloodai.validation.image_sequence_runner import (
     RESULT_CAMERA_OR_IMAGE_PROBLEM,
@@ -150,6 +152,14 @@ def test_run_classifies_all_four_result_states_and_writes_outputs(tmp_path: Path
     assert summary["sequence_id"] == SEQUENCE_ID
     assert summary["biggest_change_filename"] == "possible-change.jpg"
     assert summary["review_images_generated"] is True
+    assert summary["effective_evidence_adapters"] == [
+        {
+            "plugin_id": "pixel_change_region_v1",
+            "plugin_version": "1.0.0",
+            "enabled": True,
+            "source": "catalog_default",
+        }
+    ]
 
     report_text = (run_dir / "image-sequence-report.md").read_text()
     assert "Safety Boundary" in report_text
@@ -157,6 +167,199 @@ def test_run_classifies_all_four_result_states_and_writes_outputs(tmp_path: Path
 
     records_lines = (run_dir / "image-sequence-records.jsonl").read_text().splitlines()
     assert len(records_lines) == 5
+
+    evidence_lines = (run_dir / "evidence-records.jsonl").read_text().splitlines()
+    assert len(evidence_lines) == 5
+    evidence_rows = [json.loads(line) for line in evidence_lines]
+    statuses = [row["status"] for row in evidence_rows]
+    # no-change/possible-change/camera-problem/dark all reach a real
+    # compare_region_signals() call (camera-problem and dark are still
+    # readable images -- they're only judged a "camera or image problem"
+    # by brightness, not by a failed comparison), so those 4 rows carry a
+    # real measurement. Only "missing.jpg" never got downloaded, so it's
+    # the one "unavailable" row -- no fabricated score for a missing image.
+    assert statuses.count("available") == 4
+    assert statuses.count("unavailable") == 1
+    for row in evidence_rows:
+        assert row["plugin_id"] == "pixel_change_region_v1"
+        if row["status"] == "available":
+            assert isinstance(row["value"], float)
+        else:
+            assert row["value"] is None
+
+
+def test_run_marks_the_row_cannot_judge_when_the_adapter_is_disabled_globally(
+    tmp_path: Path,
+) -> None:
+    """Disabling the only signal source must show up in the real result too.
+
+    Classification is now driven by the adapter's evidence, not a parallel
+    read of the same raw dict -- so turning the adapter off has to mean
+    something for the actual row, not just the evidence side channel. It
+    must never silently keep reporting "no change" with no real signal
+    behind it.
+    """
+
+    # site_dir must be nested as <sites_dir>/<folder_name>, matching real
+    # production layout (home_server.py's _resolve_site_dir) -- the
+    # reference directory is a sibling of sites_dir, not of the site itself.
+    site_dir = tmp_path / "sites" / "site"
+    make_site(site_dir)
+    write_global_adapter_setting(tmp_path / "reference", "pixel_change_region_v1", False)
+    sequence_dir = site_dir / "inputs" / "image-sequences" / SEQUENCE_ID
+    images_dir = sequence_dir / "images"
+
+    write_frame(images_dir / "baseline.jpg", 30)
+    write_frame(images_dir / "no-change.jpg", 30)
+
+    write_manifest(
+        sequence_dir,
+        [
+            manifest_record("baseline.jpg", "2026-09-01T00:00:00+00:00", "downloaded"),
+            manifest_record("no-change.jpg", "2026-09-01T01:00:00+00:00", "downloaded"),
+        ],
+    )
+
+    report = run_image_sequence_validation(site_dir, SEQUENCE_ID)
+
+    assert report.records[0].result == RESULT_CANNOT_JUDGE_WATER_LEVEL
+    assert report.records[0].region_change_score is None
+
+    evidence_lines = (report.run_dir / "evidence-records.jsonl").read_text().splitlines()
+    assert len(evidence_lines) == 1
+    row = json.loads(evidence_lines[0])
+    assert row["status"] == "disabled"
+    assert row["value"] is None
+    assert "ADAPTER_DISABLED" in row["reason_codes"]
+
+
+def test_disabled_adapter_does_not_hide_a_missing_or_unreadable_image(tmp_path: Path) -> None:
+    """A missing/unreadable image is a fact about the image, not the adapter.
+
+    Dataset-quality counts (camera_or_image_problem) must stay accurate
+    even when the adapter is off -- disabling a signal must never make a
+    real data-quality problem disappear into "cannot judge".
+    """
+
+    site_dir = tmp_path / "sites" / "site"
+    make_site(site_dir)
+    write_global_adapter_setting(tmp_path / "reference", "pixel_change_region_v1", False)
+    sequence_dir = site_dir / "inputs" / "image-sequences" / SEQUENCE_ID
+    images_dir = sequence_dir / "images"
+
+    write_frame(images_dir / "baseline.jpg", 30)
+    write_frame(images_dir / "no-change.jpg", 30)
+    # "missing.jpg" is deliberately never written -- download_status says
+    # downloaded, but the file isn't there, so this is an unreadable image.
+
+    write_manifest(
+        sequence_dir,
+        [
+            manifest_record("baseline.jpg", "2026-09-01T00:00:00+00:00", "downloaded"),
+            manifest_record("no-change.jpg", "2026-09-01T01:00:00+00:00", "downloaded"),
+            manifest_record("missing.jpg", "2026-09-01T02:00:00+00:00", "missing"),
+            manifest_record("unreadable.jpg", "2026-09-01T03:00:00+00:00", "downloaded"),
+        ],
+    )
+
+    report = run_image_sequence_validation(site_dir, SEQUENCE_ID)
+
+    results_by_filename = {record.filename: record.result for record in report.records}
+    assert results_by_filename["missing.jpg"] == RESULT_CAMERA_OR_IMAGE_PROBLEM
+    assert results_by_filename["unreadable.jpg"] == RESULT_CAMERA_OR_IMAGE_PROBLEM
+    # The only genuinely valid, readable image still gets the disabled treatment.
+    assert results_by_filename["no-change.jpg"] == RESULT_CANNOT_JUDGE_WATER_LEVEL
+
+    evidence_by_status: dict[str, list[list[str]]] = {}
+    for line in (report.run_dir / "evidence-records.jsonl").read_text().splitlines():
+        row = json.loads(line)
+        evidence_by_status.setdefault(row["status"], []).append(row["reason_codes"])
+    assert evidence_by_status["unavailable"] == [
+        ["IMAGE_NOT_DOWNLOADED"],
+        ["IMAGE_FILE_UNREADABLE"],
+    ]
+    assert evidence_by_status["disabled"] == [["ADAPTER_DISABLED"]]
+
+
+def test_run_site_override_re_enables_an_adapter_disabled_globally(tmp_path: Path) -> None:
+    site_dir = tmp_path / "sites" / "site"
+    make_site(site_dir)
+    write_global_adapter_setting(tmp_path / "reference", "pixel_change_region_v1", False)
+    write_evidence_adapter_override(
+        site_dir / "configs" / "site.json", "pixel_change_region_v1", True
+    )
+    sequence_dir = site_dir / "inputs" / "image-sequences" / SEQUENCE_ID
+    images_dir = sequence_dir / "images"
+
+    write_frame(images_dir / "baseline.jpg", 30)
+    write_frame(images_dir / "no-change.jpg", 30)
+
+    write_manifest(
+        sequence_dir,
+        [
+            manifest_record("baseline.jpg", "2026-09-01T00:00:00+00:00", "downloaded"),
+            manifest_record("no-change.jpg", "2026-09-01T01:00:00+00:00", "downloaded"),
+        ],
+    )
+
+    report = run_image_sequence_validation(site_dir, SEQUENCE_ID)
+
+    evidence_lines = (report.run_dir / "evidence-records.jsonl").read_text().splitlines()
+    row = json.loads(evidence_lines[0])
+    assert row["status"] == "available"
+    assert row["value"] == 0.0
+
+    summary = json.loads((report.run_dir / "run-summary.json").read_text())
+    assert summary["effective_evidence_adapters"] == [
+        {
+            "plugin_id": "pixel_change_region_v1",
+            "plugin_version": "1.0.0",
+            "enabled": True,
+            "source": "site_override",
+        }
+    ]
+
+
+def test_run_records_global_override_as_the_adapter_source_when_no_site_override(
+    tmp_path: Path,
+) -> None:
+    """catalog_default and global_override must be distinguished, not both called "global".
+
+    Two runs can both resolve to enabled=True for different reasons: one
+    because nobody ever touched the setting (catalog_default), another
+    because someone explicitly turned the global default back on
+    (global_override). Auditing a run needs to know which actually
+    happened.
+    """
+
+    site_dir = tmp_path / "sites" / "site"
+    make_site(site_dir)
+    write_global_adapter_setting(tmp_path / "reference", "pixel_change_region_v1", True)
+    sequence_dir = site_dir / "inputs" / "image-sequences" / SEQUENCE_ID
+    images_dir = sequence_dir / "images"
+
+    write_frame(images_dir / "baseline.jpg", 30)
+    write_frame(images_dir / "no-change.jpg", 30)
+
+    write_manifest(
+        sequence_dir,
+        [
+            manifest_record("baseline.jpg", "2026-09-01T00:00:00+00:00", "downloaded"),
+            manifest_record("no-change.jpg", "2026-09-01T01:00:00+00:00", "downloaded"),
+        ],
+    )
+
+    report = run_image_sequence_validation(site_dir, SEQUENCE_ID)
+
+    summary = json.loads((report.run_dir / "run-summary.json").read_text())
+    assert summary["effective_evidence_adapters"] == [
+        {
+            "plugin_id": "pixel_change_region_v1",
+            "plugin_version": "1.0.0",
+            "enabled": True,
+            "source": "global_override",
+        }
+    ]
 
 
 def test_run_marks_a_too_small_watched_area_as_cannot_judge(tmp_path: Path) -> None:
@@ -292,6 +495,10 @@ def test_list_and_read_run_detail_round_trip(tmp_path: Path) -> None:
     # sequence yet: both keys are present but empty, never missing.
     assert detail["gauge_series"] == []
     assert detail["event_reviews"] == {}
+    assert len(detail["evidence_records"]) == 1
+    evidence_row = detail["evidence_records"][0]
+    assert evidence_row["plugin_id"] == "pixel_change_region_v1"
+    assert evidence_row["timestamp"] == "2026-09-01T01:00:00+00:00"
 
 
 def test_read_run_detail_includes_gauge_series_and_event_reviews_when_present(

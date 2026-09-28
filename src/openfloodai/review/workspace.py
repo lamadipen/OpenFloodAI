@@ -21,8 +21,15 @@ from typing import Any
 
 from openfloodai.contracts import read_jsonl_records, write_jsonl_record
 from openfloodai.ingestion.river_images import resolve_sequence_image
-from openfloodai.review.dataset_groups import assign_dataset_group, list_dataset_group_assignments
-from openfloodai.review.dataset_manifest import ALLOWED_MANIFEST_SPLITS, load_manifest_records
+from openfloodai.review.dataset_groups import (
+    assign_dataset_group,
+    dataset_group_for_date,
+    list_dataset_group_assignments,
+)
+from openfloodai.review.dataset_manifest import (
+    ALLOWED_MANIFEST_SPLITS,
+    load_manifest_records,
+)
 from openfloodai.review.human_labels import (
     ALLOWED_CONFIDENCE_LEVELS,
     ALLOWED_TRISTATE_VALUES,
@@ -35,6 +42,21 @@ from openfloodai.review.label_comparison import compare_label_records
 
 _ID = re.compile(r"^[A-Za-z0-9_-]+$")
 _lock = RLock()
+
+# The reviewed-observation contract (docs: Water-Signal data collection plan).
+# schema_version 0 = a pre-existing record with none of these fields; 1 = the
+# fields below are present. normalize_observation() fills 0 -> 1 on read so
+# historical records stay valid without ever being rewritten on disk.
+OBSERVATION_SCHEMA_VERSION = 1
+ALLOWED_EVENT_VALIDITY = {"real", "not_real", "uncertain", "not_reviewed"}
+_CHANGE_PRESENCE_BY_HUMAN_LABEL = {
+    "water_level_rising": "change",
+    "water_level_falling": "change",
+    "no_water_level_change": "no_change",
+    "cannot_judge_water_level": "cannot_judge",
+    "camera_video_problem": "cannot_judge",
+}
+_UNASSIGNED_DATASET_GROUP = "unassigned"
 
 
 def _json(path: Path) -> Any:
@@ -111,6 +133,98 @@ def _finite(value: object) -> float | None:
 
 def _key(record: dict[str, Any]) -> str:
     return hashlib.sha256(json.dumps(record, sort_keys=True).encode()).hexdigest()[:24]
+
+
+def _observation_id(*, kind: str, run_id: str, media_id: str, sample_key: str) -> str:
+    """Stable identity for one reviewable sample -- unchanged across re-reviews.
+
+    A new review of the same sample gets a new revision (see
+    _next_label_revision), not a new identity: this is what "duplicate
+    reviews of the same observation" and "latest revision wins" resolve
+    against.
+    """
+
+    return _key({"kind": kind, "run_id": run_id, "media_id": media_id, "sample_key": sample_key})
+
+
+def _change_presence_from_human_label(human_label: object) -> str:
+    return _CHANGE_PRESENCE_BY_HUMAN_LABEL.get(str(human_label), "cannot_judge")
+
+
+def _next_label_revision(existing_reviews: list[dict[str, Any]], observation_id: str) -> int:
+    prior = [r for r in existing_reviews if r.get("observation_id") == observation_id]
+    return len(prior) + 1
+
+
+def _dataset_group_for_observation(
+    site: Path, *, kind: str, media_id: str, captured_at_utc: object
+) -> str:
+    """The dataset group this observation belonged to at review time.
+
+    Stamped onto the observation itself (not just looked up later) so a
+    later re-grouping can't silently change what split a past review's
+    metrics were computed against -- reproducibility depends on this being
+    frozen at the moment of review, not resolved dynamically forever.
+    """
+
+    if kind == "image":
+        assignments = list_dataset_group_assignments(site)
+        target_date = str(captured_at_utc or "")[:10]
+        if not target_date:
+            return _UNASSIGNED_DATASET_GROUP
+        return dataset_group_for_date(assignments, target_date)
+    manifest = site / "manifest.jsonl"
+    if not manifest.exists():
+        return _UNASSIGNED_DATASET_GROUP
+    matches = [r for r in load_manifest_records(manifest) if r.get("video_id") == media_id]
+    if len(matches) != 1:
+        return _UNASSIGNED_DATASET_GROUP
+    split = matches[0].get("split")
+    return (
+        str(split)
+        if isinstance(split, str) and split in ALLOWED_MANIFEST_SPLITS
+        else (_UNASSIGNED_DATASET_GROUP)
+    )
+
+
+def normalize_observation(record: dict[str, Any]) -> dict[str, Any]:
+    """Fill contract fields on a possibly-historical observation record.
+
+    Never mutates the file on disk -- a record written before this
+    contract existed simply gets these fields derived on read, every time,
+    so "existing records remain readable" holds without a migration step.
+    """
+
+    if record.get("schema_version") == OBSERVATION_SCHEMA_VERSION and "observation_id" in record:
+        return record
+
+    normalized = dict(record)
+    kind = str(record.get("kind", ""))
+    run_id = str(record.get("run_id", ""))
+    media_id = str(record.get("media_id", ""))
+    sample_key = str(record.get("sample_key", ""))
+    normalized.setdefault(
+        "observation_id",
+        _observation_id(kind=kind, run_id=run_id, media_id=media_id, sample_key=sample_key),
+    )
+    normalized.setdefault("source", "image_pair" if kind == "image" else "video_window")
+    label = record.get("label")
+    human_label = label.get("human_label") if isinstance(label, dict) else None
+    normalized.setdefault("change_presence", _change_presence_from_human_label(human_label))
+    normalized.setdefault("event_validity", "not_reviewed")
+    normalized.setdefault("dataset_group", _UNASSIGNED_DATASET_GROUP)
+    normalized.setdefault("label_revision", 1)
+    normalized["schema_version"] = OBSERVATION_SCHEMA_VERSION
+    return normalized
+
+
+def load_observations(run: Path) -> list[dict[str, Any]]:
+    """Read one run's human-review observations, normalized to the current contract."""
+
+    path = _inside(run, "human-review", "observations.jsonl")
+    if not path.exists():
+        return []
+    return [normalize_observation(record) for record in read_jsonl_records(path)]
 
 
 def evidence(site: Path, kind: str, run_id: str, media_id: str) -> dict[str, Any]:
@@ -330,6 +444,15 @@ def _label_fields(data: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _event_validity_field(data: dict[str, Any]) -> str:
+    value = str(data.get("event_validity") or "not_reviewed").strip()
+    if value not in ALLOWED_EVENT_VALIDITY:
+        raise ValueError(
+            f"event_validity must be one of {sorted(ALLOWED_EVENT_VALIDITY)}, got {value!r}."
+        )
+    return value
+
+
 def save_observation(site: Path, data: dict[str, Any]) -> dict[str, Any]:
     kind, run_id, media_id = (str(data.get(k, "")) for k in ("kind", "run_id", "media_id"))
     with _lock:
@@ -338,6 +461,7 @@ def save_observation(site: Path, data: dict[str, Any]) -> dict[str, Any]:
         if point is None:
             raise ValueError("Selected sample was not found in the saved machine evidence.")
         label = _label_fields(data)
+        event_validity = _event_validity_field(data)
         run = run_path(site, kind, run_id)
         if kind == "video":
             media_path(site, kind, run_id, media_id)
@@ -360,12 +484,27 @@ def save_observation(site: Path, data: dict[str, Any]) -> dict[str, Any]:
             if point["has_media"]:
                 media_path(site, kind, run_id, media_id, str(point["filename"]))
             media_path(site, kind, run_id, media_id, str(payload["baseline_filename"]))
+        observation_id = _observation_id(
+            kind=kind, run_id=run_id, media_id=media_id, sample_key=point["key"]
+        )
+        review_path = _inside(run, "human-review", "observations.jsonl")
+        existing_reviews = read_jsonl_records(review_path) if review_path.exists() else []
+        human_label = label.get("human_label") if isinstance(label, dict) else None
         observation = {
+            "schema_version": OBSERVATION_SCHEMA_VERSION,
+            "observation_id": observation_id,
+            "source": "image_pair" if kind == "image" else "video_window",
             "sample_key": point["key"],
             "media_id": media_id,
             "kind": kind,
             "run_id": run_id,
             "label": label,
+            "change_presence": _change_presence_from_human_label(human_label),
+            "event_validity": event_validity,
+            "dataset_group": _dataset_group_for_observation(
+                site, kind=kind, media_id=media_id, captured_at_utc=point.get("time")
+            ),
+            "label_revision": _next_label_revision(existing_reviews, observation_id),
             "baseline_filename": payload["baseline_filename"],
             "filename": point.get("filename"),
             "captured_at_utc": point.get("time"),
@@ -373,7 +512,7 @@ def save_observation(site: Path, data: dict[str, Any]) -> dict[str, Any]:
             "reviewed_at_utc": datetime.now(UTC).isoformat(),
         }
         try:
-            write_jsonl_record(_inside(run, "human-review", "observations.jsonl"), observation)
+            write_jsonl_record(review_path, observation)
         except (OSError, ValueError):
             if kind == "video":
                 return {

@@ -11,7 +11,7 @@
 <script src="/console/shared.js"></script>
 <script>
 const folderName = qs("site");
-let state = { tab: "overview", config: null, status: null, sequences: [], runsBySequence: {}, manifest: [] };
+let state = { tab: "overview", config: null, status: null, sequences: [], runsBySequence: {}, manifest: [], evidenceAdapters: [] };
 
 async function main() {
   if (!folderName) {
@@ -38,16 +38,18 @@ async function main() {
 
 async function load() {
   try {
-    const [sitesData, configData, sequenceData, manifestData] = await Promise.all([
+    const [sitesData, configData, sequenceData, manifestData, evidenceData] = await Promise.all([
       api("/api/sites"),
       api(`/api/site-config?${new URLSearchParams({ folder_name: folderName })}`),
       api(`/api/site-image-sequences?${new URLSearchParams({ folder_name: folderName })}`),
-      api(`/api/site-manifest?${new URLSearchParams({ folder_name: folderName })}`).catch(() => ({ records: [] }))
+      api(`/api/site-manifest?${new URLSearchParams({ folder_name: folderName })}`).catch(() => ({ records: [] })),
+      api(`/api/evidence-adapters?${new URLSearchParams({ folder_name: folderName })}`).catch(() => ({ adapters: [] }))
     ]);
     state.status = (sitesData.sites || []).find((s) => s.site_name === folderName) || null;
     state.config = configData.config || {};
     state.sequences = sequenceData.sequences || [];
     state.manifest = manifestData.records || [];
+    state.evidenceAdapters = evidenceData.adapters || [];
 
     await Promise.all(
       state.sequences.map(async (seq) => {
@@ -87,7 +89,7 @@ function render() {
     </div>
 
     <div style="display:flex;gap:4px;border-bottom:1px solid var(--line);">
-      ${["overview", "setup", "sequences", "dataset"]
+      ${["overview", "setup", "sequences", "dataset", "settings"]
         .map(
           (t) => `<button data-tab="${t}" style="border:none;background:none;padding:10px 16px;font-size:13px;font-weight:${state.tab === t ? 600 : 500};color:${state.tab === t ? "var(--accent)" : "var(--ink-soft)"};border-bottom:2px solid ${state.tab === t ? "var(--accent)" : "transparent"};cursor:pointer;">${tabLabel(t)}</button>`
         )
@@ -108,7 +110,8 @@ function render() {
   if (state.tab === "overview") body.innerHTML = renderOverview();
   else if (state.tab === "setup") body.innerHTML = renderSetup();
   else if (state.tab === "sequences") body.innerHTML = renderSequences();
-  else body.innerHTML = renderDataset();
+  else if (state.tab === "dataset") body.innerHTML = renderDataset();
+  else body.innerHTML = renderSettings();
   wireTabActions();
 }
 
@@ -141,7 +144,13 @@ function renderBaselineExplanation(baseline) {
 }
 
 function tabLabel(t) {
-  return { overview: "Overview", setup: "Setup", sequences: "Sequences & runs", dataset: "Dataset tags" }[t];
+  return {
+    overview: "Overview",
+    setup: "Setup",
+    sequences: "Sequences & runs",
+    dataset: "Dataset tags",
+    settings: "Settings"
+  }[t];
 }
 
 function renderOverview() {
@@ -500,7 +509,69 @@ function renderVideoDatasetOption() {
     </div>`;
 }
 
+function renderSettings() {
+  const rows = state.evidenceAdapters || [];
+  return `
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div style="font-size:12px;color:var(--ink-muted);max-width:640px;">
+        Overrides here apply to this site only, and win over the
+        <a href="/console/settings.html">global default</a>. Leave an adapter on
+        &ldquo;Use global&rdquo; to follow whatever the global setting is at any time.
+      </div>
+      <div class="card" style="overflow:hidden;">
+        ${rows.map(evidenceAdapterRowHtml).join("") || `<div style="padding:18px 20px;font-size:13px;color:var(--ink-soft);">No known adapters.</div>`}
+      </div>
+    </div>`;
+}
+
+function evidenceAdapterRowHtml(adapter) {
+  const override = adapter.site_override; // true | false | null
+  const mode = override === null ? "global" : override ? "on" : "off";
+  return `
+    <div style="padding:14px 18px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;gap:16px;">
+      <div style="min-width:0;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:13px;font-weight:600;">${escapeHtml(adapter.display_name)}</span>
+          ${adapter.is_default ? '<span class="pill ok">Default</span>' : ""}
+        </div>
+        <div style="font-size:11px;color:var(--ink-muted);margin-top:3px;">
+          Global default: ${adapter.global_enabled ? "Enabled" : "Disabled"} &middot;
+          Effective here: <strong>${adapter.effective_enabled ? "Enabled" : "Disabled"}</strong>
+        </div>
+      </div>
+      <select data-site-override-plugin="${escapeHtml(adapter.plugin_id)}" style="height:32px;border-radius:7px;border:1px solid var(--line);background:var(--card);font-size:12px;padding:0 8px;">
+        <option value="global" ${mode === "global" ? "selected" : ""}>Use global</option>
+        <option value="on" ${mode === "on" ? "selected" : ""}>Enable here</option>
+        <option value="off" ${mode === "off" ? "selected" : ""}>Disable here</option>
+      </select>
+    </div>`;
+}
+
+async function setSiteAdapterOverride(pluginId, mode) {
+  const enabled = mode === "global" ? null : mode === "on";
+  try {
+    const data = await api("/api/set-evidence-adapter-enabled", {
+      scope: "site",
+      folder_name: folderName,
+      plugin_id: pluginId,
+      enabled
+    });
+    state.evidenceAdapters = data.adapters || state.evidenceAdapters;
+    render();
+    toast(
+      mode === "global"
+        ? `${pluginId} now follows the global default for this site.`
+        : `${pluginId} ${mode === "on" ? "enabled" : "disabled"} for this site.`
+    );
+  } catch (error) {
+    toast(`Could not update this setting: ${error.message}`);
+  }
+}
+
 function wireTabActions() {
+  document.querySelectorAll("[data-site-override-plugin]").forEach((select) => {
+    select.addEventListener("change", () => setSiteAdapterOverride(select.dataset.siteOverridePlugin, select.value));
+  });
   const runBtn = document.getElementById("runValidationBtn");
   if (runBtn) runBtn.addEventListener("click", runVideoValidation);
   const goSequencesBtn = document.getElementById("goSequencesBtn");
