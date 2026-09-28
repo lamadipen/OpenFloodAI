@@ -225,3 +225,44 @@ def test_intake_replacement_defaults_label_flag_without_changing_other_rows(tmp_
     records = {row["video_id"]: row for row in load_manifest_records(result.manifest_path)}
     assert records["replace-me"]["has_human_label"] is False
     assert records["keep-me"]["has_human_label"] is True
+
+
+def test_intake_validation_video_names_only_the_actually_missing_field(tmp_path: Path) -> None:
+    """The error must say which field is missing, not always list all three.
+
+    Listing every required field regardless of what's actually empty is
+    misleading -- a user with a filled-in video_id and purpose but a
+    blank notes box would otherwise be told video_id is missing too.
+    """
+
+    site_dir = _make_site(tmp_path)
+    source = _make_video(tmp_path / "rising-001.mp4")
+
+    result = intake_validation_video(
+        site_dir=site_dir,
+        video_path=source,
+        video_id="rising-001",
+        purpose="possible_rising_water",
+        split="practice",
+        notes="",
+    )
+
+    assert not result.created
+    assert result.message == "Missing required field(s): notes."
+
+
+def test_intake_validation_video_names_every_missing_field(tmp_path: Path) -> None:
+    site_dir = _make_site(tmp_path)
+    source = _make_video(tmp_path / "rising-001.mp4")
+
+    result = intake_validation_video(
+        site_dir=site_dir,
+        video_path=source,
+        video_id="",
+        purpose="",
+        split="practice",
+        notes="",
+    )
+
+    assert not result.created
+    assert result.message == "Missing required field(s): video_id, purpose, notes."

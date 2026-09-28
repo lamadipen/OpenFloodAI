@@ -54,10 +54,15 @@ def intake_validation_video(
         message="",
     )
 
-    if not video_id or not purpose or not notes:
+    missing_fields = [
+        name
+        for name, value in (("video_id", video_id), ("purpose", purpose), ("notes", notes))
+        if not value
+    ]
+    if missing_fields:
         return replace(
             empty,
-            message=("Missing required fields: video_id, purpose, and notes are all required."),
+            message=f"Missing required field(s): {', '.join(missing_fields)}.",
         )
 
     if _VIDEO_ID_PATTERN.fullmatch(video_id) is None:
