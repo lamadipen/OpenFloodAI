@@ -86,6 +86,10 @@ class NormalWaterlineGuide:
     # exactly one, never both, never neither. See _load_normal_waterline_guide.
     image_sequence_id: str = ""
     image_filename: str = ""
+    # One point on the normally-wet side of this line, for adapters (e.g.
+    # riverbank_crossing_v1) that need to know which side is water without a
+    # second drawing tool. Optional so existing guides keep loading as-is.
+    water_side_point: WaterlinePoint | None = None
 
 
 @dataclass(frozen=True)
@@ -387,6 +391,9 @@ def _normal_waterline_guide_to_dict(value: NormalWaterlineGuide) -> dict[str, An
         "invalidation_reason": value.invalidation_reason,
         "image_sequence_id": value.image_sequence_id,
         "image_filename": value.image_filename,
+        "water_side_point": (
+            _point_to_dict(value.water_side_point) if value.water_side_point is not None else None
+        ),
     }
 
 
@@ -534,6 +541,19 @@ def _load_waterline_point(value: object) -> WaterlinePoint:
     return WaterlinePoint(x=x, y=y)
 
 
+def _load_optional_water_side_point(
+    value: object, *, parent_region: ReferenceRegion
+) -> WaterlinePoint | None:
+    if value is None:
+        return None
+    point = _load_waterline_point(value)
+    if not _point_inside_region(point, parent_region):
+        raise SiteConfigError(
+            "Normal waterline guide's water_side_point must fit inside the watched area"
+        )
+    return point
+
+
 def _point_inside_region(point: WaterlinePoint, region: ReferenceRegion) -> bool:
     return (
         region.x <= point.x <= region.x + region.width
@@ -563,7 +583,7 @@ def _load_normal_waterline_guide(
         "invalidated_at",
         "invalidation_reason",
     }
-    optional_fields = {"image_sequence_id", "image_filename"}
+    optional_fields = {"image_sequence_id", "image_filename", "water_side_point"}
     missing_fields = sorted(required_fields - record.keys())
     if missing_fields:
         joined_fields = ", ".join(missing_fields)
@@ -619,6 +639,10 @@ def _load_normal_waterline_guide(
             "a video (video_id) or a saved image (image_sequence_id + image_filename)"
         )
 
+    water_side_point = _load_optional_water_side_point(
+        record.get("water_side_point"), parent_region=parent_region
+    )
+
     return NormalWaterlineGuide(
         id=_load_required_text(record, "id"),
         label=_load_required_text(record, "label"),
@@ -635,6 +659,7 @@ def _load_normal_waterline_guide(
         invalidation_reason=invalidation_reason,
         image_sequence_id=image_sequence_id,
         image_filename=image_filename,
+        water_side_point=water_side_point,
     )
 
 

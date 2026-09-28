@@ -6,6 +6,7 @@ from openfloodai.vision.simple_signals import (
     compare_region_signals,
     extract_frame_signals,
     extract_region_signals,
+    patch_change_score,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "compare_region_signals",
     "extract_frame_signals",
     "extract_region_signals",
+    "patch_change_score",
 ]

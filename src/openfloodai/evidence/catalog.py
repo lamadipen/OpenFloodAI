@@ -50,6 +50,18 @@ KNOWN_ADAPTERS: tuple[AdapterDescriptor, ...] = (
         ),
         is_default=True,
     ),
+    AdapterDescriptor(
+        plugin_id="riverbank_crossing_v1",
+        plugin_family="observation",
+        display_name="Riverbank Crossing",
+        description=(
+            "Compares narrow bands on each side of a site's confirmed normal "
+            "waterline guide for visual change crossing past it. Unevaluated "
+            "against the human-reviewed pilot yet, so this ships disabled by "
+            "default -- advisory geometric evidence, not a flood confirmation."
+        ),
+        is_default=False,
+    ),
 )
 
 

@@ -263,6 +263,53 @@ def test_write_normal_waterline_guide_rejects_point_outside_watched_area(tmp_pat
         )
 
 
+def test_write_normal_waterline_guide_stores_water_side_point(tmp_path: Path) -> None:
+    config_path = site_with_watched_area(tmp_path)
+
+    saved = write_normal_waterline_guide(
+        config_path,
+        normal_waterline_guide_payload(water_side_point={"x": 15, "y": 90}),
+    )
+
+    assert saved.water_side_point == WaterlinePoint(x=15, y=90)
+    config = load_site_config(config_path)
+    assert config.normal_waterline_guides == (saved,)
+
+
+def test_write_normal_waterline_guide_water_side_point_is_optional(tmp_path: Path) -> None:
+    config_path = site_with_watched_area(tmp_path)
+
+    saved = write_normal_waterline_guide(config_path, normal_waterline_guide_payload())
+
+    assert saved.water_side_point is None
+
+
+def test_write_normal_waterline_guide_rejects_water_side_point_outside_watched_area(
+    tmp_path: Path,
+) -> None:
+    config_path = site_with_watched_area(tmp_path)
+
+    with pytest.raises(SiteConfigError, match="fit inside the watched area"):
+        write_normal_waterline_guide(
+            config_path,
+            normal_waterline_guide_payload(water_side_point={"x": 0, "y": 0}),
+        )
+
+
+def test_a_guide_saved_before_water_side_point_existed_still_loads(tmp_path: Path) -> None:
+    """A config written before this field existed has no `water_side_point` key at all."""
+
+    config_path = site_with_watched_area(tmp_path)
+    write_normal_waterline_guide(config_path, normal_waterline_guide_payload())
+    raw_config = json.loads(config_path.read_text(encoding="utf-8"))
+    del raw_config["normal_waterline_guides"][0]["water_side_point"]
+    config_path.write_text(json.dumps(raw_config), encoding="utf-8")
+
+    config = load_site_config(config_path)
+
+    assert config.normal_waterline_guides[0].water_side_point is None
+
+
 def test_write_normal_waterline_guide_rejects_fewer_than_two_points(tmp_path: Path) -> None:
     config_path = site_with_watched_area(tmp_path)
 
