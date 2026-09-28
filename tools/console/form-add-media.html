@@ -9,7 +9,7 @@
 </head>
 <body style="background:var(--paper);">
 <div class="modal-overlay">
-  <div class="modal-card" style="width:min(720px,94vw);">
+  <div class="modal-card" style="width:min(640px,94vw);">
     <div style="padding:18px 24px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;">
       <div>
         <div style="font-size:15px;font-weight:600;">Add media</div>
@@ -25,29 +25,35 @@
       <button data-mode="images" style="border:none;background:none;padding:8px 14px;font-size:13px;font-weight:500;color:var(--ink-soft);border-bottom:2px solid transparent;cursor:pointer;">Timestamped images</button>
     </div>
 
-    <div style="padding:20px 24px;max-height:60vh;overflow:auto;">
+    <div style="padding:22px 24px;">
       <div id="videoPanel">
         <form id="videoForm">
-          <div style="margin-bottom:14px;">
-            <label for="video_file">Video file</label>
-            <input type="file" id="video_file" name="video" accept=".mp4,.mov,.avi,.mkv" required>
+          <div style="margin-bottom:16px;">
+            <label>Video file</label>
+            <div id="dropzone" tabindex="0" style="position:relative;border:1.5px dashed var(--line);border-radius:10px;background:var(--paper);padding:18px 16px;text-align:center;cursor:pointer;transition:border-color .12s,background .12s;">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink-muted)" stroke-width="1.8" style="margin-bottom:6px;"><path d="M12 15V4M12 4l-4 4M12 4l4 4"/><path d="M4 15v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>
+              <div id="dropzoneText" style="font-size:12.5px;font-weight:600;color:var(--ink-soft);">Drop a video file here</div>
+              <div id="dropzoneSub" style="font-size:11px;color:var(--ink-muted);margin-top:3px;">or click to browse &middot; .mp4, .mov, .avi, .mkv</div>
+              <input type="file" id="video_file" name="video" accept=".mp4,.mov,.avi,.mkv" required style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;">
+            </div>
+            <div class="hint">The watched-area guide and site settings stay exactly as configured &mdash; only the source video changes.</div>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
-            <div>
-              <label for="video_id">Video id</label>
-              <input id="video_id" placeholder="auto from filename">
-            </div>
-            <div>
-              <label for="split">Split</label>
-              <select id="split">
-                <option value="practice">practice</option>
-                <option value="locked_validation">locked_validation</option>
-              </select>
-            </div>
+          <div style="margin-bottom:14px;">
+            <label for="video_id">Video id</label>
+            <input id="video_id" placeholder="auto from filename" style="width:100%;font-family:var(--mono);font-size:12px;">
+            <div class="hint">Leave blank to reuse the filename.</div>
+          </div>
+          <div style="margin-bottom:14px;">
+            <label for="split">Split</label>
+            <select id="split" style="width:100%;">
+              <option value="practice">practice</option>
+              <option value="locked_validation">locked_validation</option>
+            </select>
+            <div class="hint">Practice runs don&rsquo;t count toward locked validation.</div>
           </div>
           <div style="margin-bottom:14px;">
             <label for="purpose">Purpose</label>
-            <select id="purpose">
+            <select id="purpose" style="width:100%;">
               <option value="practice_normal_water">Practice: normal water</option>
               <option value="possible_rising_water">Possible rising water</option>
               <option value="possible_falling_water">Possible falling water</option>
@@ -57,8 +63,8 @@
             </select>
           </div>
           <div style="margin-bottom:14px;">
-            <label for="notes">Notes</label>
-            <textarea id="notes" rows="2"></textarea>
+            <label for="notes">Notes (required)</label>
+            <textarea id="notes" rows="3" required style="width:100%;" placeholder="What a reviewer should know before watching this clip."></textarea>
           </div>
           <div id="videoError" class="err" hidden style="margin-bottom:12px;"></div>
           <button type="submit" id="videoSubmit" class="btn primary" style="width:100%;justify-content:center;">Add video</button>
@@ -70,16 +76,16 @@
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
             <div>
               <label for="start_date">Start date</label>
-              <input type="date" id="start_date" required>
+              <input type="date" id="start_date" required style="width:100%;">
             </div>
             <div>
               <label for="end_date">End date</label>
-              <input type="date" id="end_date" required>
+              <input type="date" id="end_date" required style="width:100%;">
             </div>
           </div>
           <div style="margin-bottom:14px;">
             <label for="camera_url">Camera URL</label>
-            <input id="camera_url" placeholder="https://apps.usgs.gov/hivis/camera/...">
+            <input id="camera_url" placeholder="https://apps.usgs.gov/hivis/camera/..." style="width:100%;">
           </div>
           <div style="margin-bottom:8px;">Sampling mode</div>
           <div id="samplingOptions" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;"></div>
@@ -138,9 +144,53 @@ function sanitizeVideoId(value) {
   return value.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9_-]/g, "");
 }
 
+function formatFileSize(bytes) {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function setDropzoneFile(file) {
+  $("dropzoneText").textContent = file.name;
+  $("dropzoneText").style.fontFamily = "var(--mono)";
+  $("dropzoneSub").textContent = `${formatFileSize(file.size)} · click to choose a different file`;
+  $("dropzone").style.borderColor = "var(--accent)";
+  $("dropzone").style.background = "var(--accent-soft)";
+}
+
+const dropzone = $("dropzone");
+dropzone.addEventListener("click", () => $("video_file").click());
+dropzone.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    $("video_file").click();
+  }
+});
+["dragenter", "dragover"].forEach((eventName) => {
+  dropzone.addEventListener(eventName, (event) => {
+    event.preventDefault();
+    dropzone.style.borderColor = "var(--accent)";
+    dropzone.style.background = "var(--accent-soft)";
+  });
+});
+dropzone.addEventListener("dragleave", () => {
+  if (!$("video_file").files[0]) {
+    dropzone.style.borderColor = "var(--line)";
+    dropzone.style.background = "var(--paper)";
+  }
+});
+dropzone.addEventListener("drop", (event) => {
+  event.preventDefault();
+  const file = event.dataTransfer.files[0];
+  if (!file) return;
+  $("video_file").files = event.dataTransfer.files;
+  setDropzoneFile(file);
+  $("video_id").value = sanitizeVideoId(fileStem(file.name));
+});
+
 $("video_file").addEventListener("change", () => {
   const file = $("video_file").files[0];
   if (!file) return;
+  setDropzoneFile(file);
   $("video_id").value = sanitizeVideoId(fileStem(file.name));
 });
 
