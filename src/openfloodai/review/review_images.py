@@ -323,6 +323,20 @@ def _is_guide_trusted(guide: NormalWaterlineGuideInput) -> bool:
     )
 
 
+def _is_guide_confirmed_but_not_normal(guide: NormalWaterlineGuideInput) -> bool:
+    """A guide a reviewer confirmed as drawn, but not from normal-condition footage.
+
+    Still worth showing a reviewer where the bank was traced, but never in the
+    same style as a trusted baseline (see ``_is_guide_trusted``) — a draft or
+    invalid guide still draws nothing, since those were never confirmed at all.
+    """
+
+    return (
+        _guide_field(guide, "status") == "confirmed"
+        and _guide_field(guide, "normal_condition") is False
+    )
+
+
 def _point_pixels(frame: NDArray[np.uint8], point: WaterlinePointInput) -> tuple[int, int]:
     point_x = _point_value(point, "x")
     point_y = _point_value(point, "y")
@@ -355,15 +369,20 @@ def _draw_normal_waterline_guides_overlay(
     frame: NDArray[np.uint8],
     normal_waterline_guides: Sequence[NormalWaterlineGuideInput],
 ) -> NDArray[np.uint8]:
-    """Burn each truly confirmed normal-waterline guide onto a frame as a polyline.
+    """Burn each confirmed normal-waterline (river bank) guide onto a frame as a polyline.
 
-    Draws nothing for a guide unless it is truly confirmed, so a draft or
-    invalid guide is never shown as if trusted.
+    Draws nothing for a guide unless it is at least confirmed, so a draft or
+    invalid guide is never shown at all. A truly confirmed guide (also
+    normal_condition) is drawn as the trusted baseline; a guide a reviewer
+    confirmed from non-normal footage is still shown, so the traced bank stays
+    visible for reference, but in a distinct green (never the trusted
+    baseline's black+orange) so it is never mistaken for the trusted baseline.
     """
 
     output_frame = frame.copy()
     for guide in normal_waterline_guides:
-        if not _is_guide_trusted(guide):
+        trusted = _is_guide_trusted(guide)
+        if not trusted and not _is_guide_confirmed_but_not_normal(guide):
             continue
 
         points = cast(Sequence[WaterlinePointInput], _guide_field(guide, "points") or ())
@@ -373,8 +392,12 @@ def _draw_normal_waterline_guides_overlay(
         ).reshape((-1, 1, 2))
         if len(pixel_points) < 2:
             continue
-        cv2.polylines(output_frame, [pixel_points], False, (0, 0, 0), 4, cv2.LINE_AA)
-        cv2.polylines(output_frame, [pixel_points], False, (216, 64, 29), 2, cv2.LINE_AA)
+        if trusted:
+            cv2.polylines(output_frame, [pixel_points], False, (0, 0, 0), 4, cv2.LINE_AA)
+            cv2.polylines(output_frame, [pixel_points], False, (216, 64, 29), 2, cv2.LINE_AA)
+        else:
+            cv2.polylines(output_frame, [pixel_points], False, (0, 0, 0), 4, cv2.LINE_AA)
+            cv2.polylines(output_frame, [pixel_points], False, (77, 122, 31), 2, cv2.LINE_AA)
 
     return output_frame
 
