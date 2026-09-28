@@ -166,7 +166,6 @@ def test_normal_waterline_guide_overlay_accepts_dataclass_input(tmp_path: Path) 
     [
         {**NORMAL_WATERLINE_GUIDES[0], "status": "draft"},
         {**NORMAL_WATERLINE_GUIDES[0], "status": "invalid"},
-        {**NORMAL_WATERLINE_GUIDES[0], "normal_condition": False},
         {**NORMAL_WATERLINE_GUIDES[0], "normal_condition": None},
     ],
 )
@@ -196,6 +195,27 @@ def test_not_confirmed_guide_draws_nothing_extra(
         load_image(without.overlay_image_paths[1]),
         load_image(with_guide.overlay_image_paths[1]),
     )
+
+
+def test_confirmed_but_not_normal_guide_is_drawn_muted_not_trusted(tmp_path: Path) -> None:
+    baseline_frame = np.zeros((100, 100), dtype=np.uint8)
+    changed_frame = np.full((100, 100), 180, dtype=np.uint8)
+    guide = {**NORMAL_WATERLINE_GUIDES[0], "normal_condition": False}
+
+    result = generate_biggest_change_review_images(
+        [baseline_frame, changed_frame],
+        tmp_path,
+        reference_region=REFERENCE_REGION,
+        normal_waterline_guides=[guide],
+    )
+
+    overlay_image = load_image(result.overlay_image_paths[0])
+
+    # Still visible (a saved bank line a reviewer can see), but in green
+    # rather than the trusted-baseline color, so it can't be mistaken for a
+    # confirmed normal waterline.
+    assert overlay_image[60, 60].tolist() == [77, 122, 31]
+    assert overlay_image[80, 80].tolist() == [77, 122, 31]
 
 
 def test_evidence_usability_note_adds_a_taller_caption_band(tmp_path: Path) -> None:

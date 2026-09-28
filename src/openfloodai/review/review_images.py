@@ -293,8 +293,11 @@ def _draw_reference_region_box(
 ) -> NDArray[np.uint8]:
     left, top, right, bottom = _reference_region_pixels(frame, reference_region)
     output_frame = frame.copy()
-    cv2.rectangle(output_frame, (left, top), (right - 1, bottom - 1), (0, 0, 0), 3)
-    cv2.rectangle(output_frame, (left, top), (right - 1, bottom - 1), (0, 255, 255), 1)
+    corners = [(left, top), (right - 1, top), (right - 1, bottom - 1), (left, bottom - 1)]
+    for index in range(len(corners)):
+        start = corners[index]
+        end = corners[(index + 1) % len(corners)]
+        _draw_dashed_polyline(output_frame, [start, end], (0, 255, 255), radius=3)
     return output_frame
 
 
@@ -320,6 +323,20 @@ def _is_guide_trusted(guide: NormalWaterlineGuideInput) -> bool:
                 "normal_condition": _guide_field(guide, "normal_condition"),
             }
         ]
+    )
+
+
+def _is_guide_confirmed_but_not_normal(guide: NormalWaterlineGuideInput) -> bool:
+    """A guide a reviewer confirmed as drawn, but not from normal-condition footage.
+
+    Still worth showing a reviewer where the bank was traced, but never in the
+    same style as a trusted baseline (see ``_is_guide_trusted``) — a draft or
+    invalid guide still draws nothing, since those were never confirmed at all.
+    """
+
+    return (
+        _guide_field(guide, "status") == "confirmed"
+        and _guide_field(guide, "normal_condition") is False
     )
 
 
@@ -351,30 +368,98 @@ def _point_value(point: WaterlinePointInput, field_name: str) -> float:
     return float(value)
 
 
+def _draw_capsule(
+    frame: NDArray[np.uint8],
+    start: tuple[int, int],
+    end: tuple[int, int],
+    color: tuple[int, int, int],
+    radius: int,
+) -> None:
+    """Draw one filled, rounded-end line segment ("pill") from start to end."""
+
+    cv2.line(frame, start, end, color, radius * 2, cv2.LINE_AA)
+    cv2.circle(frame, start, radius, color, -1, cv2.LINE_AA)
+    cv2.circle(frame, end, radius, color, -1, cv2.LINE_AA)
+
+
+def _draw_dashed_polyline(
+    frame: NDArray[np.uint8],
+    points: Sequence[tuple[int, int]],
+    color: tuple[int, int, int],
+    *,
+    radius: int = 5,
+    dash_length: float = 18.0,
+    gap_length: float = 12.0,
+) -> None:
+    """Draw a polyline as a chain of rounded ("pill") dashes along its path.
+
+    Always draws a dash starting at the very first point and a dash ending at
+    the very last point, regardless of dash phase, so a guide's endpoints stay
+    solidly colored no matter how long the path is.
+    """
+
+    segments = [
+        (np.array(points[i], dtype=np.float64), np.array(points[i + 1], dtype=np.float64))
+        for i in range(len(points) - 1)
+    ]
+    lengths = [float(np.linalg.norm(end - start)) for start, end in segments]
+    total_length = sum(lengths)
+    if total_length <= 0:
+        if points:
+            cv2.circle(frame, tuple(points[0]), radius, color, -1, cv2.LINE_AA)
+        return
+
+    def point_at(distance: float) -> tuple[int, int]:
+        remaining = distance
+        for (start, end), length in zip(segments, lengths, strict=True):
+            if length == 0:
+                continue
+            if remaining <= length:
+                point = start + (end - start) * (remaining / length)
+                return int(round(point[0])), int(round(point[1]))
+            remaining -= length
+        last_point = segments[-1][1]
+        return int(round(last_point[0])), int(round(last_point[1]))
+
+    distance = 0.0
+    last_dash_end = 0.0
+    while distance < total_length:
+        dash_end = min(distance + dash_length, total_length)
+        _draw_capsule(frame, point_at(distance), point_at(dash_end), color, radius)
+        last_dash_end = dash_end
+        distance += dash_length + gap_length
+
+    if last_dash_end < total_length:
+        start_distance = max(total_length - dash_length, 0.0)
+        _draw_capsule(frame, point_at(start_distance), point_at(total_length), color, radius)
+
+
 def _draw_normal_waterline_guides_overlay(
     frame: NDArray[np.uint8],
     normal_waterline_guides: Sequence[NormalWaterlineGuideInput],
 ) -> NDArray[np.uint8]:
-    """Burn each truly confirmed normal-waterline guide onto a frame as a polyline.
+    """Burn each confirmed normal-waterline (river bank) guide onto a frame as a polyline.
 
-    Draws nothing for a guide unless it is truly confirmed, so a draft or
-    invalid guide is never shown as if trusted.
+    Draws nothing for a guide unless it is at least confirmed, so a draft or
+    invalid guide is never shown at all. A truly confirmed guide (also
+    normal_condition) is drawn as the trusted baseline, as a chain of dashed
+    orange pills; a guide a reviewer confirmed from non-normal footage is
+    still shown the same way in green, so the traced bank stays visible for
+    reference without ever being mistaken for the trusted baseline.
     """
 
     output_frame = frame.copy()
     for guide in normal_waterline_guides:
-        if not _is_guide_trusted(guide):
+        trusted = _is_guide_trusted(guide)
+        if not trusted and not _is_guide_confirmed_but_not_normal(guide):
             continue
 
         points = cast(Sequence[WaterlinePointInput], _guide_field(guide, "points") or ())
-        pixel_points = np.array(
-            [_point_pixels(output_frame, point) for point in points],
-            dtype=np.int32,
-        ).reshape((-1, 1, 2))
+        pixel_points = [_point_pixels(output_frame, point) for point in points]
         if len(pixel_points) < 2:
             continue
-        cv2.polylines(output_frame, [pixel_points], False, (0, 0, 0), 4, cv2.LINE_AA)
-        cv2.polylines(output_frame, [pixel_points], False, (216, 64, 29), 2, cv2.LINE_AA)
+        color, radius = ((216, 64, 29), 5) if trusted else ((77, 122, 31), 3)
+        _draw_dashed_polyline(output_frame, pixel_points, color, radius=radius)
 
     return output_frame
 
