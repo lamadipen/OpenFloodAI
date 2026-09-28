@@ -124,6 +124,25 @@ def resolve_effective_adapter_settings(
     return resolved
 
 
+def resolve_adapter_setting_source(
+    reference_dir: Path, plugin_id: str, site_overrides: Mapping[str, bool] | None = None
+) -> str:
+    """Which precedence layer actually determined one adapter's effective setting.
+
+    Distinct from resolve_effective_adapter_settings()'s enabled value: two
+    adapters can both resolve to enabled=True for different reasons (one
+    because someone explicitly turned the global default on, another
+    because nobody has ever touched it and the catalog default happens to
+    be True). Auditing a run needs to know which one actually happened.
+    """
+
+    if site_overrides and plugin_id in site_overrides:
+        return "site_override"
+    if plugin_id in read_global_adapter_overrides(reference_dir):
+        return "global_override"
+    return "catalog_default"
+
+
 def describe_adapters_for_settings_ui(
     reference_dir: Path, site_overrides: Mapping[str, bool] | None = None
 ) -> list[dict[str, Any]]:

@@ -157,7 +157,7 @@ def test_run_classifies_all_four_result_states_and_writes_outputs(tmp_path: Path
             "plugin_id": "pixel_change_region_v1",
             "plugin_version": "1.0.0",
             "enabled": True,
-            "source": "global",
+            "source": "catalog_default",
         }
     ]
 
@@ -316,6 +316,48 @@ def test_run_site_override_re_enables_an_adapter_disabled_globally(tmp_path: Pat
             "plugin_version": "1.0.0",
             "enabled": True,
             "source": "site_override",
+        }
+    ]
+
+
+def test_run_records_global_override_as_the_adapter_source_when_no_site_override(
+    tmp_path: Path,
+) -> None:
+    """catalog_default and global_override must be distinguished, not both called "global".
+
+    Two runs can both resolve to enabled=True for different reasons: one
+    because nobody ever touched the setting (catalog_default), another
+    because someone explicitly turned the global default back on
+    (global_override). Auditing a run needs to know which actually
+    happened.
+    """
+
+    site_dir = tmp_path / "sites" / "site"
+    make_site(site_dir)
+    write_global_adapter_setting(tmp_path / "reference", "pixel_change_region_v1", True)
+    sequence_dir = site_dir / "inputs" / "image-sequences" / SEQUENCE_ID
+    images_dir = sequence_dir / "images"
+
+    write_frame(images_dir / "baseline.jpg", 30)
+    write_frame(images_dir / "no-change.jpg", 30)
+
+    write_manifest(
+        sequence_dir,
+        [
+            manifest_record("baseline.jpg", "2026-09-01T00:00:00+00:00", "downloaded"),
+            manifest_record("no-change.jpg", "2026-09-01T01:00:00+00:00", "downloaded"),
+        ],
+    )
+
+    report = run_image_sequence_validation(site_dir, SEQUENCE_ID)
+
+    summary = json.loads((report.run_dir / "run-summary.json").read_text())
+    assert summary["effective_evidence_adapters"] == [
+        {
+            "plugin_id": "pixel_change_region_v1",
+            "plugin_version": "1.0.0",
+            "enabled": True,
+            "source": "global_override",
         }
     ]
 

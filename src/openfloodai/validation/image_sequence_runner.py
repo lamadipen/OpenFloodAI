@@ -33,7 +33,11 @@ from openfloodai.evidence.adapters.pixel_change import (
 )
 from openfloodai.evidence.adapters.pixel_change import evidence_from_pixel_change_signal
 from openfloodai.evidence.contract import EvidenceRecord, build_unavailable_evidence
-from openfloodai.evidence.settings import EvidenceSettingsError, resolve_effective_adapter_settings
+from openfloodai.evidence.settings import (
+    EvidenceSettingsError,
+    resolve_adapter_setting_source,
+    resolve_effective_adapter_settings,
+)
 from openfloodai.review.event_reviews import (
     EventReviewError,
     compute_evidence_key,
@@ -178,6 +182,11 @@ def run_image_sequence_validation(
         pixel_change_enabled = resolve_effective_adapter_settings(
             reference_dir, site_overrides=site_config.evidence_adapter_overrides
         )[_PIXEL_CHANGE_PLUGIN_ID]
+        pixel_change_adapter_source = resolve_adapter_setting_source(
+            reference_dir,
+            _PIXEL_CHANGE_PLUGIN_ID,
+            site_overrides=site_config.evidence_adapter_overrides,
+        )
     except EvidenceSettingsError as error:
         raise ImageSequenceValidationError(
             f"Could not read evidence adapter settings: {error}"
@@ -386,6 +395,7 @@ def run_image_sequence_validation(
         best_filename=best_filename,
         review_images_generated=review_images_generated,
         pixel_change_enabled=pixel_change_enabled,
+        pixel_change_adapter_source=pixel_change_adapter_source,
     )
     _write_report_markdown(
         run_dir=run_dir, report=report, review_images_generated=review_images_generated
@@ -628,12 +638,8 @@ def _write_run_summary(
     best_filename: str | None,
     review_images_generated: bool,
     pixel_change_enabled: bool,
+    pixel_change_adapter_source: str,
 ) -> None:
-    adapter_source = (
-        "site_override"
-        if _PIXEL_CHANGE_PLUGIN_ID in site_config.evidence_adapter_overrides
-        else "global"
-    )
     summary = {
         "run_id": report.run_id,
         "sequence_id": report.sequence_id,
@@ -658,7 +664,7 @@ def _write_run_summary(
                 "plugin_id": _PIXEL_CHANGE_PLUGIN_ID,
                 "plugin_version": _PIXEL_CHANGE_PLUGIN_VERSION,
                 "enabled": pixel_change_enabled,
-                "source": adapter_source,
+                "source": pixel_change_adapter_source,
             }
         ],
         "created_at": datetime.now(tz=UTC).isoformat(),

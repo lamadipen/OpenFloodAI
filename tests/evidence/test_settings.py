@@ -8,6 +8,7 @@ from openfloodai.evidence.settings import (
     EvidenceSettingsError,
     describe_adapters_for_settings_ui,
     read_global_adapter_overrides,
+    resolve_adapter_setting_source,
     resolve_effective_adapter_settings,
     resolve_global_adapter_settings,
     write_global_adapter_setting,
@@ -133,3 +134,35 @@ def test_describe_adapters_for_settings_ui_without_a_site_override(tmp_path: Pat
     row = rows[0]
     assert row["site_override"] is None
     assert row["effective_enabled"] is True
+
+
+def test_resolve_adapter_setting_source_is_catalog_default_when_untouched(
+    tmp_path: Path,
+) -> None:
+    assert resolve_adapter_setting_source(tmp_path, _PLUGIN_ID) == "catalog_default"
+
+
+def test_resolve_adapter_setting_source_is_global_override_once_set(tmp_path: Path) -> None:
+    write_global_adapter_setting(tmp_path, _PLUGIN_ID, False)
+
+    assert resolve_adapter_setting_source(tmp_path, _PLUGIN_ID) == "global_override"
+
+
+def test_resolve_adapter_setting_source_is_global_override_even_when_set_to_the_default(
+    tmp_path: Path,
+) -> None:
+    """Explicitly setting the same value as the default is still an override, not untouched."""
+
+    write_global_adapter_setting(tmp_path, _PLUGIN_ID, True)
+
+    assert resolve_adapter_setting_source(tmp_path, _PLUGIN_ID) == "global_override"
+
+
+def test_resolve_adapter_setting_source_site_override_wins_regardless_of_global_state(
+    tmp_path: Path,
+) -> None:
+    write_global_adapter_setting(tmp_path, _PLUGIN_ID, False)
+
+    source = resolve_adapter_setting_source(tmp_path, _PLUGIN_ID, site_overrides={_PLUGIN_ID: True})
+
+    assert source == "site_override"
