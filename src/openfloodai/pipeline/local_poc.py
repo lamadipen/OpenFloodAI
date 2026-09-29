@@ -11,7 +11,7 @@ from uuid import uuid4
 
 import cv2
 
-from openfloodai.config import ReferenceRegion, load_site_config
+from openfloodai.config import NormalWaterlineGuide, ReferenceRegion, load_site_config
 from openfloodai.contracts import write_jsonl_records
 from openfloodai.evidence.adapters.pixel_change import (
     PLUGIN_ID as _PIXEL_CHANGE_PLUGIN_ID,
@@ -20,6 +20,13 @@ from openfloodai.evidence.adapters.pixel_change import (
     PLUGIN_VERSION as _PIXEL_CHANGE_PLUGIN_VERSION,
 )
 from openfloodai.evidence.adapters.pixel_change import evidence_from_pixel_change_signal
+from openfloodai.evidence.adapters.riverbank_crossing import (
+    PLUGIN_ID as _RIVERBANK_CROSSING_PLUGIN_ID,
+)
+from openfloodai.evidence.adapters.riverbank_crossing import (
+    PLUGIN_VERSION as _RIVERBANK_CROSSING_PLUGIN_VERSION,
+)
+from openfloodai.evidence.adapters.riverbank_crossing import RiverbankCrossingObservationAdapter
 from openfloodai.evidence.contract import build_unavailable_evidence
 from openfloodai.evidence.settings import (
     EvidenceSettingsError,
@@ -99,6 +106,7 @@ def run_local_region_poc_pipeline(
         region=config.reference_region,
         reference_dir=reference_dir,
         site_evidence_adapter_overrides=config.evidence_adapter_overrides,
+        normal_waterline_guides=config.normal_waterline_guides,
     )
     summary.update(reference_region_used=True, config_path=str(config_path))
     return summary
@@ -115,6 +123,7 @@ def _run_pipeline(
     region: ReferenceRegion | None = None,
     reference_dir: Path | None = None,
     site_evidence_adapter_overrides: Mapping[str, bool] | None = None,
+    normal_waterline_guides: tuple[NormalWaterlineGuide, ...] | None = None,
 ) -> dict[str, object]:
     settings = sampling or SamplingSettings()
     for start, end in time_windows or []:
@@ -147,6 +156,44 @@ def _run_pipeline(
             raise LocalPocPipelineError(
                 f"Could not read evidence adapter settings: {error}"
             ) from error
+
+    # riverbank_crossing_v1 is independent from pixel_change_region_v1: its
+    # own enable/disable resolution, its own evidence record, and it is
+    # never consulted by evaluate_risk_state() -- unevaluated evidence must
+    # not affect the existing risk decision (see the adapter's own catalog
+    # entry: is_default=False until proven against the human-reviewed pilot).
+    riverbank_crossing_enabled = False
+    riverbank_crossing_adapter_source = "catalog_default"
+    if region is not None and reference_dir is not None:
+        try:
+            riverbank_crossing_enabled = resolve_effective_adapter_settings(
+                reference_dir, site_overrides=site_evidence_adapter_overrides
+            )[_RIVERBANK_CROSSING_PLUGIN_ID]
+            riverbank_crossing_adapter_source = resolve_adapter_setting_source(
+                reference_dir,
+                _RIVERBANK_CROSSING_PLUGIN_ID,
+                site_overrides=site_evidence_adapter_overrides,
+            )
+        except EvidenceSettingsError as error:
+            raise LocalPocPipelineError(
+                f"Could not read evidence adapter settings: {error}"
+            ) from error
+
+    # The confirmed, normal-condition guide with a water_side_point set, if
+    # any -- resolved once per run since guides don't change mid-run. A site
+    # with more than one eligible guide (e.g. both banks confirmed) uses the
+    # first one, in config order; fusing multiple guides' evidence is not
+    # part of this v1 slice.
+    riverbank_crossing_guide = next(
+        (
+            guide
+            for guide in normal_waterline_guides or ()
+            if guide.status == "confirmed"
+            and guide.normal_condition
+            and guide.water_side_point is not None
+        ),
+        None,
+    )
 
     metadata = read_video_metadata(video_path, site_id=site_id, camera_id=camera_id)
     for record in metadata:
@@ -206,6 +253,44 @@ def _run_pipeline(
                     is_usable=False,
                     reason_codes=["INSUFFICIENT_TIME_COVERAGE"],
                 )
+
+            # riverbank_crossing_v1 always runs its own gating here, entirely
+            # independent of pixel_change_region_v1's enabled/disabled state
+            # below -- neither adapter's outcome affects the other's evidence
+            # or the risk state pixel_change feeds.
+            if region is not None:
+                if riverbank_crossing_enabled:
+                    riverbank_crossing_evidence = RiverbankCrossingObservationAdapter(
+                        site_id=site_id,
+                        camera_id=camera_id,
+                        guide_id=(
+                            riverbank_crossing_guide.id if riverbank_crossing_guide else None
+                        ),
+                        guide_points=(
+                            riverbank_crossing_guide.points if riverbank_crossing_guide else None
+                        ),
+                        water_side_point=(
+                            riverbank_crossing_guide.water_side_point
+                            if riverbank_crossing_guide
+                            else None
+                        ),
+                        previous_frame=frames[before],
+                        current_frame=frames[after],
+                        timestamp=timestamp,
+                    ).collect()
+                else:
+                    riverbank_crossing_evidence = build_unavailable_evidence(
+                        plugin_id=_RIVERBANK_CROSSING_PLUGIN_ID,
+                        plugin_version=_RIVERBANK_CROSSING_PLUGIN_VERSION,
+                        plugin_family="observation",
+                        site_id=site_id,
+                        camera_id=camera_id,
+                        evidence_type="riverbank_crossing_percentage",
+                        status="disabled",
+                        reason_codes=("ADAPTER_DISABLED",),
+                        timestamp=timestamp,
+                    )
+                records.append(riverbank_crossing_evidence.to_dict())
 
             if region is not None and not pixel_change_enabled:
                 # Disabled means disabled: no comparison is attempted at all, and
@@ -280,7 +365,13 @@ def _run_pipeline(
                     "plugin_version": _PIXEL_CHANGE_PLUGIN_VERSION,
                     "enabled": pixel_change_enabled,
                     "source": pixel_change_adapter_source,
-                }
+                },
+                {
+                    "plugin_id": _RIVERBANK_CROSSING_PLUGIN_ID,
+                    "plugin_version": _RIVERBANK_CROSSING_PLUGIN_VERSION,
+                    "enabled": riverbank_crossing_enabled,
+                    "source": riverbank_crossing_adapter_source,
+                },
             ]
             if region is not None
             else []

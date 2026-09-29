@@ -9,6 +9,7 @@ import pytest
 
 from openfloodai.config import write_evidence_adapter_override
 from openfloodai.contracts import read_jsonl_records
+from openfloodai.contracts.local_store import JsonObject
 from openfloodai.evidence.settings import write_global_adapter_setting
 from openfloodai.pipeline import LocalPocPipelineError, run_local_poc_pipeline
 from openfloodai.pipeline.local_poc import run_local_region_poc_pipeline
@@ -46,6 +47,47 @@ def write_site_config(path: Path, *, include_reference_region: bool = True) -> N
 {reference_region if include_reference_region else ""}
   "privacy_notes": "Broad public location only."
 }}
+""",
+        encoding="utf-8",
+    )
+
+
+def write_site_config_with_eligible_guide(path: Path) -> None:
+    """A site with a confirmed, normal-condition guide that has a water_side_point."""
+
+    path.write_text(
+        """{
+  "site_id": "site-demo-01",
+  "camera_id": "camera-demo-01",
+  "site_name": "Demo River Bridge",
+  "public_location": "Demo River near Example Town",
+  "input_type": "local_video",
+  "reference_region": {
+    "x": 0,
+    "y": 50,
+    "width": 100,
+    "height": 50
+  },
+  "normal_waterline_guides": [
+    {
+      "id": "left_bank",
+      "label": "left bank",
+      "points": [{"x": 0, "y": 60}, {"x": 100, "y": 60}],
+      "video_id": "practice-01",
+      "video_time_seconds": 0,
+      "site_id": "site-demo-01",
+      "camera_id": "camera-demo-01",
+      "status": "confirmed",
+      "normal_condition": true,
+      "notes": "",
+      "confirmed_at": "2026-01-01T00:00:00+00:00",
+      "invalidated_at": null,
+      "invalidation_reason": null,
+      "water_side_point": {"x": 50, "y": 90}
+    }
+  ],
+  "privacy_notes": "Broad public location only."
+}
 """,
         encoding="utf-8",
     )
@@ -247,6 +289,13 @@ def _nested_site_config(tmp_path: Path) -> Path:
     return config_path
 
 
+def _nested_site_config_with_guide(tmp_path: Path) -> Path:
+    config_path = tmp_path / "sites" / "site" / "configs" / "site.json"
+    config_path.parent.mkdir(parents=True)
+    write_site_config_with_eligible_guide(config_path)
+    return config_path
+
+
 def _reference_dir_for(config_path: Path) -> Path:
     site_dir = config_path.parent.parent
     return site_dir.parent.parent / "reference"
@@ -268,10 +317,14 @@ def test_local_region_poc_pipeline_disabled_adapter_skips_the_comparison(
     records = read_jsonl_records(output_path)
     record_types = [record["record_type"] for record in records]
     assert "visual_signal_output" not in record_types, "disabled means no comparison at all"
-    assert record_types.count("evidence_record") == 1
+    assert record_types.count("evidence_record") == 2
     assert record_types.count("risk_state_output") == 1
 
-    evidence_record = next(r for r in records if r["record_type"] == "evidence_record")
+    evidence_record = next(
+        r
+        for r in records
+        if r["record_type"] == "evidence_record" and r["plugin_id"] == "pixel_change_region_v1"
+    )
     assert evidence_record["status"] == "disabled"
     assert evidence_record["value"] is None
     assert "ADAPTER_DISABLED" in cast(list[str], evidence_record["reason_codes"])
@@ -286,7 +339,13 @@ def test_local_region_poc_pipeline_disabled_adapter_skips_the_comparison(
             "plugin_version": "1.0.0",
             "enabled": False,
             "source": "global_override",
-        }
+        },
+        {
+            "plugin_id": "riverbank_crossing_v1",
+            "plugin_version": "1.0.0",
+            "enabled": False,
+            "source": "catalog_default",
+        },
     ]
 
 
@@ -304,9 +363,12 @@ def test_local_region_poc_pipeline_enabled_adapter_writes_evidence_from_the_same
 
     records = read_jsonl_records(output_path)
     visual = next(r for r in records if r["record_type"] == "visual_signal_output")
-    evidence_record = next(r for r in records if r["record_type"] == "evidence_record")
+    evidence_record = next(
+        r
+        for r in records
+        if r["record_type"] == "evidence_record" and r["plugin_id"] == "pixel_change_region_v1"
+    )
 
-    assert evidence_record["plugin_id"] == "pixel_change_region_v1"
     assert evidence_record["status"] == "available"
     assert evidence_record["value"] == visual["region_change_score"]
 
@@ -319,7 +381,13 @@ def test_local_region_poc_pipeline_enabled_adapter_writes_evidence_from_the_same
             "plugin_version": "1.0.0",
             "enabled": True,
             "source": "catalog_default",
-        }
+        },
+        {
+            "plugin_id": "riverbank_crossing_v1",
+            "plugin_version": "1.0.0",
+            "enabled": False,
+            "source": "catalog_default",
+        },
     ]
 
 
@@ -363,3 +431,106 @@ def test_local_poc_pipeline_whole_frame_path_is_unaffected_by_adapter_settings(
     records = read_jsonl_records(output_path)
     assert not any(r["record_type"] == "evidence_record" for r in records)
     assert summary["effective_evidence_adapters"] == []
+
+
+def _riverbank_crossing_records(records: list[JsonObject]) -> JsonObject:
+    return next(
+        r
+        for r in records
+        if r["record_type"] == "evidence_record" and r["plugin_id"] == "riverbank_crossing_v1"
+    )
+
+
+def test_riverbank_crossing_disabled_by_default_produces_disabled_evidence(
+    tmp_path: Path,
+) -> None:
+    video_path = tmp_path / "sample.avi"
+    output_path = tmp_path / "region-records.jsonl"
+    create_tiny_video(video_path)
+    config_path = _nested_site_config_with_guide(tmp_path)
+
+    summary = run_local_region_poc_pipeline(
+        video_path=video_path, config_path=config_path, output_path=output_path
+    )
+
+    records = read_jsonl_records(output_path)
+    evidence = _riverbank_crossing_records(records)
+    assert evidence["status"] == "disabled"
+    assert evidence["reason_codes"] == ["ADAPTER_DISABLED"]
+
+    adapters = cast(list[dict[str, object]], summary["effective_evidence_adapters"])
+    riverbank_adapter = next(a for a in adapters if a["plugin_id"] == "riverbank_crossing_v1")
+    assert riverbank_adapter["enabled"] is False
+    assert riverbank_adapter["source"] == "catalog_default"
+
+
+def test_riverbank_crossing_enabled_with_a_confirmed_guide_produces_available_evidence(
+    tmp_path: Path,
+) -> None:
+    video_path = tmp_path / "sample.avi"
+    output_path = tmp_path / "region-records.jsonl"
+    create_tiny_video(video_path)
+    config_path = _nested_site_config_with_guide(tmp_path)
+    write_global_adapter_setting(_reference_dir_for(config_path), "riverbank_crossing_v1", True)
+
+    run_local_region_poc_pipeline(
+        video_path=video_path, config_path=config_path, output_path=output_path
+    )
+
+    records = read_jsonl_records(output_path)
+    evidence = _riverbank_crossing_records(records)
+    assert evidence["status"] == "available"
+    provenance = cast(dict[str, object], evidence["provenance"])
+    assert provenance["guide_id"] == "left_bank"
+
+
+def test_riverbank_crossing_enabled_without_an_eligible_guide_is_invalid(
+    tmp_path: Path,
+) -> None:
+    """No confirmed+normal_condition+water_side_point guide -> GUIDE_MISSING, not a crash."""
+
+    video_path = tmp_path / "sample.avi"
+    output_path = tmp_path / "region-records.jsonl"
+    create_tiny_video(video_path)
+    config_path = _nested_site_config(tmp_path)
+    write_global_adapter_setting(_reference_dir_for(config_path), "riverbank_crossing_v1", True)
+
+    run_local_region_poc_pipeline(
+        video_path=video_path, config_path=config_path, output_path=output_path
+    )
+
+    records = read_jsonl_records(output_path)
+    evidence = _riverbank_crossing_records(records)
+    assert evidence["status"] == "invalid"
+    assert evidence["reason_codes"] == ["GUIDE_MISSING"]
+
+
+def test_riverbank_crossing_never_affects_the_risk_state(tmp_path: Path) -> None:
+    """Enabling/disabling riverbank_crossing must not change pixel_change's risk output."""
+
+    video_path = tmp_path / "sample.avi"
+    disabled_output = tmp_path / "disabled.jsonl"
+    enabled_output = tmp_path / "enabled.jsonl"
+    create_tiny_video(video_path)
+    config_path = _nested_site_config_with_guide(tmp_path)
+
+    run_local_region_poc_pipeline(
+        video_path=video_path, config_path=config_path, output_path=disabled_output
+    )
+    write_global_adapter_setting(_reference_dir_for(config_path), "riverbank_crossing_v1", True)
+    run_local_region_poc_pipeline(
+        video_path=video_path, config_path=config_path, output_path=enabled_output
+    )
+
+    disabled_risk = next(
+        r for r in read_jsonl_records(disabled_output) if r["record_type"] == "risk_state_output"
+    )
+    enabled_risk = next(
+        r for r in read_jsonl_records(enabled_output) if r["record_type"] == "risk_state_output"
+    )
+    # Compare content, not generated identifiers (record_id/source_record_ids
+    # are fresh uuids each run regardless of riverbank_crossing's state).
+    stable_fields = ("risk_state", "reason_codes", "confidence", "human_summary")
+    assert {field: disabled_risk[field] for field in stable_fields} == {
+        field: enabled_risk[field] for field in stable_fields
+    }

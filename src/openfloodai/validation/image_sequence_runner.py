@@ -32,6 +32,13 @@ from openfloodai.evidence.adapters.pixel_change import (
     PLUGIN_VERSION as _PIXEL_CHANGE_PLUGIN_VERSION,
 )
 from openfloodai.evidence.adapters.pixel_change import evidence_from_pixel_change_signal
+from openfloodai.evidence.adapters.riverbank_crossing import (
+    PLUGIN_ID as _RIVERBANK_CROSSING_PLUGIN_ID,
+)
+from openfloodai.evidence.adapters.riverbank_crossing import (
+    PLUGIN_VERSION as _RIVERBANK_CROSSING_PLUGIN_VERSION,
+)
+from openfloodai.evidence.adapters.riverbank_crossing import RiverbankCrossingObservationAdapter
 from openfloodai.evidence.contract import EvidenceRecord, build_unavailable_evidence
 from openfloodai.evidence.settings import (
     EvidenceSettingsError,
@@ -191,6 +198,68 @@ def run_image_sequence_validation(
         raise ImageSequenceValidationError(
             f"Could not read evidence adapter settings: {error}"
         ) from error
+
+    # riverbank_crossing_v1 is independent from pixel_change_region_v1: its
+    # own enable/disable resolution, its own evidence records, and it never
+    # affects this row's result/reason -- unevaluated evidence must not
+    # change the existing classification (see the adapter's catalog entry:
+    # is_default=False until proven against the human-reviewed pilot).
+    try:
+        riverbank_crossing_enabled = resolve_effective_adapter_settings(
+            reference_dir, site_overrides=site_config.evidence_adapter_overrides
+        )[_RIVERBANK_CROSSING_PLUGIN_ID]
+        riverbank_crossing_adapter_source = resolve_adapter_setting_source(
+            reference_dir,
+            _RIVERBANK_CROSSING_PLUGIN_ID,
+            site_overrides=site_config.evidence_adapter_overrides,
+        )
+    except EvidenceSettingsError as error:
+        raise ImageSequenceValidationError(
+            f"Could not read evidence adapter settings: {error}"
+        ) from error
+    # The confirmed, normal-condition guide with a water_side_point set, if
+    # any -- resolved once per run since guides don't change mid-run. A site
+    # with more than one eligible guide uses the first one, in config order;
+    # fusing multiple guides' evidence is not part of this v1 slice.
+    riverbank_crossing_guide = next(
+        (
+            guide
+            for guide in site_config.normal_waterline_guides
+            if guide.status == "confirmed"
+            and guide.normal_condition
+            and guide.water_side_point is not None
+        ),
+        None,
+    )
+
+    def _riverbank_crossing_unavailable(
+        *, timestamp: str, reason_codes: tuple[str, ...]
+    ) -> EvidenceRecord:
+        return build_unavailable_evidence(
+            plugin_id=_RIVERBANK_CROSSING_PLUGIN_ID,
+            plugin_version=_RIVERBANK_CROSSING_PLUGIN_VERSION,
+            plugin_family="observation",
+            site_id=site_config.site_id,
+            camera_id=site_config.camera_id,
+            evidence_type="riverbank_crossing_percentage",
+            status="unavailable",
+            reason_codes=reason_codes,
+            timestamp=timestamp or None,
+        )
+
+    def _riverbank_crossing_disabled(*, timestamp: str) -> EvidenceRecord:
+        return build_unavailable_evidence(
+            plugin_id=_RIVERBANK_CROSSING_PLUGIN_ID,
+            plugin_version=_RIVERBANK_CROSSING_PLUGIN_VERSION,
+            plugin_family="observation",
+            site_id=site_config.site_id,
+            camera_id=site_config.camera_id,
+            evidence_type="riverbank_crossing_percentage",
+            status="disabled",
+            reason_codes=("ADAPTER_DISABLED",),
+            timestamp=timestamp or None,
+        )
+
     evidence_records: list[EvidenceRecord] = []
 
     def _unavailable_evidence(*, timestamp: str, reason_codes: tuple[str, ...]) -> EvidenceRecord:
@@ -248,6 +317,11 @@ def run_image_sequence_validation(
                     timestamp=captured_at_utc, reason_codes=("IMAGE_NOT_DOWNLOADED",)
                 )
             )
+            evidence_records.append(
+                _riverbank_crossing_unavailable(
+                    timestamp=captured_at_utc, reason_codes=("IMAGE_NOT_DOWNLOADED",)
+                )
+            )
             continue
 
         current_frame = cv2.imread(str(images_dir / filename))
@@ -267,7 +341,37 @@ def run_image_sequence_validation(
                     timestamp=captured_at_utc, reason_codes=("IMAGE_FILE_UNREADABLE",)
                 )
             )
+            evidence_records.append(
+                _riverbank_crossing_unavailable(
+                    timestamp=captured_at_utc, reason_codes=("IMAGE_FILE_UNREADABLE",)
+                )
+            )
             continue
+
+        # riverbank_crossing_v1 always runs its own gating here, entirely
+        # independent of pixel_change_region_v1's enabled/disabled state
+        # below -- neither adapter's outcome affects the other's evidence or
+        # this row's result/reason.
+        if riverbank_crossing_enabled:
+            riverbank_crossing_evidence = RiverbankCrossingObservationAdapter(
+                site_id=site_config.site_id,
+                camera_id=site_config.camera_id,
+                guide_id=(riverbank_crossing_guide.id if riverbank_crossing_guide else None),
+                guide_points=(
+                    riverbank_crossing_guide.points if riverbank_crossing_guide else None
+                ),
+                water_side_point=(
+                    riverbank_crossing_guide.water_side_point
+                    if riverbank_crossing_guide
+                    else None
+                ),
+                previous_frame=baseline_frame,
+                current_frame=current_frame,
+                timestamp=captured_at_utc or None,
+            ).collect()
+        else:
+            riverbank_crossing_evidence = _riverbank_crossing_disabled(timestamp=captured_at_utc)
+        evidence_records.append(riverbank_crossing_evidence)
 
         # The adapter-enabled check comes after download/readability, not before:
         # a missing or unreadable image is a fact about the IMAGE, not the adapter,
@@ -396,6 +500,8 @@ def run_image_sequence_validation(
         review_images_generated=review_images_generated,
         pixel_change_enabled=pixel_change_enabled,
         pixel_change_adapter_source=pixel_change_adapter_source,
+        riverbank_crossing_enabled=riverbank_crossing_enabled,
+        riverbank_crossing_adapter_source=riverbank_crossing_adapter_source,
     )
     _write_report_markdown(
         run_dir=run_dir, report=report, review_images_generated=review_images_generated
@@ -639,6 +745,8 @@ def _write_run_summary(
     review_images_generated: bool,
     pixel_change_enabled: bool,
     pixel_change_adapter_source: str,
+    riverbank_crossing_enabled: bool,
+    riverbank_crossing_adapter_source: str,
 ) -> None:
     summary = {
         "run_id": report.run_id,
@@ -665,7 +773,13 @@ def _write_run_summary(
                 "plugin_version": _PIXEL_CHANGE_PLUGIN_VERSION,
                 "enabled": pixel_change_enabled,
                 "source": pixel_change_adapter_source,
-            }
+            },
+            {
+                "plugin_id": _RIVERBANK_CROSSING_PLUGIN_ID,
+                "plugin_version": _RIVERBANK_CROSSING_PLUGIN_VERSION,
+                "enabled": riverbank_crossing_enabled,
+                "source": riverbank_crossing_adapter_source,
+            },
         ],
         "created_at": datetime.now(tz=UTC).isoformat(),
     }
