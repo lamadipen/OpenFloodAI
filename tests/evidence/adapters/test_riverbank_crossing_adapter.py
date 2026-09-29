@@ -49,6 +49,10 @@ def test_adapter_reports_a_possible_crossing_as_available_evidence() -> None:
     assert isinstance(samples, list)
     assert any(sample["crossed"] is True for sample in samples)
     assert all("land_band_x" in sample and "water_band_x" in sample for sample in samples)
+    assert isinstance(record.quality["processing_time_ms"], float)
+    assert record.quality["processing_time_ms"] >= 0
+    assert record.quality["estimated_frame_memory_bytes"] == 60_000
+    assert record.quality["memory_measurement"] == "input_frames_only"
     assert record.provenance is not None
     assert record.provenance["guide_id"] == "left_bank"
     assert isinstance(record.provenance["guide_fingerprint"], str)
@@ -132,6 +136,8 @@ def test_adapter_fails_cleanly_on_mismatched_frame_shapes() -> None:
     assert ready is False
     assert record.status == "failed"
     assert record.value is None
+    assert record.quality is not None
+    assert record.quality["estimated_frame_memory_bytes"] == 30_300
 
 
 def test_adapter_works_through_the_shared_registry_helpers() -> None:
