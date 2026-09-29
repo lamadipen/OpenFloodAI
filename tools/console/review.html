@@ -63,24 +63,23 @@ function buildDays(records) {
     .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
 }
 
-// Evidence records (evidence-records.jsonl, one per image row) are a
-// separate, additive side channel from the machine's result/score above --
-// see docs/architecture/plugin-evidence-architecture.md. They join to a day
-// by exact timestamp match, not by array position, since either list could
-// grow independently in the future (e.g. a second adapter).
-function evidenceForDay(evidenceRecords, day) {
-  return (evidenceRecords || []).find((row) => row.timestamp === day.capturedAtUtc) || null;
+// Evidence records (evidence-records.jsonl, one per image row PER adapter)
+// are a separate, additive side channel from the machine's result/score
+// above -- see docs/architecture/plugin-evidence-architecture.md. They join
+// to a day by exact timestamp match, not by array position. More than one
+// adapter can produce a row for the same day (e.g. pixel_change_region_v1
+// and riverbank_crossing_v1 side by side), so every matching row is shown,
+// not just the first -- otherwise a second adapter's evidence would exist
+// on disk but never be visible here.
+function evidenceRowsForDay(evidenceRecords, day) {
+  return (evidenceRecords || []).filter((row) => row.timestamp === day.capturedAtUtc);
 }
 
 function evidenceStatusPillClass(status) {
   return { available: "ok", disabled: "gray", unavailable: "warn", failed: "bad" }[status] || "gray";
 }
 
-function evidencePanelHtml(evidenceRecords, day) {
-  const row = evidenceForDay(evidenceRecords, day);
-  if (!row) {
-    return `<div class="hint">No evidence adapter ran for this day.</div>`;
-  }
+function evidenceRowHtml(row) {
   const valueText = typeof row.value === "number" ? row.value.toFixed(3) + (row.units ? ` ${row.units}` : "") : "&mdash;";
   const reasons = (row.reason_codes || []).join(", ");
   return `
@@ -96,6 +95,16 @@ function evidencePanelHtml(evidenceRecords, day) {
       ? `<div class="hint" style="margin-top:4px;">${row.status === "disabled" ? "This signal is turned off for this site -- its absence means nothing." : "No measurement could be taken for this day -- this is not the same as a real \"no change\" reading."}</div>`
       : ""}
   `;
+}
+
+function evidencePanelHtml(evidenceRecords, day) {
+  const rows = evidenceRowsForDay(evidenceRecords, day);
+  if (!rows.length) {
+    return `<div class="hint">No evidence adapter ran for this day.</div>`;
+  }
+  return rows
+    .map((row, index) => `<div${index > 0 ? ' style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line-soft);"' : ""}>${evidenceRowHtml(row)}</div>`)
+    .join("");
 }
 
 function buildGaugeByDate(gaugeSeries) {
