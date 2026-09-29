@@ -204,6 +204,102 @@ def render_pair_comparison_overlay(
     return cast(NDArray[np.uint8], np.hstack([prepared_baseline, prepared_other]))
 
 
+def render_riverbank_crossing_overlay(
+    baseline_frame: FrameArray,
+    current_frame: FrameArray,
+    *,
+    reference_region: ReferenceRegionInput,
+    guide_points: Sequence[WaterlinePointInput],
+    samples: Sequence[Mapping[str, object]],
+    band_width_px: int,
+) -> NDArray[np.uint8]:
+    """Show the riverbank adapter's saved bands and sampled crossing sections.
+
+    The left image is the confirmed guide's own baseline source and the
+    right image is the selected current image. Rendering uses the sample
+    coordinates saved with the run, so an old run never gets redrawn from
+    newer geometry or newly computed evidence.
+    """
+
+    baseline = _prepare_image_frame(baseline_frame)
+    current = _prepare_image_frame(current_frame)
+    if baseline.shape != current.shape:
+        raise ReviewImageError("Riverbank overlay images must have matching shapes.")
+    if band_width_px <= 0:
+        raise ReviewImageError("Riverbank overlay band width must be greater than 0.")
+    if len(guide_points) < 2 or not samples:
+        raise ReviewImageError("Riverbank overlay needs a guide and saved sample evidence.")
+
+    baseline = _draw_reference_region_box(baseline, reference_region)
+    current = _draw_reference_region_box(current, reference_region)
+    guide_pixels = [_point_pixels(baseline, point) for point in guide_points]
+    land_pixels = [_sample_pixels(baseline, sample, "land_band") for sample in samples]
+    water_pixels = [_sample_pixels(baseline, sample, "water_band") for sample in samples]
+    sample_pixels = [_sample_pixels(baseline, sample, "point") for sample in samples]
+
+    baseline = _draw_crossing_context(
+        baseline, guide_pixels, land_pixels, water_pixels, band_width_px
+    )
+    current = _draw_crossing_context(
+        current, guide_pixels, land_pixels, water_pixels, band_width_px
+    )
+    crossed = [bool(sample.get("crossed")) for sample in samples]
+    _draw_crossed_sections(current, sample_pixels, crossed, band_width_px)
+    return cast(NDArray[np.uint8], np.hstack([baseline, current]))
+
+
+def _sample_pixels(
+    frame: NDArray[np.uint8], sample: Mapping[str, object], prefix: str
+) -> tuple[int, int]:
+    x_value = sample.get(f"{prefix}_x")
+    y_value = sample.get(f"{prefix}_y")
+    if (
+        isinstance(x_value, bool)
+        or not isinstance(x_value, int | float)
+        or isinstance(y_value, bool)
+        or not isinstance(y_value, int | float)
+        or not math.isfinite(x_value)
+        or not math.isfinite(y_value)
+    ):
+        raise ReviewImageError("Riverbank overlay sample coordinates must be finite numbers.")
+    frame_height, frame_width = frame.shape[:2]
+    x = min(max(round(frame_width * float(x_value) / 100.0), 0), frame_width - 1)
+    y = min(max(round(frame_height * float(y_value) / 100.0), 0), frame_height - 1)
+    return x, y
+
+
+def _draw_crossing_context(
+    frame: NDArray[np.uint8],
+    guide_points: Sequence[tuple[int, int]],
+    land_points: Sequence[tuple[int, int]],
+    water_points: Sequence[tuple[int, int]],
+    band_width_px: int,
+) -> NDArray[np.uint8]:
+    overlay = frame.copy()
+    thickness = max(2, band_width_px)
+    cv2.polylines(overlay, [np.array(land_points)], False, (40, 170, 245), thickness, cv2.LINE_AA)
+    cv2.polylines(overlay, [np.array(water_points)], False, (220, 130, 30), thickness, cv2.LINE_AA)
+    output = cv2.addWeighted(overlay, 0.42, frame, 0.58, 0)
+    cv2.polylines(output, [np.array(guide_points)], False, (216, 64, 29), 2, cv2.LINE_AA)
+    return cast(NDArray[np.uint8], output)
+
+
+def _draw_crossed_sections(
+    frame: NDArray[np.uint8],
+    points: Sequence[tuple[int, int]],
+    crossed: Sequence[bool],
+    band_width_px: int,
+) -> None:
+    radius = max(4, band_width_px // 2)
+    color = (180, 30, 220)
+    for index, (point, is_crossed) in enumerate(zip(points, crossed, strict=True)):
+        if not is_crossed:
+            continue
+        cv2.circle(frame, point, radius, color, -1, cv2.LINE_AA)
+        if index > 0 and crossed[index - 1]:
+            cv2.line(frame, points[index - 1], point, color, radius * 2, cv2.LINE_AA)
+
+
 def encode_png(frame: NDArray[np.uint8]) -> bytes:
     """Encode a frame as PNG bytes, for serving without writing to disk."""
 

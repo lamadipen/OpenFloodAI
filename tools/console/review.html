@@ -107,6 +107,59 @@ function evidencePanelHtml(evidenceRecords, day) {
     .join("");
 }
 
+function riverbankEvidenceForDay(evidenceRecords, day) {
+  return evidenceRowsForDay(evidenceRecords, day).find(
+    (row) => row.plugin_id === "riverbank_crossing_v1"
+  ) || null;
+}
+
+function riverbankReviewHtml(evidenceRecords, day) {
+  const row = riverbankEvidenceForDay(evidenceRecords, day);
+  const quality = row && row.quality;
+  if (!row || row.status !== "available" || !quality || !Array.isArray(quality.samples) || !quality.samples.length || !day.filename) {
+    return "";
+  }
+  const crossingSeen = typeof row.value === "number" && row.value > 0;
+  const explanation = crossingSeen
+    ? "Possible visual change extends onto the land side of the confirmed normal line. It may be caused by water, lighting, vegetation, snow, or camera movement. Human review is required."
+    : "No clear crossing pattern was measured in the sampled bands. This does not prove that conditions are safe; human review is still required.";
+  const alignmentNote = (row.reason_codes || []).includes("CAMERA_ALIGNMENT_UNAVAILABLE")
+    ? "The images were not camera-aligned, so even small camera movement may create a false change."
+    : "";
+  const overlayQuery = new URLSearchParams({
+    folder_name: folderName,
+    sequence_id: sequenceId(),
+    run_id: runId,
+    filename: day.filename
+  });
+  const percent = (value) => typeof value === "number" ? `${value.toFixed(1)}%` : "Not available";
+  const pixels = typeof quality.maximum_crossing_pixels === "number"
+    ? `${quality.maximum_crossing_pixels.toFixed(1)} px`
+    : "Not available";
+  return `
+    <div class="card" style="padding:16px 18px;">
+      <div style="font-size:13px;font-weight:600;margin-bottom:4px;">Riverbank crossing review</div>
+      <div class="hint" style="margin-bottom:10px;">Confirmed guide baseline on the left; selected current image on the right.</div>
+      <img src="/api/image-sequence-riverbank-overlay?${overlayQuery}" style="width:100%;border-radius:8px;display:block;" alt="Riverbank crossing review showing the normal guide, water-side and land-side bands, and highlighted changed sections">
+      <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:var(--ink-soft);">
+        <span><strong style="color:#1d40d8;">Blue line</strong> confirmed normal guide</span>
+        <span><strong style="color:#d07916;">Amber band</strong> land side</span>
+        <span><strong style="color:#1e82dc;">Blue band</strong> water side</span>
+        <span><strong style="color:#b41edc;">Purple sections</strong> possible crossing samples</span>
+      </div>
+      <div style="background:${crossingSeen ? "var(--warn-soft)" : "var(--line-soft)"};border-radius:8px;padding:10px 12px;margin-top:10px;font-size:12px;line-height:1.5;">
+        <strong>${crossingSeen ? "Possible crossing evidence" : "No clear crossing evidence"}</strong><br>
+        ${escapeHtml(explanation)} ${alignmentNote ? escapeHtml(alignmentNote) : ""}
+        <strong>This is visual evidence only, not flood confirmation or a public warning.</strong>
+      </div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:var(--ink-soft);">
+        <span>Sample points crossing: <strong>${percent(row.value)}</strong></span>
+        <span>Guide length affected: <strong>${percent(quality.changed_bank_length_percentage)}</strong></span>
+        <span>Maximum measured extent: <strong>${pixels}</strong></span>
+      </div>
+    </div>`;
+}
+
 function buildGaugeByDate(gaugeSeries) {
   const map = new Map();
   (gaugeSeries || []).forEach((row) => {
@@ -402,6 +455,8 @@ function render() {
           <div class="hint" style="margin-bottom:6px;">Side-by-side comparison, watched area outlined</div>
           ${comparisonQuery ? `<img src="/api/image-sequence-comparison?${comparisonQuery}" style="width:100%;border-radius:8px;display:block;" alt="Side-by-side comparison">` : `<div class="hint">No comparison for this day.</div>`}
         </div>
+
+        ${riverbankReviewHtml(detail.evidence_records, sel)}
 
         <div class="card" style="padding:14px 18px;">
           <div style="font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:8px;">Evidence</div>

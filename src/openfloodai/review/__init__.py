@@ -49,6 +49,7 @@ from openfloodai.review.review_images import (
     encode_png,
     generate_biggest_change_review_images,
     render_pair_comparison_overlay,
+    render_riverbank_crossing_overlay,
 )
 from openfloodai.review.sample_quality import (
     ALLOWED_FAILURE_REASONS,
@@ -120,6 +121,7 @@ __all__ = [
     "repair_manifest_from_local_videos",
     "render_label_comparison_report",
     "render_pair_comparison_overlay",
+    "render_riverbank_crossing_overlay",
     "render_threshold_tuning_report",
     "summarize_sample_quality",
     "tune_threshold_files",

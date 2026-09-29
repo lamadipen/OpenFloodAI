@@ -45,6 +45,10 @@ def test_adapter_reports_a_possible_crossing_as_available_evidence() -> None:
     assert "CAMERA_ALIGNMENT_UNAVAILABLE" in record.reason_codes
     assert record.quality is not None
     assert record.quality["alignment_status"] == "unavailable"
+    samples = record.quality["samples"]
+    assert isinstance(samples, list)
+    assert any(sample["crossed"] is True for sample in samples)
+    assert all("land_band_x" in sample and "water_band_x" in sample for sample in samples)
     assert record.provenance is not None
     assert record.provenance["guide_id"] == "left_bank"
     assert isinstance(record.provenance["guide_fingerprint"], str)
