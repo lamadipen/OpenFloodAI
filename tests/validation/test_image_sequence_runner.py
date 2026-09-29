@@ -158,7 +158,13 @@ def test_run_classifies_all_four_result_states_and_writes_outputs(tmp_path: Path
             "plugin_version": "1.0.0",
             "enabled": True,
             "source": "catalog_default",
-        }
+        },
+        {
+            "plugin_id": "riverbank_crossing_v1",
+            "plugin_version": "1.0.0",
+            "enabled": False,
+            "source": "catalog_default",
+        },
     ]
 
     report_text = (run_dir / "image-sequence-report.md").read_text()
@@ -169,8 +175,12 @@ def test_run_classifies_all_four_result_states_and_writes_outputs(tmp_path: Path
     assert len(records_lines) == 5
 
     evidence_lines = (run_dir / "evidence-records.jsonl").read_text().splitlines()
-    assert len(evidence_lines) == 5
-    evidence_rows = [json.loads(line) for line in evidence_lines]
+    assert len(evidence_lines) == 10
+    all_evidence_rows = [json.loads(line) for line in evidence_lines]
+    evidence_rows = [
+        row for row in all_evidence_rows if row["plugin_id"] == "pixel_change_region_v1"
+    ]
+    assert len(evidence_rows) == 5
     statuses = [row["status"] for row in evidence_rows]
     # no-change/possible-change/camera-problem/dark all reach a real
     # compare_region_signals() call (camera-problem and dark are still
@@ -186,6 +196,18 @@ def test_run_classifies_all_four_result_states_and_writes_outputs(tmp_path: Path
             assert isinstance(row["value"], float)
         else:
             assert row["value"] is None
+
+    # riverbank_crossing_v1 is disabled by default (unevaluated): every
+    # readable image gets a "disabled" row (never a fabricated measurement),
+    # and never affects pixel_change_region_v1's own rows above. The one
+    # never-downloaded image still gets its own "unavailable" row, same as
+    # pixel_change's -- a missing image is a fact about the image, not the
+    # adapter's enabled state.
+    riverbank_statuses = [
+        row["status"] for row in all_evidence_rows if row["plugin_id"] == "riverbank_crossing_v1"
+    ]
+    assert riverbank_statuses.count("disabled") == 4
+    assert riverbank_statuses.count("unavailable") == 1
 
 
 def test_run_marks_the_row_cannot_judge_when_the_adapter_is_disabled_globally(
@@ -226,8 +248,9 @@ def test_run_marks_the_row_cannot_judge_when_the_adapter_is_disabled_globally(
     assert report.records[0].region_change_score is None
 
     evidence_lines = (report.run_dir / "evidence-records.jsonl").read_text().splitlines()
-    assert len(evidence_lines) == 1
-    row = json.loads(evidence_lines[0])
+    assert len(evidence_lines) == 2
+    all_rows = [json.loads(line) for line in evidence_lines]
+    row = next(r for r in all_rows if r["plugin_id"] == "pixel_change_region_v1")
     assert row["status"] == "disabled"
     assert row["value"] is None
     assert "ADAPTER_DISABLED" in row["reason_codes"]
@@ -270,9 +293,13 @@ def test_disabled_adapter_does_not_hide_a_missing_or_unreadable_image(tmp_path: 
     # The only genuinely valid, readable image still gets the disabled treatment.
     assert results_by_filename["no-change.jpg"] == RESULT_CANNOT_JUDGE_WATER_LEVEL
 
+    pixel_change_rows = [
+        json.loads(line)
+        for line in (report.run_dir / "evidence-records.jsonl").read_text().splitlines()
+        if json.loads(line)["plugin_id"] == "pixel_change_region_v1"
+    ]
     evidence_by_status: dict[str, list[list[str]]] = {}
-    for line in (report.run_dir / "evidence-records.jsonl").read_text().splitlines():
-        row = json.loads(line)
+    for row in pixel_change_rows:
         evidence_by_status.setdefault(row["status"], []).append(row["reason_codes"])
     assert evidence_by_status["unavailable"] == [
         ["IMAGE_NOT_DOWNLOADED"],
@@ -305,7 +332,8 @@ def test_run_site_override_re_enables_an_adapter_disabled_globally(tmp_path: Pat
     report = run_image_sequence_validation(site_dir, SEQUENCE_ID)
 
     evidence_lines = (report.run_dir / "evidence-records.jsonl").read_text().splitlines()
-    row = json.loads(evidence_lines[0])
+    all_rows = [json.loads(line) for line in evidence_lines]
+    row = next(r for r in all_rows if r["plugin_id"] == "pixel_change_region_v1")
     assert row["status"] == "available"
     assert row["value"] == 0.0
 
@@ -316,7 +344,13 @@ def test_run_site_override_re_enables_an_adapter_disabled_globally(tmp_path: Pat
             "plugin_version": "1.0.0",
             "enabled": True,
             "source": "site_override",
-        }
+        },
+        {
+            "plugin_id": "riverbank_crossing_v1",
+            "plugin_version": "1.0.0",
+            "enabled": False,
+            "source": "catalog_default",
+        },
     ]
 
 
@@ -358,8 +392,221 @@ def test_run_records_global_override_as_the_adapter_source_when_no_site_override
             "plugin_version": "1.0.0",
             "enabled": True,
             "source": "global_override",
-        }
+        },
+        {
+            "plugin_id": "riverbank_crossing_v1",
+            "plugin_version": "1.0.0",
+            "enabled": False,
+            "source": "catalog_default",
+        },
     ]
+
+
+def image_sequence_guide_record(
+    guide_id: str = "left-bank",
+    *,
+    image_sequence_id: str,
+    image_filename: str,
+    points: list[dict[str, object]] | None = None,
+) -> dict[str, object]:
+    """A confirmed guide sourced from a saved image-sequence still, not a video.
+
+    riverbank_crossing_v1 only treats a guide as usable when its saved
+    source actually matches the run: for an image-sequence run, that means
+    guide.image_sequence_id == the sequence_id being validated (see
+    GUIDE_SOURCE_MISMATCH in image_sequence_runner.py).
+    """
+
+    return {
+        "id": guide_id,
+        "label": "Left bank",
+        "points": points or [{"x": 10, "y": 10}, {"x": 20, "y": 20}],
+        "video_id": "",
+        "video_time_seconds": 0,
+        "image_sequence_id": image_sequence_id,
+        "image_filename": image_filename,
+        "site_id": "site-demo-01",
+        "camera_id": "camera-demo-01",
+        "status": "confirmed",
+        "normal_condition": True,
+        "notes": "Clear view of the bank.",
+        "confirmed_at": "2026-08-01T00:00:00+00:00",
+        "invalidated_at": None,
+        "invalidation_reason": None,
+    }
+
+
+def test_riverbank_crossing_enabled_with_a_confirmed_guide_produces_available_evidence(
+    tmp_path: Path,
+) -> None:
+    """Proves the guide's OWN source image is used, not this run's baseline.jpg.
+
+    baseline.jpg (the run's own chosen baseline, unrelated to the guide) is
+    a uniform "already flooded" frame; the guide's real source
+    (guide-source.jpg) and the compared image (no-change.jpg) both show the
+    true normal condition (dry land above the line, water below). If the
+    adapter used baseline.jpg instead of the guide's own source -- the
+    exact bug this test guards against -- the land side would appear to
+    change from "flooded" to "dry", registering a false crossing. Using
+    the guide's real source correctly reports no change at all.
+    """
+
+    site_dir = tmp_path / "sites" / "site"
+    guide_points: list[dict[str, object]] = [{"x": 0, "y": 70}, {"x": 100, "y": 70}]
+    guide = {
+        **image_sequence_guide_record(
+            image_sequence_id=SEQUENCE_ID,
+            image_filename="guide-source.jpg",
+            points=guide_points,
+        ),
+        "water_side_point": {"x": 50, "y": 95},
+    }
+    make_site(site_dir, normal_waterline_guides=[guide])
+    write_global_adapter_setting(tmp_path / "reference", "riverbank_crossing_v1", True)
+    sequence_dir = site_dir / "inputs" / "image-sequences" / SEQUENCE_ID
+    images_dir = sequence_dir / "images"
+
+    # The run's OWN baseline: a uniform, already-anomalous frame, deliberately
+    # different from the guide's real source below.
+    write_frame(images_dir / "baseline.jpg", 50, bottom_third_value=50)
+    # The guide's real source and the compared image both show the true
+    # normal condition: land (top) bright/dry, water (bottom) dark/wet.
+    write_frame(images_dir / "guide-source.jpg", 200, bottom_third_value=50)
+    write_frame(images_dir / "no-change.jpg", 200, bottom_third_value=50)
+    write_manifest(
+        sequence_dir,
+        [
+            manifest_record("baseline.jpg", "2026-09-01T00:00:00+00:00", "downloaded"),
+            manifest_record("no-change.jpg", "2026-09-01T01:00:00+00:00", "downloaded"),
+        ],
+    )
+
+    report = run_image_sequence_validation(site_dir, SEQUENCE_ID)
+
+    all_rows = [
+        json.loads(line)
+        for line in (report.run_dir / "evidence-records.jsonl").read_text().splitlines()
+    ]
+    row = next(r for r in all_rows if r["plugin_id"] == "riverbank_crossing_v1")
+    assert row["status"] == "available"
+    assert row["provenance"]["guide_id"] == "left-bank"
+    # Comparing against the guide's real source (identical to no-change.jpg)
+    # correctly finds nothing. Comparing against the run's own baseline.jpg
+    # (the bug this guards against) would instead show the land side
+    # "changing" from flooded to dry and wrongly report a crossing.
+    assert row["value"] == 0.0
+    assert "NO_CLEAR_CROSSING" in row["reason_codes"]
+
+
+def test_riverbank_crossing_reports_source_mismatch_for_a_guide_from_another_sequence(
+    tmp_path: Path,
+) -> None:
+    """A guide traced on a DIFFERENT sequence's image must never supply a baseline here.
+
+    Regression for the exact bug reported in review: without this check, the
+    pipeline would silently compare against this run's own chosen baseline
+    image instead of refusing -- convincing but wrong crossing evidence.
+    """
+
+    site_dir = tmp_path / "sites" / "site"
+    guide = {
+        **image_sequence_guide_record(
+            image_sequence_id="a-completely-different-sequence",
+            image_filename="baseline.jpg",
+        ),
+        "water_side_point": {"x": 50, "y": 50},
+    }
+    make_site(site_dir, normal_waterline_guides=[guide])
+    write_global_adapter_setting(tmp_path / "reference", "riverbank_crossing_v1", True)
+    sequence_dir = site_dir / "inputs" / "image-sequences" / SEQUENCE_ID
+    images_dir = sequence_dir / "images"
+
+    write_frame(images_dir / "baseline.jpg", 30)
+    write_frame(images_dir / "no-change.jpg", 30)
+    write_manifest(
+        sequence_dir,
+        [
+            manifest_record("baseline.jpg", "2026-09-01T00:00:00+00:00", "downloaded"),
+            manifest_record("no-change.jpg", "2026-09-01T01:00:00+00:00", "downloaded"),
+        ],
+    )
+
+    report = run_image_sequence_validation(site_dir, SEQUENCE_ID)
+
+    all_rows = [
+        json.loads(line)
+        for line in (report.run_dir / "evidence-records.jsonl").read_text().splitlines()
+    ]
+    row = next(r for r in all_rows if r["plugin_id"] == "riverbank_crossing_v1")
+    assert row["status"] == "invalid"
+    assert row["reason_codes"] == ["GUIDE_SOURCE_MISMATCH"]
+
+
+def test_riverbank_crossing_reports_baseline_missing_when_the_guides_image_is_gone(
+    tmp_path: Path,
+) -> None:
+    """The guide's source matches this sequence, but its exact image file is missing."""
+
+    site_dir = tmp_path / "sites" / "site"
+    guide = {
+        **image_sequence_guide_record(
+            image_sequence_id=SEQUENCE_ID, image_filename="deleted-guide-source.jpg"
+        ),
+        "water_side_point": {"x": 50, "y": 50},
+    }
+    make_site(site_dir, normal_waterline_guides=[guide])
+    write_global_adapter_setting(tmp_path / "reference", "riverbank_crossing_v1", True)
+    sequence_dir = site_dir / "inputs" / "image-sequences" / SEQUENCE_ID
+    images_dir = sequence_dir / "images"
+
+    write_frame(images_dir / "baseline.jpg", 30)
+    write_frame(images_dir / "no-change.jpg", 30)
+    # "deleted-guide-source.jpg" is deliberately never written.
+    write_manifest(
+        sequence_dir,
+        [
+            manifest_record("baseline.jpg", "2026-09-01T00:00:00+00:00", "downloaded"),
+            manifest_record("no-change.jpg", "2026-09-01T01:00:00+00:00", "downloaded"),
+        ],
+    )
+
+    report = run_image_sequence_validation(site_dir, SEQUENCE_ID)
+
+    all_rows = [
+        json.loads(line)
+        for line in (report.run_dir / "evidence-records.jsonl").read_text().splitlines()
+    ]
+    row = next(r for r in all_rows if r["plugin_id"] == "riverbank_crossing_v1")
+    assert row["status"] == "unavailable"
+    assert row["reason_codes"] == ["GUIDE_BASELINE_MISSING"]
+
+
+def test_riverbank_crossing_enabled_without_an_eligible_guide_is_invalid(tmp_path: Path) -> None:
+    site_dir = tmp_path / "sites" / "site"
+    make_site(site_dir)
+    write_global_adapter_setting(tmp_path / "reference", "riverbank_crossing_v1", True)
+    sequence_dir = site_dir / "inputs" / "image-sequences" / SEQUENCE_ID
+    images_dir = sequence_dir / "images"
+
+    write_frame(images_dir / "baseline.jpg", 30)
+    write_frame(images_dir / "no-change.jpg", 30)
+    write_manifest(
+        sequence_dir,
+        [
+            manifest_record("baseline.jpg", "2026-09-01T00:00:00+00:00", "downloaded"),
+            manifest_record("no-change.jpg", "2026-09-01T01:00:00+00:00", "downloaded"),
+        ],
+    )
+
+    report = run_image_sequence_validation(site_dir, SEQUENCE_ID)
+
+    all_rows = [
+        json.loads(line)
+        for line in (report.run_dir / "evidence-records.jsonl").read_text().splitlines()
+    ]
+    row = next(r for r in all_rows if r["plugin_id"] == "riverbank_crossing_v1")
+    assert row["status"] == "invalid"
+    assert row["reason_codes"] == ["GUIDE_MISSING"]
 
 
 def test_run_marks_a_too_small_watched_area_as_cannot_judge(tmp_path: Path) -> None:
@@ -495,9 +742,10 @@ def test_list_and_read_run_detail_round_trip(tmp_path: Path) -> None:
     # sequence yet: both keys are present but empty, never missing.
     assert detail["gauge_series"] == []
     assert detail["event_reviews"] == {}
-    assert len(detail["evidence_records"]) == 1
-    evidence_row = detail["evidence_records"][0]
-    assert evidence_row["plugin_id"] == "pixel_change_region_v1"
+    assert len(detail["evidence_records"]) == 2
+    evidence_row = next(
+        r for r in detail["evidence_records"] if r["plugin_id"] == "pixel_change_region_v1"
+    )
     assert evidence_row["timestamp"] == "2026-09-01T01:00:00+00:00"
 
 
