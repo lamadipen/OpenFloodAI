@@ -51,6 +51,7 @@
   </div>
 </div>
 <script src="/console/shared.js"></script>
+<script src="/console/guide-source-matching.js"></script>
 <script>
 const folderName = qs("site");
 let sequenceId = null;
@@ -60,6 +61,7 @@ let videoTimeSeconds = 0;
 let watchedArea = null;
 let rows = [];
 let activeUid = null;
+let placingWaterSideFor = null;
 
 const INVALIDATION_REASONS = [
   ["camera_moved", "Camera moved"],
@@ -124,6 +126,11 @@ function activeRow() {
 
 function statusLineText() {
   const active = activeRow();
+  if (placingWaterSideFor) {
+    const row = rows.find((r) => r.uid === placingWaterSideFor);
+    const name = (row && row.fields && row.fields.label.value.trim()) || "this line";
+    return `Click the spot in the water for "${name}", on the wet side of the line.`;
+  }
   if (!rows.length) return 'Click "+ Add line" to start tracing the first bank.';
   if (!active) return "Choose a line on the right (or add another) to keep drawing.";
   if (active.points.length === 0) return "Click inside the dashed watched area to start this line.";
@@ -131,17 +138,29 @@ function statusLineText() {
   return `${active.points.length} points on this line. Keep clicking to follow the curve, or draw another line.`;
 }
 
+function waterMarkerSvg(point, isActive) {
+  const fill = isActive ? "#4ea1ff" : "#7d93a3";
+  return `<g>
+    <circle cx="${point.x}" cy="${point.y}" r="${isActive ? 7 : 5.5}" fill="${fill}" stroke="#fff" stroke-width="1.2"/>
+    <text x="${point.x}" y="${point.y + 3.5}" font-size="9" font-family="var(--sans)" font-weight="700" fill="#fff" text-anchor="middle">W</text>
+  </g>`;
+}
+
 function drawLines() {
   $("lines").innerHTML = rows
     .map((row) => {
-      if (!row.points.length) return "";
       const isActive = row.uid === activeUid;
-      const stroke = isActive ? "#7fe0b4" : "#9fb0bd";
-      const width = isActive ? 2.5 : 1.5;
-      const dash = row.status === "invalid" ? ' stroke-dasharray="3,3"' : "";
-      const poly = `<polyline points="${row.points.map((p) => `${p.x},${p.y}`).join(" ")}" fill="none" stroke="${stroke}" stroke-width="${width}"${dash}/>`;
-      const dots = row.points.map((p) => `<circle cx="${p.x}" cy="${p.y}" r="${isActive ? 5 : 3.5}" fill="${stroke}" stroke="#fff" stroke-width="1.2"/>`).join("");
-      return poly + dots;
+      let html = "";
+      if (row.points.length) {
+        const stroke = isActive ? "#7fe0b4" : "#9fb0bd";
+        const width = isActive ? 2.5 : 1.5;
+        const dash = row.status === "invalid" ? ' stroke-dasharray="3,3"' : "";
+        const poly = `<polyline points="${row.points.map((p) => `${p.x},${p.y}`).join(" ")}" fill="none" stroke="${stroke}" stroke-width="${width}"${dash}/>`;
+        const dots = row.points.map((p) => `<circle cx="${p.x}" cy="${p.y}" r="${isActive ? 5 : 3.5}" fill="${stroke}" stroke="#fff" stroke-width="1.2"/>`).join("");
+        html += poly + dots;
+      }
+      if (row.waterSidePoint) html += waterMarkerSvg(row.waterSidePoint, isActive);
+      return html;
     })
     .join("");
   $("statusLine").textContent = statusLineText();
@@ -209,6 +228,7 @@ function buildRowElement(row, initial) {
     }
     rows = rows.filter((r) => r.uid !== row.uid);
     wrapper.remove();
+    if (placingWaterSideFor === row.uid) placingWaterSideFor = null;
     if (activeUid === row.uid) setActiveRow(rows.length ? rows[rows.length - 1].uid : null);
     else drawLines();
     updateSaveState();
@@ -265,15 +285,78 @@ function buildRowElement(row, initial) {
   pointCount.className = "hint";
   pointCount.textContent = `${row.points.length} point(s) traced.`;
 
-  wrapper.append(header, controlsRow, reasonWrap, notesInput, pointCount);
+  const waterSideRow = document.createElement("div");
+  waterSideRow.style.cssText = "display:flex;align-items:center;gap:6px;";
+  const waterSideStatus = document.createElement("span");
+  waterSideStatus.className = "hint";
+  waterSideStatus.style.flex = "1";
+  const waterSideBtn = document.createElement("button");
+  waterSideBtn.type = "button";
+  waterSideBtn.className = "btn";
+  waterSideBtn.style.cssText = "font-size:11px;padding:5px 9px;white-space:nowrap;";
+  const waterSideClearBtn = document.createElement("button");
+  waterSideClearBtn.type = "button";
+  waterSideClearBtn.className = "btn";
+  waterSideClearBtn.style.cssText = "font-size:11px;padding:5px 9px;white-space:nowrap;";
+  waterSideClearBtn.textContent = "Clear";
+  waterSideClearBtn.addEventListener("click", () => {
+    row.waterSidePoint = null;
+    if (placingWaterSideFor === row.uid) placingWaterSideFor = null;
+    refreshWaterSideRow(row);
+    drawLines();
+  });
+  waterSideBtn.addEventListener("click", () => {
+    setActiveRow(row.uid);
+    placingWaterSideFor = placingWaterSideFor === row.uid ? null : row.uid;
+    rows.forEach((r) => r.fields && refreshWaterSideRow(r));
+    drawLines();
+  });
+  waterSideRow.append(waterSideStatus, waterSideBtn, waterSideClearBtn);
+
+  wrapper.append(header, controlsRow, reasonWrap, notesInput, pointCount, waterSideRow);
 
   row.el = wrapper;
-  row.fields = { label: labelInput, drawButton, status: statusSelect, invalidationReason: reasonSelect, normalCondition: normalCheckbox, notes: notesInput, pointCount };
+  row.fields = {
+    label: labelInput,
+    drawButton,
+    status: statusSelect,
+    invalidationReason: reasonSelect,
+    normalCondition: normalCheckbox,
+    notes: notesInput,
+    pointCount,
+    waterSideStatus,
+    waterSideBtn,
+    waterSideClearBtn
+  };
+  refreshWaterSideRow(row);
   return wrapper;
 }
 
+function refreshWaterSideRow(row) {
+  if (!row.fields) return;
+  const placing = placingWaterSideFor === row.uid;
+  row.fields.waterSideStatus.textContent = row.waterSidePoint
+    ? "Water side: set"
+    : "Water side: not set";
+  row.fields.waterSideBtn.textContent = placing ? "Click the water…" : "Set water side";
+  row.fields.waterSideClearBtn.hidden = !row.waterSidePoint;
+}
+
 function addRow(initial) {
-  const row = { uid: uid(), id: initial.id, existingOnServer: Boolean(initial.existingOnServer), points: initial.points || [], status: initial.status || "draft", el: null, fields: null };
+  const row = {
+    uid: uid(),
+    id: initial.id,
+    existingOnServer: Boolean(initial.existingOnServer),
+    points: initial.points || [],
+    waterSidePoint: initial.waterSidePoint || null,
+    status: initial.status || "draft",
+    // The exact media this line was originally traced on -- null for a
+    // brand-new, never-saved line. Saving must reuse this, never whatever
+    // media happens to be on screen right now (see savingSourceForRow).
+    savedSource: initial.savedSource || null,
+    el: null,
+    fields: null
+  };
   rows.push(row);
   $("rowsContainer").append(buildRowElement(row, initial));
   updateSaveState();
@@ -286,14 +369,26 @@ $("addLineBtn").addEventListener("click", () => {
 });
 
 $("stage").addEventListener("click", (event) => {
+  const rect = $("stage").getBoundingClientRect();
+  const rawX = ((event.clientX - rect.left) / rect.width) * 640;
+  const rawY = ((event.clientY - rect.top) / rect.height) * 400;
+
+  if (placingWaterSideFor) {
+    const row = rows.find((r) => r.uid === placingWaterSideFor);
+    if (row) {
+      row.waterSidePoint = clampToWatchedArea(rawX, rawY);
+      refreshWaterSideRow(row);
+    }
+    placingWaterSideFor = null;
+    drawLines();
+    return;
+  }
+
   const active = activeRow();
   if (!active) {
     $("statusLine").textContent = 'Choose a line on the right (or click "+ Add line") before clicking the image.';
     return;
   }
-  const rect = $("stage").getBoundingClientRect();
-  const rawX = ((event.clientX - rect.left) / rect.width) * 640;
-  const rawY = ((event.clientY - rect.top) / rect.height) * 400;
   active.points.push(clampToWatchedArea(rawX, rawY));
   drawLines();
   if (active.fields) active.fields.pointCount.textContent = `${active.points.length} point(s) traced.`;
@@ -320,24 +415,44 @@ async function main() {
     }
     paintWatchedArea();
 
-    const sequences = sequenceData.sequences || [];
-    if (sequences.length) {
-      const seq = sequences[sequences.length - 1];
-      sequenceId = seq.sequence_id;
-      const downloaded = (seq.records || []).find((r) => r.download_status === "downloaded");
-      if (downloaded) {
-        baselineFilename = downloaded.filename;
-        $("stageImg").setAttribute(
-          "href",
-          `/api/image-sequence-image?${new URLSearchParams({ folder_name: folderName, sequence_id: sequenceId, filename: baselineFilename })}`
-        );
+    const existingGuides = cfg.normal_waterline_guides || [];
+    // When guides already exist, load the FIRST one's own saved source --
+    // never just "whatever is newest" -- so opening this editor to fix an
+    // older guide actually shows the image/video it was traced on, instead
+    // of a dead end where saving is refused with no way to see the right
+    // media at all. Only a site with no guides yet falls back to newest.
+    const referenceGuide = existingGuides[0] || null;
+
+    if (referenceGuide && referenceGuide.image_sequence_id) {
+      sequenceId = referenceGuide.image_sequence_id;
+      baselineFilename = referenceGuide.image_filename;
+      $("stageImg").setAttribute(
+        "href",
+        `/api/image-sequence-image?${new URLSearchParams({ folder_name: folderName, sequence_id: sequenceId, filename: baselineFilename })}`
+      );
+    } else if (referenceGuide && referenceGuide.video_id) {
+      videoId = referenceGuide.video_id;
+      await loadVideoSource(referenceGuide.video_time_seconds || 0);
+    } else {
+      const sequences = sequenceData.sequences || [];
+      if (sequences.length) {
+        const seq = sequences[sequences.length - 1];
+        sequenceId = seq.sequence_id;
+        const downloaded = (seq.records || []).find((r) => r.download_status === "downloaded");
+        if (downloaded) {
+          baselineFilename = downloaded.filename;
+          $("stageImg").setAttribute(
+            "href",
+            `/api/image-sequence-image?${new URLSearchParams({ folder_name: folderName, sequence_id: sequenceId, filename: baselineFilename })}`
+          );
+        }
       }
-    }
-    if (!baselineFilename) {
-      const firstVideo = (manifestData.records || [])[0];
-      if (firstVideo && firstVideo.video_id) {
-        videoId = firstVideo.video_id;
-        await loadVideoSource();
+      if (!baselineFilename) {
+        const firstVideo = (manifestData.records || [])[0];
+        if (firstVideo && firstVideo.video_id) {
+          videoId = firstVideo.video_id;
+          await loadVideoSource(0);
+        }
       }
     }
     if (!baselineFilename && !videoId) {
@@ -345,17 +460,23 @@ async function main() {
       return;
     }
 
-    const existingGuides = cfg.normal_waterline_guides || [];
     existingGuides.forEach((guide) => {
       addRow({
         id: guide.id,
         existingOnServer: true,
         points: (guide.points || []).map(toPixelPoint),
+        waterSidePoint: guide.water_side_point ? toPixelPoint(guide.water_side_point) : null,
         label: guide.label || "",
         status: guide.status || "draft",
         invalidationReason: guide.invalidation_reason,
         normalCondition: Boolean(guide.normal_condition),
-        notes: guide.notes || ""
+        notes: guide.notes || "",
+        savedSource: {
+          image_sequence_id: guide.image_sequence_id || "",
+          image_filename: guide.image_filename || "",
+          video_id: guide.video_id || "",
+          video_time_seconds: guide.video_time_seconds || 0
+        }
       });
     });
     if (rows.length) setActiveRow(rows[0].uid);
@@ -365,7 +486,7 @@ async function main() {
   }
 }
 
-function loadVideoSource() {
+function loadVideoSource(startAtSeconds) {
   return new Promise((resolve) => {
     const video = $("sourceVideo");
     video.src = `/api/site-video?${new URLSearchParams({ folder_name: folderName, video_id: videoId })}`;
@@ -373,8 +494,9 @@ function loadVideoSource() {
       "loadedmetadata",
       () => {
         $("scrub").max = video.duration || 1;
-        $("scrub").value = 0;
-        video.currentTime = 0;
+        const target = clamp(startAtSeconds || 0, 0, video.duration || 1);
+        $("scrub").value = target;
+        video.currentTime = target;
         resolve();
       },
       { once: true }
@@ -391,6 +513,28 @@ function loadVideoSource() {
   });
 }
 
+// The one media source this save request will use, for every line in the
+// batch -- /api/set-normal-waterline-guides always applies one source to
+// the whole request, matching how it's traced (all lines are drawn while
+// looking at ONE image/video). Uses the shared guideSourceIdentity() (see
+// guide-source-matching.js) so this comparison is the exact same logic a
+// Node test exercises directly.
+function currentSource() {
+  return baselineFilename
+    ? { image_sequence_id: sequenceId, image_filename: baselineFilename }
+    : { video_id: videoId };
+}
+
+// An existing line's own saved frame/time, never the page's current scrub
+// position -- a save that only touches OTHER lines (or just adds a water
+// side point) must not silently retrace this line onto whatever moment
+// happens to be on screen right now. A brand-new line has no saved time
+// yet, so it correctly uses wherever it was just drawn.
+function savingVideoTimeForRow(row) {
+  if (row.existingOnServer && row.savedSource) return row.savedSource.video_time_seconds;
+  return videoTimeSeconds;
+}
+
 $("saveBtn").addEventListener("click", async () => {
   for (const row of rows) {
     const label = row.fields.label.value.trim();
@@ -405,6 +549,28 @@ $("saveBtn").addEventListener("click", async () => {
       return;
     }
   }
+
+  // Refuse rather than silently reattaching an existing line to whatever
+  // media is currently on screen -- this editor can only save one media
+  // source per request, so a line traced on different media must block
+  // the whole save with a clear reason, not be quietly rewritten.
+  const targetSource = currentSource();
+  const mismatched = rows.filter(
+    (row) =>
+      row.existingOnServer && row.savedSource && !sourcesMatch(row.savedSource, targetSource)
+  );
+  if (mismatched.length) {
+    const names = mismatched.map((row) => row.fields.label.value.trim() || "a line").join(", ");
+    const plural = mismatched.length > 1;
+    $("formError").hidden = false;
+    $("formError").textContent =
+      `Can't save: ${names} ${plural ? "were" : "was"} traced on different media than what's ` +
+      `showing here. Nothing was changed. Reopen this editor once the site's current image/video ` +
+      `matches what ${plural ? "these lines" : "this line"} ${plural ? "were" : "was"} drawn on, ` +
+      `or delete and redraw ${plural ? "them" : "it"} against the current media.`;
+    return;
+  }
+
   $("saveBtn").disabled = true;
   $("saveBtn").innerHTML = '<span class="spinner"></span>Saving…';
   $("formError").hidden = true;
@@ -419,11 +585,12 @@ $("saveBtn").addEventListener("click", async () => {
         id: row.id,
         label: row.fields.label.value.trim(),
         points: row.points.map(toPercentPoint),
+        water_side_point: row.waterSidePoint ? toPercentPoint(row.waterSidePoint) : null,
         status: row.fields.status.value,
         invalidation_reason: row.fields.status.value === "invalid" ? row.fields.invalidationReason.value : null,
         normal_condition: row.fields.normalCondition.checked,
         notes: row.fields.notes.value.trim(),
-        video_time_seconds: videoTimeSeconds
+        video_time_seconds: savingVideoTimeForRow(row)
       }))
     });
     location.href = `/console/site.html?${new URLSearchParams({ site: folderName })}`;

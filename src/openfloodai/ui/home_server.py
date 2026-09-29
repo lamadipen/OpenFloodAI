@@ -1614,6 +1614,9 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
                     "invalidation_reason": (
                         str(entry.get("invalidation_reason", "")).strip() or None
                     ),
+                    "water_side_point": _parse_optional_waterline_point(
+                        entry.get("water_side_point")
+                    ),
                 }
                 for entry in raw_guides
             ]
@@ -2229,3 +2232,18 @@ def _parse_waterline_points(value: object) -> list[dict[str, object]]:
             raise SiteConfigError("Each waterline point must be a JSON object")
         points.append({str(key): item for key, item in entry.items()})
     return points
+
+
+def _parse_optional_waterline_point(value: object) -> dict[str, object] | None:
+    """Parse a guide's optional water_side_point, or None if the guide has none set.
+
+    Shape validation (exactly x/y, within the watched area) happens in
+    site_config._load_optional_water_side_point -- this only needs to
+    reject a value that isn't even a JSON object, same as _parse_waterline_points.
+    """
+
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise SiteConfigError("water_side_point must be a JSON object")
+    return {str(key): item for key, item in value.items()}

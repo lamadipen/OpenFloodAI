@@ -332,6 +332,51 @@ def test_set_normal_waterline_guides_saves_all_rows_in_one_request(tmp_path: Pat
     }
 
 
+def test_set_normal_waterline_guides_saves_a_water_side_point(tmp_path: Path) -> None:
+    site_dir = make_site(tmp_path / "example-site")
+
+    with serve_home_ui(tmp_path) as base_url:
+        status, payload = post(
+            base_url,
+            "/api/set-normal-waterline-guides",
+            normal_waterline_guides_bulk_request(
+                guides=[
+                    {
+                        "id": "left_bank_normal_waterline",
+                        "label": "left bank normal waterline",
+                        "points": [{"x": 10, "y": 55}, {"x": 20, "y": 60}],
+                        "video_time_seconds": 4.5,
+                        "normal_condition": True,
+                        "notes": "",
+                        "status": "confirmed",
+                        "water_side_point": {"x": 50, "y": 90},
+                    }
+                ]
+            ),
+        )
+
+    assert status == 200
+    assert payload["success"] is True
+    saved = read_config(site_dir)["normal_waterline_guides"]
+    assert saved[0]["water_side_point"] == {"x": 50, "y": 90}
+
+
+def test_set_normal_waterline_guides_without_a_water_side_point_saves_none(
+    tmp_path: Path,
+) -> None:
+    site_dir = make_site(tmp_path / "example-site")
+
+    with serve_home_ui(tmp_path) as base_url:
+        status, payload = post(
+            base_url, "/api/set-normal-waterline-guides", normal_waterline_guides_bulk_request()
+        )
+
+    assert status == 200
+    assert payload["success"] is True
+    saved = read_config(site_dir)["normal_waterline_guides"]
+    assert all(guide["water_side_point"] is None for guide in saved)
+
+
 def test_set_normal_waterline_guides_accepts_a_saved_image_source(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
