@@ -51,6 +51,7 @@
   </div>
 </div>
 <script src="/console/shared.js"></script>
+<script src="/console/guide-source-matching.js"></script>
 <script>
 const folderName = qs("site");
 let sequenceId = null;
@@ -414,24 +415,44 @@ async function main() {
     }
     paintWatchedArea();
 
-    const sequences = sequenceData.sequences || [];
-    if (sequences.length) {
-      const seq = sequences[sequences.length - 1];
-      sequenceId = seq.sequence_id;
-      const downloaded = (seq.records || []).find((r) => r.download_status === "downloaded");
-      if (downloaded) {
-        baselineFilename = downloaded.filename;
-        $("stageImg").setAttribute(
-          "href",
-          `/api/image-sequence-image?${new URLSearchParams({ folder_name: folderName, sequence_id: sequenceId, filename: baselineFilename })}`
-        );
+    const existingGuides = cfg.normal_waterline_guides || [];
+    // When guides already exist, load the FIRST one's own saved source --
+    // never just "whatever is newest" -- so opening this editor to fix an
+    // older guide actually shows the image/video it was traced on, instead
+    // of a dead end where saving is refused with no way to see the right
+    // media at all. Only a site with no guides yet falls back to newest.
+    const referenceGuide = existingGuides[0] || null;
+
+    if (referenceGuide && referenceGuide.image_sequence_id) {
+      sequenceId = referenceGuide.image_sequence_id;
+      baselineFilename = referenceGuide.image_filename;
+      $("stageImg").setAttribute(
+        "href",
+        `/api/image-sequence-image?${new URLSearchParams({ folder_name: folderName, sequence_id: sequenceId, filename: baselineFilename })}`
+      );
+    } else if (referenceGuide && referenceGuide.video_id) {
+      videoId = referenceGuide.video_id;
+      await loadVideoSource(referenceGuide.video_time_seconds || 0);
+    } else {
+      const sequences = sequenceData.sequences || [];
+      if (sequences.length) {
+        const seq = sequences[sequences.length - 1];
+        sequenceId = seq.sequence_id;
+        const downloaded = (seq.records || []).find((r) => r.download_status === "downloaded");
+        if (downloaded) {
+          baselineFilename = downloaded.filename;
+          $("stageImg").setAttribute(
+            "href",
+            `/api/image-sequence-image?${new URLSearchParams({ folder_name: folderName, sequence_id: sequenceId, filename: baselineFilename })}`
+          );
+        }
       }
-    }
-    if (!baselineFilename) {
-      const firstVideo = (manifestData.records || [])[0];
-      if (firstVideo && firstVideo.video_id) {
-        videoId = firstVideo.video_id;
-        await loadVideoSource();
+      if (!baselineFilename) {
+        const firstVideo = (manifestData.records || [])[0];
+        if (firstVideo && firstVideo.video_id) {
+          videoId = firstVideo.video_id;
+          await loadVideoSource(0);
+        }
       }
     }
     if (!baselineFilename && !videoId) {
@@ -439,7 +460,6 @@ async function main() {
       return;
     }
 
-    const existingGuides = cfg.normal_waterline_guides || [];
     existingGuides.forEach((guide) => {
       addRow({
         id: guide.id,
@@ -466,7 +486,7 @@ async function main() {
   }
 }
 
-function loadVideoSource() {
+function loadVideoSource(startAtSeconds) {
   return new Promise((resolve) => {
     const video = $("sourceVideo");
     video.src = `/api/site-video?${new URLSearchParams({ folder_name: folderName, video_id: videoId })}`;
@@ -474,8 +494,9 @@ function loadVideoSource() {
       "loadedmetadata",
       () => {
         $("scrub").max = video.duration || 1;
-        $("scrub").value = 0;
-        video.currentTime = 0;
+        const target = clamp(startAtSeconds || 0, 0, video.duration || 1);
+        $("scrub").value = target;
+        video.currentTime = target;
         resolve();
       },
       { once: true }
@@ -495,17 +516,13 @@ function loadVideoSource() {
 // The one media source this save request will use, for every line in the
 // batch -- /api/set-normal-waterline-guides always applies one source to
 // the whole request, matching how it's traced (all lines are drawn while
-// looking at ONE image/video). "identity" ignores the specific frame/time,
-// since that's guide-specific (see savingSourceForRow), only which
-// image sequence or video it is.
-function currentSourceIdentity() {
-  return baselineFilename ? `image:${sequenceId}` : `video:${videoId}`;
-}
-
-function savedSourceIdentity(savedSource) {
-  return savedSource.image_sequence_id
-    ? `image:${savedSource.image_sequence_id}`
-    : `video:${savedSource.video_id}`;
+// looking at ONE image/video). Uses the shared guideSourceIdentity() (see
+// guide-source-matching.js) so this comparison is the exact same logic a
+// Node test exercises directly.
+function currentSource() {
+  return baselineFilename
+    ? { image_sequence_id: sequenceId, image_filename: baselineFilename }
+    : { video_id: videoId };
 }
 
 // An existing line's own saved frame/time, never the page's current scrub
@@ -537,12 +554,10 @@ $("saveBtn").addEventListener("click", async () => {
   // media is currently on screen -- this editor can only save one media
   // source per request, so a line traced on different media must block
   // the whole save with a clear reason, not be quietly rewritten.
-  const currentIdentity = currentSourceIdentity();
+  const targetSource = currentSource();
   const mismatched = rows.filter(
     (row) =>
-      row.existingOnServer &&
-      row.savedSource &&
-      savedSourceIdentity(row.savedSource) !== currentIdentity
+      row.existingOnServer && row.savedSource && !sourcesMatch(row.savedSource, targetSource)
   );
   if (mismatched.length) {
     const names = mismatched.map((row) => row.fields.label.value.trim() || "a line").join(", ");
