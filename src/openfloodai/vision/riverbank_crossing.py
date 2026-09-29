@@ -152,9 +152,7 @@ def evaluate_riverbank_crossing(
 
     crossed_count = sum(1 for sample in samples if sample.crossed)
     crossed_line_percentage = round(100.0 * crossed_count / len(samples), 2)
-    changed_bank_length_percentage = round(
-        _crossed_arc_length_percentage(samples, total_length), 2
-    )
+    changed_bank_length_percentage = round(_crossed_arc_length_percentage(samples, total_length), 2)
     maximum_crossing_pixels = round(
         max((sample.crossing_extent_pixels for sample in samples), default=0.0), 2
     )
