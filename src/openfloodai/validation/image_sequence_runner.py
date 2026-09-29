@@ -361,9 +361,7 @@ def run_image_sequence_validation(
                     riverbank_crossing_guide.points if riverbank_crossing_guide else None
                 ),
                 water_side_point=(
-                    riverbank_crossing_guide.water_side_point
-                    if riverbank_crossing_guide
-                    else None
+                    riverbank_crossing_guide.water_side_point if riverbank_crossing_guide else None
                 ),
                 previous_frame=baseline_frame,
                 current_frame=current_frame,
