@@ -67,6 +67,7 @@ from openfloodai.review import (
     is_baseline_ready,
     is_normal_baseline_confirmed,
     render_pair_comparison_overlay,
+    render_riverbank_crossing_overlay,
     repair_manifest_from_local_videos,
 )
 from openfloodai.review.dataset_manifest import HARD_CASE_TYPE_OPTIONS, MANIFEST_PURPOSE_OPTIONS
@@ -178,6 +179,9 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             return
         if path == "/api/image-sequence-comparison":
             self._send_image_sequence_comparison()
+            return
+        if path == "/api/image-sequence-riverbank-overlay":
+            self._send_image_sequence_riverbank_overlay()
             return
         if path == "/api/image-sequence-runs":
             self._send_image_sequence_runs()
@@ -407,6 +411,116 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             ImageSequenceValidationError,
         ):
             self.send_error(404, "Comparison image not found")
+
+    def _send_image_sequence_riverbank_overlay(self) -> None:
+        """Render saved riverbank-crossing evidence for one selected image."""
+
+        query = parse_qs(urlsplit(self.path).query)
+        try:
+            site_dir = self._resolve_site_dir(query.get("folder_name", [""])[0])
+            sequence_id = query.get("sequence_id", [""])[0]
+            run_id = query.get("run_id", [""])[0]
+            filename = query.get("filename", [""])[0]
+            detail = read_image_sequence_run_detail(site_dir, run_id)
+            summary = detail.get("summary")
+            if not isinstance(summary, dict) or summary.get("sequence_id") != sequence_id:
+                raise ValueError("Run does not belong to this image sequence.")
+
+            selected_record = next(
+                (
+                    record
+                    for record in detail.get("records", [])
+                    if isinstance(record, dict) and record.get("filename") == filename
+                ),
+                None,
+            )
+            if selected_record is None:
+                raise ValueError("Selected image is not part of this run.")
+            timestamp = selected_record.get("captured_at_utc")
+            evidence = next(
+                (
+                    record
+                    for record in detail.get("evidence_records", [])
+                    if isinstance(record, dict)
+                    and record.get("plugin_id") == "riverbank_crossing_v1"
+                    and record.get("timestamp") == timestamp
+                    and record.get("status") == "available"
+                ),
+                None,
+            )
+            if evidence is None:
+                raise ValueError("No available riverbank-crossing evidence for this image.")
+            quality = evidence.get("quality")
+            provenance = evidence.get("provenance")
+            if not isinstance(quality, dict) or not isinstance(provenance, dict):
+                raise ValueError("Riverbank-crossing evidence is incomplete.")
+            samples = quality.get("samples")
+            band_width = quality.get("band_width_px")
+            if (
+                not isinstance(samples, list)
+                or not all(isinstance(sample, dict) for sample in samples)
+                or isinstance(band_width, bool)
+                or not isinstance(band_width, int)
+            ):
+                raise ValueError("This run does not contain review-overlay samples.")
+
+            config_snapshot = resolve_run_config_snapshot(
+                site_dir, run_id, expected_sequence_id=sequence_id
+            )
+            guides = config_snapshot.get("normal_waterline_guides")
+            guide = (
+                next(
+                    (
+                        candidate
+                        for candidate in guides
+                        if isinstance(candidate, dict)
+                        and candidate.get("id") == provenance.get("guide_id")
+                        and candidate.get("image_sequence_id") == sequence_id
+                        and candidate.get("status") == "confirmed"
+                        and candidate.get("normal_condition") is True
+                    ),
+                    None,
+                )
+                if isinstance(guides, list)
+                else None
+            )
+            reference_region = config_snapshot.get("reference_region")
+            if not isinstance(guide, dict) or not isinstance(reference_region, dict):
+                raise ValueError("The saved guide or watched area is unavailable.")
+            guide_points = guide.get("points")
+            guide_filename = guide.get("image_filename")
+            if not isinstance(guide_points, list) or not isinstance(guide_filename, str):
+                raise ValueError("The saved guide source is incomplete.")
+
+            baseline_path = resolve_sequence_image(site_dir, sequence_id, guide_filename)
+            selected_path = resolve_sequence_image(site_dir, sequence_id, filename)
+            baseline_frame = cv2.imread(str(baseline_path))
+            selected_frame = cv2.imread(str(selected_path))
+            if baseline_frame is None or selected_frame is None:
+                raise RiverImageError("Could not read one of the overlay images.")
+            overlay = render_riverbank_crossing_overlay(
+                baseline_frame,
+                selected_frame,
+                reference_region=reference_region,
+                guide_points=guide_points,
+                samples=samples,
+                band_width_px=band_width,
+            )
+            body = encode_png(overlay)
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+        except (
+            OSError,
+            ValueError,
+            RiverImageError,
+            ReviewImageError,
+            ImageSequenceValidationError,
+        ):
+            self.send_error(404, "Riverbank review overlay not found")
 
     def _send_image_sequence_runs(self) -> None:
         """List saved image-sequence validation runs for one sequence."""

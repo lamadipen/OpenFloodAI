@@ -66,6 +66,10 @@ class SampleResult:
 
     point_x: float
     point_y: float
+    land_band_x: float
+    land_band_y: float
+    water_band_x: float
+    water_band_y: float
     distance_px: float
     land_change_score: float
     water_change_score: float
@@ -151,6 +155,8 @@ def evaluate_riverbank_crossing(
         point, normal = _point_and_normal_at(segments, lengths, distance)
         land_normal = -normal if flip_to_land else normal
         water_normal = -land_normal
+        land_band_point = _offset_point(point, land_normal, band_width_px / 2.0)
+        water_band_point = _offset_point(point, water_normal, band_width_px / 2.0)
 
         land_score = _patch_change_score_at(
             baseline_frame, current_frame, point, land_normal, band_width_px, region_bounds
@@ -184,6 +190,10 @@ def evaluate_riverbank_crossing(
             SampleResult(
                 point_x=round(point[0] / frame_width * 100.0, 4),
                 point_y=round(point[1] / frame_height * 100.0, 4),
+                land_band_x=round(land_band_point[0] / frame_width * 100.0, 4),
+                land_band_y=round(land_band_point[1] / frame_height * 100.0, 4),
+                water_band_x=round(water_band_point[0] / frame_width * 100.0, 4),
+                water_band_y=round(water_band_point[1] / frame_height * 100.0, 4),
                 distance_px=distance,
                 land_change_score=land_score,
                 water_change_score=water_score,
@@ -402,6 +412,16 @@ def _patch_change_score_at(
     if baseline_patch.size == 0:
         return None
     return patch_change_score(baseline_patch, current_patch)
+
+
+def _offset_point(
+    point: NDArray[np.float64], direction: NDArray[np.float64], distance: float
+) -> NDArray[np.float64]:
+    """Return a point moved along one local guide normal."""
+
+    norm = float(np.linalg.norm(direction))
+    unit_direction = direction / norm if norm > 0 else direction
+    return point + unit_direction * distance
 
 
 def _search_crossing_extent(

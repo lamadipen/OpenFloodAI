@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
+from dataclasses import asdict
 from datetime import UTC, datetime
 
 from openfloodai.evidence.contract import (
@@ -175,6 +176,7 @@ class RiverbankCrossingObservationAdapter:
                 "band_width_px": result.band_width_px,
                 "crossing_threshold": result.crossing_threshold,
                 "sample_count": result.sample_count,
+                "samples": [asdict(sample) for sample in result.samples],
             },
             reason_codes=(crossing_reason, "CAMERA_ALIGNMENT_UNAVAILABLE"),
             provenance={

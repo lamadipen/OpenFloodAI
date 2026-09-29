@@ -47,6 +47,24 @@ every generated report.
    and overlay versions with the watched area and any confirmed riverbank
    guide burned in), and the per-image results.
 
+## Riverbank Review Overlay
+
+When the optional `riverbank_crossing_v1` adapter is enabled and produces
+available evidence, the Review screen shows an additional riverbank crossing
+overlay for the selected image. It uses the guide's own confirmed baseline on
+the left and the current image on the right.
+
+The overlay shows the confirmed normal line, the sampled land-side and
+water-side bands, and the exact sampled guide sections where possible crossing
+evidence was measured. The explanation also reports how much of the sampled
+line changed and whether camera alignment was unavailable.
+
+This is visual comparison evidence only. A highlighted section may be caused by
+water, lighting, vegetation, snow, or camera movement. It is not flood
+confirmation, a physical water-height measurement, or a public warning. Human
+review is required, and a result with no highlighted section does not prove
+that conditions are safe.
+
 The baseline is the earliest successfully downloaded image in the sequence
 by default. Every other downloaded image is compared against it. Missing or
 failed images are recorded as `camera_or_image_problem`, never silently
@@ -64,6 +82,7 @@ site/
         run-summary.json
         image-sequence-report.md
         image-sequence-records.jsonl
+        evidence-records.jsonl
         review-images/
         inputs-used/
 ```

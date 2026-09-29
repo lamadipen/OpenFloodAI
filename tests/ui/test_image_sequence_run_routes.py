@@ -382,6 +382,86 @@ def test_image_sequence_comparison_route_renders_an_on_demand_png(tmp_path: Path
             assert body[:8] == b"\x89PNG\r\n\x1a\n"
 
 
+def test_riverbank_overlay_route_renders_saved_sample_evidence(tmp_path: Path) -> None:
+    site_dir = tmp_path / "example-site"
+    make_site(site_dir)
+    baseline_name, changed_name = write_named_sequence(site_dir)
+    run_id = "run-riverbank-overlay"
+    run_dir = site_dir / "outputs" / "image-sequence-runs" / run_id
+    inputs_used = run_dir / "inputs-used"
+    inputs_used.mkdir(parents=True)
+    (run_dir / "run-summary.json").write_text(
+        json.dumps({"run_id": run_id, "sequence_id": SEQUENCE_ID}), encoding="utf-8"
+    )
+    guide = {
+        "id": "left-bank",
+        "status": "confirmed",
+        "normal_condition": True,
+        "image_sequence_id": SEQUENCE_ID,
+        "image_filename": baseline_name,
+        "points": [{"x": 10, "y": 50}, {"x": 90, "y": 50}],
+        "water_side_point": {"x": 50, "y": 80},
+    }
+    (inputs_used / "site-config.snapshot.json").write_text(
+        json.dumps(
+            {
+                "reference_region": {"x": 0, "y": 0, "width": 100, "height": 100},
+                "normal_waterline_guides": [guide],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "image-sequence-records.jsonl").write_text(
+        json.dumps(
+            {
+                "filename": changed_name,
+                "captured_at_utc": "2026-09-01T01:00:00+00:00",
+                "download_status": "downloaded",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    samples = [
+        {
+            "point_x": x,
+            "point_y": 50,
+            "land_band_x": x,
+            "land_band_y": 45,
+            "water_band_x": x,
+            "water_band_y": 55,
+            "crossed": x >= 50,
+        }
+        for x in (10, 50, 90)
+    ]
+    (run_dir / "evidence-records.jsonl").write_text(
+        json.dumps(
+            {
+                "plugin_id": "riverbank_crossing_v1",
+                "timestamp": "2026-09-01T01:00:00+00:00",
+                "status": "available",
+                "quality": {"band_width_px": 10, "samples": samples},
+                "provenance": {"guide_id": "left-bank"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with serve_home_ui(tmp_path) as base_url:
+        query = urlencode(
+            {
+                "folder_name": "example-site",
+                "sequence_id": SEQUENCE_ID,
+                "run_id": run_id,
+                "filename": changed_name,
+            }
+        )
+        with urlopen(f"{base_url}/api/image-sequence-riverbank-overlay?{query}") as response:
+            assert response.headers.get_content_type() == "image/png"
+            assert response.read()[:8] == b"\x89PNG\r\n\x1a\n"
+
+
 def test_image_sequence_comparison_route_404s_for_unknown_filename(tmp_path: Path) -> None:
     site_dir = tmp_path / "example-site"
     make_site(site_dir)

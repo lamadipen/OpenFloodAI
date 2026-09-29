@@ -12,6 +12,7 @@ from openfloodai.review import (
     encode_png,
     generate_biggest_change_review_images,
     render_pair_comparison_overlay,
+    render_riverbank_crossing_overlay,
 )
 
 REFERENCE_REGION = {"x": 0, "y": 50, "width": 100, "height": 50}
@@ -355,6 +356,80 @@ def test_render_pair_comparison_overlay_rejects_mismatched_heights() -> None:
 
     with pytest.raises(ReviewImageError, match="matching height"):
         render_pair_comparison_overlay(baseline_frame, other_frame)
+
+
+def test_riverbank_crossing_overlay_draws_bands_and_changed_sections() -> None:
+    baseline = np.zeros((100, 100, 3), dtype=np.uint8)
+    current = baseline.copy()
+    samples = [
+        {
+            "point_x": x,
+            "point_y": 50,
+            "land_band_x": x,
+            "land_band_y": 45,
+            "water_band_x": x,
+            "water_band_y": 55,
+            "crossed": crossed,
+        }
+        for x, crossed in ((20, False), (50, True), (80, True))
+    ]
+
+    overlay = render_riverbank_crossing_overlay(
+        baseline,
+        current,
+        reference_region={"x": 0, "y": 0, "width": 100, "height": 100},
+        guide_points=[{"x": 0, "y": 50}, {"x": 100, "y": 50}],
+        samples=samples,
+        band_width_px=10,
+    )
+
+    assert overlay.shape == (100, 200, 3)
+    assert overlay[45, 50].any(), "land-side band should be visible on the baseline"
+    assert overlay[55, 50].any(), "water-side band should be visible on the baseline"
+    assert not np.array_equal(overlay[50, 50], overlay[50, 150]), (
+        "only the current image should highlight a crossed guide section"
+    )
+
+
+def test_riverbank_crossing_overlay_requires_saved_samples() -> None:
+    frame = np.zeros((100, 100, 3), dtype=np.uint8)
+
+    with pytest.raises(ReviewImageError, match="saved sample"):
+        render_riverbank_crossing_overlay(
+            frame,
+            frame,
+            reference_region={"x": 0, "y": 0, "width": 100, "height": 100},
+            guide_points=[{"x": 0, "y": 50}, {"x": 100, "y": 50}],
+            samples=[],
+            band_width_px=10,
+        )
+
+
+def test_riverbank_crossing_overlay_clips_band_centers_at_image_edges() -> None:
+    frame = np.zeros((100, 100, 3), dtype=np.uint8)
+    samples = [
+        {
+            "point_x": 50,
+            "point_y": 2,
+            "land_band_x": 50,
+            "land_band_y": -3,
+            "water_band_x": 50,
+            "water_band_y": 7,
+            "crossed": True,
+        }
+    ]
+
+    overlay = render_riverbank_crossing_overlay(
+        frame,
+        frame,
+        reference_region={"x": 0, "y": 0, "width": 100, "height": 100},
+        guide_points=[{"x": 10, "y": 2}, {"x": 90, "y": 2}],
+        samples=samples,
+        band_width_px=10,
+    )
+
+    assert overlay.shape == (100, 200, 3)
+    assert overlay[0, 50].any()
 
 
 def test_encode_png_round_trips_through_cv2() -> None:
