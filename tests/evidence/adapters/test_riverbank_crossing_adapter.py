@@ -9,6 +9,7 @@ from openfloodai.evidence.registry import check_capabilities, collect_evidence
 
 GUIDE_POINTS = ({"x": 0, "y": 50}, {"x": 100, "y": 50})
 WATER_SIDE_POINT = {"x": 50, "y": 80}
+FULL_REGION = {"x": 0, "y": 0, "width": 100, "height": 100}
 
 
 def two_band_frame(*, changed_band: tuple[int, int] | None = None) -> np.ndarray:
@@ -27,6 +28,7 @@ def test_adapter_reports_a_possible_crossing_as_available_evidence() -> None:
         guide_id="left_bank",
         guide_points=GUIDE_POINTS,
         water_side_point=WATER_SIDE_POINT,
+        reference_region=FULL_REGION,
         previous_frame=two_band_frame(),
         current_frame=two_band_frame(changed_band=(40, 50)),
         timestamp="2026-06-18T00:00:00+00:00",
@@ -39,7 +41,7 @@ def test_adapter_reports_a_possible_crossing_as_available_evidence() -> None:
     assert record.status == "available"
     assert record.value is not None and record.value > 0
     assert record.units == "percent"
-    assert "POSSIBLE_WATER_BEYOND_NORMAL_LINE" in record.reason_codes
+    assert "POSSIBLE_VISUAL_CHANGE_BEYOND_NORMAL_LINE" in record.reason_codes
     assert "CAMERA_ALIGNMENT_UNAVAILABLE" in record.reason_codes
     assert record.quality is not None
     assert record.quality["alignment_status"] == "unavailable"
@@ -55,6 +57,7 @@ def test_adapter_reports_no_clear_crossing_when_nothing_changes() -> None:
         guide_id="left_bank",
         guide_points=GUIDE_POINTS,
         water_side_point=WATER_SIDE_POINT,
+        reference_region=FULL_REGION,
         previous_frame=two_band_frame(),
         current_frame=two_band_frame(),
     )
@@ -73,6 +76,7 @@ def test_adapter_is_invalid_without_a_confirmed_guide() -> None:
         guide_id=None,
         guide_points=None,
         water_side_point=None,
+        reference_region=FULL_REGION,
         previous_frame=two_band_frame(),
         current_frame=two_band_frame(),
     )
@@ -93,6 +97,7 @@ def test_adapter_is_invalid_without_a_water_side_point() -> None:
         guide_id="left_bank",
         guide_points=GUIDE_POINTS,
         water_side_point=None,
+        reference_region=FULL_REGION,
         previous_frame=two_band_frame(),
         current_frame=two_band_frame(),
     )
@@ -112,6 +117,7 @@ def test_adapter_fails_cleanly_on_mismatched_frame_shapes() -> None:
         guide_id="left_bank",
         guide_points=GUIDE_POINTS,
         water_side_point=WATER_SIDE_POINT,
+        reference_region=FULL_REGION,
         previous_frame=two_band_frame(),
         current_frame=np.zeros((10, 10, 3), dtype=np.uint8),
     )
@@ -131,6 +137,7 @@ def test_adapter_works_through_the_shared_registry_helpers() -> None:
         guide_id="left_bank",
         guide_points=GUIDE_POINTS,
         water_side_point=WATER_SIDE_POINT,
+        reference_region=FULL_REGION,
         previous_frame=two_band_frame(),
         current_frame=two_band_frame(changed_band=(40, 50)),
     )

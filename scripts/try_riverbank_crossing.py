@@ -45,6 +45,10 @@ GUIDE_POINTS = (
 # new `water_side_point` field) -- not yet saveable from the console UI.
 WATER_SIDE_POINT = {"x": 50, "y": 60}
 
+# Copy the site's own "reference_region" out of its config JSON. Every
+# sample/search patch is clipped to this -- never the whole frame.
+REFERENCE_REGION = {"x": 6.09375, "y": 20.5, "width": 90.15625, "height": 39.0}
+
 # ----------------------------------------------------------------------------
 
 
@@ -60,6 +64,7 @@ def main() -> None:
         guide_id="try-it-out-guide",
         guide_points=GUIDE_POINTS,
         water_side_point=WATER_SIDE_POINT,
+        reference_region=REFERENCE_REGION,
         previous_frame=baseline,
         current_frame=current,
     )

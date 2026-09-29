@@ -35,11 +35,17 @@ from openfloodai.vision.riverbank_crossing import (
     WaterlinePointInput,
     evaluate_riverbank_crossing,
 )
-from openfloodai.vision.simple_signals import FrameArray
+from openfloodai.vision.simple_signals import FrameArray, ReferenceRegionInput
 
 PLUGIN_ID = "riverbank_crossing_v1"
 PLUGIN_VERSION = "1.0.0"
 PLUGIN_FAMILY = "observation"
+# The algorithm only measures land-side PIXEL change; it never identifies the
+# changed substance as water (vegetation, snow, a person, or shadow can all
+# trigger this). Named accordingly -- never "POSSIBLE_WATER_..." -- until a
+# separate adapter supplies real water evidence.
+REASON_POSSIBLE_VISUAL_CHANGE = "POSSIBLE_VISUAL_CHANGE_BEYOND_NORMAL_LINE"
+REASON_NO_CLEAR_CROSSING = "NO_CLEAR_CROSSING"
 
 
 def _guide_fingerprint(
@@ -84,6 +90,7 @@ class RiverbankCrossingObservationAdapter:
         guide_id: str | None,
         guide_points: tuple[WaterlinePointInput, ...] | None,
         water_side_point: WaterlinePointInput | None,
+        reference_region: ReferenceRegionInput,
         previous_frame: FrameArray,
         current_frame: FrameArray,
         timestamp: str | None = None,
@@ -98,6 +105,7 @@ class RiverbankCrossingObservationAdapter:
         self._guide_id = guide_id
         self._guide_points = guide_points
         self._water_side_point = water_side_point
+        self._reference_region = reference_region
         self._previous_frame = previous_frame
         self._current_frame = current_frame
         self._timestamp = timestamp
@@ -128,6 +136,7 @@ class RiverbankCrossingObservationAdapter:
                 self._current_frame,
                 self._guide_points,
                 self._water_side_point,
+                self._reference_region,
                 band_width_px=self._band_width_px,
                 crossing_threshold=self._crossing_threshold,
                 max_search_pixels=self._max_search_pixels,
@@ -140,9 +149,9 @@ class RiverbankCrossingObservationAdapter:
             )
 
         crossing_reason = (
-            "POSSIBLE_WATER_BEYOND_NORMAL_LINE"
+            REASON_POSSIBLE_VISUAL_CHANGE
             if result.crossed_line_percentage > 0
-            else "NO_CLEAR_CROSSING"
+            else REASON_NO_CLEAR_CROSSING
         )
         guide_points_plain = tuple(_point_to_plain_dict(point) for point in self._guide_points)
         water_side_plain = _point_to_plain_dict(self._water_side_point)
