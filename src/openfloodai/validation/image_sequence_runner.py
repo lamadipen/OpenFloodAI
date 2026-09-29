@@ -363,6 +363,7 @@ def run_image_sequence_validation(
                 water_side_point=(
                     riverbank_crossing_guide.water_side_point if riverbank_crossing_guide else None
                 ),
+                reference_region=site_config.reference_region,
                 previous_frame=baseline_frame,
                 current_frame=current_frame,
                 timestamp=captured_at_utc or None,

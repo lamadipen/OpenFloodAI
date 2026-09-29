@@ -274,6 +274,7 @@ def _run_pipeline(
                             if riverbank_crossing_guide
                             else None
                         ),
+                        reference_region=region,
                         previous_frame=frames[before],
                         current_frame=frames[after],
                         timestamp=timestamp,
