@@ -349,6 +349,10 @@ function addRow(initial) {
     points: initial.points || [],
     waterSidePoint: initial.waterSidePoint || null,
     status: initial.status || "draft",
+    // The exact media this line was originally traced on -- null for a
+    // brand-new, never-saved line. Saving must reuse this, never whatever
+    // media happens to be on screen right now (see savingSourceForRow).
+    savedSource: initial.savedSource || null,
     el: null,
     fields: null
   };
@@ -446,7 +450,13 @@ async function main() {
         status: guide.status || "draft",
         invalidationReason: guide.invalidation_reason,
         normalCondition: Boolean(guide.normal_condition),
-        notes: guide.notes || ""
+        notes: guide.notes || "",
+        savedSource: {
+          image_sequence_id: guide.image_sequence_id || "",
+          image_filename: guide.image_filename || "",
+          video_id: guide.video_id || "",
+          video_time_seconds: guide.video_time_seconds || 0
+        }
       });
     });
     if (rows.length) setActiveRow(rows[0].uid);
@@ -482,6 +492,32 @@ function loadVideoSource() {
   });
 }
 
+// The one media source this save request will use, for every line in the
+// batch -- /api/set-normal-waterline-guides always applies one source to
+// the whole request, matching how it's traced (all lines are drawn while
+// looking at ONE image/video). "identity" ignores the specific frame/time,
+// since that's guide-specific (see savingSourceForRow), only which
+// image sequence or video it is.
+function currentSourceIdentity() {
+  return baselineFilename ? `image:${sequenceId}` : `video:${videoId}`;
+}
+
+function savedSourceIdentity(savedSource) {
+  return savedSource.image_sequence_id
+    ? `image:${savedSource.image_sequence_id}`
+    : `video:${savedSource.video_id}`;
+}
+
+// An existing line's own saved frame/time, never the page's current scrub
+// position -- a save that only touches OTHER lines (or just adds a water
+// side point) must not silently retrace this line onto whatever moment
+// happens to be on screen right now. A brand-new line has no saved time
+// yet, so it correctly uses wherever it was just drawn.
+function savingVideoTimeForRow(row) {
+  if (row.existingOnServer && row.savedSource) return row.savedSource.video_time_seconds;
+  return videoTimeSeconds;
+}
+
 $("saveBtn").addEventListener("click", async () => {
   for (const row of rows) {
     const label = row.fields.label.value.trim();
@@ -496,6 +532,30 @@ $("saveBtn").addEventListener("click", async () => {
       return;
     }
   }
+
+  // Refuse rather than silently reattaching an existing line to whatever
+  // media is currently on screen -- this editor can only save one media
+  // source per request, so a line traced on different media must block
+  // the whole save with a clear reason, not be quietly rewritten.
+  const currentIdentity = currentSourceIdentity();
+  const mismatched = rows.filter(
+    (row) =>
+      row.existingOnServer &&
+      row.savedSource &&
+      savedSourceIdentity(row.savedSource) !== currentIdentity
+  );
+  if (mismatched.length) {
+    const names = mismatched.map((row) => row.fields.label.value.trim() || "a line").join(", ");
+    const plural = mismatched.length > 1;
+    $("formError").hidden = false;
+    $("formError").textContent =
+      `Can't save: ${names} ${plural ? "were" : "was"} traced on different media than what's ` +
+      `showing here. Nothing was changed. Reopen this editor once the site's current image/video ` +
+      `matches what ${plural ? "these lines" : "this line"} ${plural ? "were" : "was"} drawn on, ` +
+      `or delete and redraw ${plural ? "them" : "it"} against the current media.`;
+    return;
+  }
+
   $("saveBtn").disabled = true;
   $("saveBtn").innerHTML = '<span class="spinner"></span>Saving…';
   $("formError").hidden = true;
@@ -515,7 +575,7 @@ $("saveBtn").addEventListener("click", async () => {
         invalidation_reason: row.fields.status.value === "invalid" ? row.fields.invalidationReason.value : null,
         normal_condition: row.fields.normalCondition.checked,
         notes: row.fields.notes.value.trim(),
-        video_time_seconds: videoTimeSeconds
+        video_time_seconds: savingVideoTimeForRow(row)
       }))
     });
     location.href = `/console/site.html?${new URLSearchParams({ site: folderName })}`;
