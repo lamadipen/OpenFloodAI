@@ -403,7 +403,11 @@ def test_run_records_global_override_as_the_adapter_source_when_no_site_override
 
 
 def image_sequence_guide_record(
-    guide_id: str = "left-bank", *, image_sequence_id: str, image_filename: str
+    guide_id: str = "left-bank",
+    *,
+    image_sequence_id: str,
+    image_filename: str,
+    points: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     """A confirmed guide sourced from a saved image-sequence still, not a video.
 
@@ -416,7 +420,7 @@ def image_sequence_guide_record(
     return {
         "id": guide_id,
         "label": "Left bank",
-        "points": [{"x": 10, "y": 10}, {"x": 20, "y": 20}],
+        "points": points or [{"x": 10, "y": 10}, {"x": 20, "y": 20}],
         "video_id": "",
         "video_time_seconds": 0,
         "image_sequence_id": image_sequence_id,
@@ -435,18 +439,40 @@ def image_sequence_guide_record(
 def test_riverbank_crossing_enabled_with_a_confirmed_guide_produces_available_evidence(
     tmp_path: Path,
 ) -> None:
+    """Proves the guide's OWN source image is used, not this run's baseline.jpg.
+
+    baseline.jpg (the run's own chosen baseline, unrelated to the guide) is
+    a uniform "already flooded" frame; the guide's real source
+    (guide-source.jpg) and the compared image (no-change.jpg) both show the
+    true normal condition (dry land above the line, water below). If the
+    adapter used baseline.jpg instead of the guide's own source -- the
+    exact bug this test guards against -- the land side would appear to
+    change from "flooded" to "dry", registering a false crossing. Using
+    the guide's real source correctly reports no change at all.
+    """
+
     site_dir = tmp_path / "sites" / "site"
+    guide_points: list[dict[str, object]] = [{"x": 0, "y": 70}, {"x": 100, "y": 70}]
     guide = {
-        **image_sequence_guide_record(image_sequence_id=SEQUENCE_ID, image_filename="baseline.jpg"),
-        "water_side_point": {"x": 50, "y": 50},
+        **image_sequence_guide_record(
+            image_sequence_id=SEQUENCE_ID,
+            image_filename="guide-source.jpg",
+            points=guide_points,
+        ),
+        "water_side_point": {"x": 50, "y": 95},
     }
     make_site(site_dir, normal_waterline_guides=[guide])
     write_global_adapter_setting(tmp_path / "reference", "riverbank_crossing_v1", True)
     sequence_dir = site_dir / "inputs" / "image-sequences" / SEQUENCE_ID
     images_dir = sequence_dir / "images"
 
-    write_frame(images_dir / "baseline.jpg", 30)
-    write_frame(images_dir / "no-change.jpg", 30)
+    # The run's OWN baseline: a uniform, already-anomalous frame, deliberately
+    # different from the guide's real source below.
+    write_frame(images_dir / "baseline.jpg", 50, bottom_third_value=50)
+    # The guide's real source and the compared image both show the true
+    # normal condition: land (top) bright/dry, water (bottom) dark/wet.
+    write_frame(images_dir / "guide-source.jpg", 200, bottom_third_value=50)
+    write_frame(images_dir / "no-change.jpg", 200, bottom_third_value=50)
     write_manifest(
         sequence_dir,
         [
@@ -464,6 +490,12 @@ def test_riverbank_crossing_enabled_with_a_confirmed_guide_produces_available_ev
     row = next(r for r in all_rows if r["plugin_id"] == "riverbank_crossing_v1")
     assert row["status"] == "available"
     assert row["provenance"]["guide_id"] == "left-bank"
+    # Comparing against the guide's real source (identical to no-change.jpg)
+    # correctly finds nothing. Comparing against the run's own baseline.jpg
+    # (the bug this guards against) would instead show the land side
+    # "changing" from flooded to dry and wrongly report a crossing.
+    assert row["value"] == 0.0
+    assert "NO_CLEAR_CROSSING" in row["reason_codes"]
 
 
 def test_riverbank_crossing_reports_source_mismatch_for_a_guide_from_another_sequence(

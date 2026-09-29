@@ -52,7 +52,9 @@ def write_site_config(path: Path, *, include_reference_region: bool = True) -> N
     )
 
 
-def write_site_config_with_eligible_guide(path: Path, *, video_id: str = "sample") -> None:
+def write_site_config_with_eligible_guide(
+    path: Path, *, video_id: str = "sample", video_time_seconds: float = 0
+) -> None:
     """A site with a confirmed, normal-condition guide that has a water_side_point.
 
     `video_id` defaults to "sample" to match every test in this file's
@@ -82,7 +84,7 @@ def write_site_config_with_eligible_guide(path: Path, *, video_id: str = "sample
       "label": "left bank",
       "points": [{{"x": 0, "y": 60}}, {{"x": 100, "y": 60}}],
       "video_id": "{video_id}",
-      "video_time_seconds": 0,
+      "video_time_seconds": {video_time_seconds},
       "site_id": "site-demo-01",
       "camera_id": "camera-demo-01",
       "status": "confirmed",
@@ -99,6 +101,72 @@ def write_site_config_with_eligible_guide(path: Path, *, video_id: str = "sample
 """,
         encoding="utf-8",
     )
+
+
+def write_site_config_with_full_region_guide(
+    path: Path, *, video_id: str = "sample", video_time_seconds: float
+) -> None:
+    """A full-frame-region site, for tests needing real pixel separation between
+    the land and water sides (the default 50%-tall region is too short for
+    riverbank_crossing_v1's fixed band_width_px=10 to distinguish bands on a
+    small test frame).
+    """
+
+    path.write_text(
+        f"""{{
+  "site_id": "site-demo-01",
+  "camera_id": "camera-demo-01",
+  "site_name": "Demo River Bridge",
+  "public_location": "Demo River near Example Town",
+  "input_type": "local_video",
+  "reference_region": {{
+    "x": 0,
+    "y": 0,
+    "width": 100,
+    "height": 100
+  }},
+  "normal_waterline_guides": [
+    {{
+      "id": "left_bank",
+      "label": "left bank",
+      "points": [{{"x": 0, "y": 50}}, {{"x": 100, "y": 50}}],
+      "video_id": "{video_id}",
+      "video_time_seconds": {video_time_seconds},
+      "site_id": "site-demo-01",
+      "camera_id": "camera-demo-01",
+      "status": "confirmed",
+      "normal_condition": true,
+      "notes": "",
+      "confirmed_at": "2026-01-01T00:00:00+00:00",
+      "invalidated_at": null,
+      "invalidation_reason": null,
+      "water_side_point": {{"x": 50, "y": 80}}
+    }}
+  ],
+  "privacy_notes": "Broad public location only."
+}}
+""",
+        encoding="utf-8",
+    )
+
+
+def create_two_band_video(path: Path, frames: list[np.ndarray]) -> None:
+    """Write a 100x100 video whose frames are given explicitly, one array each."""
+
+    fourcc = cv2.VideoWriter_fourcc(*"MJPG")  # type: ignore[attr-defined]
+    writer = cv2.VideoWriter(str(path), fourcc, 2.0, (100, 100))
+    assert writer.isOpened(), "test video writer should open"
+    try:
+        for frame in frames:
+            writer.write(frame)
+    finally:
+        writer.release()
+
+
+def two_band_frame(*, top_value: int, bottom_value: int) -> np.ndarray:
+    frame = np.full((100, 100, 3), top_value, dtype=np.uint8)
+    frame[50:, :, :] = bottom_value
+    return frame
 
 
 def test_local_poc_pipeline_writes_records_for_readable_video(tmp_path: Path) -> None:
@@ -475,14 +543,42 @@ def test_riverbank_crossing_disabled_by_default_produces_disabled_evidence(
 def test_riverbank_crossing_enabled_with_a_confirmed_guide_produces_available_evidence(
     tmp_path: Path,
 ) -> None:
+    """Proves the guide's OWN source frame is used, not frames[before] from the pair.
+
+    Frame 0 (t=0.0, the pair's own "before") is a uniform "already flooded"
+    frame -- deliberately different from the guide's real source. The
+    guide's video_time_seconds points at frame 2 (t=1.0), which -- like
+    frame 1 (t=0.5, the pair's "after"/current) -- shows the true normal
+    condition (dry land on top, water on the bottom). time_windows
+    restricts the compared pair to (0.0, 1) only, so frame 2 is never
+    itself part of the comparison; it exists solely to supply the guide's
+    baseline. If the adapter used frames[before] (frame 0) instead of the
+    guide's own source -- the exact bug this test guards against -- the
+    land side would appear to change from "flooded" to "dry", registering
+    a false crossing. Using the guide's real source correctly reports no
+    change at all.
+    """
+
     video_path = tmp_path / "sample.avi"
     output_path = tmp_path / "region-records.jsonl"
-    create_tiny_video(video_path)
-    config_path = _nested_site_config_with_guide(tmp_path)
+    create_two_band_video(
+        video_path,
+        [
+            two_band_frame(top_value=50, bottom_value=50),  # t=0.0: pair's "before"
+            two_band_frame(top_value=200, bottom_value=50),  # t=0.5: pair's "after"
+            two_band_frame(top_value=200, bottom_value=50),  # t=1.0: guide's real source
+        ],
+    )
+    config_path = tmp_path / "sites" / "site" / "configs" / "site.json"
+    config_path.parent.mkdir(parents=True)
+    write_site_config_with_full_region_guide(config_path, video_time_seconds=1.0)
     write_global_adapter_setting(_reference_dir_for(config_path), "riverbank_crossing_v1", True)
 
     run_local_region_poc_pipeline(
-        video_path=video_path, config_path=config_path, output_path=output_path
+        video_path=video_path,
+        config_path=config_path,
+        output_path=output_path,
+        time_windows=[(0.0, 0.75)],
     )
 
     records = read_jsonl_records(output_path)
@@ -490,6 +586,12 @@ def test_riverbank_crossing_enabled_with_a_confirmed_guide_produces_available_ev
     assert evidence["status"] == "available"
     provenance = cast(dict[str, object], evidence["provenance"])
     assert provenance["guide_id"] == "left_bank"
+    # Comparing against the guide's real source (content-identical to the
+    # "after" frame) correctly finds nothing. Comparing against frames[before]
+    # (the bug this guards against) would instead show the land side
+    # "changing" from flooded to dry and wrongly report a crossing.
+    assert evidence["value"] == 0.0
+    assert evidence["reason_codes"] == ["NO_CLEAR_CROSSING", "CAMERA_ALIGNMENT_UNAVAILABLE"]
 
 
 def test_riverbank_crossing_reports_source_mismatch_for_a_guide_from_another_video(
