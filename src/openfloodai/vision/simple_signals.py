@@ -196,6 +196,21 @@ def compare_region_signals(
     )
 
 
+def patch_change_score(previous_patch: FrameArray, current_patch: FrameArray) -> float:
+    """Return the same mean-absolute-difference change score used for a whole region.
+
+    Public wrapper so other vision code (e.g. riverbank_crossing.py's small
+    per-sample-point patches) can reuse the one pixel-diff metric this module
+    already uses for compare_region_signals(), instead of a second one.
+    """
+
+    previous = _prepare_frame(previous_patch)
+    current = _prepare_frame(current_patch)
+    if previous.shape != current.shape:
+        raise VisualSignalError("Patches must have the same shape for comparison")
+    return _frame_change_score(previous, current)
+
+
 def _build_signal_record(
     *,
     site_id: str,

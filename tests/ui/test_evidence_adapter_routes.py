@@ -35,9 +35,7 @@ def test_get_evidence_adapters_reports_the_catalog_default(tmp_path: Path) -> No
     with serve_home_ui(sites_dir) as base_url:
         payload = get_json(f"{base_url}/api/evidence-adapters")
 
-    assert len(payload["adapters"]) == 1
-    row = payload["adapters"][0]
-    assert row["plugin_id"] == _PLUGIN_ID
+    row = next(row for row in payload["adapters"] if row["plugin_id"] == _PLUGIN_ID)
     assert row["is_default"] is True
     assert row["global_enabled"] is True
     assert row["site_override"] is None

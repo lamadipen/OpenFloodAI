@@ -119,9 +119,7 @@ def test_describe_adapters_for_settings_ui_reports_identity_and_effective_state(
 ) -> None:
     rows = describe_adapters_for_settings_ui(tmp_path, site_overrides={_PLUGIN_ID: False})
 
-    assert len(rows) == 1
-    row = rows[0]
-    assert row["plugin_id"] == _PLUGIN_ID
+    row = next(row for row in rows if row["plugin_id"] == _PLUGIN_ID)
     assert row["is_default"] is True
     assert row["global_enabled"] is True
     assert row["site_override"] is False

@@ -14,3 +14,11 @@ def test_pixel_change_is_a_known_default_adapter() -> None:
 
     defaults = default_enabled_by_id()
     assert defaults["pixel_change_region_v1"] is True
+
+
+def test_riverbank_crossing_is_a_known_but_not_default_adapter() -> None:
+    ids = known_adapter_ids()
+    assert "riverbank_crossing_v1" in ids
+
+    defaults = default_enabled_by_id()
+    assert defaults["riverbank_crossing_v1"] is False
