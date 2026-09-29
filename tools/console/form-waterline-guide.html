@@ -60,6 +60,7 @@ let videoTimeSeconds = 0;
 let watchedArea = null;
 let rows = [];
 let activeUid = null;
+let placingWaterSideFor = null;
 
 const INVALIDATION_REASONS = [
   ["camera_moved", "Camera moved"],
@@ -124,6 +125,11 @@ function activeRow() {
 
 function statusLineText() {
   const active = activeRow();
+  if (placingWaterSideFor) {
+    const row = rows.find((r) => r.uid === placingWaterSideFor);
+    const name = (row && row.fields && row.fields.label.value.trim()) || "this line";
+    return `Click the spot in the water for "${name}", on the wet side of the line.`;
+  }
   if (!rows.length) return 'Click "+ Add line" to start tracing the first bank.';
   if (!active) return "Choose a line on the right (or add another) to keep drawing.";
   if (active.points.length === 0) return "Click inside the dashed watched area to start this line.";
@@ -131,17 +137,29 @@ function statusLineText() {
   return `${active.points.length} points on this line. Keep clicking to follow the curve, or draw another line.`;
 }
 
+function waterMarkerSvg(point, isActive) {
+  const fill = isActive ? "#4ea1ff" : "#7d93a3";
+  return `<g>
+    <circle cx="${point.x}" cy="${point.y}" r="${isActive ? 7 : 5.5}" fill="${fill}" stroke="#fff" stroke-width="1.2"/>
+    <text x="${point.x}" y="${point.y + 3.5}" font-size="9" font-family="var(--sans)" font-weight="700" fill="#fff" text-anchor="middle">W</text>
+  </g>`;
+}
+
 function drawLines() {
   $("lines").innerHTML = rows
     .map((row) => {
-      if (!row.points.length) return "";
       const isActive = row.uid === activeUid;
-      const stroke = isActive ? "#7fe0b4" : "#9fb0bd";
-      const width = isActive ? 2.5 : 1.5;
-      const dash = row.status === "invalid" ? ' stroke-dasharray="3,3"' : "";
-      const poly = `<polyline points="${row.points.map((p) => `${p.x},${p.y}`).join(" ")}" fill="none" stroke="${stroke}" stroke-width="${width}"${dash}/>`;
-      const dots = row.points.map((p) => `<circle cx="${p.x}" cy="${p.y}" r="${isActive ? 5 : 3.5}" fill="${stroke}" stroke="#fff" stroke-width="1.2"/>`).join("");
-      return poly + dots;
+      let html = "";
+      if (row.points.length) {
+        const stroke = isActive ? "#7fe0b4" : "#9fb0bd";
+        const width = isActive ? 2.5 : 1.5;
+        const dash = row.status === "invalid" ? ' stroke-dasharray="3,3"' : "";
+        const poly = `<polyline points="${row.points.map((p) => `${p.x},${p.y}`).join(" ")}" fill="none" stroke="${stroke}" stroke-width="${width}"${dash}/>`;
+        const dots = row.points.map((p) => `<circle cx="${p.x}" cy="${p.y}" r="${isActive ? 5 : 3.5}" fill="${stroke}" stroke="#fff" stroke-width="1.2"/>`).join("");
+        html += poly + dots;
+      }
+      if (row.waterSidePoint) html += waterMarkerSvg(row.waterSidePoint, isActive);
+      return html;
     })
     .join("");
   $("statusLine").textContent = statusLineText();
@@ -209,6 +227,7 @@ function buildRowElement(row, initial) {
     }
     rows = rows.filter((r) => r.uid !== row.uid);
     wrapper.remove();
+    if (placingWaterSideFor === row.uid) placingWaterSideFor = null;
     if (activeUid === row.uid) setActiveRow(rows.length ? rows[rows.length - 1].uid : null);
     else drawLines();
     updateSaveState();
@@ -265,15 +284,74 @@ function buildRowElement(row, initial) {
   pointCount.className = "hint";
   pointCount.textContent = `${row.points.length} point(s) traced.`;
 
-  wrapper.append(header, controlsRow, reasonWrap, notesInput, pointCount);
+  const waterSideRow = document.createElement("div");
+  waterSideRow.style.cssText = "display:flex;align-items:center;gap:6px;";
+  const waterSideStatus = document.createElement("span");
+  waterSideStatus.className = "hint";
+  waterSideStatus.style.flex = "1";
+  const waterSideBtn = document.createElement("button");
+  waterSideBtn.type = "button";
+  waterSideBtn.className = "btn";
+  waterSideBtn.style.cssText = "font-size:11px;padding:5px 9px;white-space:nowrap;";
+  const waterSideClearBtn = document.createElement("button");
+  waterSideClearBtn.type = "button";
+  waterSideClearBtn.className = "btn";
+  waterSideClearBtn.style.cssText = "font-size:11px;padding:5px 9px;white-space:nowrap;";
+  waterSideClearBtn.textContent = "Clear";
+  waterSideClearBtn.addEventListener("click", () => {
+    row.waterSidePoint = null;
+    if (placingWaterSideFor === row.uid) placingWaterSideFor = null;
+    refreshWaterSideRow(row);
+    drawLines();
+  });
+  waterSideBtn.addEventListener("click", () => {
+    setActiveRow(row.uid);
+    placingWaterSideFor = placingWaterSideFor === row.uid ? null : row.uid;
+    rows.forEach((r) => r.fields && refreshWaterSideRow(r));
+    drawLines();
+  });
+  waterSideRow.append(waterSideStatus, waterSideBtn, waterSideClearBtn);
+
+  wrapper.append(header, controlsRow, reasonWrap, notesInput, pointCount, waterSideRow);
 
   row.el = wrapper;
-  row.fields = { label: labelInput, drawButton, status: statusSelect, invalidationReason: reasonSelect, normalCondition: normalCheckbox, notes: notesInput, pointCount };
+  row.fields = {
+    label: labelInput,
+    drawButton,
+    status: statusSelect,
+    invalidationReason: reasonSelect,
+    normalCondition: normalCheckbox,
+    notes: notesInput,
+    pointCount,
+    waterSideStatus,
+    waterSideBtn,
+    waterSideClearBtn
+  };
+  refreshWaterSideRow(row);
   return wrapper;
 }
 
+function refreshWaterSideRow(row) {
+  if (!row.fields) return;
+  const placing = placingWaterSideFor === row.uid;
+  row.fields.waterSideStatus.textContent = row.waterSidePoint
+    ? "Water side: set"
+    : "Water side: not set";
+  row.fields.waterSideBtn.textContent = placing ? "Click the water…" : "Set water side";
+  row.fields.waterSideClearBtn.hidden = !row.waterSidePoint;
+}
+
 function addRow(initial) {
-  const row = { uid: uid(), id: initial.id, existingOnServer: Boolean(initial.existingOnServer), points: initial.points || [], status: initial.status || "draft", el: null, fields: null };
+  const row = {
+    uid: uid(),
+    id: initial.id,
+    existingOnServer: Boolean(initial.existingOnServer),
+    points: initial.points || [],
+    waterSidePoint: initial.waterSidePoint || null,
+    status: initial.status || "draft",
+    el: null,
+    fields: null
+  };
   rows.push(row);
   $("rowsContainer").append(buildRowElement(row, initial));
   updateSaveState();
@@ -286,14 +364,26 @@ $("addLineBtn").addEventListener("click", () => {
 });
 
 $("stage").addEventListener("click", (event) => {
+  const rect = $("stage").getBoundingClientRect();
+  const rawX = ((event.clientX - rect.left) / rect.width) * 640;
+  const rawY = ((event.clientY - rect.top) / rect.height) * 400;
+
+  if (placingWaterSideFor) {
+    const row = rows.find((r) => r.uid === placingWaterSideFor);
+    if (row) {
+      row.waterSidePoint = clampToWatchedArea(rawX, rawY);
+      refreshWaterSideRow(row);
+    }
+    placingWaterSideFor = null;
+    drawLines();
+    return;
+  }
+
   const active = activeRow();
   if (!active) {
     $("statusLine").textContent = 'Choose a line on the right (or click "+ Add line") before clicking the image.';
     return;
   }
-  const rect = $("stage").getBoundingClientRect();
-  const rawX = ((event.clientX - rect.left) / rect.width) * 640;
-  const rawY = ((event.clientY - rect.top) / rect.height) * 400;
   active.points.push(clampToWatchedArea(rawX, rawY));
   drawLines();
   if (active.fields) active.fields.pointCount.textContent = `${active.points.length} point(s) traced.`;
@@ -351,6 +441,7 @@ async function main() {
         id: guide.id,
         existingOnServer: true,
         points: (guide.points || []).map(toPixelPoint),
+        waterSidePoint: guide.water_side_point ? toPixelPoint(guide.water_side_point) : null,
         label: guide.label || "",
         status: guide.status || "draft",
         invalidationReason: guide.invalidation_reason,
@@ -419,6 +510,7 @@ $("saveBtn").addEventListener("click", async () => {
         id: row.id,
         label: row.fields.label.value.trim(),
         points: row.points.map(toPercentPoint),
+        water_side_point: row.waterSidePoint ? toPercentPoint(row.waterSidePoint) : null,
         status: row.fields.status.value,
         invalidation_reason: row.fields.status.value === "invalid" ? row.fields.invalidationReason.value : null,
         normal_condition: row.fields.normalCondition.checked,
