@@ -5,7 +5,7 @@
 // module (both dependency-free, Node >= 18) rather than adding a new
 // dependency. Run with:
 //
-//   node --test tests/console/test_guide_source_matching.js
+//   node --test tests/ui/test_guide_source_matching.cjs
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
