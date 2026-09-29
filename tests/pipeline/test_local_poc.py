@@ -52,28 +52,36 @@ def write_site_config(path: Path, *, include_reference_region: bool = True) -> N
     )
 
 
-def write_site_config_with_eligible_guide(path: Path) -> None:
-    """A site with a confirmed, normal-condition guide that has a water_side_point."""
+def write_site_config_with_eligible_guide(path: Path, *, video_id: str = "sample") -> None:
+    """A site with a confirmed, normal-condition guide that has a water_side_point.
+
+    `video_id` defaults to "sample" to match every test in this file's
+    `video_path = tmp_path / "sample.avi"` -- riverbank_crossing_v1 only
+    treats a guide as usable when its saved video_id matches the video
+    actually being validated (video_path.stem), so tests exercising the
+    "available" path must keep these in sync; call with a different
+    video_id to exercise the GUIDE_SOURCE_MISMATCH path instead.
+    """
 
     path.write_text(
-        """{
+        f"""{{
   "site_id": "site-demo-01",
   "camera_id": "camera-demo-01",
   "site_name": "Demo River Bridge",
   "public_location": "Demo River near Example Town",
   "input_type": "local_video",
-  "reference_region": {
+  "reference_region": {{
     "x": 0,
     "y": 50,
     "width": 100,
     "height": 50
-  },
+  }},
   "normal_waterline_guides": [
-    {
+    {{
       "id": "left_bank",
       "label": "left bank",
-      "points": [{"x": 0, "y": 60}, {"x": 100, "y": 60}],
-      "video_id": "practice-01",
+      "points": [{{"x": 0, "y": 60}}, {{"x": 100, "y": 60}}],
+      "video_id": "{video_id}",
       "video_time_seconds": 0,
       "site_id": "site-demo-01",
       "camera_id": "camera-demo-01",
@@ -83,11 +91,11 @@ def write_site_config_with_eligible_guide(path: Path) -> None:
       "confirmed_at": "2026-01-01T00:00:00+00:00",
       "invalidated_at": null,
       "invalidation_reason": null,
-      "water_side_point": {"x": 50, "y": 90}
-    }
+      "water_side_point": {{"x": 50, "y": 90}}
+    }}
   ],
   "privacy_notes": "Broad public location only."
-}
+}}
 """,
         encoding="utf-8",
     )
@@ -289,10 +297,10 @@ def _nested_site_config(tmp_path: Path) -> Path:
     return config_path
 
 
-def _nested_site_config_with_guide(tmp_path: Path) -> Path:
+def _nested_site_config_with_guide(tmp_path: Path, *, video_id: str = "sample") -> Path:
     config_path = tmp_path / "sites" / "site" / "configs" / "site.json"
     config_path.parent.mkdir(parents=True)
-    write_site_config_with_eligible_guide(config_path)
+    write_site_config_with_eligible_guide(config_path, video_id=video_id)
     return config_path
 
 
@@ -482,6 +490,34 @@ def test_riverbank_crossing_enabled_with_a_confirmed_guide_produces_available_ev
     assert evidence["status"] == "available"
     provenance = cast(dict[str, object], evidence["provenance"])
     assert provenance["guide_id"] == "left_bank"
+
+
+def test_riverbank_crossing_reports_source_mismatch_for_a_guide_from_another_video(
+    tmp_path: Path,
+) -> None:
+    """A guide traced on a DIFFERENT video must never supply a baseline here.
+
+    Regression for the exact bug reported in review: without this check,
+    the pipeline would silently compare against an arbitrary sampled frame
+    from THIS video instead of refusing -- convincing but wrong crossing
+    evidence, since the guide's points were only ever traced relative to
+    some other video entirely.
+    """
+
+    video_path = tmp_path / "sample.avi"
+    output_path = tmp_path / "region-records.jsonl"
+    create_tiny_video(video_path)
+    config_path = _nested_site_config_with_guide(tmp_path, video_id="a-different-video")
+    write_global_adapter_setting(_reference_dir_for(config_path), "riverbank_crossing_v1", True)
+
+    run_local_region_poc_pipeline(
+        video_path=video_path, config_path=config_path, output_path=output_path
+    )
+
+    records = read_jsonl_records(output_path)
+    evidence = _riverbank_crossing_records(records)
+    assert evidence["status"] == "invalid"
+    assert evidence["reason_codes"] == ["GUIDE_SOURCE_MISMATCH"]
 
 
 def test_riverbank_crossing_enabled_without_an_eligible_guide_is_invalid(

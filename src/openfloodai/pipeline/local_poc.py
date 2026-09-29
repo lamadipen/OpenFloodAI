@@ -181,18 +181,29 @@ def _run_pipeline(
 
     # The confirmed, normal-condition guide with a water_side_point set, if
     # any -- resolved once per run since guides don't change mid-run. A site
-    # with more than one eligible guide (e.g. both banks confirmed) uses the
-    # first one, in config order; fusing multiple guides' evidence is not
-    # part of this v1 slice.
+    # with more than one eligible guide uses the first one whose saved
+    # SOURCE actually matches this video (video_id == this file's own
+    # name), in config order; fusing multiple guides' evidence is not part
+    # of this v1 slice.
+    #
+    # A guide's points are only meaningful relative to the exact frame it
+    # was traced on -- comparing against some other, arbitrary sampled
+    # frame from this run can produce convincing but wrong crossing
+    # evidence, so riverbank_crossing_v1 always loads its OWN baseline
+    # frame from the guide's own video_time_seconds, never frames[before].
+    eligible_riverbank_guides = [
+        guide
+        for guide in normal_waterline_guides or ()
+        if guide.status == "confirmed"
+        and guide.normal_condition
+        and guide.water_side_point is not None
+    ]
     riverbank_crossing_guide = next(
-        (
-            guide
-            for guide in normal_waterline_guides or ()
-            if guide.status == "confirmed"
-            and guide.normal_condition
-            and guide.water_side_point is not None
-        ),
+        (guide for guide in eligible_riverbank_guides if guide.video_id == video_path.stem),
         None,
+    )
+    riverbank_crossing_source_mismatch = (
+        riverbank_crossing_guide is None and len(eligible_riverbank_guides) > 0
     )
 
     metadata = read_video_metadata(video_path, site_id=site_id, camera_id=camera_id)
@@ -207,6 +218,21 @@ def _run_pipeline(
         record["reason_codes"] = reasons or ["INPUT_USABLE"]
         record["minimum_brightness"] = settings.minimum_brightness
     records.extend(metadata)
+
+    riverbank_crossing_baseline_frame: FrameArray | None = None
+    if riverbank_crossing_guide is not None:
+        guide_time = riverbank_crossing_guide.video_time_seconds
+        baseline_index = min(
+            range(len(metadata)),
+            key=lambda i: abs(frame_second(metadata[i]) - guide_time),
+        )
+        try:
+            riverbank_crossing_baseline_frame = read_selected_frames(video_path, [baseline_index])[
+                baseline_index
+            ]
+        except LocalPocPipelineError:
+            riverbank_crossing_baseline_frame = None
+
     fps = cast(float, metadata[0].get("frame_rate", 1.0))
     duration = frame_second(metadata[-1]) + 1 / fps
     windows = sorted(set(time_windows or [(0.0, duration)]))
@@ -259,27 +285,7 @@ def _run_pipeline(
             # below -- neither adapter's outcome affects the other's evidence
             # or the risk state pixel_change feeds.
             if region is not None:
-                if riverbank_crossing_enabled:
-                    riverbank_crossing_evidence = RiverbankCrossingObservationAdapter(
-                        site_id=site_id,
-                        camera_id=camera_id,
-                        guide_id=(
-                            riverbank_crossing_guide.id if riverbank_crossing_guide else None
-                        ),
-                        guide_points=(
-                            riverbank_crossing_guide.points if riverbank_crossing_guide else None
-                        ),
-                        water_side_point=(
-                            riverbank_crossing_guide.water_side_point
-                            if riverbank_crossing_guide
-                            else None
-                        ),
-                        reference_region=region,
-                        previous_frame=frames[before],
-                        current_frame=frames[after],
-                        timestamp=timestamp,
-                    ).collect()
-                else:
+                if not riverbank_crossing_enabled:
                     riverbank_crossing_evidence = build_unavailable_evidence(
                         plugin_id=_RIVERBANK_CROSSING_PLUGIN_ID,
                         plugin_version=_RIVERBANK_CROSSING_PLUGIN_VERSION,
@@ -291,6 +297,47 @@ def _run_pipeline(
                         reason_codes=("ADAPTER_DISABLED",),
                         timestamp=timestamp,
                     )
+                elif riverbank_crossing_guide is None:
+                    reason = (
+                        "GUIDE_SOURCE_MISMATCH"
+                        if riverbank_crossing_source_mismatch
+                        else "GUIDE_MISSING"
+                    )
+                    riverbank_crossing_evidence = build_unavailable_evidence(
+                        plugin_id=_RIVERBANK_CROSSING_PLUGIN_ID,
+                        plugin_version=_RIVERBANK_CROSSING_PLUGIN_VERSION,
+                        plugin_family="observation",
+                        site_id=site_id,
+                        camera_id=camera_id,
+                        evidence_type="riverbank_crossing_percentage",
+                        status="invalid",
+                        reason_codes=(reason,),
+                        timestamp=timestamp,
+                    )
+                elif riverbank_crossing_baseline_frame is None:
+                    riverbank_crossing_evidence = build_unavailable_evidence(
+                        plugin_id=_RIVERBANK_CROSSING_PLUGIN_ID,
+                        plugin_version=_RIVERBANK_CROSSING_PLUGIN_VERSION,
+                        plugin_family="observation",
+                        site_id=site_id,
+                        camera_id=camera_id,
+                        evidence_type="riverbank_crossing_percentage",
+                        status="unavailable",
+                        reason_codes=("GUIDE_BASELINE_MISSING",),
+                        timestamp=timestamp,
+                    )
+                else:
+                    riverbank_crossing_evidence = RiverbankCrossingObservationAdapter(
+                        site_id=site_id,
+                        camera_id=camera_id,
+                        guide_id=riverbank_crossing_guide.id,
+                        guide_points=riverbank_crossing_guide.points,
+                        water_side_point=riverbank_crossing_guide.water_side_point,
+                        reference_region=region,
+                        previous_frame=riverbank_crossing_baseline_frame,
+                        current_frame=frames[after],
+                        timestamp=timestamp,
+                    ).collect()
                 records.append(riverbank_crossing_evidence.to_dict())
 
             if region is not None and not pixel_change_enabled:

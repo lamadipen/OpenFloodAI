@@ -219,21 +219,39 @@ def run_image_sequence_validation(
         ) from error
     # The confirmed, normal-condition guide with a water_side_point set, if
     # any -- resolved once per run since guides don't change mid-run. A site
-    # with more than one eligible guide uses the first one, in config order;
-    # fusing multiple guides' evidence is not part of this v1 slice.
+    # with more than one eligible guide uses the first one whose saved
+    # SOURCE actually matches this sequence, in config order; fusing
+    # multiple guides' evidence is not part of this v1 slice.
+    #
+    # A guide's points are only meaningful relative to the exact frame it
+    # was traced on -- comparing against some other, arbitrary frame (e.g.
+    # this run's chosen baseline_filename, which may be a completely
+    # different image) can produce convincing but wrong crossing evidence,
+    # so riverbank_crossing_v1 always loads its OWN baseline frame from the
+    # guide's own image_sequence_id/image_filename, never baseline_frame.
+    eligible_riverbank_guides = [
+        guide
+        for guide in site_config.normal_waterline_guides
+        if guide.status == "confirmed"
+        and guide.normal_condition
+        and guide.water_side_point is not None
+    ]
     riverbank_crossing_guide = next(
-        (
-            guide
-            for guide in site_config.normal_waterline_guides
-            if guide.status == "confirmed"
-            and guide.normal_condition
-            and guide.water_side_point is not None
-        ),
+        (guide for guide in eligible_riverbank_guides if guide.image_sequence_id == sequence_id),
         None,
     )
+    riverbank_crossing_source_mismatch = (
+        riverbank_crossing_guide is None and len(eligible_riverbank_guides) > 0
+    )
+
+    riverbank_crossing_baseline_frame = None
+    if riverbank_crossing_guide is not None:
+        riverbank_crossing_baseline_frame = cv2.imread(
+            str(images_dir / riverbank_crossing_guide.image_filename)
+        )
 
     def _riverbank_crossing_unavailable(
-        *, timestamp: str, reason_codes: tuple[str, ...]
+        *, timestamp: str, status: str, reason_codes: tuple[str, ...]
     ) -> EvidenceRecord:
         return build_unavailable_evidence(
             plugin_id=_RIVERBANK_CROSSING_PLUGIN_ID,
@@ -242,7 +260,7 @@ def run_image_sequence_validation(
             site_id=site_config.site_id,
             camera_id=site_config.camera_id,
             evidence_type="riverbank_crossing_percentage",
-            status="unavailable",
+            status=status,
             reason_codes=reason_codes,
             timestamp=timestamp or None,
         )
@@ -319,7 +337,9 @@ def run_image_sequence_validation(
             )
             evidence_records.append(
                 _riverbank_crossing_unavailable(
-                    timestamp=captured_at_utc, reason_codes=("IMAGE_NOT_DOWNLOADED",)
+                    timestamp=captured_at_utc,
+                    status="unavailable",
+                    reason_codes=("IMAGE_NOT_DOWNLOADED",),
                 )
             )
             continue
@@ -343,7 +363,9 @@ def run_image_sequence_validation(
             )
             evidence_records.append(
                 _riverbank_crossing_unavailable(
-                    timestamp=captured_at_utc, reason_codes=("IMAGE_FILE_UNREADABLE",)
+                    timestamp=captured_at_utc,
+                    status="unavailable",
+                    reason_codes=("IMAGE_FILE_UNREADABLE",),
                 )
             )
             continue
@@ -352,24 +374,33 @@ def run_image_sequence_validation(
         # independent of pixel_change_region_v1's enabled/disabled state
         # below -- neither adapter's outcome affects the other's evidence or
         # this row's result/reason.
-        if riverbank_crossing_enabled:
+        if not riverbank_crossing_enabled:
+            riverbank_crossing_evidence = _riverbank_crossing_disabled(timestamp=captured_at_utc)
+        elif riverbank_crossing_guide is None:
+            reason = (
+                "GUIDE_SOURCE_MISMATCH" if riverbank_crossing_source_mismatch else "GUIDE_MISSING"
+            )
+            riverbank_crossing_evidence = _riverbank_crossing_unavailable(
+                timestamp=captured_at_utc, status="invalid", reason_codes=(reason,)
+            )
+        elif riverbank_crossing_baseline_frame is None:
+            riverbank_crossing_evidence = _riverbank_crossing_unavailable(
+                timestamp=captured_at_utc,
+                status="unavailable",
+                reason_codes=("GUIDE_BASELINE_MISSING",),
+            )
+        else:
             riverbank_crossing_evidence = RiverbankCrossingObservationAdapter(
                 site_id=site_config.site_id,
                 camera_id=site_config.camera_id,
-                guide_id=(riverbank_crossing_guide.id if riverbank_crossing_guide else None),
-                guide_points=(
-                    riverbank_crossing_guide.points if riverbank_crossing_guide else None
-                ),
-                water_side_point=(
-                    riverbank_crossing_guide.water_side_point if riverbank_crossing_guide else None
-                ),
+                guide_id=riverbank_crossing_guide.id,
+                guide_points=riverbank_crossing_guide.points,
+                water_side_point=riverbank_crossing_guide.water_side_point,
                 reference_region=site_config.reference_region,
-                previous_frame=baseline_frame,
+                previous_frame=riverbank_crossing_baseline_frame,
                 current_frame=current_frame,
                 timestamp=captured_at_utc or None,
             ).collect()
-        else:
-            riverbank_crossing_evidence = _riverbank_crossing_disabled(timestamp=captured_at_utc)
         evidence_records.append(riverbank_crossing_evidence)
 
         # The adapter-enabled check comes after download/readability, not before:

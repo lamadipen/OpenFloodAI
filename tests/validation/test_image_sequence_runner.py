@@ -402,11 +402,44 @@ def test_run_records_global_override_as_the_adapter_source_when_no_site_override
     ]
 
 
+def image_sequence_guide_record(
+    guide_id: str = "left-bank", *, image_sequence_id: str, image_filename: str
+) -> dict[str, object]:
+    """A confirmed guide sourced from a saved image-sequence still, not a video.
+
+    riverbank_crossing_v1 only treats a guide as usable when its saved
+    source actually matches the run: for an image-sequence run, that means
+    guide.image_sequence_id == the sequence_id being validated (see
+    GUIDE_SOURCE_MISMATCH in image_sequence_runner.py).
+    """
+
+    return {
+        "id": guide_id,
+        "label": "Left bank",
+        "points": [{"x": 10, "y": 10}, {"x": 20, "y": 20}],
+        "video_id": "",
+        "video_time_seconds": 0,
+        "image_sequence_id": image_sequence_id,
+        "image_filename": image_filename,
+        "site_id": "site-demo-01",
+        "camera_id": "camera-demo-01",
+        "status": "confirmed",
+        "normal_condition": True,
+        "notes": "Clear view of the bank.",
+        "confirmed_at": "2026-08-01T00:00:00+00:00",
+        "invalidated_at": None,
+        "invalidation_reason": None,
+    }
+
+
 def test_riverbank_crossing_enabled_with_a_confirmed_guide_produces_available_evidence(
     tmp_path: Path,
 ) -> None:
     site_dir = tmp_path / "sites" / "site"
-    guide = {**confirmed_guide_record(), "water_side_point": {"x": 50, "y": 50}}
+    guide = {
+        **image_sequence_guide_record(image_sequence_id=SEQUENCE_ID, image_filename="baseline.jpg"),
+        "water_side_point": {"x": 50, "y": 50},
+    }
     make_site(site_dir, normal_waterline_guides=[guide])
     write_global_adapter_setting(tmp_path / "reference", "riverbank_crossing_v1", True)
     sequence_dir = site_dir / "inputs" / "image-sequences" / SEQUENCE_ID
@@ -431,6 +464,89 @@ def test_riverbank_crossing_enabled_with_a_confirmed_guide_produces_available_ev
     row = next(r for r in all_rows if r["plugin_id"] == "riverbank_crossing_v1")
     assert row["status"] == "available"
     assert row["provenance"]["guide_id"] == "left-bank"
+
+
+def test_riverbank_crossing_reports_source_mismatch_for_a_guide_from_another_sequence(
+    tmp_path: Path,
+) -> None:
+    """A guide traced on a DIFFERENT sequence's image must never supply a baseline here.
+
+    Regression for the exact bug reported in review: without this check, the
+    pipeline would silently compare against this run's own chosen baseline
+    image instead of refusing -- convincing but wrong crossing evidence.
+    """
+
+    site_dir = tmp_path / "sites" / "site"
+    guide = {
+        **image_sequence_guide_record(
+            image_sequence_id="a-completely-different-sequence",
+            image_filename="baseline.jpg",
+        ),
+        "water_side_point": {"x": 50, "y": 50},
+    }
+    make_site(site_dir, normal_waterline_guides=[guide])
+    write_global_adapter_setting(tmp_path / "reference", "riverbank_crossing_v1", True)
+    sequence_dir = site_dir / "inputs" / "image-sequences" / SEQUENCE_ID
+    images_dir = sequence_dir / "images"
+
+    write_frame(images_dir / "baseline.jpg", 30)
+    write_frame(images_dir / "no-change.jpg", 30)
+    write_manifest(
+        sequence_dir,
+        [
+            manifest_record("baseline.jpg", "2026-09-01T00:00:00+00:00", "downloaded"),
+            manifest_record("no-change.jpg", "2026-09-01T01:00:00+00:00", "downloaded"),
+        ],
+    )
+
+    report = run_image_sequence_validation(site_dir, SEQUENCE_ID)
+
+    all_rows = [
+        json.loads(line)
+        for line in (report.run_dir / "evidence-records.jsonl").read_text().splitlines()
+    ]
+    row = next(r for r in all_rows if r["plugin_id"] == "riverbank_crossing_v1")
+    assert row["status"] == "invalid"
+    assert row["reason_codes"] == ["GUIDE_SOURCE_MISMATCH"]
+
+
+def test_riverbank_crossing_reports_baseline_missing_when_the_guides_image_is_gone(
+    tmp_path: Path,
+) -> None:
+    """The guide's source matches this sequence, but its exact image file is missing."""
+
+    site_dir = tmp_path / "sites" / "site"
+    guide = {
+        **image_sequence_guide_record(
+            image_sequence_id=SEQUENCE_ID, image_filename="deleted-guide-source.jpg"
+        ),
+        "water_side_point": {"x": 50, "y": 50},
+    }
+    make_site(site_dir, normal_waterline_guides=[guide])
+    write_global_adapter_setting(tmp_path / "reference", "riverbank_crossing_v1", True)
+    sequence_dir = site_dir / "inputs" / "image-sequences" / SEQUENCE_ID
+    images_dir = sequence_dir / "images"
+
+    write_frame(images_dir / "baseline.jpg", 30)
+    write_frame(images_dir / "no-change.jpg", 30)
+    # "deleted-guide-source.jpg" is deliberately never written.
+    write_manifest(
+        sequence_dir,
+        [
+            manifest_record("baseline.jpg", "2026-09-01T00:00:00+00:00", "downloaded"),
+            manifest_record("no-change.jpg", "2026-09-01T01:00:00+00:00", "downloaded"),
+        ],
+    )
+
+    report = run_image_sequence_validation(site_dir, SEQUENCE_ID)
+
+    all_rows = [
+        json.loads(line)
+        for line in (report.run_dir / "evidence-records.jsonl").read_text().splitlines()
+    ]
+    row = next(r for r in all_rows if r["plugin_id"] == "riverbank_crossing_v1")
+    assert row["status"] == "unavailable"
+    assert row["reason_codes"] == ["GUIDE_BASELINE_MISSING"]
 
 
 def test_riverbank_crossing_enabled_without_an_eligible_guide_is_invalid(tmp_path: Path) -> None:
