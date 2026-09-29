@@ -79,6 +79,7 @@ class RiverbankCrossingResult:
 
     crossed_line_percentage: float
     changed_bank_length_percentage: float
+    measured_bank_length_percentage: float
     maximum_crossing_pixels: float
     band_width_px: int
     crossing_threshold: float
@@ -198,7 +199,21 @@ def evaluate_riverbank_crossing(
 
     crossed_count = sum(1 for sample in samples if sample.crossed)
     crossed_line_percentage = round(100.0 * crossed_count / len(samples), 2)
-    changed_bank_length_percentage = round(_crossed_arc_length_percentage(samples, total_length), 2)
+    # sample_count here is the ORIGINAL requested spacing, not len(samples):
+    # each sample owns a fixed-width slice at its own grid position, so an
+    # excluded sample's slice is simply never counted by anyone -- never
+    # silently absorbed into a neighboring surviving sample's span.
+    slice_width = total_length / (sample_count - 1)
+    changed_length = sum(
+        _sample_slice_width(sample.distance_px, slice_width, total_length)
+        for sample in samples
+        if sample.crossed
+    )
+    measured_length = sum(
+        _sample_slice_width(sample.distance_px, slice_width, total_length) for sample in samples
+    )
+    changed_bank_length_percentage = round(100.0 * changed_length / total_length, 2)
+    measured_bank_length_percentage = round(100.0 * measured_length / total_length, 2)
     maximum_crossing_pixels = round(
         max((sample.crossing_extent_pixels for sample in samples), default=0.0), 2
     )
@@ -206,6 +221,7 @@ def evaluate_riverbank_crossing(
     return RiverbankCrossingResult(
         crossed_line_percentage=crossed_line_percentage,
         changed_bank_length_percentage=changed_bank_length_percentage,
+        measured_bank_length_percentage=measured_bank_length_percentage,
         maximum_crossing_pixels=maximum_crossing_pixels,
         band_width_px=band_width_px,
         crossing_threshold=crossing_threshold,
@@ -424,31 +440,20 @@ def _search_crossing_extent(
     return farthest
 
 
-def _crossed_arc_length_percentage(samples: Sequence[SampleResult], total_length: float) -> float:
-    """Percentage of the guide's arc length covered by crossed sample points.
+def _sample_slice_width(distance_px: float, slice_width: float, total_length: float) -> float:
+    """The fixed-width arc-length slice one sample owns, at its own grid position.
 
-    A different, length-weighted number from crossed_line_percentage (a
-    simple point-count ratio): each sample "owns" the span between the
-    midpoints to its neighbors (or the guide's start/end for the first/last
-    sample), so this reflects how much of the physical bank is affected, not
-    just how many sample points happened to land on it. Uses each sample's
-    own recorded distance_px rather than assuming even spacing, since a
-    sample excluded for insufficient watched-region area (see
-    evaluate_riverbank_crossing) can leave an uneven gap between the ones
-    that remain.
+    Deliberately independent of which neighboring samples survived: a slice
+    is anchored to this sample's own original evenly-spaced position
+    (`distance_px`), not to whatever samples happen to be adjacent to it in
+    the post-exclusion list. A sample excluded for insufficient
+    watched-region area (see evaluate_riverbank_crossing) therefore leaves
+    its slice uncounted by everyone -- never absorbed into a surviving
+    neighbor's span, which would let an unmeasured stretch near the guide's
+    edge masquerade as measured (and, if crossed, as changed).
     """
 
-    sample_count = len(samples)
-    if sample_count < 2 or total_length <= 0:
-        return 0.0
-
-    covered = 0.0
-    for index, sample in enumerate(samples):
-        if not sample.crossed:
-            continue
-        previous_distance = samples[index - 1].distance_px if index > 0 else 0.0
-        next_distance = samples[index + 1].distance_px if index < sample_count - 1 else total_length
-        left_midpoint = (previous_distance + sample.distance_px) / 2.0
-        right_midpoint = (sample.distance_px + next_distance) / 2.0
-        covered += max(right_midpoint - left_midpoint, 0.0)
-    return 100.0 * covered / total_length
+    half = slice_width / 2.0
+    left = max(distance_px - half, 0.0)
+    right = min(distance_px + half, total_length)
+    return max(right - left, 0.0)

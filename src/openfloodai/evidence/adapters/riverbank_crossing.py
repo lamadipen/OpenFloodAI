@@ -170,6 +170,7 @@ class RiverbankCrossingObservationAdapter:
             quality={
                 "alignment_status": "unavailable",
                 "changed_bank_length_percentage": result.changed_bank_length_percentage,
+                "measured_bank_length_percentage": result.measured_bank_length_percentage,
                 "maximum_crossing_pixels": result.maximum_crossing_pixels,
                 "band_width_px": result.band_width_px,
                 "crossing_threshold": result.crossing_threshold,

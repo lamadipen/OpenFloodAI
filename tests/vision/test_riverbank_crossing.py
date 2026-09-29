@@ -320,6 +320,34 @@ def test_rejects_when_no_sample_has_enough_watched_region_area() -> None:
         )
 
 
+def test_excluded_edge_samples_do_not_inflate_changed_or_measured_length() -> None:
+    """Regression: an excluded sample's unmeasured gap must not be absorbed
+    into a neighboring surviving sample's owned length.
+
+    Most of the guide (its first ~60%) sits outside a region covering only
+    x=60-100%, so those samples are excluded (insufficient watched-region
+    area), leaving a contiguous block of measured samples near the far end
+    -- all of which cross. The old midpoint-to-neighbor formula let the
+    first surviving sample inherit the entire unmeasured stretch back to
+    the guide's true start, reporting ~71% changed length here despite only
+    ever measuring ~45% of the guide; the fixed-slice formula correctly
+    reports both figures as ~45%.
+    """
+
+    baseline = two_band_frame()
+    current = two_band_frame(changed_band=(40, 50))
+    far_end_region = {"x": 60, "y": 0, "width": 40, "height": 100}
+
+    result = evaluate_riverbank_crossing(
+        baseline, current, STRAIGHT_GUIDE, WATER_BELOW, far_end_region, band_width_px=10
+    )
+
+    assert result.crossed_line_percentage == 100.0
+    assert result.measured_bank_length_percentage < 60.0
+    assert result.changed_bank_length_percentage < 60.0
+    assert result.changed_bank_length_percentage <= result.measured_bank_length_percentage + 0.01
+
+
 def test_region_clipping_ignores_change_outside_the_watched_region() -> None:
     """A land-side change entirely outside the watched region must not be seen."""
 
