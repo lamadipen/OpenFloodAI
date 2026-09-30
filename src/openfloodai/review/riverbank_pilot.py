@@ -129,14 +129,37 @@ def evaluate_riverbank_pilot(
     """Compare saved riverbank evidence with independent human reviews."""
 
     evidence_by_id = _index_evidence(evidence_records)
-    observations = list(reviewed_observations)
+    observations: list[tuple[int, Mapping[str, object]]] = []
+    latest_workspace_observations: dict[str, tuple[int, int, Mapping[str, object]]] = {}
+    for index, record in enumerate(reviewed_observations, start=1):
+        prepared = _prepare_observation(record, index=index)
+        if prepared is None:
+            continue
+        revision = record.get("label_revision")
+        observation_id = prepared.get("observation_id")
+        if (
+            isinstance(revision, int)
+            and not isinstance(revision, bool)
+            and isinstance(observation_id, str)
+        ):
+            prior = latest_workspace_observations.get(observation_id)
+            if prior is None or revision >= prior[1]:
+                latest_workspace_observations[observation_id] = (index, revision, prepared)
+        else:
+            observations.append((index, prepared))
+    observations.extend(
+        (index, prepared) for index, _revision, prepared in latest_workspace_observations.values()
+    )
+    observations.sort(key=lambda item: item[0])
     if not observations:
-        raise RiverbankPilotError("At least one human-reviewed pilot observation is required.")
+        raise RiverbankPilotError(
+            "At least one observation with a saved riverbank pilot review is required."
+        )
 
     samples: list[PilotSampleResult] = []
     evidence_used: list[Mapping[str, object]] = []
     seen_observation_ids: set[str] = set()
-    for index, observation in enumerate(observations, start=1):
+    for index, observation in observations:
         clean = _validate_observation(observation, index=index)
         if clean["observation_id"] in seen_observation_ids:
             raise RiverbankPilotError(
@@ -352,8 +375,8 @@ def _validate_observation(record: Mapping[str, object], *, index: int) -> _Valid
         )
 
     conditions_value = record["conditions"]
-    if not isinstance(conditions_value, list) or not conditions_value:
-        raise RiverbankPilotError(f"Observation {index}: conditions must be a non-empty list.")
+    if not isinstance(conditions_value, list):
+        raise RiverbankPilotError(f"Observation {index}: conditions must be a list.")
     conditions: list[str] = []
     for condition in conditions_value:
         if not isinstance(condition, str) or condition not in PILOT_CONDITIONS:
@@ -386,6 +409,45 @@ def _validate_observation(record: Mapping[str, object], *, index: int) -> _Valid
         "overlay_review": overlay_review,
         "false_crossing_cause": false_crossing_cause,
     }
+
+
+def _prepare_observation(
+    record: Mapping[str, object], *, index: int
+) -> Mapping[str, object] | None:
+    """Accept the compact pilot format or a full review-workspace observation."""
+
+    if "expected_result" in record:
+        return record
+    if "crossing_review" not in record:
+        return None
+
+    label = record.get("label")
+    label_fields = label if isinstance(label, Mapping) else {}
+    conditions_value = record.get("pilot_conditions", [])
+    if not isinstance(conditions_value, list):
+        raise RiverbankPilotError(f"Observation {index}: pilot_conditions must be a list.")
+    conditions = list(conditions_value)
+    raw_visibility = label_fields.get("visibility_condition")
+    visibility_condition = (
+        {"dark": "low_light", "glare": "glare"}.get(raw_visibility)
+        if isinstance(raw_visibility, str)
+        else None
+    )
+    if visibility_condition is not None and visibility_condition not in conditions:
+        conditions.append(visibility_condition)
+    if label_fields.get("camera_stable") == "no" and "camera_movement" not in conditions:
+        conditions.append("camera_movement")
+
+    prepared: dict[str, object] = {
+        "observation_id": record.get("observation_id"),
+        "evidence_record_id": record.get("evidence_record_id"),
+        "expected_result": record.get("crossing_review"),
+        "conditions": conditions,
+        "overlay_review": record.get("overlay_review"),
+    }
+    if record.get("false_crossing_cause") is not None:
+        prepared["false_crossing_cause"] = record["false_crossing_cause"]
+    return prepared
 
 
 def _evaluate_sample(

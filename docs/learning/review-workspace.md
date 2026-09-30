@@ -56,6 +56,14 @@ details, and select **Save label & next**. The existing label vocabulary is
 retained. Review normal conditions and
 poor-quality samples as well as large changes. Use **All** to see the full queue.
 
+When the selected image has available `riverbank_crossing_v1` evidence, the
+same form shows two additional questions: whether visual change crossed the
+normal guide and whether the highlighted overlay matches what the reviewer
+sees. Optional chips capture muddy water, glare, shadows, vegetation, snow, or
+low light. The existing camera-stability answer is reused instead of asking
+about camera movement again. The server links the review to the exact saved evidence record;
+the reviewer does not enter an evidence ID.
+
 Without a label, the page says **No human label for comparison**. Missing or
 unclear evidence can also prevent comparison. An image comparison checks change
 versus no change; agreement does not prove rising/falling direction or safety.
@@ -93,6 +101,9 @@ The workspace recalculates displayed comparisons from saved machine evidence
 and current reviews. It does not rewrite the original run report or scorecard.
 Image review logs are workspace records; they are not automatically converted
 into training data or consumed by the existing video-label tools.
+
+Riverbank pilot answers are saved in this same observation log. They do not
+change the machine result or enable the adapter in the risk engine.
 
 Original media must still match the run's saved file hashes to be displayed or
 reviewed. If a file was removed or replaced, restore the original file or run

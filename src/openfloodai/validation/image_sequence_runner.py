@@ -661,6 +661,18 @@ def read_image_sequence_run_detail(site_dir: Path, run_id: str) -> dict[str, Any
     )
     report_path = run_dir / "image-sequence-report.md"
     report_text = report_path.read_text(encoding="utf-8") if report_path.is_file() else ""
+    pilot_evaluation: dict[str, Any] | None = None
+    pilot_evaluation_path = run_dir / "riverbank-pilot-evaluation.json"
+    if pilot_evaluation_path.is_file():
+        try:
+            loaded_pilot_evaluation = json.loads(pilot_evaluation_path.read_text(encoding="utf-8"))
+            if (
+                isinstance(loaded_pilot_evaluation, dict)
+                and loaded_pilot_evaluation.get("plugin_id") == _RIVERBANK_CROSSING_PLUGIN_ID
+            ):
+                pilot_evaluation = loaded_pilot_evaluation
+        except (OSError, ValueError):
+            pilot_evaluation = None
     review_images: list[str] = []
     review_images_dir = run_dir / "review-images"
     if review_images_dir.is_dir():
@@ -696,6 +708,7 @@ def read_image_sequence_run_detail(site_dir: Path, run_id: str) -> dict[str, Any
         "gauge_series": gauge_series,
         "event_reviews": event_reviews,
         "evidence_records": evidence_records,
+        "pilot_evaluation": pilot_evaluation,
     }
 
 

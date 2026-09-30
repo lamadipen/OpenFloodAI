@@ -38,6 +38,21 @@
         <div id="tristateOptions" style="display:flex;flex-direction:column;gap:10px;"></div>
       </div>
 
+      <div id="pilotSection" hidden style="border-top:1px solid var(--line-soft);padding-top:18px;">
+        <div style="font-size:13px;font-weight:600;">Riverbank overlay review</div>
+        <div class="hint" style="margin-top:3px;margin-bottom:14px;">These two answers help evaluate the highlighted guide sections. They do not change the machine result.</div>
+        <div class="hint" style="text-transform:uppercase;letter-spacing:.03em;margin-bottom:8px;">Did visual change cross the normal guide?</div>
+        <div id="crossingOptions" style="display:flex;gap:7px;flex-wrap:wrap;"></div>
+        <div id="crossingError" class="err" hidden style="margin-top:6px;">Choose crossing, no crossing, or unclear.</div>
+
+        <div class="hint" style="text-transform:uppercase;letter-spacing:.03em;margin:16px 0 8px;">Does the highlighted overlay match what you see?</div>
+        <div id="overlayOptions" style="display:flex;gap:7px;flex-wrap:wrap;"></div>
+        <div id="overlayError" class="err" hidden style="margin-top:6px;">Choose yes, no, or not sure.</div>
+
+        <div class="hint" style="text-transform:uppercase;letter-spacing:.03em;margin:16px 0 8px;">Additional conditions (optional)</div>
+        <div id="pilotConditions" style="display:flex;gap:7px;flex-wrap:wrap;"></div>
+      </div>
+
       <div>
         <label for="note">Notes</label>
         <textarea id="note" rows="3" placeholder="Anything the machine result doesn't capture"></textarea>
@@ -72,8 +87,35 @@ const TRISTATE_FIELDS = [
   { key: "water_boundary_visible", label: "Water boundary visible" },
   { key: "camera_stable", label: "Camera stable" }
 ];
+const CROSSING_OPTIONS = [
+  { id: "change", text: "Crossing" },
+  { id: "no_change", text: "No crossing" },
+  { id: "unclear", text: "Unclear" }
+];
+const OVERLAY_OPTIONS = [
+  { id: "accepted", text: "Yes" },
+  { id: "rejected", text: "No" },
+  { id: "not_reviewed", text: "Not sure" }
+];
+const PILOT_CONDITIONS = [
+  { id: "muddy_water", text: "Muddy water" },
+  { id: "glare", text: "Glare" },
+  { id: "shadows", text: "Shadows" },
+  { id: "vegetation", text: "Vegetation" },
+  { id: "snow", text: "Snow" },
+  { id: "low_light", text: "Low light" }
+];
 
-let state = { label: null, confidence: "medium", tristate: {}, triedSave: false };
+let state = {
+  label: null,
+  confidence: "medium",
+  tristate: {},
+  triedSave: false,
+  pilotAvailable: false,
+  crossingReview: null,
+  overlayReview: null,
+  pilotConditions: new Set()
+};
 
 function renderLabels() {
   $("labelOptions").innerHTML = LABELS.map((l) => {
@@ -119,6 +161,46 @@ function renderTristate() {
   });
 }
 
+function choiceButtons(options, selected, attribute) {
+  return options.map((option) => {
+    const on = selected === option.id;
+    return `<button type="button" data-${attribute}="${option.id}" style="min-width:100px;height:34px;border-radius:8px;border:1.5px solid ${on ? "var(--accent)" : "var(--line)"};background:${on ? "var(--accent-soft)" : "#fff"};font-size:12px;font-weight:600;color:${on ? "var(--accent)" : "var(--ink-soft)"};cursor:pointer;">${option.text}</button>`;
+  }).join("");
+}
+
+function renderPilotFields() {
+  $("pilotSection").hidden = !state.pilotAvailable;
+  if (!state.pilotAvailable) return;
+  $("crossingOptions").innerHTML = choiceButtons(CROSSING_OPTIONS, state.crossingReview, "crossing");
+  $("overlayOptions").innerHTML = choiceButtons(OVERLAY_OPTIONS, state.overlayReview, "overlay");
+  $("pilotConditions").innerHTML = PILOT_CONDITIONS.map((condition) => {
+    const on = state.pilotConditions.has(condition.id);
+    return `<button type="button" data-condition="${condition.id}" aria-pressed="${on}" style="height:32px;border-radius:8px;border:1px solid ${on ? "var(--accent)" : "var(--line)"};background:${on ? "var(--accent-soft)" : "#fff"};padding:0 11px;font-size:12px;font-weight:600;color:${on ? "var(--accent)" : "var(--ink-soft)"};cursor:pointer;">${condition.text}</button>`;
+  }).join("");
+  $("crossingOptions").querySelectorAll("[data-crossing]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.crossingReview = button.dataset.crossing;
+      $("crossingError").hidden = true;
+      renderPilotFields();
+    });
+  });
+  $("overlayOptions").querySelectorAll("[data-overlay]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.overlayReview = button.dataset.overlay;
+      $("overlayError").hidden = true;
+      renderPilotFields();
+    });
+  });
+  $("pilotConditions").querySelectorAll("[data-condition]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const condition = button.dataset.condition;
+      if (state.pilotConditions.has(condition)) state.pilotConditions.delete(condition);
+      else state.pilotConditions.add(condition);
+      renderPilotFields();
+    });
+  });
+}
+
 async function main() {
   if (!folderName || !runId || !mediaId || !sampleKey) {
     document.body.innerHTML = `<div style="padding:40px;">Missing required parameters in the URL.</div>`;
@@ -132,12 +214,25 @@ async function main() {
   renderLabels();
   renderConfidence();
   renderTristate();
+  try {
+    const evidence = await api(`/api/workspace-evidence?${new URLSearchParams({ folder_name: folderName, kind: "image", run_id: runId, media_id: mediaId })}`);
+    const point = (evidence.points || []).find((candidate) => candidate.key === sampleKey);
+    state.pilotAvailable = !!(point && point.riverbank_evidence_record_id);
+  } catch (error) {
+    state.pilotAvailable = false;
+  }
+  renderPilotFields();
 }
 
 $("saveBtn").addEventListener("click", async () => {
   if (!state.label) {
     state.triedSave = true;
     $("labelError").hidden = false;
+    return;
+  }
+  if (state.pilotAvailable && (!state.crossingReview || !state.overlayReview)) {
+    $("crossingError").hidden = !!state.crossingReview;
+    $("overlayError").hidden = !!state.overlayReview;
     return;
   }
   $("saveBtn").disabled = true;
@@ -152,7 +247,12 @@ $("saveBtn").addEventListener("click", async () => {
       human_label: state.label,
       confidence: state.confidence,
       note: $("note").value.trim(),
-      ...state.tristate
+      ...state.tristate,
+      ...(state.pilotAvailable ? {
+        crossing_review: state.crossingReview,
+        overlay_review: state.overlayReview,
+        pilot_conditions: Array.from(state.pilotConditions)
+      } : {})
     };
     await api("/api/workspace-label", data);
     location.href = `/console/review.html?${new URLSearchParams({ site: folderName, run_id: runId })}`;

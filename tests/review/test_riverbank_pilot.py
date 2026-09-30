@@ -174,3 +174,48 @@ def test_rejects_an_available_evidence_record_without_a_numeric_value() -> None:
             evidence_records=[evidence("e1", value=None)],
             reviewed_observations=[review("o1", "e1", "change", ["high_water"])],
         )
+
+
+def test_accepts_latest_pilot_review_from_full_workspace_observations() -> None:
+    base = {
+        "schema_version": 2,
+        "observation_id": "workspace-observation",
+        "source": "image_pair",
+        "evidence_record_id": "e1",
+        "crossing_review": "no_change",
+        "overlay_review": "rejected",
+        "pilot_conditions": ["shadows"],
+        "label": {"camera_stable": "no", "visibility_condition": "glare"},
+    }
+    report = evaluate_riverbank_pilot(
+        evidence_records=[evidence("e1", value=20)],
+        reviewed_observations=[
+            {**base, "label_revision": 1, "crossing_review": "change"},
+            {
+                **base,
+                "label_revision": 2,
+                "false_crossing_cause": "camera_movement",
+            },
+            {
+                "schema_version": 2,
+                "observation_id": "ordinary-label-without-pilot-answers",
+                "source": "image_pair",
+                "label_revision": 1,
+            },
+        ],
+    )
+
+    assert report.reviewed_count == 1
+    assert report.metrics.false_positive == 1
+    assert report.samples[0].conditions == ("shadows", "glare", "camera_movement")
+    assert report.false_crossing_causes == {"camera_movement": 1}
+
+
+def test_pilot_conditions_may_be_empty_when_no_special_condition_was_recorded() -> None:
+    report = evaluate_riverbank_pilot(
+        evidence_records=[evidence("e1", value=0)],
+        reviewed_observations=[review("o1", "e1", "no_change", [])],
+    )
+
+    assert report.metrics.true_negative == 1
+    assert all(condition.reviewed_count == 0 for condition in report.condition_metrics)

@@ -31,15 +31,27 @@ data/sites/<site>/outputs/image-sequence-runs/<run-id>/evidence-records.jsonl
 Keep real images and local pilot output out of git unless their source,
 license, privacy, and retention rules are approved.
 
-## Human Review File
+## Review In The UI
 
-Create a local JSON Lines file, for example:
+Open an image-sequence run in the Review UI, select an image with an available
+riverbank overlay, and choose **Add human label**. The existing form collects
+the normal water-level label and quality answers. It then asks only:
+
+- Did visual change cross the normal guide?
+- Does the highlighted overlay match what you see?
+
+Muddy water, glare, shadows, vegetation, snow, and low light are optional
+chips. The existing camera-stability answer is reused. The server automatically
+links the exact saved riverbank evidence record, so the reviewer does not copy
+an ID.
+
+The review is saved with the rest of the run observations:
 
 ```text
-data/sites/<site>/labels/riverbank-pilot-reviews.jsonl
+data/sites/<site>/outputs/image-sequence-runs/<run-id>/human-review/observations.jsonl
 ```
 
-Each line reviews one saved riverbank evidence record:
+Historical or externally prepared pilot files can still use the compact format:
 
 ```json
 {"observation_id":"review-001","evidence_record_id":"evidence-example-001","expected_result":"change","conditions":["muddy_water","summer","high_water"],"overlay_review":"accepted","note":"The highlighted section matches the visible change."}
@@ -55,7 +67,7 @@ Use the `record_id` from the `riverbank_crossing_v1` row in
 | `observation_id` | unique text | A local ID for this human review. |
 | `evidence_record_id` | saved evidence ID | Connects the review to the exact machine result. |
 | `expected_result` | `change`, `no_change`, `unclear` | What the reviewer could safely judge. |
-| `conditions` | one or more condition names below | What was visible in this sample. |
+| `conditions` | zero or more condition names below | What was visible in this sample. |
 | `overlay_review` | `accepted`, `rejected`, `not_reviewed` | Whether the overlay helped and matched the visible evidence. |
 
 Optional fields are `note` and `false_crossing_cause`. A false-crossing cause
@@ -80,13 +92,19 @@ From the repository root with the virtual environment active:
 ```bash
 python3 scripts/evaluate_riverbank_pilot.py \
   --evidence-path data/sites/<site>/outputs/image-sequence-runs/<run-id>/evidence-records.jsonl \
-  --reviews-path data/sites/<site>/labels/riverbank-pilot-reviews.jsonl \
+  --reviews-path data/sites/<site>/outputs/image-sequence-runs/<run-id>/human-review/observations.jsonl \
   --output-path data/sites/<site>/outputs/image-sequence-runs/<run-id>/riverbank-pilot-evaluation.md \
   --json-output-path data/sites/<site>/outputs/image-sequence-runs/<run-id>/riverbank-pilot-evaluation.json
 ```
 
 The Markdown file is for people. The JSON file contains the same result in a
 machine-readable form.
+
+When the JSON file is saved with the exact name shown above, open that run in
+the Review UI. A **Riverbank-crossing pilot evaluation** card displays the main
+metrics, tested conditions, false-crossing causes, processing cost, and safety
+boundary. A run without this file shows that its pilot evaluation has not been
+generated yet.
 
 ## What The Report Measures
 

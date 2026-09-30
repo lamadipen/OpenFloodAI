@@ -47,8 +47,18 @@ _lock = RLock()
 # schema_version 0 = a pre-existing record with none of these fields; 1 = the
 # fields below are present. normalize_observation() fills 0 -> 1 on read so
 # historical records stay valid without ever being rewritten on disk.
-OBSERVATION_SCHEMA_VERSION = 1
+OBSERVATION_SCHEMA_VERSION = 2
 ALLOWED_EVENT_VALIDITY = {"real", "not_real", "uncertain", "not_reviewed"}
+ALLOWED_CROSSING_REVIEWS = {"change", "no_change", "unclear"}
+ALLOWED_OVERLAY_REVIEWS = {"accepted", "rejected", "not_reviewed"}
+ALLOWED_PILOT_CONDITIONS = {
+    "muddy_water",
+    "glare",
+    "shadows",
+    "vegetation",
+    "snow",
+    "low_light",
+}
 _CHANGE_PRESENCE_BY_HUMAN_LABEL = {
     "water_level_rising": "change",
     "water_level_falling": "change",
@@ -227,6 +237,14 @@ def load_observations(run: Path) -> list[dict[str, Any]]:
     return [normalize_observation(record) for record in read_jsonl_records(path)]
 
 
+def _has_riverbank_overlay_samples(record: dict[str, Any]) -> bool:
+    quality = record.get("quality")
+    if not isinstance(quality, dict):
+        return False
+    samples = quality.get("samples")
+    return isinstance(samples, list) and bool(samples)
+
+
 def evidence(site: Path, kind: str, run_id: str, media_id: str) -> dict[str, Any]:
     run = run_path(site, kind, run_id)
     if not _ID.fullmatch(media_id):
@@ -243,9 +261,29 @@ def evidence(site: Path, kind: str, run_id: str, media_id: str) -> dict[str, Any
         if summary.get("sequence_id") != media_id:
             raise ValueError("This sequence does not belong to the selected run.")
         records = read_jsonl_records(_inside(run, "image-sequence-records.jsonl"))
+        evidence_path = _inside(run, "evidence-records.jsonl")
+        riverbank_records = (
+            [
+                record
+                for record in read_jsonl_records(evidence_path)
+                if record.get("plugin_id") == "riverbank_crossing_v1"
+            ]
+            if evidence_path.is_file()
+            else []
+        )
         for record in records:
             key = _key(record)
             review = current_reviews.get(key)
+            riverbank = next(
+                (
+                    evidence_record
+                    for evidence_record in riverbank_records
+                    if evidence_record.get("timestamp") == record.get("captured_at_utc")
+                    and evidence_record.get("status") == "available"
+                    and _has_riverbank_overlay_samples(evidence_record)
+                ),
+                None,
+            )
             points.append(
                 {
                     "key": key,
@@ -257,6 +295,12 @@ def evidence(site: Path, kind: str, run_id: str, media_id: str) -> dict[str, Any
                     "reason": record.get("reason"),
                     "has_media": record.get("download_status") == "downloaded",
                     "label": review.get("label") if review else None,
+                    "riverbank_evidence_record_id": (
+                        riverbank.get("record_id") if riverbank is not None else None
+                    ),
+                    "riverbank_crossing_value": (
+                        riverbank.get("value") if riverbank is not None else None
+                    ),
                 }
             )
         for point in points:
@@ -453,6 +497,50 @@ def _event_validity_field(data: dict[str, Any]) -> str:
     return value
 
 
+def _pilot_review_fields(data: dict[str, Any], point: dict[str, Any]) -> dict[str, Any]:
+    evidence_record_id = point.get("riverbank_evidence_record_id")
+    supplied = any(key in data for key in ("crossing_review", "overlay_review", "pilot_conditions"))
+    if not supplied:
+        return {}
+    if not isinstance(evidence_record_id, str) or not evidence_record_id:
+        raise ValueError("No available riverbank-crossing evidence exists for this sample.")
+
+    crossing_review = str(data.get("crossing_review") or "").strip()
+    if crossing_review not in ALLOWED_CROSSING_REVIEWS:
+        raise ValueError(f"crossing_review must be one of {sorted(ALLOWED_CROSSING_REVIEWS)}.")
+    overlay_review = str(data.get("overlay_review") or "").strip()
+    if overlay_review not in ALLOWED_OVERLAY_REVIEWS:
+        raise ValueError(f"overlay_review must be one of {sorted(ALLOWED_OVERLAY_REVIEWS)}.")
+
+    raw_conditions = data.get("pilot_conditions", [])
+    if not isinstance(raw_conditions, list):
+        raise ValueError("pilot_conditions must be a list.")
+    conditions: list[str] = []
+    for raw_condition in raw_conditions:
+        condition = str(raw_condition).strip()
+        if condition not in ALLOWED_PILOT_CONDITIONS:
+            raise ValueError(f"pilot_conditions must use {sorted(ALLOWED_PILOT_CONDITIONS)}.")
+        if condition not in conditions:
+            conditions.append(condition)
+
+    fields: dict[str, Any] = {
+        "evidence_record_id": evidence_record_id,
+        "crossing_review": crossing_review,
+        "overlay_review": overlay_review,
+        "pilot_conditions": conditions,
+    }
+    crossing_value = _finite(point.get("riverbank_crossing_value"))
+    if crossing_review == "no_change" and crossing_value is not None and crossing_value > 0:
+        if data.get("camera_stable") == "no":
+            fields["false_crossing_cause"] = "camera_movement"
+        else:
+            for condition in ("glare", "shadows", "vegetation"):
+                if condition in conditions:
+                    fields["false_crossing_cause"] = condition
+                    break
+    return fields
+
+
 def save_observation(site: Path, data: dict[str, Any]) -> dict[str, Any]:
     kind, run_id, media_id = (str(data.get(k, "")) for k in ("kind", "run_id", "media_id"))
     with _lock:
@@ -462,6 +550,7 @@ def save_observation(site: Path, data: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("Selected sample was not found in the saved machine evidence.")
         label = _label_fields(data)
         event_validity = _event_validity_field(data)
+        pilot_review = _pilot_review_fields(data, point)
         run = run_path(site, kind, run_id)
         if kind == "video":
             media_path(site, kind, run_id, media_id)
@@ -510,6 +599,7 @@ def save_observation(site: Path, data: dict[str, Any]) -> dict[str, Any]:
             "captured_at_utc": point.get("time"),
             "config_sha256": _hash(run / "inputs-used" / "site-config.snapshot.json"),
             "reviewed_at_utc": datetime.now(UTC).isoformat(),
+            **pilot_review,
         }
         try:
             write_jsonl_record(review_path, observation)
