@@ -95,6 +95,15 @@ def test_run_image_sequence_validation_route_saves_a_run(tmp_path: Path) -> None
         run_id = cast(str, payload["run_id"])
         counts = cast("dict[str, int]", payload["counts"])
         assert counts["possible_water_level_change"] == 1
+        run_dir = site_dir / "outputs" / "image-sequence-runs" / run_id
+        pilot_evaluation = {
+            "plugin_id": "riverbank_crossing_v1",
+            "reviewed_count": 4,
+            "metrics": {"precision": 0.75, "recall": 0.6, "false_positive": 1},
+        }
+        (run_dir / "riverbank-pilot-evaluation.json").write_text(
+            json.dumps(pilot_evaluation), encoding="utf-8"
+        )
 
         runs = get_json(
             f"{base_url}/api/image-sequence-runs?"
@@ -110,6 +119,7 @@ def test_run_image_sequence_validation_route_saves_a_run(tmp_path: Path) -> None
         assert detail["summary"]["run_id"] == run_id
         assert len(detail["records"]) == 1
         assert detail["review_images"]
+        assert detail["pilot_evaluation"] == pilot_evaluation
 
         image_query = urlencode(
             {
@@ -121,6 +131,29 @@ def test_run_image_sequence_validation_route_saves_a_run(tmp_path: Path) -> None
         with urlopen(f"{base_url}/api/image-sequence-run-image?{image_query}") as response:
             assert response.headers.get_content_type() == "image/png"
             assert response.read()
+
+
+def test_run_detail_ignores_a_malformed_pilot_evaluation(tmp_path: Path) -> None:
+    site_dir = tmp_path / "example-site"
+    make_site(site_dir)
+    write_sequence(site_dir)
+
+    with serve_home_ui(tmp_path) as base_url:
+        _, payload = post(
+            base_url,
+            "/api/run-image-sequence-validation",
+            {"folder_name": "example-site", "sequence_id": SEQUENCE_ID},
+        )
+        run_id = cast(str, payload["run_id"])
+        run_dir = site_dir / "outputs" / "image-sequence-runs" / run_id
+        (run_dir / "riverbank-pilot-evaluation.json").write_text("not json", encoding="utf-8")
+
+        detail = get_json(
+            f"{base_url}/api/image-sequence-run-detail?"
+            f"{urlencode({'folder_name': 'example-site', 'run_id': run_id})}"
+        )
+
+    assert detail["pilot_evaluation"] is None
 
 
 def test_set_image_sequence_event_review_route_round_trip(tmp_path: Path) -> None:

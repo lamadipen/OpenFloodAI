@@ -20,6 +20,7 @@ import json
 from collections.abc import Mapping
 from dataclasses import asdict
 from datetime import UTC, datetime
+from time import perf_counter
 
 from openfloodai.evidence.contract import (
     EvidenceRecord,
@@ -131,6 +132,7 @@ class RiverbankCrossingObservationAdapter:
         if self._water_side_point is None:
             return self._unavailable(status="invalid", reason_codes=("WATER_SIDE_NOT_SET",))
 
+        started_at = perf_counter()
         try:
             result = evaluate_riverbank_crossing(
                 self._previous_frame,
@@ -146,8 +148,12 @@ class RiverbankCrossingObservationAdapter:
             )
         except RiverbankCrossingError as error:
             return self._unavailable(
-                status="failed", reason_codes=(f"GEOMETRY_ERROR_{type(error).__name__}",)
+                status="failed",
+                reason_codes=(f"GEOMETRY_ERROR_{type(error).__name__}",),
+                quality=self._processing_cost(started_at),
             )
+
+        processing_cost = self._processing_cost(started_at)
 
         crossing_reason = (
             REASON_POSSIBLE_VISUAL_CHANGE
@@ -177,6 +183,7 @@ class RiverbankCrossingObservationAdapter:
                 "crossing_threshold": result.crossing_threshold,
                 "sample_count": result.sample_count,
                 "samples": [asdict(sample) for sample in result.samples],
+                **processing_cost,
             },
             reason_codes=(crossing_reason, "CAMERA_ALIGNMENT_UNAVAILABLE"),
             provenance={
@@ -188,7 +195,23 @@ class RiverbankCrossingObservationAdapter:
             },
         )
 
-    def _unavailable(self, *, status: str, reason_codes: tuple[str, ...]) -> EvidenceRecord:
+    def _processing_cost(self, started_at: float) -> dict[str, object]:
+        return {
+            "processing_time_ms": (perf_counter() - started_at) * 1000.0,
+            # This is a reproducible lower-bound estimate, not process peak RSS.
+            "estimated_frame_memory_bytes": int(
+                self._previous_frame.nbytes + self._current_frame.nbytes
+            ),
+            "memory_measurement": "input_frames_only",
+        }
+
+    def _unavailable(
+        self,
+        *,
+        status: str,
+        reason_codes: tuple[str, ...],
+        quality: Mapping[str, object] | None = None,
+    ) -> EvidenceRecord:
         return build_unavailable_evidence(
             plugin_id=PLUGIN_ID,
             plugin_version=PLUGIN_VERSION,
@@ -199,4 +222,5 @@ class RiverbankCrossingObservationAdapter:
             status=status,
             timestamp=self._timestamp,
             reason_codes=reason_codes,
+            quality=quality,
         )

@@ -118,6 +118,7 @@ The current validation record is early and should be updated as more reviewed ex
 | Validation scorecard | Available in the multi-video report with counts, review reasons, and safety wording. |
 | Time-window comparison | Available when machine records have matching timing evidence. |
 | Reference-region band signal | Available as prototype evidence for human review. |
+| Riverbank-crossing pilot evaluator | Available for local reviewed samples; no field pilot results have been recorded yet. |
 | Hard-case expected behavior | Documented with a safe example fixture. |
 | Field validation | Not started. |
 | Production readiness | Not started. |

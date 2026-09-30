@@ -94,6 +94,30 @@ def _saved_rows(site: Path, run_id: str) -> list[dict[str, Any]]:
     return list(read_jsonl_records(path)) if path.exists() else []
 
 
+def _add_available_riverbank_evidence(site: Path, run_id: str) -> str:
+    run_dir = site / "outputs" / "image-sequence-runs" / run_id
+    record_id = "evidence-riverbank-review"
+    evidence_path = run_dir / "evidence-records.jsonl"
+    with evidence_path.open("a", encoding="utf-8") as handle:
+        handle.write(
+            json.dumps(
+                {
+                    "record_id": record_id,
+                    "plugin_id": "riverbank_crossing_v1",
+                    "status": "available",
+                    "value": 25.0,
+                    "timestamp": "2026-09-01T01:00:00+00:00",
+                    "quality": {
+                        "processing_time_ms": 2.5,
+                        "samples": [{"point_x": 50, "point_y": 50, "crossed": True}],
+                    },
+                }
+            )
+            + "\n"
+        )
+    return record_id
+
+
 def test_save_observation_writes_the_full_contract(tmp_path: Path) -> None:
     site = tmp_path / "site"
     run_id, sample_key = _run_a_real_image_sequence(site)
@@ -136,6 +160,60 @@ def test_event_validity_defaults_to_not_reviewed(tmp_path: Path) -> None:
     )
 
     assert _saved_rows(site, run_id)[0]["event_validity"] == "not_reviewed"
+
+
+def test_image_observation_saves_pilot_answers_and_server_selected_evidence_id(
+    tmp_path: Path,
+) -> None:
+    site = tmp_path / "site"
+    run_id, sample_key = _run_a_real_image_sequence(site)
+    evidence_record_id = _add_available_riverbank_evidence(site, run_id)
+
+    save_observation(
+        site,
+        {
+            "kind": "image",
+            "run_id": run_id,
+            "media_id": SEQUENCE_ID,
+            "sample_key": sample_key,
+            "human_label": "no_water_level_change",
+            "camera_stable": "no",
+            "crossing_review": "no_change",
+            "overlay_review": "rejected",
+            "pilot_conditions": ["muddy_water", "shadows", "shadows"],
+            "evidence_record_id": "client-must-not-control-this",
+        },
+    )
+
+    row = _saved_rows(site, run_id)[0]
+    assert row["schema_version"] == 2
+    assert row["evidence_record_id"] == evidence_record_id
+    assert row["crossing_review"] == "no_change"
+    assert row["overlay_review"] == "rejected"
+    assert row["pilot_conditions"] == ["muddy_water", "shadows"]
+    assert row["false_crossing_cause"] == "camera_movement"
+
+
+def test_pilot_answers_are_rejected_without_available_riverbank_evidence(
+    tmp_path: Path,
+) -> None:
+    site = tmp_path / "site"
+    run_id, sample_key = _run_a_real_image_sequence(site)
+
+    with pytest.raises(ValueError, match="No available riverbank-crossing evidence"):
+        save_observation(
+            site,
+            {
+                "kind": "image",
+                "run_id": run_id,
+                "media_id": SEQUENCE_ID,
+                "sample_key": sample_key,
+                "human_label": "no_water_level_change",
+                "crossing_review": "no_change",
+                "overlay_review": "accepted",
+                "pilot_conditions": [],
+            },
+        )
 
 
 def test_event_validity_rejects_an_unknown_value(tmp_path: Path) -> None:

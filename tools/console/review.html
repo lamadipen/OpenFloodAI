@@ -160,6 +160,71 @@ function riverbankReviewHtml(evidenceRecords, day) {
     </div>`;
 }
 
+function pilotMetricPercent(value) {
+  return typeof value === "number" ? `${(value * 100).toFixed(1)}%` : "Not available";
+}
+
+function pilotEvaluationHtml(report) {
+  if (!report) {
+    return `
+      <div class="card" style="padding:16px 18px;">
+        <div style="font-size:13px;font-weight:600;">Pilot evaluation</div>
+        <div class="hint" style="margin-top:5px;">No pilot evaluation is saved for this run yet. Review samples first, then generate <code>riverbank-pilot-evaluation.json</code> for this run.</div>
+      </div>`;
+  }
+  const metrics = report.metrics || {};
+  const cost = report.processing_cost || {};
+  const conditions = (Array.isArray(report.condition_metrics) ? report.condition_metrics : [])
+    .filter((row) => row && row.reviewed_count > 0);
+  const causeMap = report.false_crossing_causes && typeof report.false_crossing_causes === "object"
+    ? report.false_crossing_causes
+    : {};
+  const causes = Object.entries(causeMap);
+  const milliseconds = (value) => typeof value === "number" ? `${value.toFixed(3)} ms` : "Not measured";
+  const memory = (value) => typeof value === "number" ? `${(value / (1024 * 1024)).toFixed(3)} MiB` : "Not measured";
+  const stat = (label, value, note) => `
+    <div style="border:1px solid var(--line-soft);border-radius:8px;padding:10px 12px;min-width:0;">
+      <div style="font-size:11px;color:var(--ink-muted);">${escapeHtml(label)}</div>
+      <div style="font-size:20px;font-weight:700;margin-top:2px;">${escapeHtml(value)}</div>
+      <div style="font-size:11px;color:var(--ink-soft);margin-top:2px;line-height:1.35;">${escapeHtml(note)}</div>
+    </div>`;
+  return `
+    <div class="card" style="padding:18px 20px;">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+        <div>
+          <div style="font-size:14px;font-weight:700;">Riverbank-crossing pilot evaluation</div>
+          <div class="hint" style="margin-top:3px;">Summary across human-reviewed observations linked to this run.</div>
+        </div>
+        <span class="pill gray">${escapeHtml(String(report.reviewed_count || 0))} reviewed</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:14px;">
+        ${stat("Precision", pilotMetricPercent(metrics.precision), "How often reported crossings matched human review.")}
+        ${stat("Recall", pilotMetricPercent(metrics.recall), "How many human-reviewed changes were found.")}
+        ${stat("Unavailable / failure", pilotMetricPercent(report.unavailable_or_failure_rate), "Missing and unusable results stay visible.")}
+        ${stat("False crossings", String(metrics.false_positive || 0), "Reported crossing when the reviewer marked no change.")}
+        ${stat("Overlay acceptance", pilotMetricPercent(report.overlay_acceptance_rate), "Accepted divided by accepted plus rejected overlays.")}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:10px;font-size:12px;color:var(--ink-soft);">
+        <div>Mean processing time: <strong>${escapeHtml(milliseconds(cost.mean_processing_time_ms))}</strong></div>
+        <div>P95 processing time: <strong>${escapeHtml(milliseconds(cost.p95_processing_time_ms))}</strong></div>
+        <div>Maximum input-frame memory: <strong>${escapeHtml(memory(cost.max_estimated_frame_memory_bytes))}</strong></div>
+      </div>
+      <div style="margin-top:14px;font-size:12px;font-weight:600;">Tested conditions</div>
+      ${conditions.length ? `
+        <div style="overflow-x:auto;margin-top:6px;">
+          <table style="width:100%;border-collapse:collapse;font-size:12px;">
+            <thead><tr style="text-align:left;color:var(--ink-muted);"><th style="padding:6px 8px;">Condition</th><th style="padding:6px 8px;">Reviewed</th><th style="padding:6px 8px;">Available</th><th style="padding:6px 8px;">Precision</th><th style="padding:6px 8px;">Recall</th><th style="padding:6px 8px;">False crossings</th></tr></thead>
+            <tbody>${conditions.map((row) => `<tr style="border-top:1px solid var(--line-soft);"><td style="padding:7px 8px;font-weight:600;">${escapeHtml(String(row.condition).replace(/_/g, " "))}</td><td style="padding:7px 8px;">${escapeHtml(String(row.reviewed_count))}</td><td style="padding:7px 8px;">${escapeHtml(String(row.available_count))}</td><td style="padding:7px 8px;">${escapeHtml(pilotMetricPercent((row.metrics || {}).precision))}</td><td style="padding:7px 8px;">${escapeHtml(pilotMetricPercent((row.metrics || {}).recall))}</td><td style="padding:7px 8px;">${escapeHtml(String((row.metrics || {}).false_positive || 0))}</td></tr>`).join("")}</tbody>
+          </table>
+        </div>`
+        : `<div class="hint" style="margin-top:5px;">No environmental condition has reviewed coverage yet. Missing coverage is not success.</div>`}
+      ${causes.length ? `<div class="hint" style="margin-top:10px;">False-crossing causes: ${causes.map(([cause, count]) => `${escapeHtml(cause.replace(/_/g, " "))} (${escapeHtml(String(count))})`).join(", ")}.</div>` : ""}
+      <div style="background:var(--warn-soft);border-radius:8px;padding:10px 12px;margin-top:14px;font-size:12px;line-height:1.5;">
+        This compares visual evidence with human-reviewed samples. It does not confirm flooding, prove safety, or create a public warning. Small or single-site results must not be generalized to other rivers, cameras, seasons, or weather.
+      </div>
+    </div>`;
+}
+
 function buildGaugeByDate(gaugeSeries) {
   const map = new Map();
   (gaugeSeries || []).forEach((row) => {
@@ -417,6 +482,8 @@ function render() {
       <div style="font-size:13px;font-weight:600;color:#5c3b08;">Possible visual shift &mdash; ${escapeHtml(changeStartDay.date)}</div>
       <div style="font-size:12px;color:#6b4a12;margin-top:2px;">${changeSummary}</div>
     </div>` : ""}
+
+    ${pilotEvaluationHtml(detail.pilot_evaluation)}
 
     <div style="display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;flex-grow:1;min-height:0;">
       <div style="display:flex;flex-direction:column;gap:16px;min-width:0;">
