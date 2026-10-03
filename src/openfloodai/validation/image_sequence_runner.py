@@ -45,6 +45,12 @@ from openfloodai.evidence.settings import (
     resolve_adapter_setting_source,
     resolve_effective_adapter_settings,
 )
+from openfloodai.ingestion.usgs_gage_data import (
+    GAUGE_SOURCE_FILENAME,
+    RUN_GAUGE_EVIDENCE_FILENAME,
+    build_run_gauge_evidence,
+    load_gauge_source,
+)
 from openfloodai.review.event_reviews import (
     EventReviewError,
     compute_evidence_key,
@@ -543,6 +549,12 @@ def run_image_sequence_validation(
         site_config=site_config,
         report=report,
     )
+    _write_gauge_evidence(
+        run_dir=run_dir,
+        sequence_dir=sequence_dir,
+        baseline_record=baseline_record,
+        records=records,
+    )
 
     return report
 
@@ -678,19 +690,11 @@ def read_image_sequence_run_detail(site_dir: Path, run_id: str) -> dict[str, Any
     if review_images_dir.is_dir():
         review_images = sorted(path.name for path in review_images_dir.glob("*.png"))
 
-    gauge_series: list[dict[str, Any]] = []
+    gauge_evidence = read_run_gauge_evidence(run_dir)
     event_reviews: dict[str, str] = {}
     sequence_id = summary.get("sequence_id") if isinstance(summary, dict) else None
     if isinstance(sequence_id, str) and sequence_id:
         sequence_dir = site_dir / "inputs" / "image-sequences" / sequence_id
-        gauge_series_path = sequence_dir / "gauge-daily-series.json"
-        if gauge_series_path.is_file():
-            try:
-                loaded = json.loads(gauge_series_path.read_text(encoding="utf-8"))
-                if isinstance(loaded, list):
-                    gauge_series = loaded
-            except (OSError, ValueError):
-                gauge_series = []
         evidence_key = compute_evidence_key(
             summary.get("baseline_filename") if isinstance(summary, dict) else None,
             summary.get("watched_area_used") if isinstance(summary, dict) else None,
@@ -705,7 +709,8 @@ def read_image_sequence_run_detail(site_dir: Path, run_id: str) -> dict[str, Any
         "records": records,
         "report": report_text,
         "review_images": review_images,
-        "gauge_series": gauge_series,
+        "gauge_evidence": gauge_evidence,
+        "gauge_series": legacy_gauge_series(gauge_evidence),
         "event_reviews": event_reviews,
         "evidence_records": evidence_records,
         "pilot_evaluation": pilot_evaluation,
@@ -951,3 +956,110 @@ def _sha256_of_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _write_gauge_evidence(
+    *,
+    run_dir: Path,
+    sequence_dir: Path,
+    baseline_record: dict[str, Any],
+    records: list[ImageSequenceRecord],
+) -> None:
+    """Freeze this run's per-image gauge matches inside the run folder.
+
+    Matching happens once, here, against the sequence's saved gauge source;
+    the source file itself is also copied in (and hashed) so the match can be
+    audited later. After this, nothing about the run reads the sequence-level
+    gauge files again: a later download, a corrected USGS value, or a
+    registry change can only affect a NEW run.
+    """
+
+    images: list[dict[str, Any]] = [
+        {
+            "filename": str(baseline_record["filename"]),
+            "captured_at_utc": str(baseline_record.get("captured_at_utc", "")),
+            "local_time": str(baseline_record.get("local_time", "")),
+            "download_status": "downloaded",
+            "is_baseline": True,
+            "change_score": None,
+        }
+    ]
+    images.extend(
+        {
+            "filename": record.filename,
+            "captured_at_utc": record.captured_at_utc,
+            "local_time": record.local_time,
+            "download_status": record.download_status,
+            "is_baseline": False,
+            # This run's own score for this exact image -- never another's.
+            "change_score": record.region_change_score,
+        }
+        for record in records
+    )
+
+    source = load_gauge_source(sequence_dir)
+    source_path = sequence_dir / GAUGE_SOURCE_FILENAME
+    source_sha256 = _sha256_of_file(source_path) if source is not None else None
+    evidence = build_run_gauge_evidence(source, images, source_sha256=source_sha256)
+    (run_dir / RUN_GAUGE_EVIDENCE_FILENAME).write_text(
+        json.dumps(evidence, indent=2) + "\n", encoding="utf-8"
+    )
+    if source is not None:
+        shutil.copyfile(source_path, run_dir / "inputs-used" / "gauge-readings.snapshot.json")
+
+
+def read_run_gauge_evidence(run_dir: Path) -> dict[str, Any]:
+    """The run's frozen gauge evidence, or an explicit "not captured" state.
+
+    A run made before gauge evidence was saved with runs has no such file.
+    That is reported as exactly that -- never rebuilt from today's sequence
+    files or a live fetch, which would rewrite what the run actually showed.
+    """
+
+    path = run_dir / RUN_GAUGE_EVIDENCE_FILENAME
+    if path.is_file():
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            loaded = None
+        if isinstance(loaded, dict):
+            return loaded
+    return {
+        "schema_version": 1,
+        "captured": False,
+        "status": "not_captured",
+        "reason": (
+            "Gauge evidence was not captured for this run. It was made before runs "
+            "saved gauge matches, and past runs are not reconstructed from newer data."
+        ),
+        "images": [],
+        "peak_events": None,
+    }
+
+
+def legacy_gauge_series(gauge_evidence: dict[str, Any]) -> list[dict[str, Any]]:
+    """One row per matched image from the frozen evidence, for older review pages.
+
+    Built only from the run's own saved records. The old date-keyed pages
+    still need a `date`; the newer console reads `gauge_evidence` directly.
+    """
+
+    rows: list[dict[str, Any]] = []
+    for image in gauge_evidence.get("images", []):
+        reading = image.get("reading")
+        if not isinstance(reading, dict):
+            continue
+        rows.append(
+            {
+                "date": str(image.get("captured_at_utc", ""))[:10],
+                "local_time": image.get("local_time"),
+                "captured_at_utc": image.get("captured_at_utc"),
+                "gauge_datetime_utc": reading.get("datetime_utc"),
+                "gauge_value": reading.get("value"),
+                "parameter_code": reading.get("parameter_code"),
+                "parameter_label": reading.get("parameter_label"),
+                "unit": reading.get("unit"),
+                "used_fallback_discharge": reading.get("used_fallback_discharge"),
+            }
+        )
+    return rows

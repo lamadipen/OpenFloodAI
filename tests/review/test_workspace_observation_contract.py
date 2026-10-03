@@ -418,3 +418,45 @@ def test_save_group_still_works_alongside_the_new_contract_fields(tmp_path: Path
     from openfloodai.review.workspace import evidence
 
     assert len(evidence(site, "image", run_id, SEQUENCE_ID)["groups"]) == 1
+
+
+def test_workspace_gauge_comes_only_from_the_runs_frozen_evidence(tmp_path: Path) -> None:
+    from openfloodai.review.workspace import _gage_for_run
+
+    # No frozen evidence (an older run): nothing is shown, and no sequence
+    # files are consulted to fill the gap.
+    assert _gage_for_run(tmp_path) is None
+
+    (tmp_path / "gauge-evidence.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "captured": True,
+                "status": "available",
+                "association": {"relationship": "same_site", "relationship_note": None},
+                "parameter": {"code": "00065", "label": "gage height", "unit": "ft"},
+                "images": [
+                    {
+                        "filename": "a.jpg",
+                        "captured_at_utc": "2026-09-01T10:00:00+00:00",
+                        "local_time": "2026-09-01T04:00:00-06:00",
+                        "reading": {
+                            "datetime_utc": "2026-09-01T10:05:00+00:00",
+                            "value": 3.2,
+                            "parameter_code": "00065",
+                            "parameter_label": "gage height",
+                            "unit": "ft",
+                        },
+                    },
+                    {"filename": "b.jpg", "captured_at_utc": "x", "reading": None},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    gauge = _gage_for_run(tmp_path)
+
+    assert gauge is not None
+    assert gauge["relationship"] == "same_site"
+    assert [row["gauge_value"] for row in gauge["rows"]] == [3.2]

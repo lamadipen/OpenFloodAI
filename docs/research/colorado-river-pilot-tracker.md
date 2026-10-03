@@ -75,7 +75,8 @@ Inside `data/sites/<folder_name>/inputs/image-sequences/<sequence_id>/`:
 - `images/`: the selected JPEG images.
 - `sequence-manifest.jsonl`: one row per selected day, with its filename, capture time, and download status (`downloaded`, `missing`, or `failed`).
 - `download-summary.json`: totals for the run (how many downloaded, missing, failed).
-- `gauge-readings-summary.json`: the matching USGS gage data for the same date range, including the highest and lowest readings, the largest 6/12/24-hour rises and falls, and the image nearest each of those moments. If gage data is not available, this file still gets written with `available: false` and a plain reason; a gage problem never blocks the image download.
+- `gauge-readings.json`: the raw valid USGS readings for the date range, each with its timestamp, value, and USGS qualifier codes, plus the camera-to-station association and where it came from (registry source and the date it was checked). If gage data is unavailable this file still gets written with a distinct status: `no_station_association`, `service_unavailable`, or `no_readings_in_range`. A gage problem never blocks the image download.
+- `gauge-readings-summary.json`: highest and lowest readings, the largest 6/12/24-hour rises and falls, and the image within 15 minutes of each of those moments (or none).
 
 None of this is committed to the repository. Raw images, per-sequence manifests, and gage summaries stay local. Share a reviewed dataset through an external drive, not through Git.
 
@@ -133,3 +134,14 @@ Only after the pilot passes:
 5. Lock suitable sites or periods for validation.
 6. Keep adding approved videos independently, unaffected by any of this.
 7. Publishing this dataset publicly (e.g. Hugging Face or Kaggle) is a separate future issue, with its own review for attribution, license, privacy, and hosting cost, once the local dataset is stable.
+
+
+## How Gauge Readings Are Matched To Images
+
+- An image uses the nearest valid reading within 15 minutes, inclusive (exactly 15:00 matches, 15:01 does not). If two readings are equally near, the earlier one wins. Readings are never interpolated, carried forward, or averaged.
+- Missing, empty, non-numeric, NaN, infinite, and USGS no-data values (such as -999999) are rejected before matching, so another valid reading in the window can still be used.
+- USGS qualifier codes are saved as reported. `P` is shown as provisional and `A` as approved; an unrecognized or missing code is never promoted to approved.
+- If a source lists the same timestamp twice, approved beats provisional, then the lower value is kept, so the choice is repeatable.
+- Gage height (00065) and discharge (00060) are never mixed; discharge is only used when no gage height exists, and it is labeled as discharge.
+- The camera-to-station link is the one USGS provides in the registry. There is no nearest-station search.
+- Each review run freezes its own matches (`gauge-evidence.json` plus a hashed copy of the readings it used under `inputs-used/`). Re-downloading gauge data later does not change a finished run, and runs made before this was saved show "not captured" instead of being reconstructed.

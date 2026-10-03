@@ -32,7 +32,8 @@ let detail = null;
 let days = [];
 let events = [];
 let changeInfo = null;
-let gaugeByDate = new Map();
+let gaugeEvidence = null;
+let gaugeImages = new Map();
 let gaugeMeta = { label: "Gage height", unit: "", usedFallbackDischarge: false };
 let evidencePoints = [];
 let state = { filter: null, selectedIndex: 0, eventCursor: -1, granularity: "daily" };
@@ -225,22 +226,117 @@ function pilotEvaluationHtml(report) {
     </div>`;
 }
 
-function buildGaugeByDate(gaugeSeries) {
+// Gauge evidence is frozen per run and joined to an image by its own identity
+// (filename + capture time), never by calendar date -- two images on the same
+// day each keep their own reading, time gap, and score.
+function gaugeKey(filename, capturedAtUtc) {
+  return `${filename || ""}|${capturedAtUtc || ""}`;
+}
+
+function buildGaugeImages(evidence) {
   const map = new Map();
-  (gaugeSeries || []).forEach((row) => {
-    if (row && row.date && typeof row.gauge_value === "number") map.set(row.date, row.gauge_value);
-  });
+  ((evidence && evidence.images) || []).forEach((row) => map.set(gaugeKey(row.filename, row.captured_at_utc), row));
   return map;
 }
 
-function buildGaugeMeta(gaugeSeries) {
-  const row = (gaugeSeries || []).find((r) => r && r.parameter_label);
-  if (!row) return { label: "Gage height", unit: "", usedFallbackDischarge: false };
+function gaugeFor(day) {
+  return gaugeImages.get(gaugeKey(day.filename, day.capturedAtUtc)) || null;
+}
+
+function gaugeValueFor(day) {
+  const reading = (gaugeFor(day) || {}).reading;
+  return reading && typeof reading.value === "number" ? reading.value : null;
+}
+
+function buildGaugeMeta(evidence) {
+  const parameter = evidence && evidence.parameter;
+  if (!parameter || !parameter.label) return { label: "Gage height", unit: "", usedFallbackDischarge: false };
   return {
-    label: row.parameter_label.charAt(0).toUpperCase() + row.parameter_label.slice(1),
-    unit: row.unit || "",
-    usedFallbackDischarge: !!row.used_fallback_discharge
+    label: parameter.label.charAt(0).toUpperCase() + parameter.label.slice(1),
+    unit: parameter.unit || "",
+    usedFallbackDischarge: !!parameter.used_fallback_discharge
   };
+}
+
+// Unambiguous instants: always UTC, with the zone named.
+function formatUtc(iso) {
+  const parsed = new Date(iso);
+  if (!iso || Number.isNaN(parsed.getTime())) return "unknown time";
+  return parsed.toISOString().slice(0, 16).replace("T", " ") + " UTC";
+}
+
+// time_difference_seconds is reading minus image: positive = reading came later.
+function formatGap(seconds) {
+  if (typeof seconds !== "number") return "";
+  if (seconds === 0) return "taken at the same minute as the image";
+  const minutes = Math.round(Math.abs(seconds) / 60);
+  const text = Math.abs(seconds) % 60 === 0 ? `${minutes} min` : `${Math.floor(Math.abs(seconds) / 60)} min ${Math.abs(seconds) % 60} s`;
+  return `${text} ${seconds < 0 ? "before" : "after"} the image`;
+}
+
+const GAUGE_STATUS_TEXT = {
+  not_captured: "Gauge evidence was not captured for this run. It is never rebuilt from gauge data fetched later.",
+  no_station_association: "No USGS gauge is associated with this camera, so there is nothing to match.",
+  service_unavailable: "The USGS service was unavailable when gauge data was requested, so no readings were saved.",
+  no_readings_in_range: "USGS returned no valid readings for this period.",
+  image_not_downloaded: "No image was saved for this time."
+};
+
+function gaugeQualityHtml(reading) {
+  const qualifiers = (reading.qualifiers || []).join(", ");
+  const text = { approved: "Approved", provisional: "Provisional, may be revised", not_reported: "Quality not reported", unknown: "Unrecognized quality code" }[reading.quality_status] || "Quality not reported";
+  const tone = reading.quality_status === "provisional" ? "warn" : reading.quality_status === "approved" ? "ok" : "gray";
+  return `<span class="pill ${tone}" style="font-size:10px;">${escapeHtml(text)}</span>${qualifiers ? ` <span style="font-family:var(--mono);font-size:11px;color:var(--ink-muted);">qualifiers: ${escapeHtml(qualifiers)}</span>` : ""}`;
+}
+
+function gaugeReadingText(reading) {
+  const label = String(reading.parameter_label || "gauge reading");
+  const unit = reading.unit ? ` ${reading.unit}` : "";
+  return `${label.charAt(0).toUpperCase() + label.slice(1)} ${Number(reading.value).toFixed(2)}${unit}`;
+}
+
+// The selected image's own gauge reading, beside that image's own timestamp.
+function selectedGaugeHtml(day) {
+  const row = gaugeFor(day);
+  const imageLine = `Image ${escapeHtml(formatUtc(day.capturedAtUtc))} (${escapeHtml(day.time)} local)`;
+  if (!row || !row.reading) {
+    const reason = row && GAUGE_STATUS_TEXT[row.match_status];
+    const why = reason || (gaugeEvidence && !gaugeEvidence.captured ? GAUGE_STATUS_TEXT.not_captured : "No USGS reading was within 15 minutes of this image.");
+    return `<div class="hint" style="margin-bottom:10px;line-height:1.5;">${imageLine}<br><strong>No matching gauge reading.</strong> ${escapeHtml(why)}</div>`;
+  }
+  const reading = row.reading;
+  return `<div style="font-size:12px;line-height:1.6;color:var(--ink-soft);margin-bottom:10px;">
+    ${imageLine}<br>
+    Reading ${escapeHtml(formatUtc(reading.datetime_utc))}, ${escapeHtml(formatGap(row.time_difference_seconds))}<br>
+    <strong style="color:var(--ink);">${escapeHtml(gaugeReadingText(reading))}</strong>${reading.used_fallback_discharge ? " (discharge, not gage height)" : ""} ${gaugeQualityHtml(reading)}
+  </div>`;
+}
+
+function peakEventHtml(title, event) {
+  if (!event) return "";
+  const reading = event.event_reading;
+  const imageText = event.image_status === "matched"
+    ? `Nearest image ${escapeHtml(event.image_filename || "")} at ${escapeHtml(formatUtc(event.image_captured_at_utc))}; this run's change score for it: ${event.image_change_score == null ? "not scored" : Number(event.image_change_score).toFixed(4)}.`
+    : "No matching image within 15 minutes.";
+  return `<div style="font-size:12px;line-height:1.5;">
+    <strong>${escapeHtml(title)}:</strong> ${escapeHtml(gaugeReadingText(reading))} at ${escapeHtml(formatUtc(reading.datetime_utc))} ${gaugeQualityHtml(reading)}<br>
+    <span style="color:var(--ink-muted);">${imageText}</span>
+  </div>`;
+}
+
+function gaugePeakEventsHtml() {
+  const peaks = gaugeEvidence && gaugeEvidence.peak_events;
+  if (!peaks) return "";
+  return `<div style="border-top:1px solid var(--line-soft);margin-top:10px;padding-top:10px;display:flex;flex-direction:column;gap:8px;">
+    <div style="font-size:12px;font-weight:600;color:var(--ink-soft);">Highest and lowest readings in this run's window</div>
+    ${peakEventHtml("Highest", peaks.highest)}
+    ${peakEventHtml("Lowest", peaks.lowest)}
+  </div>`;
+}
+
+function gaugeEmptyStateText() {
+  if (!gaugeEvidence) return GAUGE_STATUS_TEXT.not_captured;
+  return GAUGE_STATUS_TEXT[gaugeEvidence.status] || "No gauge reading matched any image in this run.";
 }
 
 // Granularity bucketing for the two charts -- daily is the trivial case of
@@ -270,11 +366,11 @@ function buildBuckets(rows, granularity) {
   return Array.from(map.values());
 }
 
-function summarizeBucket(bucket, rows, gaugeByDateMap) {
+function summarizeBucket(bucket, rows) {
   const codes = bucket.indices.map((i) => rows[i].code);
   const validScoreIdx = bucket.indices.filter((i) => rows[i].score != null);
   const meanScore = validScoreIdx.length ? isoMean(validScoreIdx.map((i) => rows[i].score)) : null;
-  const gaugeValues = bucket.indices.map((i) => gaugeByDateMap.get(rows[i].date)).filter((v) => v != null);
+  const gaugeValues = bucket.indices.map((i) => gaugeValueFor(rows[i])).filter((v) => v != null);
   const meanGauge = gaugeValues.length ? isoMean(gaugeValues) : null;
   const hasPossible = codes.some((code) => code === "P" || code === "U");
   const hasCamera = codes.some((code) => code === "C");
@@ -328,13 +424,13 @@ function granularityLabelSuffix() {
 // The selected day's own numbers, in one line, right above the chart it
 // summarizes -- date/time, the raw change score (not the bucket mean,
 // since this always describes one specific day regardless of granularity),
-// gage height that day if known, and the machine's result label.
+// the gauge reading matched to this exact image if any, and the machine's result label.
 function selectedDaySummaryHtml() {
   const sel = days[state.selectedIndex];
-  const selGauge = gaugeByDate.get(sel.date);
+  const selGauge = gaugeValueFor(sel);
   const gaugeUnitSuffix = gaugeMeta.unit ? ` ${gaugeMeta.unit}` : "";
   const scoreText = sel.score == null ? "no image, not compared" : sel.score.toFixed(4);
-  const gaugeText = selGauge != null ? ` &middot; ${escapeHtml(gaugeMeta.label.toLowerCase())} ${selGauge.toFixed(2)}${escapeHtml(gaugeUnitSuffix)}` : "";
+  const gaugeText = selGauge != null ? ` &middot; ${escapeHtml(gaugeMeta.label.toLowerCase())} ${selGauge.toFixed(2)}${escapeHtml(gaugeUnitSuffix)}` : " &middot; no matching gauge reading";
   return `
     <div style="background:var(--paper);border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px;color:var(--ink-soft);">
       <strong style="color:var(--ink);">${escapeHtml(sel.date)}, ${escapeHtml(sel.time)} local</strong>
@@ -419,8 +515,9 @@ async function main() {
   days = buildDays(detail.records);
   events = buildEvents(days);
   changeInfo = findChangeStart(days);
-  gaugeByDate = buildGaugeByDate(detail.gauge_series);
-  gaugeMeta = buildGaugeMeta(detail.gauge_series);
+  gaugeEvidence = detail.gauge_evidence || null;
+  gaugeImages = buildGaugeImages(gaugeEvidence);
+  gaugeMeta = buildGaugeMeta(gaugeEvidence);
   state.selectedIndex = changeInfo.index >= 0 ? changeInfo.index : 0;
 
   const sequenceId = detail.summary.sequence_id;
@@ -454,8 +551,7 @@ function render() {
   const summary = detail.summary;
   const c = counts();
   const changeStartDay = changeInfo.index >= 0 ? days[changeInfo.index] : null;
-  const gaugeDates = Array.from(gaugeByDate.keys());
-  const selGauge = gaugeByDate.get(sel.date);
+  const hasGauge = days.some((d) => gaugeValueFor(d) != null);
 
   const baselineQuery = new URLSearchParams({ folder_name: folderName, sequence_id: sequenceId(), filename: summary.baseline_filename });
   const selectedQuery = sel.filename && sel.code !== "M"
@@ -491,7 +587,9 @@ function render() {
         <div class="card" style="padding:14px 18px;">
           ${granularityButtonsHtml()}
           <div style="font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:6px;">${escapeHtml(gaugeMeta.label)}${gaugeMeta.unit ? ` (${escapeHtml(gaugeMeta.unit)})` : ""}, ${granularityLabelSuffix()}</div>
-          ${gaugeDates.length ? gaugeChartSvg() : `<div style="height:44px;display:flex;align-items:center;font-size:12px;color:var(--ink-muted);">No gage data is available for this sequence yet.</div>`}
+          ${hasGauge ? gaugeChartSvg() : `<div style="min-height:44px;display:flex;align-items:center;font-size:12px;color:var(--ink-muted);">${escapeHtml(gaugeEmptyStateText())}</div>`}
+          ${hasGauge ? `<div class="hint" style="margin-top:6px;">Each point is the reading matched to one image (within 15 minutes, no interpolation)${state.granularity === "daily" ? "" : "; grouped views show the mean of matched readings only"}.</div>` : ""}
+          ${gaugePeakEventsHtml()}
         </div>
 
         <div class="card" style="padding:16px 18px;">
@@ -502,13 +600,14 @@ function render() {
 
         <div class="card" style="padding:16px 18px;flex-grow:1;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-            <div style="font-size:13px;font-weight:600;">Selected day &mdash; ${escapeHtml(sel.date)}</div>
+            <div style="font-size:13px;font-weight:600;">Selected image &mdash; ${escapeHtml(sel.date)}, ${escapeHtml(sel.time)} local</div>
             <div style="display:flex;gap:8px;">
               <button class="btn" data-act="biggest">Biggest change detected</button>
               <button class="btn" data-act="prev-event">&larr; Previous event</button>
               <button class="btn" data-act="next-event">Next event &rarr;</button>
             </div>
           </div>
+          ${selectedGaugeHtml(sel)}
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
             <div>
               <div class="hint" style="margin-bottom:4px;">Baseline &mdash; ${escapeHtml(summary.baseline_filename || "not recorded")}</div>
@@ -605,7 +704,7 @@ function pillHtml(code, label, count, tone) {
 }
 
 function currentBuckets() {
-  return buildBuckets(days, state.granularity).map((b) => summarizeBucket(b, days, gaugeByDate));
+  return buildBuckets(days, state.granularity).map((b) => summarizeBucket(b, days));
 }
 
 function assignBucketX(buckets, leftPad) {

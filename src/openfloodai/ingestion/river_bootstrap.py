@@ -353,6 +353,10 @@ def _write_gage_summary(
             gage_relationship=camera.gage_relationship,
             gage_relationship_note=camera.gage_relationship_note,
             manifest_records=manifest_records,
+            camera_id=camera.camera_id,
+            association_source=camera.registry_source,
+            association_source_checked=camera.registry_source_checked,
+            registry_id=camera.river_id,
         )
         return summary.available
     except GageDataError:
