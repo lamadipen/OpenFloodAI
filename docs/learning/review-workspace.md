@@ -69,10 +69,17 @@ unclear evidence can also prevent comparison. An image comparison checks change
 versus no change; agreement does not prove rising/falling direction or safety.
 
 Video time is not matched to gage readings, including for time-lapse videos.
-For images, available gage readings are supplemental context. The page shows
-their parameter, unit, and site relationship. It omits readings more than one
-hour from an image. These are current supplemental readings, not a saved input
-to the machine analysis.
+For images, each saved image is matched to its own USGS reading when the run is
+made, and that match is saved with the run. The page shows the image time, the
+reading time, the exact gap between them, the parameter and unit, and the USGS
+quality status (provisional readings are marked as such). It never uses a
+reading more than 15 minutes from an image; those images show **No matching
+gauge reading**. Gauge readings are supplemental context, not an input to the
+machine score.
+
+A run made before gauge evidence was saved shows that it was **not captured**.
+It is never rebuilt from gauge data downloaded later, so a finished run keeps
+showing what it showed when it was made.
 
 ## 4. Assign a dataset group
 

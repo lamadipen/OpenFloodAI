@@ -193,10 +193,25 @@ def test_nearest_image_matches_closest_downloaded_record() -> None:
         },
     ]
 
-    filename, captured_at = gage._nearest_image(manifest, "2025-01-01T11:00:00+00:00")
+    filename, captured_at = gage._nearest_image(manifest, "2025-01-01T12:07:00+00:00")
 
     assert filename == "b.jpg"
     assert captured_at == "2025-01-01T12:00:00+00:00"
+
+
+def test_nearest_image_returns_none_beyond_the_match_window() -> None:
+    manifest = [
+        {
+            "filename": "b.jpg",
+            "captured_at_utc": "2025-01-01T12:00:00+00:00",
+            "download_status": "downloaded",
+        }
+    ]
+
+    # 16 minutes away: the closest image, but not a picture of that moment.
+    assert gage._nearest_image(manifest, "2025-01-01T12:16:00+00:00") == (None, None)
+    # Exactly 15 minutes is allowed.
+    assert gage._nearest_image(manifest, "2025-01-01T12:15:00+00:00")[0] == "b.jpg"
 
 
 def test_summarize_gage_readings_builds_extremes_and_deltas(
@@ -323,160 +338,14 @@ def test_write_gauge_readings_summary_saves_json_file(
     assert '"nwis_site_id": "09095500"' in output_path.read_text(encoding="utf-8")
 
 
-def test_build_daily_gage_series_picks_nearest_reading_per_downloaded_image() -> None:
-    series = gage.GageSeries(
-        nwis_site_id="09095500",
-        parameter_code=gage.PARAMETER_GAGE_HEIGHT,
-        parameter_label="gage height",
-        unit="ft",
-        used_fallback_discharge=False,
-        readings=[
-            gage.GageReading(datetime_utc="2025-01-01T11:00:00+00:00", value=3.1),
-            gage.GageReading(datetime_utc="2025-01-01T12:00:00+00:00", value=3.5),
-            gage.GageReading(datetime_utc="2025-01-02T12:00:00+00:00", value=3.9),
-        ],
-        source_url="https://example.invalid",
-    )
-    manifest_records = [
-        {
-            "filename": "a.jpg",
-            "captured_at_utc": "2025-01-01T12:05:00+00:00",
-            "local_time": "2025-01-01T05:05:00-07:00",
-            "download_status": "downloaded",
-        },
-        {
-            "filename": "b.jpg",
-            "captured_at_utc": "2025-01-02T11:50:00+00:00",
-            "local_time": "2025-01-02T04:50:00-07:00",
-            "download_status": "downloaded",
-        },
-        {
-            "filename": "c.jpg",
-            "captured_at_utc": "2025-01-03T12:00:00+00:00",
-            "download_status": "missing",
-        },
-    ]
-
-    rows = gage.build_daily_gage_series(series, manifest_records)
-
-    assert len(rows) == 2
-    assert rows[0]["date"] == "2025-01-01"
-    assert rows[0]["gauge_value"] == 3.5
-    assert rows[1]["date"] == "2025-01-02"
-    assert rows[1]["gauge_value"] == 3.9
-    for row in rows:
-        assert row["parameter_code"] == gage.PARAMETER_GAGE_HEIGHT
-        assert row["parameter_label"] == "gage height"
-        assert row["unit"] == "ft"
-        assert row["used_fallback_discharge"] is False
-
-
-def test_build_daily_gage_series_drops_a_reading_that_is_too_far_from_the_image() -> None:
-    series = gage.GageSeries(
-        nwis_site_id="09095500",
-        parameter_code=gage.PARAMETER_GAGE_HEIGHT,
-        parameter_label="gage height",
-        unit="ft",
-        used_fallback_discharge=False,
-        # The gage was offline for weeks; the only reading anywhere near
-        # this image is 10 days away. That is not a measurement of this
-        # image's moment and must not be plotted as though it were.
-        readings=[gage.GageReading(datetime_utc="2025-01-11T12:00:00+00:00", value=3.5)],
-        source_url="https://example.invalid",
-    )
-    manifest_records = [
-        {
-            "filename": "a.jpg",
-            "captured_at_utc": "2025-01-01T12:00:00+00:00",
-            "download_status": "downloaded",
-        },
-    ]
-
-    assert gage.build_daily_gage_series(series, manifest_records) == []
-
-
-def test_build_daily_gage_series_keeps_a_reading_within_the_allowed_gap() -> None:
-    series = gage.GageSeries(
-        nwis_site_id="09095500",
-        parameter_code=gage.PARAMETER_GAGE_HEIGHT,
-        parameter_label="gage height",
-        unit="ft",
-        used_fallback_discharge=False,
-        readings=[
-            gage.GageReading(
-                datetime_utc="2025-01-01T20:00:00+00:00", value=3.5
-            )  # 8 hours away, within MAX_READING_GAP_HOURS.
-        ],
-        source_url="https://example.invalid",
-    )
-    manifest_records = [
-        {
-            "filename": "a.jpg",
-            "captured_at_utc": "2025-01-01T12:00:00+00:00",
-            "download_status": "downloaded",
-        },
-    ]
-
-    rows = gage.build_daily_gage_series(series, manifest_records)
-    assert len(rows) == 1
-    assert rows[0]["gauge_value"] == 3.5
-
-
-def test_build_daily_gage_series_carries_discharge_fallback_on_every_row() -> None:
-    series = gage.GageSeries(
-        nwis_site_id="09095500",
-        parameter_code=gage.PARAMETER_DISCHARGE,
-        parameter_label="discharge",
-        unit="ft3/s",
-        used_fallback_discharge=True,
-        readings=[gage.GageReading(datetime_utc="2025-01-01T12:00:00+00:00", value=450.0)],
-        source_url="https://example.invalid",
-    )
-    manifest_records = [
-        {
-            "filename": "a.jpg",
-            "captured_at_utc": "2025-01-01T12:00:00+00:00",
-            "download_status": "downloaded",
-        },
-    ]
-
-    rows = gage.build_daily_gage_series(series, manifest_records)
-
-    assert len(rows) == 1
-    assert rows[0]["gauge_value"] == 450.0
-    assert rows[0]["parameter_label"] == "discharge"
-    assert rows[0]["unit"] == "ft3/s"
-    assert rows[0]["used_fallback_discharge"] is True
-
-
-def test_build_daily_gage_series_skips_images_with_no_nearby_reading() -> None:
-    series = gage.GageSeries(
-        nwis_site_id="09095500",
-        parameter_code=gage.PARAMETER_GAGE_HEIGHT,
-        parameter_label="gage height",
-        unit="ft",
-        used_fallback_discharge=False,
-        readings=[],
-        source_url="",
-    )
-    manifest_records = [
-        {
-            "filename": "a.jpg",
-            "captured_at_utc": "2025-01-01T12:00:00+00:00",
-            "download_status": "downloaded",
-        },
-    ]
-
-    assert gage.build_daily_gage_series(series, manifest_records) == []
-
-
-def test_write_gauge_readings_summary_also_writes_daily_series_file(
+def test_write_gauge_readings_summary_saves_readings_with_qualifiers_and_association(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     payload = _series_payload(
         gage.PARAMETER_GAGE_HEIGHT,
         [("2025-01-01T12:00:00.000+00:00", "3.5")],
     )
+    payload["value"]["timeSeries"][0]["values"][0]["value"][0]["qualifiers"] = ["P"]
     fetch_calls: list[str] = []
 
     def fetch(url: str) -> Any:
@@ -484,49 +353,54 @@ def test_write_gauge_readings_summary_also_writes_daily_series_file(
         return payload
 
     monkeypatch.setattr(gage, "_fetch_json", fetch)
-    manifest_records = [
-        {
-            "filename": "a.jpg",
-            "captured_at_utc": "2025-01-01T12:00:00+00:00",
-            "local_time": "2025-01-01T05:00:00-07:00",
-            "download_status": "downloaded",
-        },
-    ]
 
     summary = gage.write_gauge_readings_summary(
         tmp_path,
         nwis_site_id="09095500",
         start_date="2025-01-01",
         end_date="2025-01-31",
-        gage_relationship="same_site",
-        gage_relationship_note=None,
-        manifest_records=manifest_records,
+        gage_relationship="nearby",
+        gage_relationship_note="Gage is 2 miles upstream.",
+        manifest_records=[],
+        camera_id="CO_Camera",
+        association_source="https://api.waterdata.usgs.gov/nims/v0/cameras",
+        association_source_checked="2026-09-22",
+        registry_id="colorado-river",
     )
 
     assert summary.available is True
-    # Only one fetch cycle (per parameter attempt) backs both output files.
+    # One fetch backs both the summary and the saved readings.
     assert len(fetch_calls) == 1
-    series_path = tmp_path / "gauge-daily-series.json"
-    assert series_path.is_file()
-    rows = json.loads(series_path.read_text(encoding="utf-8"))
-    assert rows == [
+    saved = json.loads((tmp_path / "gauge-readings.json").read_text(encoding="utf-8"))
+    assert saved["status"] == "available"
+    assert saved["parameter"] == {
+        "code": "00065",
+        "label": "gage height",
+        "unit": "ft",
+        "used_fallback_discharge": False,
+    }
+    assert saved["association"] == {
+        "camera_id": "CO_Camera",
+        "nwis_site_id": "09095500",
+        "relationship": "nearby",
+        "relationship_note": "Gage is 2 miles upstream.",
+        "source": "https://api.waterdata.usgs.gov/nims/v0/cameras",
+        "source_checked": "2026-09-22",
+        "registry": "colorado-river",
+    }
+    assert saved["readings"] == [
         {
-            "date": "2025-01-01",
-            "local_time": "2025-01-01T05:00:00-07:00",
-            "captured_at_utc": "2025-01-01T12:00:00+00:00",
-            "gauge_datetime_utc": "2025-01-01T12:00:00+00:00",
-            "gauge_value": 3.5,
-            "parameter_code": gage.PARAMETER_GAGE_HEIGHT,
-            "parameter_label": "gage height",
-            "unit": "ft",
-            "used_fallback_discharge": False,
+            "datetime_utc": "2025-01-01T12:00:00+00:00",
+            "value": 3.5,
+            "qualifiers": ["P"],
+            "quality_status": "provisional",
         }
     ]
+    assert saved["retrieved_at_utc"]
+    assert not (tmp_path / "gauge-daily-series.json").exists()
 
 
-def test_write_gauge_readings_summary_writes_empty_daily_series_when_unavailable(
-    tmp_path: Path,
-) -> None:
+def test_write_gauge_readings_summary_records_no_station_association(tmp_path: Path) -> None:
     gage.write_gauge_readings_summary(
         tmp_path,
         nwis_site_id="09095500",
@@ -537,5 +411,44 @@ def test_write_gauge_readings_summary_writes_empty_daily_series_when_unavailable
         manifest_records=[],
     )
 
-    series_path = tmp_path / "gauge-daily-series.json"
-    assert json.loads(series_path.read_text(encoding="utf-8")) == []
+    saved = json.loads((tmp_path / "gauge-readings.json").read_text(encoding="utf-8"))
+    assert saved["status"] == "no_station_association"
+    assert saved["readings"] == []
+
+
+def test_write_gauge_readings_summary_distinguishes_service_failure_from_no_data(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def broken(url: str) -> Any:
+        raise gage.GageDataError("Could not reach USGS water-services. Try again later.")
+
+    monkeypatch.setattr(gage, "_fetch_json", broken)
+    failed_dir = tmp_path / "failed"
+    failed_dir.mkdir()
+    gage.write_gauge_readings_summary(
+        failed_dir,
+        nwis_site_id="09095500",
+        start_date="2025-01-01",
+        end_date="2025-01-31",
+        gage_relationship="same_site",
+        gage_relationship_note=None,
+        manifest_records=[],
+    )
+
+    monkeypatch.setattr(gage, "_fetch_json", lambda url: {"value": {"timeSeries": []}})
+    empty_dir = tmp_path / "empty"
+    empty_dir.mkdir()
+    gage.write_gauge_readings_summary(
+        empty_dir,
+        nwis_site_id="09095500",
+        start_date="2025-01-01",
+        end_date="2025-01-31",
+        gage_relationship="same_site",
+        gage_relationship_note=None,
+        manifest_records=[],
+    )
+
+    failed = json.loads((failed_dir / "gauge-readings.json").read_text(encoding="utf-8"))
+    empty = json.loads((empty_dir / "gauge-readings.json").read_text(encoding="utf-8"))
+    assert failed["status"] == "service_unavailable"
+    assert empty["status"] == "no_readings_in_range"

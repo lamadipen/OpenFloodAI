@@ -10,7 +10,7 @@ const html = fs.readFileSync(
 );
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 const start = script.indexOf("function evidenceRowsForDay");
-const end = script.indexOf("function buildGaugeByDate");
+const end = script.indexOf("function gaugeKey");
 const helpers = script.slice(start, end);
 
 function context() {

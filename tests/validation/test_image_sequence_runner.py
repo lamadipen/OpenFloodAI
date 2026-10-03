@@ -749,7 +749,7 @@ def test_list_and_read_run_detail_round_trip(tmp_path: Path) -> None:
     assert evidence_row["timestamp"] == "2026-09-01T01:00:00+00:00"
 
 
-def test_read_run_detail_includes_gauge_series_and_event_reviews_when_present(
+def test_read_run_detail_includes_frozen_gauge_evidence_and_event_reviews(
     tmp_path: Path,
 ) -> None:
     site_dir = tmp_path / "site"
@@ -765,9 +765,7 @@ def test_read_run_detail_includes_gauge_series_and_event_reviews_when_present(
             manifest_record("b.jpg", "2026-09-01T01:00:00+00:00", "downloaded"),
         ],
     )
-    (sequence_dir / "gauge-daily-series.json").write_text(
-        json.dumps([{"date": "2026-09-01", "gauge_value": 3.5}]), encoding="utf-8"
-    )
+    write_gauge_source(sequence_dir, [("2026-09-01T01:07:00+00:00", 3.5, ["P"])])
 
     report = run_image_sequence_validation(site_dir, SEQUENCE_ID)
     detail = read_image_sequence_run_detail(site_dir, report.run_id)
@@ -782,8 +780,186 @@ def test_read_run_detail_includes_gauge_series_and_event_reviews_when_present(
 
     detail = read_image_sequence_run_detail(site_dir, report.run_id)
 
-    assert detail["gauge_series"] == [{"date": "2026-09-01", "gauge_value": 3.5}]
+    gauge = detail["gauge_evidence"]
+    assert gauge["captured"] is True
+    by_name = {image["filename"]: image for image in gauge["images"]}
+    assert by_name["a.jpg"]["match_status"] == "no_matching_reading"
+    assert by_name["b.jpg"]["match_status"] == "matched"
+    assert by_name["b.jpg"]["time_difference_seconds"] == 7 * 60
+    assert by_name["b.jpg"]["reading"]["quality_status"] == "provisional"
     assert detail["event_reviews"] == {"2026-09-01-2026-09-01-P": "confirmed_real"}
+
+
+def write_gauge_source(
+    sequence_dir: Path, readings: list[tuple[str, float, list[str]]], status: str = "available"
+) -> None:
+    (sequence_dir / "gauge-readings.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "status": status,
+                "reason": None,
+                "retrieved_at_utc": "2026-09-02T00:00:00+00:00",
+                "camera_id": "camera-demo-01",
+                "association": {"nwis_site_id": "09095500", "relationship": "same_site"},
+                "parameter": {
+                    "code": "00065",
+                    "label": "gage height",
+                    "unit": "ft",
+                    "used_fallback_discharge": False,
+                },
+                "source_url": "https://example.test/iv",
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-01",
+                "rejected_reading_count": 0,
+                "readings": [
+                    {
+                        "datetime_utc": stamp,
+                        "value": value,
+                        "qualifiers": codes,
+                        "quality_status": "provisional",
+                    }
+                    for stamp, value, codes in readings
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_finished_run_gauge_evidence_is_not_changed_by_later_gauge_data(
+    tmp_path: Path,
+) -> None:
+    site_dir = tmp_path / "site"
+    make_site(site_dir)
+    sequence_dir = site_dir / "inputs" / "image-sequences" / SEQUENCE_ID
+    images_dir = sequence_dir / "images"
+    write_frame(images_dir / "a.jpg", 30)
+    write_frame(images_dir / "b.jpg", 30)
+    write_manifest(
+        sequence_dir,
+        [
+            manifest_record("a.jpg", "2026-09-01T00:00:00+00:00", "downloaded"),
+            manifest_record("b.jpg", "2026-09-01T01:00:00+00:00", "downloaded"),
+        ],
+    )
+    write_gauge_source(sequence_dir, [("2026-09-01T01:00:00+00:00", 3.5, ["A"])])
+    first = run_image_sequence_validation(site_dir, SEQUENCE_ID)
+    before = read_image_sequence_run_detail(site_dir, first.run_id)["gauge_evidence"]
+
+    # A later download corrects the value and the sequence-level files change.
+    write_gauge_source(sequence_dir, [("2026-09-01T01:00:00+00:00", 9.9, ["P"])])
+    (sequence_dir / "gauge-readings-summary.json").write_text("{}", encoding="utf-8")
+
+    after = read_image_sequence_run_detail(site_dir, first.run_id)["gauge_evidence"]
+    second = run_image_sequence_validation(site_dir, SEQUENCE_ID)
+    new_run = read_image_sequence_run_detail(site_dir, second.run_id)["gauge_evidence"]
+
+    assert after == before
+    first_b = next(i for i in before["images"] if i["filename"] == "b.jpg")
+    new_b = next(i for i in new_run["images"] if i["filename"] == "b.jpg")
+    assert first_b["reading"]["value"] == 3.5
+    assert new_b["reading"]["value"] == 9.9
+    assert (first.run_dir / "inputs-used" / "gauge-readings.snapshot.json").is_file()
+
+
+def test_older_run_without_gauge_snapshot_reports_not_captured_and_never_refetches(
+    tmp_path: Path,
+) -> None:
+    site_dir = tmp_path / "site"
+    make_site(site_dir)
+    sequence_dir = site_dir / "inputs" / "image-sequences" / SEQUENCE_ID
+    images_dir = sequence_dir / "images"
+    write_frame(images_dir / "a.jpg", 30)
+    write_frame(images_dir / "b.jpg", 30)
+    write_manifest(
+        sequence_dir,
+        [
+            manifest_record("a.jpg", "2026-09-01T00:00:00+00:00", "downloaded"),
+            manifest_record("b.jpg", "2026-09-01T01:00:00+00:00", "downloaded"),
+        ],
+    )
+    report = run_image_sequence_validation(site_dir, SEQUENCE_ID)
+    (report.run_dir / "gauge-evidence.json").unlink()
+    # Gauge data that exists NOW must not be used to fill the old run's gap.
+    write_gauge_source(sequence_dir, [("2026-09-01T01:00:00+00:00", 3.5, ["A"])])
+
+    gauge = read_image_sequence_run_detail(site_dir, report.run_id)["gauge_evidence"]
+
+    assert gauge["captured"] is False
+    assert gauge["status"] == "not_captured"
+    assert gauge["images"] == []
+    assert "not captured" in gauge["reason"].lower()
+
+
+def test_run_records_each_unmatched_state_distinctly(tmp_path: Path) -> None:
+    site_dir = tmp_path / "site"
+    make_site(site_dir)
+    sequence_dir = site_dir / "inputs" / "image-sequences" / SEQUENCE_ID
+    images_dir = sequence_dir / "images"
+    write_frame(images_dir / "a.jpg", 30)
+    write_frame(images_dir / "b.jpg", 30)
+    write_manifest(
+        sequence_dir,
+        [
+            manifest_record("a.jpg", "2026-09-01T00:00:00+00:00", "downloaded"),
+            manifest_record("b.jpg", "2026-09-01T01:00:00+00:00", "downloaded"),
+            manifest_record("c.jpg", "2026-09-01T02:00:00+00:00", "missing"),
+        ],
+    )
+
+    statuses: dict[str, str] = {}
+    for status in ("no_station_association", "service_unavailable", "no_readings_in_range"):
+        write_gauge_source(sequence_dir, [], status=status)
+        report = run_image_sequence_validation(site_dir, SEQUENCE_ID)
+        gauge = read_image_sequence_run_detail(site_dir, report.run_id)["gauge_evidence"]
+        statuses[status] = gauge["images"][1]["match_status"]
+        assert gauge["images"][1]["reading"] is None
+        assert gauge["images"][-1]["match_status"] == "image_not_downloaded"
+
+    assert statuses == {
+        "no_station_association": "no_station_association",
+        "service_unavailable": "service_unavailable",
+        "no_readings_in_range": "no_readings_in_range",
+    }
+
+
+def test_run_gauge_score_is_the_runs_own_score_for_that_exact_image(tmp_path: Path) -> None:
+    site_dir = tmp_path / "site"
+    make_site(site_dir)
+    sequence_dir = site_dir / "inputs" / "image-sequences" / SEQUENCE_ID
+    images_dir = sequence_dir / "images"
+    write_frame(images_dir / "baseline.jpg", 30)
+    write_frame(images_dir / "same.jpg", 30)
+    write_frame(images_dir / "changed.jpg", 30, bottom_third_value=220)
+    write_manifest(
+        sequence_dir,
+        [
+            manifest_record("baseline.jpg", "2026-09-01T00:00:00+00:00", "downloaded"),
+            manifest_record("same.jpg", "2026-09-01T01:00:00+00:00", "downloaded"),
+            manifest_record("changed.jpg", "2026-09-01T01:05:00+00:00", "downloaded"),
+        ],
+    )
+    write_gauge_source(
+        sequence_dir,
+        [("2026-09-01T01:02:00+00:00", 3.0, ["A"]), ("2026-09-01T01:04:00+00:00", 9.0, ["P"])],
+    )
+
+    report = run_image_sequence_validation(site_dir, SEQUENCE_ID)
+    gauge = read_image_sequence_run_detail(site_dir, report.run_id)["gauge_evidence"]
+    by_name = {image["filename"]: image for image in gauge["images"]}
+    scores = {record.filename: record.region_change_score for record in report.records}
+
+    # Two images in the same hour keep their own readings and their own scores.
+    assert by_name["same.jpg"]["reading"]["value"] == 3.0
+    assert by_name["changed.jpg"]["reading"]["value"] == 9.0
+    assert by_name["same.jpg"]["change_score"] == scores["same.jpg"]
+    assert by_name["changed.jpg"]["change_score"] == scores["changed.jpg"]
+    assert by_name["changed.jpg"]["change_score"] != by_name["same.jpg"]["change_score"]
+    peak = gauge["peak_events"]["highest"]
+    assert peak["event_reading"]["value"] == 9.0
+    assert peak["image_filename"] == "changed.jpg"
+    assert peak["image_change_score"] == scores["changed.jpg"]
 
 
 def test_a_review_does_not_carry_over_when_the_watched_area_changes(tmp_path: Path) -> None:
