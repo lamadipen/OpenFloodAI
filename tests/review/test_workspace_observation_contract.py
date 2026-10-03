@@ -425,7 +425,11 @@ def test_workspace_gauge_comes_only_from_the_runs_frozen_evidence(tmp_path: Path
 
     # No frozen evidence (an older run): nothing is shown, and no sequence
     # files are consulted to fill the gap.
-    assert _gage_for_run(tmp_path) is None
+    missing = _gage_for_run(tmp_path)
+    assert missing["status"] == "not_captured"
+    assert missing["captured"] is False
+    assert missing["rows"] == []
+    assert "not rebuilt" in missing["message"]
 
     (tmp_path / "gauge-evidence.json").write_text(
         json.dumps(
@@ -446,7 +450,10 @@ def test_workspace_gauge_comes_only_from_the_runs_frozen_evidence(tmp_path: Path
                             "parameter_code": "00065",
                             "parameter_label": "gage height",
                             "unit": "ft",
+                            "qualifiers": ["P"],
+                            "quality_status": "provisional",
                         },
+                        "time_difference_seconds": 300,
                     },
                     {"filename": "b.jpg", "captured_at_utc": "x", "reading": None},
                 ],
@@ -460,3 +467,33 @@ def test_workspace_gauge_comes_only_from_the_runs_frozen_evidence(tmp_path: Path
     assert gauge is not None
     assert gauge["relationship"] == "same_site"
     assert [row["gauge_value"] for row in gauge["rows"]] == [3.2]
+    row = gauge["rows"][0]
+    assert row["quality_status"] == "provisional"
+    assert row["qualifiers"] == ["P"]
+    assert row["time_difference_seconds"] == 300
+
+
+@pytest.mark.parametrize(
+    ("status", "text"),
+    [
+        ("no_station_association", "No USGS gauge is associated"),
+        ("service_unavailable", "service was unavailable"),
+        ("no_readings_in_range", "no valid readings"),
+        ("available", "within 15 minutes of any image"),
+    ],
+)
+def test_workspace_gauge_keeps_captured_but_unmatched_states_distinct(
+    tmp_path: Path, status: str, text: str
+) -> None:
+    from openfloodai.review.workspace import _gage_for_run
+
+    (tmp_path / "gauge-evidence.json").write_text(
+        json.dumps({"captured": True, "status": status, "images": []}), encoding="utf-8"
+    )
+
+    gauge = _gage_for_run(tmp_path)
+
+    assert gauge["captured"] is True
+    assert gauge["status"] == status
+    assert gauge["rows"] == []
+    assert text in gauge["message"]

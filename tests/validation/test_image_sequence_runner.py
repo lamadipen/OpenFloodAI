@@ -863,6 +863,47 @@ def test_finished_run_gauge_evidence_is_not_changed_by_later_gauge_data(
     assert (first.run_dir / "inputs-used" / "gauge-readings.snapshot.json").is_file()
 
 
+def test_gauge_snapshot_hash_and_matches_come_from_the_same_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from openfloodai.ingestion import usgs_gage_data
+    from openfloodai.validation import image_sequence_runner as runner
+
+    site_dir = tmp_path / "site"
+    make_site(site_dir)
+    sequence_dir = site_dir / "inputs" / "image-sequences" / SEQUENCE_ID
+    images_dir = sequence_dir / "images"
+    write_frame(images_dir / "a.jpg", 30)
+    write_frame(images_dir / "b.jpg", 30)
+    write_manifest(
+        sequence_dir,
+        [
+            manifest_record("a.jpg", "2026-09-01T00:00:00+00:00", "downloaded"),
+            manifest_record("b.jpg", "2026-09-01T01:00:00+00:00", "downloaded"),
+        ],
+    )
+    write_gauge_source(sequence_dir, [("2026-09-01T01:00:00+00:00", 4.0, ["A"])])
+    real_parse = usgs_gage_data.parse_gauge_source
+
+    def parse_then_download_changes_the_file(raw: bytes):  # type: ignore[no-untyped-def]
+        parsed = real_parse(raw)
+        # A concurrent download replaces the file right after it was read.
+        write_gauge_source(sequence_dir, [("2026-09-01T01:00:00+00:00", 9.0, ["A"])])
+        return parsed
+
+    monkeypatch.setattr(runner, "parse_gauge_source", parse_then_download_changes_the_file)
+
+    report = run_image_sequence_validation(site_dir, SEQUENCE_ID)
+
+    evidence = read_image_sequence_run_detail(site_dir, report.run_id)["gauge_evidence"]
+    snapshot_path = report.run_dir / "inputs-used" / "gauge-readings.snapshot.json"
+    snapshot = json.loads(snapshot_path.read_text())
+    matched = next(i for i in evidence["images"] if i["filename"] == "b.jpg")
+    assert matched["reading"]["value"] == 4.0
+    assert snapshot["readings"][0]["value"] == 4.0
+    assert evidence["source_file_sha256"] == hashlib.sha256(snapshot_path.read_bytes()).hexdigest()
+
+
 def test_older_run_without_gauge_snapshot_reports_not_captured_and_never_refetches(
     tmp_path: Path,
 ) -> None:

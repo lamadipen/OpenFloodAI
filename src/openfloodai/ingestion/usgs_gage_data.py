@@ -934,17 +934,24 @@ RUN_GAUGE_SCHEMA_VERSION = 1
 MATCH_STATUS_NOT_AN_IMAGE = "image_not_downloaded"
 
 
+def parse_gauge_source(raw: bytes) -> dict[str, Any] | None:
+    """Parse already-read gauge source bytes (None if they are not a JSON object)."""
+
+    try:
+        loaded = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return None
+    return loaded if isinstance(loaded, dict) else None
+
+
 def load_gauge_source(sequence_dir: Path) -> dict[str, Any] | None:
     """Read a sequence's saved gauge source file, or None if none was ever saved."""
 
     path = sequence_dir / GAUGE_SOURCE_FILENAME
-    if not path.is_file():
-        return None
     try:
-        loaded = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        return parse_gauge_source(path.read_bytes())
+    except OSError:
         return None
-    return loaded if isinstance(loaded, dict) else None
 
 
 def _readings_from_source(source: Mapping[str, Any]) -> list[GageReading]:

@@ -49,7 +49,7 @@ from openfloodai.ingestion.usgs_gage_data import (
     GAUGE_SOURCE_FILENAME,
     RUN_GAUGE_EVIDENCE_FILENAME,
     build_run_gauge_evidence,
-    load_gauge_source,
+    parse_gauge_source,
 )
 from openfloodai.review.event_reviews import (
     EventReviewError,
@@ -997,15 +997,24 @@ def _write_gauge_evidence(
         for record in records
     )
 
-    source = load_gauge_source(sequence_dir)
-    source_path = sequence_dir / GAUGE_SOURCE_FILENAME
-    source_sha256 = _sha256_of_file(source_path) if source is not None else None
+    # Read the source once: the bytes that are parsed, hashed, and saved are
+    # the same bytes, so a concurrent download cannot make them disagree.
+    try:
+        source_bytes: bytes | None = (sequence_dir / GAUGE_SOURCE_FILENAME).read_bytes()
+    except OSError:
+        source_bytes = None
+    source = parse_gauge_source(source_bytes) if source_bytes is not None else None
+    source_sha256 = (
+        hashlib.sha256(source_bytes).hexdigest()
+        if source_bytes is not None and source is not None
+        else None
+    )
     evidence = build_run_gauge_evidence(source, images, source_sha256=source_sha256)
     (run_dir / RUN_GAUGE_EVIDENCE_FILENAME).write_text(
         json.dumps(evidence, indent=2) + "\n", encoding="utf-8"
     )
-    if source is not None:
-        shutil.copyfile(source_path, run_dir / "inputs-used" / "gauge-readings.snapshot.json")
+    if source is not None and source_bytes is not None:
+        (run_dir / "inputs-used" / "gauge-readings.snapshot.json").write_bytes(source_bytes)
 
 
 def read_run_gauge_evidence(run_dir: Path) -> dict[str, Any]:
@@ -1056,6 +1065,9 @@ def legacy_gauge_series(gauge_evidence: dict[str, Any]) -> list[dict[str, Any]]:
                 "captured_at_utc": image.get("captured_at_utc"),
                 "gauge_datetime_utc": reading.get("datetime_utc"),
                 "gauge_value": reading.get("value"),
+                "time_difference_seconds": image.get("time_difference_seconds"),
+                "qualifiers": reading.get("qualifiers"),
+                "quality_status": reading.get("quality_status"),
                 "parameter_code": reading.get("parameter_code"),
                 "parameter_label": reading.get("parameter_label"),
                 "unit": reading.get("unit"),
