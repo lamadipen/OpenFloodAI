@@ -396,3 +396,28 @@ def test_regular_sampling_still_rejects_the_water_level_mode_and_stray_selection
             site_dir=Path("/nonexistent"),
             selected_candidates=[],
         )
+
+
+def test_listing_exposes_each_images_group_for_the_baseline_picker(tmp_path: Path) -> None:
+    from openfloodai.ingestion.river_images import list_site_image_sequences
+
+    water = tmp_path / "inputs" / "image-sequences" / "usgs-cam-2026-03-01-2026-04-29-water_level"
+    regular = tmp_path / "inputs" / "image-sequences" / "usgs-cam-2026-03-01-2026-04-29-all"
+    for folder in (water, regular):
+        folder.mkdir(parents=True)
+        (folder / "download-summary.json").write_text(json.dumps({"sequence_id": folder.name}))
+    (water / "water-level-selection.json").write_text(
+        json.dumps(
+            {
+                "samples": [
+                    {"filename": "a.jpg", "group": "high"},
+                    {"filename": "b.jpg", "group": "low"},
+                ]
+            }
+        )
+    )
+
+    by_id = {row["sequence_id"]: row for row in list_site_image_sequences(tmp_path)}
+
+    assert by_id[water.name]["water_level_groups"] == {"a.jpg": "high", "b.jpg": "low"}
+    assert "water_level_groups" not in by_id[regular.name]

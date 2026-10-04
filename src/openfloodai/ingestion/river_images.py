@@ -920,5 +920,27 @@ def list_site_image_sequences(site_dir: Path) -> list[dict[str, Any]]:
         except (OSError, ValueError):
             continue
         if isinstance(summary, dict):
+            groups = _water_level_groups(child)
+            if groups is not None:
+                # Lets a baseline picker label each image with why it was sampled.
+                summary["water_level_groups"] = groups
             summaries.append(summary)
     return summaries
+
+
+def _water_level_groups(sequence_dir: Path) -> dict[str, str] | None:
+    """File name -> collection group for a water-level sample set, else None."""
+
+    path = sequence_dir / WATER_LEVEL_SELECTION_FILENAME
+    if not path.is_file():
+        return None
+    try:
+        saved = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    samples = saved.get("samples") if isinstance(saved, dict) else None
+    return {
+        str(sample["filename"]): str(sample.get("group", ""))
+        for sample in (samples if isinstance(samples, list) else [])
+        if isinstance(sample, dict) and sample.get("filename")
+    }
