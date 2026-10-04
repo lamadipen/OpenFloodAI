@@ -62,6 +62,18 @@ KNOWN_ADAPTERS: tuple[AdapterDescriptor, ...] = (
         ),
         is_default=False,
     ),
+    AdapterDescriptor(
+        plugin_id="hosted_sam_v1",
+        plugin_family="observation",
+        display_name="Hosted SAM segmentation",
+        description=(
+            "Optional. Sends images you choose to Meta's hosted SAM service, using your "
+            "own API key and account, to outline a concept such as water or riverbank "
+            "for faster human review. Off by default; nothing is uploaded until you "
+            "start a batch. Predictions are unreviewed and never change labels."
+        ),
+        is_default=False,
+    ),
 )
 
 

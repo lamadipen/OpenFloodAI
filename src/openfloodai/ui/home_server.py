@@ -28,6 +28,7 @@ from openfloodai.config import (
     write_reference_region,
 )
 from openfloodai.contracts import read_jsonl_records
+from openfloodai.evidence.hosted_sam_credentials import HostedSamCredentials
 from openfloodai.evidence.settings import (
     EvidenceSettingsError,
     describe_adapters_for_settings_ui,
@@ -83,7 +84,7 @@ from openfloodai.review.event_reviews import (
     set_event_review,
 )
 from openfloodai.review.river_tracker import build_river_tracker
-from openfloodai.ui import review_workspace
+from openfloodai.ui import hosted_sam_routes, review_workspace
 from openfloodai.validation import (
     build_export_all,
     build_run_export,
@@ -104,6 +105,7 @@ from openfloodai.validation.image_sequence_runner import (
 )
 from openfloodai.validation.input_snapshot import read_input_snapshot
 from openfloodai.validation.site_status import VIDEO_SUFFIXES
+from openfloodai.vision import hosted_sam
 
 VIDEO_CONTENT_TYPES = {
     ".avi": "video/x-msvideo",
@@ -124,6 +126,12 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
 
     sites_dir: Path
     ui_path: Path
+    # Hosted SAM (Issue #210). The credential holder lives in this process's memory;
+    # the decoder is None until Meta's official mask decoder is supplied, which keeps
+    # paid requests off. Tests replace the transport so no real call is ever made.
+    hosted_sam_credentials: HostedSamCredentials = HostedSamCredentials()
+    hosted_sam_decoder: hosted_sam.MaskDecoder | None = None
+    hosted_sam_transport: hosted_sam.Transport = staticmethod(hosted_sam.urllib_transport)
 
     def do_GET(self) -> None:
         """Serve site-status JSON or the static local UI."""
@@ -133,6 +141,8 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             self._send_console_file(path[len("/console/") :])
             return
         if review_workspace.handle_get(self, path):
+            return
+        if hosted_sam_routes.handle_get(self, path):
             return
         if path == "/river-images.html":
             self._send_river_images_page()
@@ -734,6 +744,8 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
     def do_POST(self) -> None:
         """Handle site setup and video intake requests."""
 
+        if hosted_sam_routes.handle_post(self, self.path):
+            return
         if review_workspace.handle_post(self, self.path):
             return
         if self.path == "/api/download-river-images":
