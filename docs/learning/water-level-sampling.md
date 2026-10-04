@@ -28,17 +28,21 @@ machine's result and from any human label, and it never creates a label.
 2. Choose **Sample by water level** (instead of Regular sampling).
 3. Tick Low, Middle, and/or High, and set **Images per group** (default 3,
    at most 10).
-4. Select **Find samples**. This reads the gauge data, ranks the readings, and
+4. Choose the **time of day**: **Any time of day** (the default) or **Daytime
+   only**, which keeps both the gauge reading and the image inside the local
+   10:00 to 14:00 window, the same daylight window regular daylight sampling uses.
+   Changing it clears the preview, so run Find samples again.
+5. Select **Find samples**. This reads the gauge data, ranks the readings, and
    then checks the camera archive only around the readings it is considering, one
    day at a time, until each group has its picks. It never lists or downloads the
    whole period, and **it downloads no images.**
-5. Review the preview. Each row shows the group, the gauge reading time, gauge
+6. Review the preview. Each row shows the group, the gauge reading time, gauge
    height and unit, USGS quality (provisional readings are marked), the image time,
    and the exact gap between them.
-6. Untick a row to leave it out, or select **Replace** to get another candidate
+7. Untick a row to leave it out, or select **Replace** to get another candidate
    for that group. A replacement keeps the group's other rows, respects the same
    rules, and never uses an image hours away.
-7. Tick the confirmation and select **Download N selected images**. Only the
+8. Tick the confirmation and select **Download N selected images**. Only the
    approved rows are downloaded, through the existing image-sequence intake.
 
 If you ask for more than can be found, the preview shows how many it found and
@@ -68,6 +72,7 @@ every selection.
 | Spacing | A group never takes two readings fewer than 3 local calendar days apart. This is a spacing rule, not a claim of independent events. |
 | Image match | The image nearest the reading within 15 minutes, an equal distance going to the earlier image. |
 | Re-check | The image's **own** nearest reading must also fall in the group. Both readings are saved when they differ, and the group reflects the image's own reading. |
+| Time of day | **Any time** (default) changes nothing. **Daytime only** keeps a candidate only if its gauge reading and its image are both within 10:00 to 14:00 on the camera's local clock (ends included, daylight saving handled). The group bands are still set by all readings in the range, so a night-time peak still shapes what "high" means; it just is not sampled. If no reading in a group is in the window, the group is a shortfall, not a night-time pick. The choice is saved with the request. |
 | Uniqueness | An image is chosen once and never fills two groups. Groups fill in the order low, middle, high. |
 | Shortfall | A group that cannot reach its count is reported, never padded with unsuitable duplicates. |
 | Archive checks | Only days around candidate readings are listed (at most 300 separate days per search). If many top readings have no usable image, the search stops and says so. |

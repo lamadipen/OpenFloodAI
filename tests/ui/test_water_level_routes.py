@@ -267,3 +267,16 @@ def test_the_regular_download_route_still_rejects_water_level_mode(env: dict[str
             },
         )
     assert code == 400 and "water-level sample" in out["message"]
+
+
+def test_time_of_day_is_validated_and_returned_with_the_preview(env: dict[str, Any]) -> None:
+    with serve(env["sites"]) as base:
+        ok = post(f"{base}/api/preview-water-level-sampling", {**BASE, "time_of_day": "daytime"})
+        bad = post(f"{base}/api/preview-water-level-sampling", {**BASE, "time_of_day": "dusk"})
+        default = post(f"{base}/api/preview-water-level-sampling", BASE)
+
+    assert ok[0] == 200
+    assert ok[1]["request"]["time_of_day"]["mode"] == "daytime"
+    assert ok[1]["selection"]["policy"]["time_of_day"]["window_local_hours"] == [10, 14]
+    assert bad[0] == 400 and bad[1]["success"] is False
+    assert default[1]["request"]["time_of_day"]["mode"] == "any"

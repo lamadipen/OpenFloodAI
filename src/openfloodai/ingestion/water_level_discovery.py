@@ -49,6 +49,8 @@ from openfloodai.ingestion.water_level_sampling import (
     SamplingError,
     SelectedSample,
     select_samples,
+    time_of_day_description,
+    validate_time_of_day,
     verify_approved,
     water_level_unavailable,
 )
@@ -190,7 +192,9 @@ def _association(camera: CameraRecord) -> dict[str, Any]:
     }
 
 
-def _base(context: DiscoveryContext, groups: Sequence[str], per_group: int) -> dict[str, Any]:
+def _base(
+    context: DiscoveryContext, groups: Sequence[str], per_group: int, time_of_day: str
+) -> dict[str, Any]:
     return {
         "policy_version": POLICY_VERSION,
         "note": NOTE_RELATIVE,
@@ -201,6 +205,7 @@ def _base(context: DiscoveryContext, groups: Sequence[str], per_group: int) -> d
             "end_date": context.end_date,
             "groups": list(groups),
             "images_per_group": per_group,
+            "time_of_day": time_of_day_description(time_of_day),
         },
         "association": _association(context.camera) if context.camera else None,
     }
@@ -213,6 +218,7 @@ def discover(
     images_per_group: int,
     kept: Sequence[Mapping[str, str]] = (),
     declined: Sequence[str] = (),
+    time_of_day: str = "any",
     fetch_gauge: GaugeFetcher | None = None,
     list_images: ImageLister | None = None,
 ) -> dict[str, Any]:
@@ -220,7 +226,8 @@ def discover(
 
     fetch_gauge = fetch_gauge or fetch_gage_readings
     list_images = list_images or list_archive_images_between
-    out = _base(context, groups, images_per_group)
+    validate_time_of_day(time_of_day)
+    out = _base(context, groups, images_per_group, time_of_day)
     out["selected_at_utc"] = datetime.now(tz=UTC).isoformat()
     camera = context.camera
     if camera is None or camera.gage_relationship == "unavailable":
@@ -246,7 +253,14 @@ def discover(
     }
     finder = ArchiveDayFinder(context.slug, list_images)
     kept_samples = (
-        verify_approved(kept, readings, finder, timezone_name=context.timezone, unit=series.unit)
+        verify_approved(
+            kept,
+            readings,
+            finder,
+            timezone_name=context.timezone,
+            unit=series.unit,
+            time_of_day=time_of_day,
+        )
         if kept
         else []
     )
@@ -262,6 +276,7 @@ def discover(
         unit=series.unit,
         kept=kept_by_group,
         declined_images=frozenset(declined),
+        time_of_day=time_of_day,
     )
     out["archive"] = {
         "days_checked": finder.days_checked,
@@ -367,6 +382,7 @@ def download_approved(
     site_dir: Path,
     overwrite: bool = False,
     resume: bool = False,
+    time_of_day: str = "any",
     fetch_gauge: GaugeFetcher | None = None,
     list_images: ImageLister | None = None,
     download: Callable[..., ImageSequenceDownloadResult] | None = None,
@@ -391,6 +407,7 @@ def download_approved(
             ArchiveDayFinder(context.slug, list_images),
             timezone_name=context.timezone,
             unit=series.unit,
+            time_of_day=time_of_day,
         )
     except SamplingError as error:
         raise RiverImageError(f"{error} Run Find samples again before downloading.") from error
@@ -401,6 +418,7 @@ def download_approved(
         groups=groups,
         images_per_group=images_per_group,
         declined=declined,
+        time_of_day=time_of_day,
         fetch_gauge=lambda *_: series,
         list_images=list_images,
     )

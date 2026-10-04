@@ -57,7 +57,11 @@ from datetime import UTC, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from openfloodai.ingestion.river_images import ImageSequenceCandidate
+from openfloodai.ingestion.river_images import (
+    DEFAULT_DAYLIGHT_WINDOW_END_HOUR,
+    DEFAULT_DAYLIGHT_WINDOW_START_HOUR,
+    ImageSequenceCandidate,
+)
 from openfloodai.ingestion.usgs_gage_data import (
     MATCH_TOLERANCE_SECONDS,
     PARAMETER_GAGE_HEIGHT,
@@ -77,6 +81,12 @@ MIDDLE_LOW_QUANTILE = 0.40
 MIDDLE_HIGH_QUANTILE = 0.60
 HIGH_QUANTILE = 0.80
 MAX_SKIP_EXAMPLES = 25
+TIME_OF_DAY_ANY = "any"
+TIME_OF_DAY_DAYTIME = "daytime"
+TIME_OF_DAY_CHOICES = (TIME_OF_DAY_ANY, TIME_OF_DAY_DAYTIME)
+# The same local daylight window the regular daylight sampling mode uses (inclusive).
+DAYTIME_START_HOUR = DEFAULT_DAYLIGHT_WINDOW_START_HOUR
+DAYTIME_END_HOUR = DEFAULT_DAYLIGHT_WINDOW_END_HOUR
 
 SKIP_NO_IMAGE = "no_image_within_15_minutes"
 SKIP_IMAGE_USED = "image_already_selected"
@@ -84,12 +94,14 @@ SKIP_IMAGE_EXCLUDED = "image_declined_by_reviewer"
 SKIP_IMAGE_NO_READING = "image_has_no_matching_reading"
 SKIP_IMAGE_OUTSIDE_GROUP = "image_reading_outside_group"
 SKIP_SPACING = "too_close_to_a_selected_date"
+SKIP_NOT_DAYTIME = "outside_daytime_window"
 
 SHORTFALL_NO_READINGS = "no_valid_gauge_height_readings"
 SHORTFALL_LIMITED_VARIATION = "limited_level_variation"
 SHORTFALL_NO_ELIGIBLE = "no_reading_in_this_group"
 SHORTFALL_NOT_ENOUGH = "not_enough_distinct_dates_with_images"
 SHORTFALL_LOOKUP_LIMIT = "archive_lookup_limit_reached"
+SHORTFALL_NO_DAYTIME = "no_daytime_reading_in_this_group"
 
 NOTE_RELATIVE = (
     "Low, middle, and high are relative to this station and date range only. They are "
@@ -318,6 +330,7 @@ class SelectionResult:
     unit: str
     reading_count: int
     image_count: int | None
+    time_of_day: str = TIME_OF_DAY_ANY
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -326,6 +339,7 @@ class SelectionResult:
                 "min_spacing_days": MIN_SPACING_DAYS,
                 "match_window_seconds": MATCH_TOLERANCE_SECONDS,
                 "images_per_group_max": MAX_IMAGES_PER_GROUP,
+                "time_of_day": time_of_day_description(self.time_of_day),
                 "note": NOTE_RELATIVE,
             },
             "reading_count": self.reading_count,
@@ -337,6 +351,28 @@ class SelectionResult:
 
     def all_samples(self) -> list[SelectedSample]:
         return [sample for group in self.groups for sample in group.selected]
+
+
+def validate_time_of_day(time_of_day: str) -> str:
+    if time_of_day not in TIME_OF_DAY_CHOICES:
+        raise SamplingError("Time of day must be 'any' or 'daytime'.")
+    return time_of_day
+
+
+def time_of_day_description(time_of_day: str) -> dict[str, Any]:
+    daytime = time_of_day == TIME_OF_DAY_DAYTIME
+    return {
+        "mode": time_of_day,
+        "window_local_hours": [DAYTIME_START_HOUR, DAYTIME_END_HOUR] if daytime else None,
+    }
+
+
+def _in_daytime(when: datetime, zone: ZoneInfo) -> bool:
+    """Inside the local daylight window, ends included, by the time on the camera's clock."""
+
+    local = when.astimezone(zone)
+    seconds = local.hour * 3600 + local.minute * 60 + local.second
+    return DAYTIME_START_HOUR * 3600 <= seconds <= DAYTIME_END_HOUR * 3600
 
 
 def _local_ordinal(reading: GageReading, zone: ZoneInfo) -> int:
@@ -376,6 +412,7 @@ def select_samples(
     unit: str = "ft",
     kept: Mapping[str, Sequence[SelectedSample]] | None = None,
     declined_images: frozenset[str] = frozenset(),
+    time_of_day: str = TIME_OF_DAY_ANY,
 ) -> SelectionResult:
     """Choose up to `images_per_group` images for each requested group.
 
@@ -389,6 +426,7 @@ def select_samples(
         raise SamplingError("Choose one or more of low, middle, and high.")
     if not 1 <= images_per_group <= MAX_IMAGES_PER_GROUP:
         raise SamplingError(f"Images per group must be from 1 to {MAX_IMAGES_PER_GROUP}.")
+    validate_time_of_day(time_of_day)
     zone = ZoneInfo(timezone_name)
     kept = kept or {}
     index = GageReadingIndex(readings)
@@ -399,7 +437,7 @@ def select_samples(
     if not valid:
         for result in results:
             result.shortfall_reason = SHORTFALL_NO_READINGS
-        return SelectionResult(results, None, unit, 0, image_count)
+        return SelectionResult(results, None, unit, 0, image_count, time_of_day)
     thresholds = compute_thresholds(valid)
 
     used_images: set[str] = {
@@ -411,6 +449,17 @@ def select_samples(
             reading for reading in valid if group_accepts(result.group, reading.value, thresholds)
         ]
         result.eligible_readings = len(eligible)
+        if time_of_day == TIME_OF_DAY_DAYTIME and eligible:
+            daytime = [
+                r for r in eligible if _in_daytime(datetime.fromisoformat(r.datetime_utc), zone)
+            ]
+            outside = len(eligible) - len(daytime)
+            if outside:
+                result.skip_counts[SKIP_NOT_DAYTIME] = outside
+            if not daytime and not thresholds.limited_variation:
+                result.shortfall_reason = SHORTFALL_NO_DAYTIME
+                continue
+            eligible = daytime
         if thresholds.limited_variation:
             result.shortfall_reason = SHORTFALL_LIMITED_VARIATION
             result.selected.clear()
@@ -444,6 +493,9 @@ def select_samples(
                 if image.source_url in used_images:
                     last_reason = SKIP_IMAGE_USED
                     continue
+                if time_of_day == TIME_OF_DAY_DAYTIME and not _in_daytime(image.captured_utc, zone):
+                    last_reason = SKIP_NOT_DAYTIME
+                    continue
                 sample, reason = _evaluate(result.group, reading, image, thresholds, index, unit)
                 if sample is not None:
                     chosen = sample
@@ -457,7 +509,7 @@ def select_samples(
             taken.append(ordinal)
         if len(result.selected) < images_per_group and result.shortfall_reason is None:
             result.shortfall_reason = SHORTFALL_NOT_ENOUGH
-    return SelectionResult(results, thresholds, unit, len(valid), image_count)
+    return SelectionResult(results, thresholds, unit, len(valid), image_count, time_of_day)
 
 
 def verify_approved(
@@ -467,6 +519,7 @@ def verify_approved(
     *,
     timezone_name: str,
     unit: str = "ft",
+    time_of_day: str = TIME_OF_DAY_ANY,
 ) -> list[SelectedSample]:
     """Re-derive approved samples from fresh data; never trust the browser's copy.
 
@@ -481,6 +534,7 @@ def verify_approved(
     thresholds = compute_thresholds(index.readings)
     by_time = {reading.datetime_utc: reading for reading in index.readings}
     find_images = as_finder(images)
+    validate_time_of_day(time_of_day)
     zone = ZoneInfo(timezone_name)
     verified: list[SelectedSample] = []
     seen_images: set[str] = set()
@@ -504,6 +558,11 @@ def verify_approved(
             )
         if not group_accepts(group, reading.value, thresholds):
             raise SamplingError(f"A reading no longer belongs to the {group} group.")
+        if time_of_day == TIME_OF_DAY_DAYTIME and not (
+            _in_daytime(datetime.fromisoformat(reading.datetime_utc), zone)
+            and _in_daytime(image.captured_utc, zone)
+        ):
+            raise SamplingError("An approved sample is outside the daytime window requested.")
         if image.source_url in seen_images:
             raise SamplingError("The same image was approved more than once.")
         sample, reason = _evaluate(group, reading, image, thresholds, index, unit)

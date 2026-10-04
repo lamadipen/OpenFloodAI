@@ -142,3 +142,34 @@ test("a replacement request is scoped to one group, keeps the others, and declin
   assert.equal(body.camera_url, "https://apps.usgs.gov/hivis/camera/CAM");
   assert.equal(body.images_per_group, 3);
 });
+
+test("the time-of-day choice is sent with the preview and with replacement requests", () => {
+  const ctx = context();
+  assert.equal(JSON.parse(JSON.stringify(vm.runInContext("wlRequestBody()", ctx))).time_of_day, "any");
+  vm.runInContext("wl.timeOfDay = 'daytime';", ctx);
+  assert.equal(JSON.parse(JSON.stringify(vm.runInContext("wlRequestBody()", ctx))).time_of_day, "daytime");
+  load(ctx, proposal([group("high", [sample("high", "a.jpg", "2026-03-01T18:00:00+00:00", 60)], 1)]));
+  assert.equal(JSON.parse(JSON.stringify(vm.runInContext("wlReplacementBody('high', 'a.jpg')", ctx))).time_of_day, "daytime");
+});
+
+test("the panel offers both choices and states the daytime window when it is used", () => {
+  const ctx = context();
+  const panel = vm.runInContext("wlPanelHtml()", ctx);
+  assert.match(panel, /Any time of day/);
+  assert.match(panel, /Daytime only \(10:00&ndash;14:00 local\)/);
+  assert.match(panel, /value="any" data-wl-time checked/);
+
+  const p = proposal([group("high", [sample("high", "a.jpg", "2026-03-01T18:00:00+00:00", 60)], 1)]);
+  p.request = { time_of_day: { mode: "daytime", window_local_hours: [10, 14] } };
+  load(ctx, p);
+  vm.runInContext("wl.timeOfDay = 'daytime';", ctx);
+  const out = vm.runInContext("wlPanelHtml()", ctx);
+  assert.match(out, /daytime only \(10:00&ndash;14:00 local, for both the gauge reading and the image\)/);
+  assert.match(out, /value="daytime" data-wl-time checked/);
+});
+
+test("a group with no daytime reading explains it", () => {
+  const ctx = context();
+  load(ctx, proposal([group("high", [], 3, { missing: 3, reason: "no_daytime_reading_in_this_group" })]));
+  assert.match(vm.runInContext("wlPanelHtml()", ctx), /taken during the daytime window/);
+});

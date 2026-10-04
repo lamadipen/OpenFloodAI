@@ -563,3 +563,39 @@ def test_the_day_finder_stops_after_its_day_limit_and_the_group_says_so() -> Non
     )
     high = result.groups[0]
     assert high.selected == [] and high.shortfall_reason == wls.SHORTFALL_LOOKUP_LIMIT
+
+
+def test_the_time_of_day_choice_is_part_of_the_saved_request(tmp_path: Path) -> None:
+    ctx = context(tmp_path)
+
+    anytime = run(ctx)
+    daytime = run(ctx, time_of_day="daytime")
+
+    assert anytime["request"]["time_of_day"] == {"mode": "any", "window_local_hours": None}
+    assert daytime["request"]["time_of_day"] == {"mode": "daytime", "window_local_hours": [10, 14]}
+    # the synthetic readings are at 12:00 UTC (early morning local), so daytime-only has none
+    groups = {g["group"]: g for g in daytime["selection"]["groups"]}
+    assert all(g["samples"] == [] for g in groups.values())
+    assert groups["high"]["shortfall"]["reason"] == "no_daytime_reading_in_this_group"
+    with pytest.raises(wls.SamplingError):
+        run(ctx, time_of_day="midnight")
+
+
+def test_a_night_time_sample_cannot_be_downloaded_under_a_daytime_request(tmp_path: Path) -> None:
+    ctx = context(tmp_path)
+    approved = approved_from(run(ctx))  # proposed under "any time"
+
+    with pytest.raises(RiverImageError, match="daytime window"):
+        wld.download_approved(
+            ctx,
+            approved=approved,
+            declined=[],
+            groups=["high"],
+            images_per_group=3,
+            site_id="s",
+            site_dir=tmp_path / "site",
+            time_of_day="daytime",
+            fetch_gauge=lambda *_: series(),
+            list_images=lambda *_: images(),
+            download=fake_download({}),
+        )

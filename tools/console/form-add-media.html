@@ -149,7 +149,7 @@ function renderSampling() {
 // page only ever names an approved sample by group, gauge-reading time and
 // image file name; the server recomputes and re-verifies everything.
 let sampleKind = "regular";
-let wl = { proposal: null, rows: {}, declined: [], busy: false, message: "", groups: ["low", "middle", "high"], perGroup: 3, confirmed: false };
+let wl = { proposal: null, rows: {}, declined: [], busy: false, message: "", groups: ["low", "middle", "high"], perGroup: 3, confirmed: false, timeOfDay: "any" };
 
 const WL_GROUP_TEXT = { low: "Low", middle: "Middle", high: "High" };
 const WL_SHORTFALL_TEXT = {
@@ -158,6 +158,7 @@ const WL_SHORTFALL_TEXT = {
   no_reading_in_this_group: "No reading in this range falls in this group.",
   not_enough_distinct_dates_with_images: "Not enough separate dates have an archive image within 15 minutes of a qualifying reading.",
   archive_lookup_limit_reached: "The archive had no usable image near many of the top readings, so the search stopped. Try a shorter date range.",
+  no_daytime_reading_in_this_group: "No reading in this group was taken during the daytime window, so nothing is picked. Choose Any time of day to include the others.",
   fewer_approved: "Fewer samples approved than requested."
 };
 const WL_SKIP_TEXT = {
@@ -166,7 +167,8 @@ const WL_SKIP_TEXT = {
   image_declined_by_reviewer: "image replaced",
   image_has_no_matching_reading: "image has no reading within 15 minutes",
   image_reading_outside_group: "image's own reading is outside the group",
-  too_close_to_a_selected_date: "too close to a selected date"
+  too_close_to_a_selected_date: "too close to a selected date",
+  outside_daytime_window: "outside the daytime window"
 };
 const WL_STATE_TEXT = {
   no_station_association: "No USGS gauge is linked to this camera, so water-level sampling is unavailable. Regular sampling still works.",
@@ -233,6 +235,7 @@ function wlRequestBody() {
     timezone: "America/Denver",
     groups: wl.groups,
     images_per_group: wl.perGroup,
+    time_of_day: wl.timeOfDay,
     declined: wl.declined
   };
 }
@@ -285,6 +288,12 @@ function wlGroupHtml(group, timezone) {
   </div>`;
 }
 
+function wlTimeOfDayText(proposal) {
+  const tod = ((proposal || {}).request || {}).time_of_day || {};
+  if (tod.mode !== "daytime" || !Array.isArray(tod.window_local_hours)) return "any time of day";
+  return `daytime only (${escapeHtml(String(tod.window_local_hours[0]))}:00&ndash;${escapeHtml(String(tod.window_local_hours[1]))}:00 local, for both the gauge reading and the image)`;
+}
+
 function wlPanelHtml() {
   const proposal = wl.proposal;
   const groupChecks = ["low", "middle", "high"].map((g) => `<label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" data-wl-group="${g}" ${wl.groups.includes(g) ? "checked" : ""}> ${WL_GROUP_TEXT[g]}</label>`).join("");
@@ -300,6 +309,7 @@ function wlPanelHtml() {
         Gauge ${escapeHtml(assoc.nwis_site_id || "")} (${escapeHtml(proposal.gauge.parameter_label)}, ${escapeHtml(proposal.gauge.unit)}), ${escapeHtml(String(proposal.gauge.valid_reading_count))} valid readings${t ? `, ranging ${escapeHtml(Number(t.minimum).toFixed(2))} to ${escapeHtml(Number(t.maximum).toFixed(2))} ${escapeHtml(proposal.gauge.unit)} (median ${escapeHtml(Number(t.median).toFixed(2))})` : ""}.
         ${assoc.source ? `Association source: ${escapeHtml(assoc.source)}.` : ""}
         ${proposal.warning ? `<br>${escapeHtml(proposal.warning)}` : ""}
+        <br>Time of day: ${wlTimeOfDayText(proposal)}.
         <br>${escapeHtml(proposal.note)} Policy ${escapeHtml(proposal.policy_version)}.</div>
       ${proposal.selection.groups.map((g) => wlGroupHtml(g, proposal.timezone)).join("")}
       <label style="display:flex;gap:8px;align-items:flex-start;margin-top:16px;font-size:12px;"><input type="checkbox" id="wlConfirm" ${wl.confirmed ? "checked" : ""}> <span>I confirm downloading ${approved} approved image(s) into this site. Each is a collection sample chosen from gauge readings, not a flood finding or a label.</span></label>
@@ -309,6 +319,11 @@ function wlPanelHtml() {
     <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;font-size:13px;">${groupChecks}
       <label style="display:flex;align-items:center;gap:6px;">Images per group <input type="number" id="wlPerGroup" min="1" max="10" value="${wl.perGroup}" style="width:64px;"></label>
       <button type="button" class="btn" id="wlFind" ${wl.busy ? "disabled" : ""}>Find samples</button></div>
+    <fieldset style="border:0;padding:0;margin:12px 0 0;display:flex;gap:18px;flex-wrap:wrap;align-items:center;font-size:13px;">
+      <legend style="font-size:12px;color:var(--ink-soft);padding:0;margin-bottom:4px;">Time of day</legend>
+      <label style="display:flex;align-items:center;gap:6px;"><input type="radio" name="wlTimeOfDay" value="any" data-wl-time ${wl.timeOfDay === "any" ? "checked" : ""}> Any time of day</label>
+      <label style="display:flex;align-items:center;gap:6px;"><input type="radio" name="wlTimeOfDay" value="daytime" data-wl-time ${wl.timeOfDay === "daytime" ? "checked" : ""}> Daytime only (10:00&ndash;14:00 local)</label>
+    </fieldset>
     ${wl.message ? `<div class="err" style="margin-top:10px;">${escapeHtml(wl.message)}</div>` : ""}
     ${preview}`;
 }
@@ -320,6 +335,14 @@ function renderWaterLevel() {
   panel.querySelectorAll("[data-wl-group]").forEach((box) => box.addEventListener("change", () => {
     const picked = Array.from(panel.querySelectorAll("[data-wl-group]")).filter((b) => b.checked).map((b) => b.dataset.wlGroup);
     wl.groups = picked;
+  }));
+  panel.querySelectorAll("[data-wl-time]").forEach((radio) => radio.addEventListener("change", () => {
+    if (!radio.checked || wl.timeOfDay === radio.value) return;
+    wl.timeOfDay = radio.value;
+    // The old preview was made for a different time of day; it cannot be downloaded as is.
+    wl.proposal = null; wl.rows = {}; wl.declined = []; wl.confirmed = false;
+    wl.message = "Time of day changed. Select Find samples again.";
+    renderWaterLevel();
   }));
   const per = $("wlPerGroup");
   if (per) per.addEventListener("change", () => { wl.perGroup = Math.max(1, Math.min(10, Number(per.value) || 3)); per.value = wl.perGroup; });

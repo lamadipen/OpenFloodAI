@@ -46,7 +46,7 @@ def _sample_refs(value: Any, what: str) -> list[dict[str, str]]:
     return refs
 
 
-def _parse(data: dict[str, Any], reference_dir: Any) -> tuple[Any, list[str], int, list[str]]:
+def _parse(data: dict[str, Any], reference_dir: Any) -> tuple[Any, list[str], int, list[str], str]:
     groups = [str(g) for g in _items(data.get("groups"), len(sampling.GROUPS), "groups")]
     per_group = data.get("images_per_group", sampling.DEFAULT_IMAGES_PER_GROUP)
     if isinstance(per_group, bool) or not isinstance(per_group, int):
@@ -59,7 +59,8 @@ def _parse(data: dict[str, Any], reference_dir: Any) -> tuple[Any, list[str], in
         str(data.get("timezone", "")),
         reference_dir,
     )
-    return context, groups, per_group, declined
+    time_of_day = sampling.validate_time_of_day(str(data.get("time_of_day", "any")))
+    return context, groups, per_group, declined, time_of_day
 
 
 def handle_post(handler: Any, path: str) -> bool:
@@ -69,7 +70,7 @@ def handle_post(handler: Any, path: str) -> bool:
     if data is None:
         return True
     try:
-        context, groups, per_group, declined = _parse(data, handler._reference_dir())
+        context, groups, per_group, declined, time_of_day = _parse(data, handler._reference_dir())
         if path == PREVIEW_PATH:
             kept = _sample_refs(data.get("kept"), "kept")
             result = discovery.discover(
@@ -78,10 +79,11 @@ def handle_post(handler: Any, path: str) -> bool:
                 images_per_group=per_group,
                 kept=kept,
                 declined=declined,
+                time_of_day=time_of_day,
             )
             handler._send_json({"success": True, **result}, status_code=200)
         else:
-            _download(handler, data, context, groups, per_group, declined)
+            _download(handler, data, context, groups, per_group, declined, time_of_day)
     except (
         ValueError,
         sampling.SamplingError,
@@ -105,6 +107,7 @@ def _download(
     groups: list[str],
     per_group: int,
     declined: list[str],
+    time_of_day: str,
 ) -> None:
     approved = _sample_refs(data.get("approved"), "approved")
     if data.get("confirmed") is not True or data.get("confirmed_count") != len(approved):
@@ -126,6 +129,7 @@ def _download(
         site_dir=site_dir,
         overwrite=data.get("overwrite") is True,
         resume=data.get("resume") is True,
+        time_of_day=time_of_day,
     )
     payload = result.to_dict()
     payload["sampling_mode"] = "water_level"

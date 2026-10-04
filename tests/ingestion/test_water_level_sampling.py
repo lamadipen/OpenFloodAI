@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -459,3 +460,141 @@ def test_a_lazy_image_finder_gives_the_same_picks_as_a_full_image_list() -> None
 
     assert [s.to_dict() for s in lazy.all_samples()] == [s.to_dict() for s in eager.all_samples()]
     assert "archive_image_count" in eager.to_dict() and "archive_image_count" not in lazy.to_dict()
+
+
+def ramp_at(hour: int) -> tuple[list[GageReading], list[ImageSequenceCandidate]]:
+    """Like `ramp()`, but every reading is at `hour`:00 UTC with an image 5 minutes later."""
+
+    readings = [reading(day(d, hour=hour), float(d)) for d in range(1, 61)]
+    images = [image(day(d, hour=hour, minute=5)) for d in range(1, 61)]
+    return readings, images
+
+
+def test_any_time_of_day_is_the_default_and_unchanged() -> None:
+    readings, images = ramp()  # 12:00 UTC is about 5-6 a.m. local: not daytime, still allowed
+
+    default = wls.select_samples(
+        readings, images, groups=["high"], images_per_group=3, timezone_name=TZ
+    )
+    explicit = wls.select_samples(
+        readings, images, groups=["high"], images_per_group=3, timezone_name=TZ, time_of_day="any"
+    )
+
+    assert picked(default, "high") == [60, 57, 54] == picked(explicit, "high")
+    assert default.to_dict()["policy"]["time_of_day"] == {"mode": "any", "window_local_hours": None}
+
+
+def test_daytime_only_uses_the_local_daylight_window() -> None:
+    readings, images = ramp_at(18)  # 18:00 UTC is 11:00 or 12:00 local (MDT/MST): daytime
+
+    result = wls.select_samples(
+        readings,
+        images,
+        groups=["high"],
+        images_per_group=3,
+        timezone_name=TZ,
+        time_of_day="daytime",
+    )
+
+    assert picked(result, "high") == [60, 57, 54]
+    assert result.to_dict()["policy"]["time_of_day"]["window_local_hours"] == [10, 14]
+
+
+def test_daytime_only_skips_night_readings_and_says_why() -> None:
+    # Values 51-60 are read at 12:00 UTC (early morning local); 1-50 at 18:00 UTC (daytime local).
+    readings = [reading(day(d, hour=18 if d <= 50 else 12), float(d)) for d in range(1, 61)]
+    images = [image(day(d, hour=18 if d <= 50 else 12, minute=5)) for d in range(1, 61)]
+
+    result = wls.select_samples(
+        readings,
+        images,
+        groups=["high"],
+        images_per_group=2,
+        timezone_name=TZ,
+        time_of_day="daytime",
+    )
+
+    high = result.groups[0]
+    # The band is still set by ALL readings (high is 48 and up); only daytime ones are used.
+    assert picked(result, "high") == [50]
+    assert high.skip_counts[wls.SKIP_NOT_DAYTIME] == 10  # readings 51..60
+    assert high.shortfall_reason == wls.SHORTFALL_NOT_ENOUGH
+
+
+def test_a_group_with_no_daytime_reading_is_a_shortfall_not_a_night_time_pick() -> None:
+    readings, images = ramp()  # all early morning local time
+
+    result = wls.select_samples(
+        readings,
+        images,
+        groups=["high"],
+        images_per_group=3,
+        timezone_name=TZ,
+        time_of_day="daytime",
+    )
+
+    high = result.groups[0]
+    assert high.selected == [] and high.shortfall_reason == wls.SHORTFALL_NO_DAYTIME
+    assert high.skip_counts[wls.SKIP_NOT_DAYTIME] == high.eligible_readings
+
+
+def test_the_daytime_window_ends_are_included_and_dst_is_on_the_local_clock() -> None:
+    zone = ZoneInfo(TZ)
+    # 2026-03-07 is MST (UTC-7); 2026-03-09 is MDT (UTC-6).
+    assert wls._in_daytime(datetime(2026, 3, 7, 17, 0, tzinfo=UTC), zone)  # 10:00 MST
+    assert not wls._in_daytime(datetime(2026, 3, 7, 16, 59, 59, tzinfo=UTC), zone)  # 09:59:59
+    assert wls._in_daytime(datetime(2026, 3, 9, 16, 0, tzinfo=UTC), zone)  # 10:00 MDT
+    assert not wls._in_daytime(datetime(2026, 3, 7, 16, 0, tzinfo=UTC), zone)  # 09:00 MST
+    assert wls._in_daytime(datetime(2026, 3, 9, 20, 0, tzinfo=UTC), zone)  # 14:00 MDT
+    assert not wls._in_daytime(datetime(2026, 3, 9, 20, 0, 1, tzinfo=UTC), zone)  # 14:00:01
+
+
+def test_a_daytime_reading_whose_image_falls_just_outside_the_window_is_skipped() -> None:
+    readings = [reading(day(d, hour=18), float(d)) for d in range(1, 31)]
+    images = [image(day(d, hour=18, minute=5)) for d in range(1, 31)]
+    late = reading(datetime(2026, 4, 5, 19, 55, tzinfo=UTC), 99.0)  # 13:55 MDT: daytime
+    readings.append(late)
+    images.append(image(datetime(2026, 4, 5, 20, 10, tzinfo=UTC)))  # 14:10 MDT: outside the window
+
+    result = wls.select_samples(
+        readings,
+        images,
+        groups=["high"],
+        images_per_group=1,
+        timezone_name=TZ,
+        time_of_day="daytime",
+    )
+    anytime = wls.select_samples(
+        readings, images, groups=["high"], images_per_group=1, timezone_name=TZ
+    )
+
+    assert picked(anytime, "high") == [99]
+    assert picked(result, "high") != [99]
+    assert wls.SKIP_NOT_DAYTIME in result.groups[0].skip_counts
+
+
+def test_approved_samples_are_rechecked_against_the_requested_time_of_day() -> None:
+    readings, images = ramp()  # early-morning local readings
+    top = readings[-1]
+    item = {
+        "group": "high",
+        "reading_datetime_utc": top.datetime_utc,
+        "filename": images[-1].source_url.rsplit("/", 1)[-1],
+    }
+
+    assert len(wls.verify_approved([item], readings, images, timezone_name=TZ)) == 1
+    with pytest.raises(wls.SamplingError, match="daytime window"):
+        wls.verify_approved([item], readings, images, timezone_name=TZ, time_of_day="daytime")
+
+
+def test_an_unknown_time_of_day_is_rejected() -> None:
+    readings, images = ramp()
+    with pytest.raises(wls.SamplingError):
+        wls.select_samples(
+            readings,
+            images,
+            groups=["low"],
+            images_per_group=1,
+            timezone_name=TZ,
+            time_of_day="night",
+        )
