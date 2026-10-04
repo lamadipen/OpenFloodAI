@@ -53,7 +53,12 @@ from openfloodai.ingestion.river_registry import (
     find_camera,
     list_river_registries,
 )
-from openfloodai.ingestion.usgs_gage_data import GageDataError, write_gauge_readings_summary
+from openfloodai.ingestion.usgs_gage_data import (
+    GAUGE_STATUS_NO_STATION,
+    GageDataError,
+    write_gauge_readings_summary,
+    write_gauge_unavailable,
+)
 from openfloodai.review import (
     ALLOWED_CONFIDENCE_LEVELS,
     ALLOWED_HUMAN_LABELS,
@@ -917,6 +922,17 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
 
         camera = find_camera(camera_id, self._reference_dir())
         if camera is None:
+            write_gauge_unavailable(
+                sequence_dir,
+                status=GAUGE_STATUS_NO_STATION,
+                reason=(
+                    "This camera is not in a USGS-derived river registry, so no "
+                    "gauge station is associated with it."
+                ),
+                camera_id=camera_id,
+                start_date=start_date,
+                end_date=end_date,
+            )
             return None
         try:
             manifest_records = read_jsonl_records(sequence_dir / "sequence-manifest.jsonl")
@@ -931,6 +947,10 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
                 gage_relationship=camera.gage_relationship,
                 gage_relationship_note=camera.gage_relationship_note,
                 manifest_records=manifest_records,
+                camera_id=camera.camera_id,
+                association_source=camera.registry_source,
+                association_source_checked=camera.registry_source_checked,
+                registry_id=camera.river_id,
             )
             return summary.available
         except GageDataError:

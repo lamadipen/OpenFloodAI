@@ -11,6 +11,8 @@ style, its own small copy of the no-redirects/size-limit safety net.
 from __future__ import annotations
 
 import json
+import math
+from bisect import bisect_left
 from collections import deque
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -32,13 +34,30 @@ PARAMETER_UNITS = {PARAMETER_GAGE_HEIGHT: "ft", PARAMETER_DISCHARGE: "ft3/s"}
 PARAMETER_LABELS = {PARAMETER_GAGE_HEIGHT: "gage height", PARAMETER_DISCHARGE: "discharge"}
 ALLOWED_GAGE_RELATIONSHIPS = {"same_site", "nearby", "unavailable"}
 DELTA_WINDOW_HOURS = (6, 12, 24)
-# The image-sequence flow samples about once per day; a gage reading found
-# more than this far from an image's capture time is not a real
-# measurement of that image's moment, just the closest one that happened
-# to exist (e.g. the gage was offline for a stretch). Treat that as no
-# coverage for the day rather than silently plotting a stale reading as
-# though it were current.
-MAX_READING_GAP_HOURS = 24
+# A gage reading only counts as a measurement of an image's moment when it
+# is within this far (inclusive, before or after) of the image's capture
+# time. Nothing farther is interpolated, carried forward, or averaged in --
+# an image with no reading inside the window simply has no matched reading.
+MATCH_TOLERANCE_SECONDS = 15 * 60
+MATCH_POLICY = {
+    "tolerance_seconds": MATCH_TOLERANCE_SECONDS,
+    "inclusive": True,
+    "selection": "nearest valid reading; equal distance prefers the earlier reading",
+    "interpolation": "none",
+    "duplicate_timestamp": "prefer approved, then provisional, then other; then lower value",
+}
+# USGS NWIS declares its own "no data" sentinel per series (normally this).
+DEFAULT_NO_DATA_VALUE = -999999.0
+QUALITY_APPROVED = "approved"
+QUALITY_PROVISIONAL = "provisional"
+QUALITY_NOT_REPORTED = "not_reported"
+QUALITY_UNKNOWN = "unknown"
+_QUALITY_RANK = {
+    QUALITY_APPROVED: 0,
+    QUALITY_PROVISIONAL: 1,
+    QUALITY_NOT_REPORTED: 2,
+    QUALITY_UNKNOWN: 2,
+}
 MAX_RESPONSE_BYTES = 20 * 1024 * 1024
 REQUEST_TIMEOUT_SECONDS = 20
 
@@ -101,6 +120,29 @@ class GageReading:
 
     datetime_utc: str
     value: float
+    # Original USGS qualifier codes (e.g. "P", "A", "e", "Ice"), kept exactly
+    # as received -- quality_status below is OUR reading of them, never a
+    # replacement for them.
+    qualifiers: tuple[str, ...] = ()
+    quality_status: str = QUALITY_NOT_REPORTED
+
+
+def interpret_quality(qualifiers: Sequence[str]) -> str:
+    """Interpret USGS qualifier codes without ever upgrading an unknown one.
+
+    "P" (provisional) wins over "A" if both somehow appear -- the cautious
+    reading. Any codes that are neither (e.g. "e" estimated, "Ice",
+    "Eqp") are "unknown": retained, but never described as approved or OK.
+    No qualifiers at all is "not_reported", which is also not approval.
+    """
+
+    if not qualifiers:
+        return QUALITY_NOT_REPORTED
+    if "P" in qualifiers:
+        return QUALITY_PROVISIONAL
+    if "A" in qualifiers:
+        return QUALITY_APPROVED
+    return QUALITY_UNKNOWN
 
 
 @dataclass(frozen=True)
@@ -114,6 +156,9 @@ class GageSeries:
     used_fallback_discharge: bool
     readings: list[GageReading]
     source_url: str
+    # Source points that were present but unusable (missing, non-numeric,
+    # non-finite, declared no-data, unreadable or timezone-less timestamp).
+    rejected_reading_count: int = 0
 
 
 def fetch_gage_readings(nwis_site_id: str, start_date: str, end_date: str) -> GageSeries:
@@ -135,6 +180,7 @@ def fetch_gage_readings(nwis_site_id: str, start_date: str, end_date: str) -> Ga
         (PARAMETER_DISCHARGE, True),
     ):
         readings: list[GageReading] = []
+        rejected = 0
         source_url = ""
         for window_start, window_end in yearly_windows(start_date, end_date):
             query = urlencode(
@@ -149,7 +195,9 @@ def fetch_gage_readings(nwis_site_id: str, start_date: str, end_date: str) -> Ga
             url = f"{NWIS_IV_URL}?{query}"
             source_url = source_url or url
             payload = _fetch_json(url)
-            readings.extend(_parse_time_series(payload))
+            parsed, window_rejected = _parse_time_series(payload, nwis_site_id, parameter_code)
+            readings.extend(parsed)
+            rejected += window_rejected
         if readings:
             return GageSeries(
                 nwis_site_id=nwis_site_id,
@@ -157,8 +205,9 @@ def fetch_gage_readings(nwis_site_id: str, start_date: str, end_date: str) -> Ga
                 parameter_label=PARAMETER_LABELS[parameter_code],
                 unit=PARAMETER_UNITS[parameter_code],
                 used_fallback_discharge=used_fallback,
-                readings=sorted(readings, key=lambda reading: reading.datetime_utc),
+                readings=dedupe_readings(readings),
                 source_url=source_url,
+                rejected_reading_count=rejected,
             )
     return GageSeries(
         nwis_site_id=nwis_site_id,
@@ -171,25 +220,68 @@ def fetch_gage_readings(nwis_site_id: str, start_date: str, end_date: str) -> Ga
     )
 
 
-def _parse_time_series(payload: Any) -> list[GageReading]:
+def _parse_time_series(
+    payload: Any, nwis_site_id: str, parameter_code: str
+) -> tuple[list[GageReading], int]:
+    """Parse one NWIS response into valid readings, counting the unusable ones.
+
+    Only series for the requested station and parameter are read -- a
+    response may also carry other sensors/parameters, and mixing gage
+    height with discharge would be silently wrong. A series missing that
+    identifying information entirely is still read, since the request
+    itself already asked for exactly one site and parameter.
+    """
+
     readings: list[GageReading] = []
+    rejected = 0
     try:
         time_series = payload["value"]["timeSeries"]
     except (KeyError, TypeError):
-        return readings
+        return readings, rejected
     for series in time_series:
+        if not _series_matches(series, nwis_site_id, parameter_code):
+            continue
+        no_data_value = _series_no_data_value(series)
         try:
             values = series["values"][0]["value"]
         except (KeyError, IndexError, TypeError):
             continue
         for point in values:
-            reading = _parse_reading_point(point)
-            if reading is not None:
+            reading = _parse_reading_point(point, no_data_value)
+            if reading is None:
+                rejected += 1
+            else:
                 readings.append(reading)
-    return readings
+    return readings, rejected
 
 
-def _parse_reading_point(point: Any) -> GageReading | None:
+def _series_matches(series: Any, nwis_site_id: str, parameter_code: str) -> bool:
+    try:
+        codes = [str(entry.get("value")) for entry in series["variable"]["variableCode"]]
+        if codes and parameter_code not in codes:
+            return False
+    except (KeyError, TypeError, AttributeError):
+        pass
+    try:
+        site_codes = [str(entry.get("value")) for entry in series["sourceInfo"]["siteCode"]]
+        if site_codes and nwis_site_id not in site_codes:
+            return False
+    except (KeyError, TypeError, AttributeError):
+        pass
+    return True
+
+
+def _series_no_data_value(series: Any) -> float:
+    try:
+        declared = float(series["variable"]["noDataValue"])
+    except (KeyError, TypeError, ValueError):
+        return DEFAULT_NO_DATA_VALUE
+    return declared if math.isfinite(declared) else DEFAULT_NO_DATA_VALUE
+
+
+def _parse_reading_point(
+    point: Any, no_data_value: float = DEFAULT_NO_DATA_VALUE
+) -> GageReading | None:
     if not isinstance(point, Mapping):
         return None
     raw_value = point.get("value")
@@ -200,11 +292,114 @@ def _parse_reading_point(point: Any) -> GageReading | None:
         numeric_value = float(raw_value)
     except (TypeError, ValueError):
         return None
+    # float() accepts "nan"/"inf"; neither is a measurement. The series' own
+    # declared no-data sentinel (e.g. -999999) is also never a real reading.
+    if not math.isfinite(numeric_value) or numeric_value == no_data_value:
+        return None
     try:
         parsed = datetime.fromisoformat(str(raw_datetime))
     except ValueError:
         return None
-    return GageReading(datetime_utc=parsed.astimezone(UTC).isoformat(), value=numeric_value)
+    if parsed.tzinfo is None:
+        # Without an offset the instant is ambiguous; guessing the machine's
+        # local zone would silently mis-time the reading.
+        return None
+    raw_qualifiers = point.get("qualifiers")
+    qualifiers = (
+        tuple(str(code) for code in raw_qualifiers) if isinstance(raw_qualifiers, list) else ()
+    )
+    return GageReading(
+        datetime_utc=parsed.astimezone(UTC).isoformat(),
+        value=numeric_value,
+        qualifiers=qualifiers,
+        quality_status=interpret_quality(qualifiers),
+    )
+
+
+def dedupe_readings(readings: Sequence[GageReading]) -> list[GageReading]:
+    """One reading per UTC instant, deterministically, sorted by time.
+
+    Source data can repeat a timestamp (overlapping yearly windows, or two
+    sensors). The kept reading is chosen by a fixed rule -- approved, then
+    provisional, then anything else; then the lower value; then the
+    qualifier text -- so the same input always yields the same series.
+    """
+
+    best: dict[str, GageReading] = {}
+    for reading in readings:
+        current = best.get(reading.datetime_utc)
+        if current is None or _dedupe_key(reading) < _dedupe_key(current):
+            best[reading.datetime_utc] = reading
+    return sorted(best.values(), key=lambda reading: _parse_utc(reading.datetime_utc))
+
+
+def _dedupe_key(reading: GageReading) -> tuple[int, float, str]:
+    return (
+        _QUALITY_RANK.get(reading.quality_status, 2),
+        reading.value,
+        ",".join(reading.qualifiers),
+    )
+
+
+def _parse_utc(value: str) -> datetime:
+    return datetime.fromisoformat(value).astimezone(UTC)
+
+
+@dataclass(frozen=True)
+class GageMatch:
+    """The outcome of matching one image timestamp to the gage readings."""
+
+    status: str  # "matched" | "no_matching_reading" | "image_timestamp_invalid"
+    reading: GageReading | None
+    # Reading time minus image time, in whole seconds (negative: reading is
+    # earlier). None when nothing matched.
+    time_difference_seconds: int | None
+    reason: str | None
+    candidates_in_window: int
+
+
+class GageReadingIndex:
+    """Valid readings sorted by time, for repeated nearest-in-window lookups."""
+
+    def __init__(self, readings: Sequence[GageReading]) -> None:
+        ordered = dedupe_readings(readings)
+        self.readings = ordered
+        self._epochs = [_parse_utc(reading.datetime_utc).timestamp() for reading in ordered]
+
+    def match(
+        self, image_datetime: str, tolerance_seconds: int = MATCH_TOLERANCE_SECONDS
+    ) -> GageMatch:
+        """Nearest valid reading within the inclusive tolerance, else no match.
+
+        Equal distance prefers the earlier reading. Never interpolates,
+        carries a reading forward, or widens the window.
+        """
+
+        try:
+            target = datetime.fromisoformat(image_datetime)
+        except (TypeError, ValueError):
+            return GageMatch("image_timestamp_invalid", None, None, "unreadable_image_time", 0)
+        if target.tzinfo is None:
+            return GageMatch("image_timestamp_invalid", None, None, "image_time_has_no_zone", 0)
+        target_epoch = target.astimezone(UTC).timestamp()
+        low = bisect_left(self._epochs, target_epoch - tolerance_seconds)
+        best_index: int | None = None
+        best_distance = 0.0
+        candidates = 0
+        for index in range(low, len(self._epochs)):
+            if self._epochs[index] > target_epoch + tolerance_seconds:
+                break
+            candidates += 1
+            distance = abs(self._epochs[index] - target_epoch)
+            # Strict "<" keeps the earlier reading when two are equidistant,
+            # since candidates are visited in time order.
+            if best_index is None or distance < best_distance:
+                best_index = index
+                best_distance = distance
+        if best_index is None:
+            return GageMatch("no_matching_reading", None, None, "none_within_15_minutes", 0)
+        difference = round(self._epochs[best_index] - target_epoch)
+        return GageMatch("matched", self.readings[best_index], difference, None, candidates)
 
 
 @dataclass(frozen=True)
@@ -383,72 +578,69 @@ def _build_summary_from_series(
     )
 
 
-def build_daily_gage_series(
-    series: GageSeries, manifest_records: Sequence[Mapping[str, Any]]
-) -> list[dict[str, Any]]:
-    """Return the gage reading nearest each downloaded image, for charting.
-
-    One row per downloaded manifest record rather than the much denser raw
-    series (a year of 15-minute readings) — exactly enough to draw a gage
-    line aligned to the images a reviewer is already looking at, without
-    persisting thousands of raw points nobody will read directly.
-    """
-
-    rows: list[dict[str, Any]] = []
-    for record in manifest_records:
-        if record.get("download_status") != "downloaded":
-            continue
-        captured_at = record.get("captured_at_utc")
-        if not captured_at:
-            continue
-        nearest = _nearest_reading(series.readings, str(captured_at))
-        if nearest is None:
-            continue
-        rows.append(
-            {
-                "date": str(captured_at)[:10],
-                "local_time": record.get("local_time"),
-                "captured_at_utc": captured_at,
-                "gauge_datetime_utc": nearest.datetime_utc,
-                "gauge_value": nearest.value,
-                # Carried on every row (not just a top-level summary file) so
-                # a reader of gauge-daily-series.json alone can label the
-                # value correctly — discharge (cfs) must never be shown as
-                # gage height (ft) just because that's the common case.
-                "parameter_code": series.parameter_code,
-                "parameter_label": series.parameter_label,
-                "unit": series.unit,
-                "used_fallback_discharge": series.used_fallback_discharge,
-            }
-        )
-    return rows
+GAUGE_SOURCE_FILENAME = "gauge-readings.json"
+GAUGE_SOURCE_SCHEMA_VERSION = 1
+# Why a sequence has no usable readings. Kept distinct on purpose: a missing
+# station association, an unreachable service, and an empty date range are
+# three different problems and must never read as the same absence.
+GAUGE_STATUS_AVAILABLE = "available"
+GAUGE_STATUS_NO_STATION = "no_station_association"
+GAUGE_STATUS_SERVICE_UNAVAILABLE = "service_unavailable"
+GAUGE_STATUS_NO_READINGS = "no_readings_in_range"
 
 
-def _nearest_reading(readings: list[GageReading], target_datetime_utc: str) -> GageReading | None:
-    """Find the reading closest in time to a target (image capture) timestamp.
+def _association_record(
+    *,
+    camera_id: str | None,
+    nwis_site_id: str,
+    gage_relationship: str,
+    gage_relationship_note: str | None,
+    association_source: str | None,
+    association_source_checked: str | None,
+    registry_id: str | None,
+) -> dict[str, Any]:
+    """The USGS-provided camera-to-station link, exactly as the registry gave it."""
 
-    Returns None (no coverage) rather than a distant reading when nothing
-    is within `MAX_READING_GAP_HOURS` — see the constant's docstring note.
-    """
+    return {
+        "camera_id": camera_id,
+        "nwis_site_id": nwis_site_id,
+        "relationship": gage_relationship,
+        "relationship_note": gage_relationship_note,
+        "source": association_source or None,
+        "source_checked": association_source_checked or None,
+        "registry": registry_id or None,
+    }
 
-    try:
-        target = datetime.fromisoformat(target_datetime_utc)
-    except ValueError:
-        return None
-    best: GageReading | None = None
-    best_diff: float | None = None
-    for reading in readings:
-        try:
-            reading_dt = datetime.fromisoformat(reading.datetime_utc)
-        except ValueError:
-            continue
-        diff = abs((reading_dt - target).total_seconds())
-        if best_diff is None or diff < best_diff:
-            best_diff = diff
-            best = reading
-    if best_diff is not None and best_diff > MAX_READING_GAP_HOURS * 3600:
-        return None
-    return best
+
+def write_gauge_unavailable(
+    sequence_dir: Path,
+    *,
+    status: str,
+    reason: str,
+    camera_id: str | None,
+    start_date: str,
+    end_date: str,
+    association: dict[str, Any] | None = None,
+) -> None:
+    """Save an explicit "no gauge evidence, and why" source file for a sequence."""
+
+    payload = {
+        "schema_version": GAUGE_SOURCE_SCHEMA_VERSION,
+        "status": status,
+        "reason": reason,
+        "retrieved_at_utc": datetime.now(tz=UTC).isoformat(),
+        "camera_id": camera_id,
+        "association": association,
+        "parameter": None,
+        "source_url": "",
+        "start_date": start_date,
+        "end_date": end_date,
+        "rejected_reading_count": 0,
+        "readings": [],
+    }
+    (sequence_dir / GAUGE_SOURCE_FILENAME).write_text(
+        json.dumps(payload, indent=2) + "\n", encoding="utf-8"
+    )
 
 
 def write_gauge_readings_summary(
@@ -460,13 +652,19 @@ def write_gauge_readings_summary(
     gage_relationship: str,
     gage_relationship_note: str | None,
     manifest_records: Sequence[Mapping[str, Any]],
+    camera_id: str | None = None,
+    association_source: str | None = None,
+    association_source_checked: str | None = None,
+    registry_id: str | None = None,
 ) -> GageReadingsSummary:
-    """Summarize gage data for one sequence and save it, plus a daily series for charting.
+    """Fetch gage data once and save the summary plus the readings themselves.
 
-    Fetches once and derives both `gauge-readings-summary.json` (extremes
-    and deltas) and `gauge-daily-series.json` (one reading per downloaded
-    image) from the same fetch, rather than summarizing and then charting
-    from two separate network calls.
+    Writes `gauge-readings-summary.json` (extremes and deltas) and
+    `gauge-readings.json` (every valid reading with its USGS qualifiers,
+    the station association and its source, and when it was retrieved).
+    A validation run later matches images to those readings and freezes the
+    result in its own folder; this sequence-level file is only the source
+    that run reads from, never what a finished run displays.
     """
 
     if gage_relationship not in ALLOWED_GAGE_RELATIONSHIPS:
@@ -495,26 +693,82 @@ def write_gauge_readings_summary(
         largest_increases=[],
         largest_decreases=[],
     )
+    association = _association_record(
+        camera_id=camera_id,
+        nwis_site_id=nwis_site_id,
+        gage_relationship=gage_relationship,
+        gage_relationship_note=gage_relationship_note,
+        association_source=association_source,
+        association_source_checked=association_source_checked,
+        registry_id=registry_id,
+    )
 
     series: GageSeries | None = None
+    source_status = GAUGE_STATUS_AVAILABLE
     if gage_relationship == "unavailable":
-        summary = _with_reason(empty, "This site has no known matching or nearby USGS gage.")
+        reason = "This site has no known matching or nearby USGS gage."
+        summary = _with_reason(empty, reason)
+        source_status = GAUGE_STATUS_NO_STATION
     else:
         try:
             series = fetch_gage_readings(nwis_site_id, start_date, end_date)
         except GageDataError as error:
-            summary = _with_reason(empty, str(error))
+            reason = str(error)
+            summary = _with_reason(empty, reason)
+            source_status = GAUGE_STATUS_SERVICE_UNAVAILABLE
         else:
             summary = _build_summary_from_series(series, empty, manifest_records)
+            if not series.readings:
+                source_status = GAUGE_STATUS_NO_READINGS
+                reason = summary.unavailable_reason or "No readings in range."
+            else:
+                reason = ""
 
     (sequence_dir / "gauge-readings-summary.json").write_text(
         json.dumps(summary.to_dict(), indent=2) + "\n", encoding="utf-8"
     )
 
-    daily_series = build_daily_gage_series(series, manifest_records) if series is not None else []
-    (sequence_dir / "gauge-daily-series.json").write_text(
-        json.dumps(daily_series, indent=2) + "\n", encoding="utf-8"
-    )
+    if series is not None and series.readings:
+        payload: dict[str, Any] = {
+            "schema_version": GAUGE_SOURCE_SCHEMA_VERSION,
+            "status": GAUGE_STATUS_AVAILABLE,
+            "reason": None,
+            "retrieved_at_utc": datetime.now(tz=UTC).isoformat(),
+            "camera_id": camera_id,
+            "association": association,
+            "parameter": {
+                "code": series.parameter_code,
+                "label": series.parameter_label,
+                "unit": series.unit,
+                "used_fallback_discharge": series.used_fallback_discharge,
+            },
+            "source_url": series.source_url,
+            "start_date": start_date,
+            "end_date": end_date,
+            "rejected_reading_count": series.rejected_reading_count,
+            "readings": [
+                {
+                    "datetime_utc": reading.datetime_utc,
+                    "value": reading.value,
+                    "qualifiers": list(reading.qualifiers),
+                    "quality_status": reading.quality_status,
+                }
+                for reading in series.readings
+            ],
+        }
+        (sequence_dir / GAUGE_SOURCE_FILENAME).write_text(
+            json.dumps(payload, indent=2) + "\n", encoding="utf-8"
+        )
+    else:
+        write_gauge_unavailable(
+            sequence_dir,
+            status=source_status,
+            reason=reason,
+            camera_id=camera_id,
+            start_date=start_date,
+            end_date=end_date,
+            association=association,
+        )
 
     return summary
 
@@ -604,16 +858,24 @@ def _largest_deltas(
 def _nearest_image(
     manifest_records: Sequence[Mapping[str, Any]], target_datetime_utc: str
 ) -> tuple[str | None, str | None]:
-    """Find the downloaded manifest record with the closest capture time."""
+    """Find the downloaded image captured within the match window of a reading.
+
+    Returns (None, None) when no image was captured within
+    MATCH_TOLERANCE_SECONDS of the reading -- a peak must never be shown
+    over an image from some other hour just because it was the closest one
+    available. Equal distance prefers the earlier image.
+    """
 
     try:
         target = datetime.fromisoformat(target_datetime_utc)
     except ValueError:
         return None, None
+    if target.tzinfo is None:
+        return None, None
 
     best_filename: str | None = None
     best_captured_at: str | None = None
-    best_diff: float | None = None
+    best_key: tuple[float, float] | None = None
     for record in manifest_records:
         if record.get("download_status") != "downloaded":
             continue
@@ -624,9 +886,14 @@ def _nearest_image(
             captured = datetime.fromisoformat(str(captured_at))
         except ValueError:
             continue
+        if captured.tzinfo is None:
+            continue
         diff = abs((captured - target).total_seconds())
-        if best_diff is None or diff < best_diff:
-            best_diff = diff
+        if diff > MATCH_TOLERANCE_SECONDS:
+            continue
+        key = (diff, captured.timestamp())
+        if best_key is None or key < best_key:
+            best_key = key
             best_filename = record.get("filename")
             best_captured_at = str(captured_at)
     return best_filename, best_captured_at
@@ -658,3 +925,223 @@ def _build_delta(
         nearest_image_filename=filename,
         nearest_image_captured_at_utc=captured_at,
     )
+
+
+# --- Per-run frozen gauge evidence -----------------------------------------
+
+RUN_GAUGE_EVIDENCE_FILENAME = "gauge-evidence.json"
+RUN_GAUGE_SCHEMA_VERSION = 1
+MATCH_STATUS_NOT_AN_IMAGE = "image_not_downloaded"
+
+
+def parse_gauge_source(raw: bytes) -> dict[str, Any] | None:
+    """Parse already-read gauge source bytes (None if they are not a JSON object)."""
+
+    try:
+        loaded = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return None
+    return loaded if isinstance(loaded, dict) else None
+
+
+def load_gauge_source(sequence_dir: Path) -> dict[str, Any] | None:
+    """Read a sequence's saved gauge source file, or None if none was ever saved."""
+
+    path = sequence_dir / GAUGE_SOURCE_FILENAME
+    try:
+        return parse_gauge_source(path.read_bytes())
+    except OSError:
+        return None
+
+
+def _readings_from_source(source: Mapping[str, Any]) -> list[GageReading]:
+    readings: list[GageReading] = []
+    raw = source.get("readings")
+    if not isinstance(raw, list):
+        return readings
+    for entry in raw:
+        if not isinstance(entry, Mapping):
+            continue
+        value = entry.get("value")
+        stamp = entry.get("datetime_utc")
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            continue
+        if not math.isfinite(float(value)) or not isinstance(stamp, str):
+            continue
+        qualifiers = entry.get("qualifiers")
+        codes = tuple(str(code) for code in qualifiers) if isinstance(qualifiers, list) else ()
+        readings.append(
+            GageReading(
+                datetime_utc=stamp,
+                value=float(value),
+                qualifiers=codes,
+                # Re-interpreted from the saved original qualifiers, so the
+                # status can never drift from what USGS actually reported.
+                quality_status=interpret_quality(codes),
+            )
+        )
+    return readings
+
+
+def _reading_record(reading: GageReading, parameter: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "datetime_utc": reading.datetime_utc,
+        "value": reading.value,
+        "parameter_code": parameter.get("code"),
+        "parameter_label": parameter.get("label"),
+        "unit": parameter.get("unit"),
+        "used_fallback_discharge": bool(parameter.get("used_fallback_discharge")),
+        "qualifiers": list(reading.qualifiers),
+        "quality_status": reading.quality_status,
+    }
+
+
+def build_run_gauge_evidence(
+    source: Mapping[str, Any] | None,
+    images: Sequence[Mapping[str, Any]],
+    *,
+    source_sha256: str | None,
+) -> dict[str, Any]:
+    """Match every image to its own gauge reading and return the record to freeze.
+
+    `images` are this run's images, each with `filename`, `captured_at_utc`,
+    `local_time`, `download_status`, `is_baseline`, and `change_score` (the
+    score THIS run computed for that exact image, or None). Nothing here
+    touches the network or the clock-of-the-data: a finished run's gauge
+    evidence is exactly what this returns at run time, and a later download
+    or corrected USGS value cannot change it.
+
+    Every image gets a record, matched or not, so an absent reading is
+    always an explicit state with a reason -- never a zero, a normal
+    reading, or a quietly dropped row.
+    """
+
+    if source is None:
+        return {
+            "schema_version": RUN_GAUGE_SCHEMA_VERSION,
+            "captured": False,
+            "status": "not_captured",
+            "reason": "No gauge data was saved for this image sequence when the run was made.",
+            "matching_policy": MATCH_POLICY,
+            "images": [_unmatched_image(image, "not_captured") for image in images],
+            "peak_events": None,
+        }
+
+    status = str(source.get("status") or GAUGE_STATUS_NO_READINGS)
+    parameter = source.get("parameter")
+    parameter_info: Mapping[str, Any] = parameter if isinstance(parameter, Mapping) else {}
+    readings = _readings_from_source(source) if status == GAUGE_STATUS_AVAILABLE else []
+    index = GageReadingIndex(readings)
+
+    image_records: list[dict[str, Any]] = []
+    for image in images:
+        if image.get("download_status") != "downloaded":
+            image_records.append(_unmatched_image(image, MATCH_STATUS_NOT_AN_IMAGE))
+            continue
+        if status != GAUGE_STATUS_AVAILABLE or not index.readings:
+            image_records.append(_unmatched_image(image, status, source.get("reason")))
+            continue
+        match = index.match(str(image.get("captured_at_utc") or ""))
+        record = _unmatched_image(image, match.status, match.reason)
+        record["candidates_in_window"] = match.candidates_in_window
+        if match.reading is not None:
+            record["reading"] = _reading_record(match.reading, parameter_info)
+            record["time_difference_seconds"] = match.time_difference_seconds
+        image_records.append(record)
+
+    return {
+        "schema_version": RUN_GAUGE_SCHEMA_VERSION,
+        "captured": True,
+        "status": status,
+        "reason": source.get("reason"),
+        "matching_policy": MATCH_POLICY,
+        "gauge_data_retrieved_at_utc": source.get("retrieved_at_utc"),
+        "source_file_sha256": source_sha256,
+        "association": source.get("association"),
+        "parameter": dict(parameter_info) if parameter_info else None,
+        "source_url": source.get("source_url"),
+        "start_date": source.get("start_date"),
+        "end_date": source.get("end_date"),
+        "rejected_reading_count": source.get("rejected_reading_count", 0),
+        "images": image_records,
+        "peak_events": _peak_events(index, image_records, parameter_info),
+    }
+
+
+def _unmatched_image(
+    image: Mapping[str, Any], match_status: str, reason: Any = None
+) -> dict[str, Any]:
+    return {
+        "filename": image.get("filename"),
+        "captured_at_utc": image.get("captured_at_utc"),
+        "local_time": image.get("local_time"),
+        "is_baseline": bool(image.get("is_baseline")),
+        "match_status": match_status,
+        "reason": reason,
+        "reading": None,
+        "time_difference_seconds": None,
+        "candidates_in_window": 0,
+        "change_score": image.get("change_score"),
+    }
+
+
+def _peak_events(
+    index: GageReadingIndex,
+    image_records: Sequence[Mapping[str, Any]],
+    parameter: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Highest and lowest reading, each with the image (if any) taken at that time.
+
+    The reading that is the peak and the image's own nearest matched reading
+    are kept as separate fields, since they can differ; an image is only
+    paired when captured within the same match window as any other image,
+    and its change score is only ever the one this run computed for it.
+    """
+
+    if not index.readings:
+        return None
+    highest = max(index.readings, key=lambda reading: reading.value)
+    lowest = min(index.readings, key=lambda reading: reading.value)
+    return {
+        "highest": _peak_event(highest, image_records, parameter),
+        "lowest": _peak_event(lowest, image_records, parameter),
+    }
+
+
+def _peak_event(
+    reading: GageReading,
+    image_records: Sequence[Mapping[str, Any]],
+    parameter: Mapping[str, Any],
+) -> dict[str, Any]:
+    filename, captured_at = _nearest_image(
+        [
+            {
+                "filename": record.get("filename"),
+                "captured_at_utc": record.get("captured_at_utc"),
+                "download_status": "downloaded"
+                if record.get("match_status") != MATCH_STATUS_NOT_AN_IMAGE
+                else "not_downloaded",
+            }
+            for record in image_records
+        ],
+        reading.datetime_utc,
+    )
+    event: dict[str, Any] = {
+        "event_reading": _reading_record(reading, parameter),
+        "image_filename": filename,
+        "image_captured_at_utc": captured_at,
+        "image_status": "matched" if filename else "no_matching_image",
+        "image_matched_reading": None,
+        "image_change_score": None,
+        "image_change_score_status": "no_matching_image" if not filename else "not_scored_in_run",
+    }
+    if filename:
+        for record in image_records:
+            if record.get("filename") == filename:
+                event["image_matched_reading"] = record.get("reading")
+                score = record.get("change_score")
+                if score is not None:
+                    event["image_change_score"] = score
+                    event["image_change_score_status"] = "scored"
+                break
+    return event

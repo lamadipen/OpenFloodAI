@@ -34,6 +34,11 @@ class CameraRecord:
     gage_relationship: str
     timezone: str
     gage_relationship_note: str | None = None
+    # Where the registry says this camera/gage pairing came from, and when it
+    # was last checked -- carried through so a run can preserve the USGS
+    # association's own provenance instead of inventing or dropping it.
+    registry_source: str = ""
+    registry_source_checked: str | None = None
 
 
 @dataclass(frozen=True)
@@ -45,6 +50,7 @@ class RiverRegistry:
     source: str
     notes: str
     cameras: tuple[CameraRecord, ...]
+    source_checked: str | None = None
 
     def camera(self, camera_id: str) -> CameraRecord | None:
         for camera in self.cameras:
@@ -154,12 +160,26 @@ def load_river_registry(river_id: str, reference_dir: Path) -> RiverRegistry:
         )
 
     notes = raw.get("notes")
+    source_checked = raw.get("source_checked")
+    if not isinstance(source_checked, str) or not source_checked.strip():
+        source_checked = None
+    cameras = [
+        CameraRecord(
+            **{
+                **camera.__dict__,
+                "registry_source": source,
+                "registry_source_checked": source_checked,
+            }
+        )
+        for camera in cameras
+    ]
     return RiverRegistry(
         river_id=_require_str(raw, "river_id", context="River registry"),
         display_name=display_name,
         source=source,
         notes=notes if isinstance(notes, str) else "",
         cameras=tuple(cameras),
+        source_checked=source_checked,
     )
 
 

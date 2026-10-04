@@ -418,3 +418,82 @@ def test_save_group_still_works_alongside_the_new_contract_fields(tmp_path: Path
     from openfloodai.review.workspace import evidence
 
     assert len(evidence(site, "image", run_id, SEQUENCE_ID)["groups"]) == 1
+
+
+def test_workspace_gauge_comes_only_from_the_runs_frozen_evidence(tmp_path: Path) -> None:
+    from openfloodai.review.workspace import _gage_for_run
+
+    # No frozen evidence (an older run): nothing is shown, and no sequence
+    # files are consulted to fill the gap.
+    missing = _gage_for_run(tmp_path)
+    assert missing["status"] == "not_captured"
+    assert missing["captured"] is False
+    assert missing["rows"] == []
+    assert "not rebuilt" in missing["message"]
+
+    (tmp_path / "gauge-evidence.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "captured": True,
+                "status": "available",
+                "association": {"relationship": "same_site", "relationship_note": None},
+                "parameter": {"code": "00065", "label": "gage height", "unit": "ft"},
+                "images": [
+                    {
+                        "filename": "a.jpg",
+                        "captured_at_utc": "2026-09-01T10:00:00+00:00",
+                        "local_time": "2026-09-01T04:00:00-06:00",
+                        "reading": {
+                            "datetime_utc": "2026-09-01T10:05:00+00:00",
+                            "value": 3.2,
+                            "parameter_code": "00065",
+                            "parameter_label": "gage height",
+                            "unit": "ft",
+                            "qualifiers": ["P"],
+                            "quality_status": "provisional",
+                        },
+                        "time_difference_seconds": 300,
+                    },
+                    {"filename": "b.jpg", "captured_at_utc": "x", "reading": None},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    gauge = _gage_for_run(tmp_path)
+
+    assert gauge is not None
+    assert gauge["relationship"] == "same_site"
+    assert [row["gauge_value"] for row in gauge["rows"]] == [3.2]
+    row = gauge["rows"][0]
+    assert row["quality_status"] == "provisional"
+    assert row["qualifiers"] == ["P"]
+    assert row["time_difference_seconds"] == 300
+
+
+@pytest.mark.parametrize(
+    ("status", "text"),
+    [
+        ("no_station_association", "No USGS gauge is associated"),
+        ("service_unavailable", "service was unavailable"),
+        ("no_readings_in_range", "no valid readings"),
+        ("available", "within 15 minutes of any image"),
+    ],
+)
+def test_workspace_gauge_keeps_captured_but_unmatched_states_distinct(
+    tmp_path: Path, status: str, text: str
+) -> None:
+    from openfloodai.review.workspace import _gage_for_run
+
+    (tmp_path / "gauge-evidence.json").write_text(
+        json.dumps({"captured": True, "status": status, "images": []}), encoding="utf-8"
+    )
+
+    gauge = _gage_for_run(tmp_path)
+
+    assert gauge["captured"] is True
+    assert gauge["status"] == status
+    assert gauge["rows"] == []
+    assert text in gauge["message"]

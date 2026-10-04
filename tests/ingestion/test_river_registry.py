@@ -198,3 +198,27 @@ def test_all_real_river_registries_load(tmp_path: Path) -> None:
         registry = load_river_registry(row["river_id"], reference_dir)
         assert len(registry.cameras) == row["camera_count"] >= 2
         assert len({camera.folder_name for camera in registry.cameras}) == len(registry.cameras)
+
+
+def test_camera_carries_the_registry_source_that_documents_its_gauge_link(
+    tmp_path: Path,
+) -> None:
+    _write_registry(
+        tmp_path,
+        "test-river",
+        {
+            "river_id": "test-river",
+            "display_name": "Test River",
+            "source": "https://example.invalid/cameras",
+            "source_checked": "2026-05-01",
+            "cameras": [VALID_CAMERA],
+        },
+    )
+
+    registry = load_river_registry("test-river", tmp_path)
+    camera = registry.camera("TEST_CAMERA_ONE")
+
+    assert camera is not None
+    assert camera.nwis_id == "09999999"
+    assert camera.registry_source == "https://example.invalid/cameras"
+    assert camera.registry_source_checked == "2026-05-01"

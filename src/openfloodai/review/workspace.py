@@ -39,6 +39,10 @@ from openfloodai.review.human_labels import (
     normalize_human_label,
 )
 from openfloodai.review.label_comparison import compare_label_records
+from openfloodai.validation.image_sequence_runner import (
+    legacy_gauge_series,
+    read_run_gauge_evidence,
+)
 
 _ID = re.compile(r"^[A-Za-z0-9_-]+$")
 _lock = RLock()
@@ -307,7 +311,7 @@ def evidence(site: Path, kind: str, run_id: str, media_id: str) -> dict[str, Any
             point["comparison"] = _image_comparison(point)
         baseline = summary.get("baseline_filename")
         groups = [asdict(a) for a in list_dataset_group_assignments(site)]
-        gauge = _gage_for_run(site, media_id)
+        gauge = _gage_for_run(run)
         comparisons: list[dict[str, Any]] = []
     else:
         records = read_jsonl_records(_inside(run, "records", media_id + ".jsonl"))
@@ -413,24 +417,44 @@ def _image_comparison(point: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def _gage_for_run(site: Path, sequence: str) -> dict[str, Any] | None:
-    # Existing runs did not snapshot gage data. Explicitly identify this as current
-    # supplemental evidence; do not present it as an original machine input.
-    root = _inside(site, "inputs", "image-sequences", sequence)
-    summary = root / "gauge-readings-summary.json"
-    series = root / "gauge-daily-series.json"
-    if not summary.exists() or not series.exists():
-        return None
-    data = _json(summary)
-    if not data.get("available"):
-        return None
+_GAUGE_STATUS_MESSAGES = {
+    "not_captured": (
+        "No gauge evidence was saved with this run. It is not rebuilt from later data."
+    ),
+    "no_station_association": "No USGS gauge is associated with this camera.",
+    "service_unavailable": "The USGS service was unavailable when this run's gauge data was saved.",
+    "no_readings_in_range": "USGS returned no valid readings for this run's period.",
+    "available": "No USGS reading was within 15 minutes of any image in this run.",
+}
+
+
+def _gage_for_run(run: Path) -> dict[str, Any]:
+    """The gauge evidence frozen with this run, with its capture state.
+
+    Reads only the run's own saved evidence, never the sequence's current
+    gauge files, so a later download cannot change what a finished run shows.
+    `status` keeps "not captured", "no station", "service unavailable", "no
+    readings" and "no image matched" distinct; `rows` is empty for all of them.
+    """
+
+    evidence = read_run_gauge_evidence(run)
+    rows = legacy_gauge_series(evidence)
+    status = str(evidence.get("status") or "not_captured")
+    association = evidence.get("association") or {}
+    parameter = evidence.get("parameter") or {}
     return {
-        "parameter": data.get("parameter_label"),
-        "unit": data.get("unit"),
-        "relationship": data.get("gage_relationship"),
-        "relationship_note": data.get("gage_relationship_note"),
-        "rows": _json(series),
-        "provenance": "Current supplemental gage data; not a saved machine input.",
+        "captured": bool(evidence.get("captured")),
+        "status": status,
+        "message": None if rows else _GAUGE_STATUS_MESSAGES.get(status, evidence.get("reason")),
+        "parameter": parameter.get("label"),
+        "unit": parameter.get("unit"),
+        "relationship": association.get("relationship"),
+        "relationship_note": association.get("relationship_note"),
+        "rows": rows,
+        "provenance": (
+            "Gauge readings frozen with this run; each is the nearest valid USGS "
+            "reading within 15 minutes of its image."
+        ),
     }
 
 
