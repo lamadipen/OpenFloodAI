@@ -456,3 +456,51 @@ def test_listing_exposes_each_images_group_for_the_baseline_picker(tmp_path: Pat
         "water_level_groups" not in by_id[regular.name]
         and "water_level_samples" not in by_id[regular.name]
     )
+
+
+def test_month_windows_cover_the_range_without_gaps_or_overlap() -> None:
+    start = datetime(2025, 11, 20, 7, 0, tzinfo=UTC)
+    end = datetime(2026, 2, 3, 7, 0, tzinfo=UTC)
+
+    windows = wld._month_windows(start, end)
+
+    assert windows[0][0] == start and windows[-1][1] == end
+    assert all(a[1] == b[0] for a, b in zip(windows, windows[1:], strict=False))
+    assert [w[0].month for w in windows] == [11, 12, 1, 2]
+
+
+def test_a_long_range_is_listed_by_month_so_the_per_request_cap_is_not_hit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[datetime, datetime]] = []
+
+    def one_month(slug: str, start: datetime, end: datetime) -> list[ImageSequenceCandidate]:
+        calls.append((start, end))
+        # ~3,000 images a month: fine per call, but 36,000 for a year is over the 20,000 cap.
+        return [
+            ImageSequenceCandidate(f"https://x.test/{slug}___{start:%Y%m%d}_{n}.jpg", start, 1)
+            for n in range(3000)
+        ]
+
+    monkeypatch.setattr(wld, "list_archive_images_between", one_month)
+
+    listed = wld.list_archive_images_chunked(
+        CAMERA, datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 10, 5, tzinfo=UTC)
+    )
+
+    assert len(calls) == 10 and len(listed) == 30_000
+    assert calls[-1][1] == datetime(2026, 10, 5, tzinfo=UTC)
+
+
+def test_a_month_that_is_still_too_large_gives_a_water_level_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def too_many(*_: Any) -> Any:
+        raise RiverImageError("This date range has too many images to list. Narrow it.")
+
+    monkeypatch.setattr(wld, "list_archive_images_between", too_many)
+
+    with pytest.raises(RiverImageError, match="water-level sampling"):
+        wld.list_archive_images_chunked(
+            CAMERA, datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 2, 1, tzinfo=UTC)
+        )

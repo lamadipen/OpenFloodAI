@@ -129,7 +129,7 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
     monkeypatch.setattr(wld, "fetch_gage_readings", fake_series)
     monkeypatch.setattr(usgs_gage_data, "fetch_gage_readings", fake_series)
-    monkeypatch.setattr(wld, "list_archive_images_between_windowed", fake_images)
+    monkeypatch.setattr(wld, "list_archive_images_chunked", fake_images)
     monkeypatch.setattr(river_images, "_fetch", fake_fetch)
     return {"sites": sites, "site": site, "fetched": fetched}
 

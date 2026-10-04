@@ -31,7 +31,7 @@ from openfloodai.ingestion.river_images import (
     camera_slug,
     camera_timezone,
     download_river_image_sequence,
-    list_archive_images_between_windowed,
+    list_archive_images_between,
     parse_sequence_date_range,
 )
 from openfloodai.ingestion.river_registry import CameraRecord, find_camera
@@ -58,6 +58,50 @@ STATE_NO_STATION = "no_station_association"
 STATE_SERVICE_UNAVAILABLE = "gauge_service_unavailable"
 STATE_NO_GAUGE_HEIGHT = "gauge_height_unavailable"
 STATE_NO_IMAGES = "no_images_in_range"
+
+# One whole-year listing can exceed the downloader's per-request listing cap on a camera
+# that archives every few minutes. Discovery only needs names and times, so it lists one
+# UTC month at a time, with a total bound so a runaway range still stops.
+MAX_DISCOVERY_IMAGES = 300_000
+
+
+def _month_windows(start: datetime, end: datetime) -> list[tuple[datetime, datetime]]:
+    windows: list[tuple[datetime, datetime]] = []
+    current = start
+    while current < end:
+        following = (
+            datetime(current.year + 1, 1, 1, tzinfo=UTC)
+            if current.month == 12
+            else datetime(current.year, current.month + 1, 1, tzinfo=UTC)
+        )
+        windows.append((current, min(following, end)))
+        current = following
+    return windows
+
+
+def list_archive_images_chunked(
+    slug: str, start_utc: datetime, end_utc: datetime
+) -> list[ImageSequenceCandidate]:
+    """Archive image listing for [start, end), fetched one UTC month at a time."""
+
+    images: list[ImageSequenceCandidate] = []
+    for window_start, window_end in _month_windows(start_utc, end_utc):
+        try:
+            images.extend(list_archive_images_between(slug, window_start, window_end))
+        except RiverImageError as error:
+            if "too many images" in str(error):
+                raise RiverImageError(
+                    "This camera archives too many images in one month to list for "
+                    "water-level sampling. Choose a shorter date range."
+                ) from error
+            raise
+        if len(images) > MAX_DISCOVERY_IMAGES:
+            raise RiverImageError(
+                "This date range covers too many archive images to list. "
+                "Choose a shorter date range."
+            )
+    return images
+
 
 GaugeFetcher = Callable[[str, str, str], GageSeries]
 ImageLister = Callable[[str, datetime, datetime], list[ImageSequenceCandidate]]
@@ -147,7 +191,7 @@ def discover(
     """Propose samples, or explain why water-level sampling cannot be used here."""
 
     fetch_gauge = fetch_gauge or fetch_gage_readings
-    list_images = list_images or list_archive_images_between_windowed
+    list_images = list_images or list_archive_images_chunked
     out = _base(context, groups, images_per_group)
     out["selected_at_utc"] = datetime.now(tz=UTC).isoformat()
     camera = context.camera
@@ -293,7 +337,7 @@ def download_approved(
     """Verify the approved set from fresh data, then download only those images."""
 
     fetch_gauge = fetch_gauge or fetch_gage_readings
-    list_images = list_images or list_archive_images_between_windowed
+    list_images = list_images or list_archive_images_chunked
     download = download or download_river_image_sequence
     if not approved:
         raise RiverImageError("Approve at least one sample before downloading.")
