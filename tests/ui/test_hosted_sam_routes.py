@@ -304,3 +304,39 @@ def test_a_cross_origin_post_cannot_start_anything(tmp_path: Path) -> None:
 
     assert raised.value.code == 403
     assert status["credential"]["configured"] is False
+
+
+def test_overlay_route_explains_when_the_source_image_changed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sites, site = setup(tmp_path)
+    transport = FakeTransport((200, reply(detection_text())))
+    monkeypatch.setattr(OpenFloodAIHomeHandler, "hosted_sam_transport", staticmethod(transport))
+    monkeypatch.setattr(OpenFloodAIHomeHandler, "hosted_sam_decoder", ones_decoder)
+    enable_globally(tmp_path)
+    with serve_home_ui(sites) as base:
+        post(f"{base}/api/hosted-sam/credential", {"api_key": KEY})
+        post(f"{base}/api/hosted-sam/acknowledge", {"acknowledged": True})
+        started = post(
+            f"{base}/api/hosted-sam/run",
+            {
+                "folder_name": "demo",
+                "sequence_id": SEQUENCE_ID,
+                "filenames": [IMAGE_A],
+                "concepts": ["water"],
+                "confirmed_request_count": 1,
+            },
+        )
+        run_id = started[1]["run"]["run_id"]
+        result_id = started[1]["run"]["results"][0]["result_id"]
+        image = site / "inputs" / "image-sequences" / SEQUENCE_ID / "images" / IMAGE_A
+        assert cv2.imwrite(str(image), np.full((60, 100, 3), 250, dtype=np.uint8))
+        with pytest.raises(HTTPError) as raised:
+            urlopen(
+                f"{base}/api/hosted-sam/overlay?folder_name=demo&run_id={run_id}&result_id={result_id}",
+                timeout=5,
+            )
+        body = json.loads(raised.value.read().decode("utf-8"))
+
+    assert raised.value.code == 409
+    assert "changed" in body["message"]

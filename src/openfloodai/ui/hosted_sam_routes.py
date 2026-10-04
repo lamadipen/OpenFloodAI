@@ -105,6 +105,8 @@ def handle_get(handler: Any, path: str) -> bool:
             handler.send_header("Content-Length", str(len(body)))
             handler.end_headers()
             handler.wfile.write(body)
+    except runner.OverlayUnavailable as error:
+        handler._send_json({"message": str(error)}, status_code=409)
     except (ValueError, OSError, KeyError, SiteConfigError, EvidenceSettingsError):
         handler._send_json({"message": "Not found."}, status_code=404)
     return True
@@ -174,7 +176,7 @@ def _handle_site_post(handler: Any, path: str, data: dict[str, Any]) -> None:
         sequence_id,
         names,
         concept_list,
-        plugin_enabled=_plugin_enabled(handler, folder_name),
+        plugin_enabled=lambda: _plugin_enabled(handler, folder_name),
         credentials=handler.hosted_sam_credentials,
         confirmed_request_count=data.get("confirmed_request_count"),
         decoder=_class_setting(handler, "hosted_sam_decoder"),

@@ -219,7 +219,9 @@ def extract_events(body: str) -> list[dict[str, Any]]:
     return events
 
 
-def parse_events(events: list[dict[str, Any]]) -> tuple[list[RawDetection], list[str]]:
+def parse_events(
+    events: list[dict[str, Any]], secret: str | None = None
+) -> tuple[list[RawDetection], list[str]]:
     """Parse reply events with Meta's parser into detections and warnings.
 
     A completed reply with no objects is a real "no match". A failed, refused,
@@ -251,7 +253,7 @@ def parse_events(events: list[dict[str, Any]]) -> tuple[list[RawDetection], list
         result = asyncio.run(run())
     except (ResponsesStreamFailedError, ResponsesStreamRefusalError) as error:
         raise SamError(
-            ERROR_PROVIDER, f"The provider could not finish: {str(error)[:200]}"
+            ERROR_PROVIDER, f"The provider could not finish: {redact(str(error), secret)[:200]}"
         ) from error
     except ResponsesStreamError as error:
         raise SamError(ERROR_MALFORMED, "The provider reply could not be parsed.") from error
@@ -284,7 +286,7 @@ def parse_events(events: list[dict[str, Any]]) -> tuple[list[RawDetection], list
                 confidence=confidence,
             )
         )
-    warnings = [d.message for d in result.diagnostics if d.severity == "warning"]
+    warnings = [redact(d.message, secret) for d in result.diagnostics if d.severity == "warning"]
     return detections, warnings[:5]
 
 
@@ -476,4 +478,9 @@ def segment(
     status, text = transport(ENDPOINT, headers, body, timeout)
     if status != 200:
         raise classify_http_error(status, text, api_key)
-    return parse_events(extract_events(text))
+    try:
+        detections, warnings = parse_events(extract_events(text), api_key)
+    except SamError as error:
+        # Whatever the provider streamed back, a stored or shown message never carries the key.
+        raise SamError(error.code, redact(error.message, api_key)) from error
+    return detections, [redact(warning, api_key) for warning in warnings]

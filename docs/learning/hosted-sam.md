@@ -64,7 +64,8 @@ rest of the batch is not sent.
   site folder, manifest, run folder, settings file, log, or browser storage.
   Removing it clears it. Restarting the app clears it and the upload
   confirmation.
-- Provider error text is redacted before it is kept or shown.
+- Provider error text and parser warnings are redacted before they are kept or shown, and every saved record is scrubbed of the key as a last step.
+- Authorization is checked again before every paid request in a batch. If you turn the plugin off or remove the key partway through, the remaining items are not sent and are saved as "not attempted". A request already on its way cannot be recalled.
 - **Disabling** the plugin stops new uploads. **Removing the key** clears it
   from the app. Neither reverses charges for requests already sent.
 
@@ -76,8 +77,9 @@ edited afterward. A rerun is a new run.
 - Image SHA-256 and capture time, provider, requested model, the prompt, and the
   crop used (watched area as percentages, the pixel rectangle, source size, and
   JPEG quality), request status, and processing time.
+- The watched area and human guides in force when the run started (`inputs-used/guides.snapshot.json`), so an old result's overlay always draws the guide it was made with.
 - Raw full-size masks as PNG files in original-image pixels, kept apart from the
-  overlay, which is drawn on request.
+  overlay, which is drawn on request. An overlay is only drawn over the exact image the result came from; if that file has since changed, no overlay is shown and the saved masks are left as they were.
 - Human review decisions in an append-only `reviews.jsonl`.
 - The model Meta returns is not yet read from the reply, so only the requested
   model (`sam-3.1`) is recorded. A confidence is saved only when the service

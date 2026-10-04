@@ -284,3 +284,24 @@ def test_urllib_transport_maps_timeouts_and_network_errors(monkeypatch: pytest.M
     with pytest.raises(sam.SamError) as raised:
         sam.urllib_transport(sam.ENDPOINT, {}, b"{}", 1.0)
     assert raised.value.code == sam.ERROR_NETWORK
+
+
+def test_streamed_failures_and_warnings_never_carry_the_key() -> None:
+    failed = {
+        "type": "response.failed",
+        "response": {"error": {"message": f"{'x' * 190} {KEY} rejected"}},
+    }
+    body = f"data: {json.dumps(failed)}\n\n"
+
+    def transport(*args: Any) -> tuple[int, str]:
+        return 200, body
+
+    with pytest.raises(sam.SamError) as raised:
+        sam.segment(api_key=KEY, concept="water", image_data_url="x", transport=transport)
+
+    assert raised.value.code == sam.ERROR_PROVIDER
+    assert KEY not in raised.value.message and KEY[:10] not in raised.value.message
+    detections, warnings = sam.parse_events(
+        sam.extract_events(reply(one_object().replace("c=0.8", f"c=0.8;{KEY}=1"))), KEY
+    )
+    assert detections and warnings and all(KEY not in w for w in warnings)

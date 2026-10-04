@@ -918,7 +918,7 @@ function samResultHtml(result) {
   const reused = result.reused_from ? " (reused from an earlier identical run, no new request)" : "";
   const error = result.error_code ? ` ${escapeHtml(SAM_ERROR_TEXT[result.error_code] || result.message || "")}` : "";
   const overlay = result.status === "completed"
-    ? `<img src="/api/hosted-sam/overlay?${new URLSearchParams({ folder_name: folderName, run_id: result.run_id, result_id: result.result_id })}" style="width:100%;border-radius:8px;display:block;margin-top:8px;" alt="Predicted mask over the original image with the human guide">`
+    ? `<img src="/api/hosted-sam/overlay?${new URLSearchParams({ folder_name: folderName, run_id: result.run_id, result_id: result.result_id })}" style="width:100%;border-radius:8px;display:block;margin-top:8px;" alt="Predicted mask over the original image with the human guide" onerror="this.outerHTML='<div class=&quot;hint&quot; style=&quot;margin-top:8px;&quot;>Overlay unavailable: the source image may have changed since this result was saved. The saved masks are unchanged.</div>'">`
     : "";
   const buttons = result.status === "completed"
     ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">

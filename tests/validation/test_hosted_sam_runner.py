@@ -452,3 +452,197 @@ def test_a_run_with_the_official_decoder_saves_a_correctly_placed_real_mask(
     assert int(np.count_nonzero(mask)) == 20 * 24  # the whole box-sized mask
     ys, xs = np.nonzero(mask)
     assert (int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())) == (11, 14, 30, 37)
+
+
+def failed_reply(message: str) -> str:
+    event = {"type": "response.failed", "response": {"error": {"message": message}}}
+    return "data: " + json.dumps(event) + "\n\n"
+
+
+def test_streamed_failure_text_that_echoes_the_key_is_never_stored(
+    tmp_path: Path, credentials: HostedSamCredentials
+) -> None:
+    site = make_site(tmp_path)
+
+    # The key straddles the 200-character cut as well as appearing plainly.
+    summary = go(
+        site,
+        credentials,
+        FakeTransport((200, failed_reply(f"{'x' * 190} {KEY} bad key {KEY}"))),
+    )
+
+    result = summary["results"][0]
+    assert result["status"] == "failed" and result["error_code"] == "provider_error"
+    assert KEY not in json.dumps(summary)
+    assert KEY[:10] not in result["message"]
+    for path in (site / "outputs").rglob("*"):
+        if path.is_file():
+            assert KEY.encode() not in path.read_bytes(), path
+
+
+def test_parser_warnings_that_echo_the_key_are_redacted(
+    tmp_path: Path, credentials: HostedSamCredentials
+) -> None:
+    site = make_site(tmp_path)
+    text = detection_text().replace("c=0.9", f"c=0.9;{KEY}=1")
+
+    summary = go(site, credentials, FakeTransport((200, reply(text))))
+
+    result = summary["results"][0]
+    assert result["status"] == "completed"
+    assert result["provider_warnings"], "the unknown field should have produced a warning"
+    for path in (site / "outputs").rglob("*"):
+        if path.is_file():
+            assert KEY.encode() not in path.read_bytes(), path
+
+
+def test_a_stored_record_is_scrubbed_even_if_a_message_slips_through() -> None:
+    record = {"message": f"oops {KEY}", "nested": [{"x": KEY}], "n": 3}
+
+    scrubbed = runner._scrub(record, KEY)
+
+    assert KEY not in json.dumps(scrubbed) and scrubbed["n"] == 3
+
+
+def test_the_run_saves_the_guides_it_used_and_overlays_use_only_those(
+    tmp_path: Path, credentials: HostedSamCredentials
+) -> None:
+    site = make_site(tmp_path)
+    config_path = site / "configs" / "site.json"
+    config = json.loads(config_path.read_text())
+    config["normal_waterline_guides"] = [
+        {
+            "id": "g1",
+            "label": "Left bank",
+            "points": [{"x": 15, "y": 30}, {"x": 40, "y": 30}],
+            "video_id": "video-001",
+            "video_time_seconds": 4.5,
+            "site_id": "site-demo-01",
+            "camera_id": "camera-demo-01",
+            "status": "confirmed",
+            "normal_condition": True,
+            "notes": "",
+            "confirmed_at": "2026-08-01T00:00:00+00:00",
+            "invalidated_at": None,
+            "invalidation_reason": None,
+        }
+    ]
+    config_path.write_text(json.dumps(config))
+    summary = go(site, credentials, FakeTransport((200, reply(detection_text()))))
+    run_id, result_id = summary["run_id"], summary["results"][0]["result_id"]
+    before = runner.render_overlay(site, run_id, result_id)
+    snapshot = (
+        site / "outputs" / "hosted-sam-runs" / run_id / "inputs-used" / "guides.snapshot.json"
+    )
+    assert json.loads(snapshot.read_text())["normal_waterline_guides"][0]["id"] == "g1"
+
+    # The guide is later moved and then removed: the old overlay does not change.
+    config["normal_waterline_guides"][0]["points"] = [{"x": 15, "y": 45}, {"x": 40, "y": 45}]
+    config_path.write_text(json.dumps(config))
+    assert runner.render_overlay(site, run_id, result_id) == before
+    config["normal_waterline_guides"] = []
+    config_path.write_text(json.dumps(config))
+    assert runner.render_overlay(site, run_id, result_id) == before
+
+
+def test_an_overlay_is_refused_if_the_source_image_changed(
+    tmp_path: Path, credentials: HostedSamCredentials
+) -> None:
+    site = make_site(tmp_path)
+    summary = go(site, credentials, FakeTransport((200, reply(detection_text()))))
+    run_id, result_id = summary["run_id"], summary["results"][0]["result_id"]
+    runner.render_overlay(site, run_id, result_id)  # fine while the image is unchanged
+    image_path = site / "inputs" / "image-sequences" / SEQUENCE_ID / "images" / IMAGE_A
+    assert cv2.imwrite(str(image_path), np.full((60, 100, 3), 250, dtype=np.uint8))
+
+    with pytest.raises(runner.OverlayUnavailable, match="changed"):
+        runner.render_overlay(site, run_id, result_id)
+    # The saved masks themselves are untouched and still listed.
+    assert runner.read_sam_run(site, run_id)["results"][0]["status"] == "completed"
+
+
+def test_removing_the_key_mid_batch_stops_the_remaining_uploads(
+    tmp_path: Path, credentials: HostedSamCredentials
+) -> None:
+    site = make_site(tmp_path)
+    calls = 0
+
+    def transport(url: str, headers: dict[str, str], body: bytes, timeout: float):  # type: ignore[no-untyped-def]
+        nonlocal calls
+        calls += 1
+        credentials.remove_session_key()  # the user removes the key after the first response
+        return 200, reply(detection_text())
+
+    summary = go(site, credentials, transport, names=(IMAGE_A, IMAGE_B))  # type: ignore[arg-type]
+
+    assert calls == 1
+    statuses = [r["status"] for r in summary["results"]]
+    assert statuses == ["completed", "not_attempted"]
+    assert summary["results"][1]["error_code"] == "not_configured"
+    assert "removed" in summary["results"][1]["message"]
+    for path in (site / "outputs").rglob("*"):
+        if path.is_file():
+            assert KEY.encode() not in path.read_bytes(), path
+
+
+def test_turning_the_plugin_off_mid_batch_stops_the_remaining_uploads(
+    tmp_path: Path, credentials: HostedSamCredentials
+) -> None:
+    site = make_site(tmp_path)
+    state = {"enabled": True}
+    calls = 0
+
+    def transport(url: str, headers: dict[str, str], body: bytes, timeout: float):  # type: ignore[no-untyped-def]
+        nonlocal calls
+        calls += 1
+        state["enabled"] = False
+        return 200, reply(detection_text())
+
+    names = (IMAGE_A, IMAGE_B)
+    plan = runner.plan_segmentation(site, SEQUENCE_ID, names, ("water",))
+    summary = runner.run_segmentation(
+        site,
+        SEQUENCE_ID,
+        names,
+        ["water"],
+        plugin_enabled=lambda: state["enabled"],
+        credentials=credentials,
+        confirmed_request_count=plan.request_count,
+        decoder=ones_decoder,
+        transport=transport,
+    )
+
+    assert calls == 1
+    assert [r["status"] for r in summary["results"]] == ["completed", "not_attempted"]
+    assert summary["results"][1]["error_code"] == "plugin_disabled"
+
+
+def test_unreadable_settings_mid_batch_stop_uploads_instead_of_allowing_them(
+    tmp_path: Path, credentials: HostedSamCredentials
+) -> None:
+    site = make_site(tmp_path)
+    flips = iter([True, True, RuntimeError("settings file broken")])
+
+    def enabled() -> bool:
+        value = next(flips)
+        if isinstance(value, Exception):
+            raise value
+        return bool(value)
+
+    names = (IMAGE_A, IMAGE_B)
+    plan = runner.plan_segmentation(site, SEQUENCE_ID, names, ("water",))
+    transport = FakeTransport((200, reply(detection_text())))
+    summary = runner.run_segmentation(
+        site,
+        SEQUENCE_ID,
+        names,
+        ["water"],
+        plugin_enabled=enabled,
+        credentials=credentials,
+        confirmed_request_count=plan.request_count,
+        decoder=ones_decoder,
+        transport=transport,
+    )
+
+    assert len(transport.calls) == 1
+    assert summary["results"][1]["status"] == "not_attempted"

@@ -26,7 +26,7 @@ import hashlib
 import json
 import re
 import shutil
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -204,20 +204,24 @@ def run_segmentation(
     filenames: Sequence[str],
     concepts: Sequence[str],
     *,
-    plugin_enabled: bool,
+    plugin_enabled: bool | Callable[[], bool],
     credentials: HostedSamCredentials,
     confirmed_request_count: object,
     decoder: sam.MaskDecoder | None,
     transport: sam.Transport = sam.urllib_transport,
 ) -> dict[str, Any]:
-    """Run one explicit batch. Raises HostedSamRefused before any upload if a gate fails."""
+    """Run one explicit batch. Raises HostedSamRefused before any upload if a gate fails.
 
-    if not plugin_enabled:
+    `plugin_enabled` may be a callable so the setting is read again before every
+    paid request: turning the plugin off or removing the key mid-batch stops the
+    remaining uploads, which are recorded as not attempted.
+    """
+
+    if not _enabled_now(plugin_enabled):
         raise HostedSamRefused(
             "plugin_disabled", "Hosted SAM segmentation is turned off for this site."
         )
-    api_key = credentials.api_key()
-    if api_key is None:
+    if credentials.api_key() is None:
         raise HostedSamRefused("not_configured", "Add your own API key before segmenting.")
     if credentials.acknowledged_at() is None:
         raise HostedSamRefused(
@@ -238,27 +242,41 @@ def run_segmentation(
     run_dir = _runs_root(site_dir) / run_id
     (run_dir / "results").mkdir(parents=True)
     (run_dir / "masks").mkdir()
+    _freeze_guides(site_dir, run_dir)
 
     results: list[dict[str, Any]] = []
     halted: str | None = None
+    # Every key this run ever used, kept only to scrub stored text -- never to send.
+    known_keys = {key for key in (credentials.api_key(),) if key}
     for number, item in enumerate(plan.items, start=1):
         result_id = f"{number:03d}-{_slug(item.filename)}-{_slug(item.concept)}"
         if item.reused_from is not None:
             record = _reuse_result(site_dir, run_dir, result_id, item)
-        elif halted is not None:
-            record = _result_base(result_id, item)
-            record.update(
-                status=STATUS_NOT_ATTEMPTED,
-                error_code=halted,
-                message="Not sent: an earlier request in this batch stopped it.",
-                detections=[],
-            )
         else:
-            record = _segment_item(
-                site_dir, sequence_id, run_dir, result_id, item, api_key, decoder, transport
-            )
-            if record["status"] == STATUS_FAILED and record["error_code"] in _STOP_BATCH_ON:
-                halted = str(record["error_code"])
+            if halted is None:
+                halted = _authorization_problem(plugin_enabled, credentials)
+            api_key = credentials.api_key() if halted is None else None
+            if api_key:
+                known_keys.add(api_key)
+            if halted is not None or api_key is None:
+                halted = halted or "not_configured"
+                record = _result_base(result_id, item)
+                record.update(
+                    status=STATUS_NOT_ATTEMPTED,
+                    error_code=halted,
+                    message=_HALT_MESSAGES.get(
+                        halted, "Not sent: an earlier request in this batch stopped it."
+                    ),
+                    detections=[],
+                )
+            else:
+                record = _segment_item(
+                    site_dir, sequence_id, run_dir, result_id, item, api_key, decoder, transport
+                )
+                if record["status"] == STATUS_FAILED and record["error_code"] in _STOP_BATCH_ON:
+                    halted = str(record["error_code"])
+        for known_key in known_keys:
+            record = _scrub(record, known_key)
         _write_new_json(run_dir / "results" / f"{result_id}.json", record)
         results.append(record)
 
@@ -287,6 +305,63 @@ def run_segmentation(
     }
     _write_new_json(run_dir / "run-summary.json", summary)
     return {**summary, "results": results}
+
+
+_HALT_MESSAGES = {
+    "plugin_disabled": "Not sent: hosted SAM was turned off during this batch.",
+    "not_configured": "Not sent: the API key was removed during this batch.",
+    "acknowledgement_required": "Not sent: the upload confirmation was cleared during this batch.",
+}
+
+
+def _enabled_now(plugin_enabled: bool | Callable[[], bool]) -> bool:
+    try:
+        return bool(plugin_enabled() if callable(plugin_enabled) else plugin_enabled)
+    except Exception:  # noqa: BLE001 -- unreadable settings must stop uploads, not allow them
+        return False
+
+
+def _authorization_problem(
+    plugin_enabled: bool | Callable[[], bool], credentials: HostedSamCredentials
+) -> str | None:
+    """Why the NEXT paid request must not be sent, or None if it may."""
+
+    if not _enabled_now(plugin_enabled):
+        return "plugin_disabled"
+    if credentials.api_key() is None:
+        return "not_configured"
+    if credentials.acknowledged_at() is None:
+        return "acknowledgement_required"
+    return None
+
+
+def _scrub(value: Any, secret: str | None) -> Any:
+    """Last line of defence: no stored string may contain the key."""
+
+    if not secret or len(secret) < 4:
+        return value
+    if isinstance(value, str):
+        return value.replace(secret, "[redacted]")
+    if isinstance(value, list):
+        return [_scrub(item, secret) for item in value]
+    if isinstance(value, dict):
+        return {key: _scrub(item, secret) for key, item in value.items()}
+    return value
+
+
+def _freeze_guides(site_dir: Path, run_dir: Path) -> None:
+    """Save the watched area and human guides this run used, so its overlays never change."""
+
+    try:
+        raw = json.loads(_site_config_path(site_dir).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        raw = {}
+    snapshot = {
+        "reference_region": raw.get("reference_region"),
+        "normal_waterline_guides": raw.get("normal_waterline_guides") or [],
+    }
+    (run_dir / "inputs-used").mkdir()
+    _write_new_json(run_dir / "inputs-used" / "guides.snapshot.json", snapshot)
 
 
 def _segment_item(
@@ -500,12 +575,18 @@ def _latest_reviews(run_dir: Path) -> dict[str, dict[str, Any]]:
     return latest
 
 
-def render_overlay(site_dir: Path, run_id: str, result_id: str) -> bytes:
-    """The original image with the predicted masks tinted and the human guide drawn on top.
+class OverlayUnavailable(ValueError):
+    """The saved result can no longer be drawn faithfully."""
 
-    Drawn fresh each time from the saved raw masks. The crop outline shows the
-    area that was actually sent. The guide is the site's current human guide,
-    drawn as a thin line; it is never altered by or merged with a mask.
+
+def render_overlay(site_dir: Path, run_id: str, result_id: str) -> bytes:
+    """The original image with the predicted masks tinted and the run's saved guide on top.
+
+    Drawn fresh from the saved raw masks, but only over the exact image the
+    result was made from: the current file must match the saved SHA-256, or no
+    overlay is produced. The guides drawn are the ones frozen with the run, so
+    editing the site's guide later does not change an old result's overlay. The
+    crop outline shows the area that was actually sent.
     """
 
     run_dir = _run_dir(site_dir, run_id)
@@ -514,7 +595,12 @@ def render_overlay(site_dir: Path, run_id: str, result_id: str) -> bytes:
     record = json.loads((run_dir / "results" / f"{result_id}.json").read_text(encoding="utf-8"))
     summary = json.loads((run_dir / "run-summary.json").read_text(encoding="utf-8"))
     path = resolve_sequence_image(site_dir, str(summary["sequence_id"]), str(record["filename"]))
-    image = cv2.imdecode(np.frombuffer(path.read_bytes(), dtype=np.uint8), cv2.IMREAD_COLOR)
+    raw = path.read_bytes()
+    if _sha256_bytes(raw) != record.get("image_sha256"):
+        raise OverlayUnavailable(
+            "The source image changed after this result was saved, so no overlay is shown."
+        )
+    image = cv2.imdecode(np.frombuffer(raw, dtype=np.uint8), cv2.IMREAD_COLOR)
     if image is None:
         raise ValueError("The source image could not be read.")
     tint = image.copy()
@@ -525,23 +611,39 @@ def render_overlay(site_dir: Path, run_id: str, result_id: str) -> bytes:
     output = cv2.addWeighted(tint, 0.45, image, 0.55, 0)
     x0, y0, x1, y1 = record["transform"]["crop_px"]
     cv2.rectangle(output, (x0, y0), (x1 - 1, y1 - 1), (255, 255, 255), 1)
-    try:
-        guides = load_site_config(_site_config_path(site_dir)).normal_waterline_guides
-    except Exception:  # noqa: BLE001 -- an unreadable config must not hide the mask
-        guides = ()
     height, width = image.shape[:2]
-    for guide in guides:
-        if guide.status == "invalid" or len(guide.points) < 2:
+    for guide in _frozen_guides(run_dir):
+        if guide.get("status") == "invalid":
             continue
-        points = np.array(
-            [[round(p.x * width / 100.0), round(p.y * height / 100.0)] for p in guide.points],
-            dtype=np.int32,
-        )
+        raw_points = guide.get("points")
+        if not isinstance(raw_points, list) or len(raw_points) < 2:
+            continue
+        try:
+            points = np.array(
+                [
+                    [round(float(p["x"]) * width / 100.0), round(float(p["y"]) * height / 100.0)]
+                    for p in raw_points
+                ],
+                dtype=np.int32,
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
         cv2.polylines(output, [points], False, (40, 220, 40), 2)
     ok, encoded = cv2.imencode(".png", output)
     if not ok:
         raise ValueError("The overlay could not be drawn.")
     return bytes(encoded.tobytes())
+
+
+def _frozen_guides(run_dir: Path) -> list[dict[str, Any]]:
+    try:
+        snapshot = json.loads(
+            (run_dir / "inputs-used" / "guides.snapshot.json").read_text(encoding="utf-8")
+        )
+    except (OSError, ValueError):
+        return []
+    guides = snapshot.get("normal_waterline_guides") if isinstance(snapshot, dict) else None
+    return [g for g in guides if isinstance(g, dict)] if isinstance(guides, list) else []
 
 
 def _run_dir(site_dir: Path, run_id: str) -> Path:
