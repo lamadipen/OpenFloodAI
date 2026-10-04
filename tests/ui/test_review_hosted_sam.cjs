@@ -20,7 +20,8 @@ function context(statusOverrides, samOverrides = {}) {
     Number,
     String,
     folderName: "demo",
-    days: [{ filename: "a.jpg", code: "N" }],
+    days: [{ filename: "cam___2026-09-02T08-00-00Z.jpg", code: "N", capturedAtUtc: "2026-09-02T08:00:00+00:00", time: "02:00" }],
+    detail: { summary: { baseline_filename: "cam___2026-09-01T00-00-00Z.jpg" } },
     state: { selectedIndex: 0 },
     sequenceId: () => "seq"
   };
@@ -40,7 +41,7 @@ function context(statusOverrides, samOverrides = {}) {
 const result = (extra) => ({
   run_id: "r1",
   result_id: "001",
-  filename: "a.jpg",
+  filename: "cam___2026-09-02T08-00-00Z.jpg",
   prompt: "water",
   model_requested: "sam-3.1",
   processed_at_utc: "2026-09-01T10:00:00+00:00",
@@ -105,4 +106,50 @@ test("results for other images are not shown on this image", () => {
 test("the panel states that a prediction is not a label or a waterline", () => {
   const out = context({}).samPanelHtml();
   assert.match(out, /not a human label, not a detected waterline/);
+});
+
+test("the panel names the image to segment with a picture, file name and time", () => {
+  const out = context({}, { plan: { request_count: 1 } }).samPanelHtml();
+  assert.match(out, /Image to segment/);
+  assert.match(out, /cam___2026-09-02T08-00-00Z\.jpg/);
+  assert.match(out, /2026-09-02 08:00 UTC \(02:00 local\)/);
+  assert.match(out, /image-sequence-image\?[^"]*cam___2026-09-02T08-00-00Z/);
+  assert.match(out, /ringed in purple/);
+});
+
+test("the baseline can be chosen and then is the image shown, planned, and sent", () => {
+  const ctx = context({}, { target: "baseline", plan: { request_count: 1 } });
+  const out = ctx.samPanelHtml();
+  assert.match(out, /cam___2026-09-01T00-00-00Z\.jpg/);
+  assert.match(out, /2026-09-01 00:00 UTC/);
+  assert.match(out, /The baseline image: the reference/);
+  assert.match(out, /value="baseline" data-sam-target="baseline" checked/);
+  assert.equal(vm.runInContext("samTargetImage().filename", ctx), "cam___2026-09-01T00-00-00Z.jpg");
+  assert.equal(vm.runInContext("samBody(samTargetImage().filename).filenames[0]", ctx), "cam___2026-09-01T00-00-00Z.jpg");
+});
+
+test("results are shown for the image being segmented, not another one", () => {
+  const baselineResult = result({ filename: "cam___2026-09-01T00-00-00Z.jpg", status: "completed" });
+  const selectedResult = result({ result_id: "9", status: "no_match" });
+  const forBaseline = context({}, { target: "baseline", results: [baselineResult, selectedResult] }).samPanelHtml();
+  assert.match(forBaseline, /Mask found/);
+  assert.doesNotMatch(forBaseline, /No match for this concept/);
+});
+
+test("a chart point is ringed only when the chart-selected image is the target and segmentation is available", () => {
+  const bucket = { indices: [0] };
+  const ready = context({}, {});
+  assert.match(vm.runInContext("samRingSvg({indices:[0]}, 10, 20, 5)", ready), /#6d28d9/);
+  assert.equal(vm.runInContext("samRingSvg({indices:[3]}, 10, 20, 5)", ready), "");
+  const baseline = context({}, { target: "baseline" });
+  assert.equal(vm.runInContext("samRingSvg({indices:[0]}, 10, 20, 5)", baseline), "");
+  assert.equal(vm.runInContext("samRingSvg({indices:[0]}, 10, 20, 5)", context({ enabled: false })), "");
+  assert.equal(vm.runInContext("samRingSvg({indices:[0]}, 10, 20, 5)", context({ credential: { configured: false } })), "");
+  assert.ok(bucket);
+});
+
+test("the baseline option is unavailable when the run recorded no baseline", () => {
+  const ctx = context({}, { plan: { request_count: 1 } });
+  vm.runInContext('detail = { summary: { baseline_filename: "" } }', ctx);
+  assert.match(ctx.samPanelHtml(), /value="baseline"[^>]*disabled/);
 });

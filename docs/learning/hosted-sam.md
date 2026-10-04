@@ -29,10 +29,18 @@ no water-level change.
 
 ## Run segmentation
 
-1. Open a run in **Review** and select an image.
-2. In **Hosted SAM segmentation**, choose `water`, `riverbank`, or both. Each
-   concept is its own paid request. The panel shows the exact number of
-   requests before you start.
+1. Open a run in **Review**. The **Image to segment** box in the Hosted SAM
+   panel shows exactly which image will be sent: a picture, its file name, and
+   its capture time in UTC.
+2. Choose the image:
+   - **Image selected on the region change chart** (the default): click any
+     point on the charts or an event. That point gets a purple ring labelled
+     SAM, and the same image is marked "Will be segmented" in the image card.
+   - **Baseline image**: the reference the watched area and guide were drawn
+     on. It is not a point on the chart, so no ring is shown; its picture is
+     marked instead.
+   Then choose `water`, `riverbank`, or both. Each concept is its own paid
+   request. The panel shows the exact number of requests before you start.
 3. The first time, confirm that the selected image, cropped to the watched
    area, will be uploaded to Meta and your account may be charged.
 4. Select **Start segmentation**. Nothing is uploaded before this step, and
