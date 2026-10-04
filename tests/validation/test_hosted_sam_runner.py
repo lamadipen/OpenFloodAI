@@ -1,0 +1,648 @@
+"""Hosted SAM runs: gates, persistence, caching, review, and key safety (no network)."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+import cv2
+import numpy as np
+import pytest
+
+from openfloodai.evidence.hosted_sam_credentials import ENV_VAR, HostedSamCredentials
+from openfloodai.validation import hosted_sam_runner as runner
+
+KEY = "sk-test-0123456789abcdef"
+SEQUENCE_ID = "usgs-camera-demo-2026-09-01-2026-09-01-all"
+IMAGE_A = "cam___2026-09-01T00-00-00Z.jpg"
+IMAGE_B = "cam___2026-09-01T01-00-00Z.jpg"
+REGION = {"x": 10, "y": 20, "width": 40, "height": 50}
+
+
+def reply(text: str) -> str:
+    lane = {"item_id": "m1", "output_index": 0, "content_index": 0}
+    events = [
+        {"type": "response.output_text.delta", **lane, "delta": text},
+        {"type": "response.output_text.done", **lane, "text": text},
+        {"type": "response.completed"},
+    ]
+    return "".join(f"data: {json.dumps(event)}\n\n" for event in events)
+
+
+def mask_payload(width: int, height: int) -> str:
+    from meta_sam_parser._mask_codec import _encode_raster
+
+    return str(_encode_raster([1] * (width * height), width, height))
+
+
+def detection_text(
+    x1: int = 1, y1: int = 2, x2: int = 20, y2: int = 25, w: int = 40, h: int = 30
+) -> str:
+    """One object. Box corners are inclusive; the mask is the size of the box."""
+
+    mask_w, mask_h = x2 - x1 + 1, y2 - y1 + 1
+    box = f"x1={x1};y1={y1};x2={x2};y2={y2};w={w};h={h};c=0.9"
+    return (
+        f"<0f>0<|box;{box}|>"
+        f"<|mask;x=0;y=0;data={mask_h},{mask_w},{mask_payload(mask_w, mask_h)}|>\n"
+    )
+
+
+def ones_decoder(height: int, width: int, encoding: str, payload: str) -> Any:
+    return np.ones((height, width), dtype=np.uint8)
+
+
+class FakeTransport:
+    def __init__(self, *responses: tuple[int, str]) -> None:
+        self.responses = list(responses)
+        self.calls: list[dict[str, Any]] = []
+
+    def __call__(self, url: str, headers: dict[str, str], body: bytes, timeout: float):  # type: ignore[no-untyped-def]
+        self.calls.append({"headers": headers, "body": json.loads(body)})
+        if len(self.responses) > 1:
+            return self.responses.pop(0)
+        return self.responses[0]
+
+
+def make_site(tmp_path: Path, *, region: dict[str, object] | None = None) -> Path:
+    site = tmp_path / "site"
+    (site / "configs").mkdir(parents=True)
+    config: dict[str, object] = {
+        "site_id": "site-demo-01",
+        "camera_id": "camera-demo-01",
+        "site_name": "Demo",
+        "input_type": "local_video",
+        "reference_region": region or REGION,
+        "normal_waterline_guides": [],
+    }
+    (site / "configs" / "site.json").write_text(json.dumps(config), encoding="utf-8")
+    sequence = site / "inputs" / "image-sequences" / SEQUENCE_ID
+    (sequence / "images").mkdir(parents=True)
+    rows = []
+    for name, value in ((IMAGE_A, 40), (IMAGE_B, 80)):
+        frame = np.full((60, 100, 3), value, dtype=np.uint8)
+        assert cv2.imwrite(str(sequence / "images" / name), frame)
+        rows.append(
+            {
+                "filename": name,
+                "captured_at_utc": "2026-09-01T00:00:00+00:00",
+                "download_status": "downloaded",
+            }
+        )
+    (sequence / "sequence-manifest.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+    )
+    return site
+
+
+@pytest.fixture
+def credentials(monkeypatch: pytest.MonkeyPatch) -> HostedSamCredentials:
+    monkeypatch.delenv(ENV_VAR, raising=False)
+    holder = HostedSamCredentials()
+    holder.set_session_key(KEY)
+    holder.acknowledge_upload()
+    return holder
+
+
+def go(
+    site: Path,
+    credentials: HostedSamCredentials,
+    transport: FakeTransport,
+    *,
+    names: tuple[str, ...] = (IMAGE_A,),
+    concepts: tuple[str, ...] = ("water",),
+    count: object | None = None,
+    enabled: bool = True,
+    decoder: Any = ones_decoder,
+) -> dict[str, Any]:
+    plan = runner.plan_segmentation(site, SEQUENCE_ID, names, concepts)
+    return runner.run_segmentation(
+        site,
+        SEQUENCE_ID,
+        names,
+        concepts,
+        plugin_enabled=enabled,
+        credentials=credentials,
+        confirmed_request_count=plan.request_count if count is None else count,
+        decoder=decoder,
+        transport=transport,
+    )
+
+
+def test_preflight_counts_one_request_per_image_and_concept(tmp_path: Path) -> None:
+    site = make_site(tmp_path)
+
+    plan = runner.plan_segmentation(site, SEQUENCE_ID, [IMAGE_A, IMAGE_B], ["water", "riverbank"])
+
+    assert plan.request_count == 4 and plan.total == 4 and plan.reused_count == 0
+    assert plan.to_dict()["concepts"] == ["riverbank", "water"]
+
+
+def test_batch_bounds_and_selection_are_enforced(tmp_path: Path) -> None:
+    site = make_site(tmp_path)
+    with pytest.raises(ValueError):
+        runner.plan_segmentation(site, SEQUENCE_ID, [], ["water"])
+    with pytest.raises(ValueError):
+        runner.plan_segmentation(site, SEQUENCE_ID, [IMAGE_A], [])
+    with pytest.raises(ValueError):
+        runner.plan_segmentation(site, SEQUENCE_ID, [IMAGE_A], ["a", "b", "c"])
+    with pytest.raises(ValueError):
+        runner.plan_segmentation(site, SEQUENCE_ID, [IMAGE_A], ["water and riverbank"])
+    many = [f"cam___2026-09-01T{h:02d}-00-00Z.jpg" for h in range(11)]
+    with pytest.raises(ValueError):
+        runner.plan_segmentation(site, SEQUENCE_ID, many, ["water"])
+
+
+def test_a_site_without_a_watched_area_cannot_be_planned(tmp_path: Path) -> None:
+    site = make_site(tmp_path)
+    config_path = site / "configs" / "site.json"
+    config = json.loads(config_path.read_text())
+    del config["reference_region"]
+    config_path.write_text(json.dumps(config))
+
+    with pytest.raises(ValueError, match="watched area"):
+        runner.plan_segmentation(site, SEQUENCE_ID, [IMAGE_A], ["water"])
+
+
+@pytest.mark.parametrize(
+    ("case", "code"),
+    [
+        ("disabled", "plugin_disabled"),
+        ("no_key", "not_configured"),
+        ("no_ack", "acknowledgement_required"),
+        ("no_decoder", "decoder_unavailable"),
+        ("wrong_count", "confirm_count_mismatch"),
+        ("bool_count", "confirm_count_mismatch"),
+    ],
+)
+def test_every_gate_refuses_before_anything_is_uploaded(
+    tmp_path: Path, credentials: HostedSamCredentials, case: str, code: str
+) -> None:
+    site = make_site(tmp_path)
+    transport = FakeTransport((200, reply(detection_text())))
+    kwargs: dict[str, Any] = {}
+    if case == "disabled":
+        kwargs["enabled"] = False
+    elif case == "no_key":
+        credentials.remove_session_key()
+    elif case == "no_ack":
+        credentials._acknowledged_at = None
+    elif case == "no_decoder":
+        kwargs["decoder"] = None
+    elif case == "wrong_count":
+        kwargs["count"] = 7
+    elif case == "bool_count":
+        kwargs["count"] = True
+
+    with pytest.raises(runner.HostedSamRefused) as raised:
+        if case == "no_decoder":
+            runner.run_segmentation(
+                site,
+                SEQUENCE_ID,
+                [IMAGE_A],
+                ["water"],
+                plugin_enabled=True,
+                credentials=credentials,
+                confirmed_request_count=1,
+                decoder=None,
+                transport=transport,
+            )
+        else:
+            go(site, credentials, transport, **kwargs)
+
+    assert raised.value.code == code
+    assert transport.calls == []
+    assert not (site / "outputs" / "hosted-sam-runs").exists()
+
+
+def test_a_completed_run_saves_provenance_and_masks_in_original_pixels(
+    tmp_path: Path, credentials: HostedSamCredentials
+) -> None:
+    site = make_site(tmp_path)
+    transport = FakeTransport((200, reply(detection_text())))
+
+    summary = go(site, credentials, transport)
+
+    assert len(transport.calls) == 1
+    sent = transport.calls[0]["body"]["input"][0]["content"]
+    assert sent[0]["text"] == "water"
+    assert sent[1]["image_url"].startswith("data:image/jpeg;base64,")
+    result = summary["results"][0]
+    assert result["status"] == "completed"
+    assert result["review_status"] == "unreviewed"
+    assert result["scores_provided"] is True  # the provider sent c=0.9
+    assert result["detections"][0]["confidence"] == 0.9
+    assert result["provider"] == "meta_sam_hosted" and result["model_requested"] == "sam-3.1"
+    assert result["prompt"] == "water" and len(result["image_sha256"]) == 64
+    assert result["transform"]["crop_px"] == [10, 12, 50, 42]
+    assert result["transform"]["source_size"] == [100, 60]
+    assert result["captured_at_utc"] == "2026-09-01T00:00:00+00:00"
+    run_dir = site / "outputs" / "hosted-sam-runs" / summary["run_id"]
+    mask = cv2.imread(str(run_dir / result["detections"][0]["mask_png"]), cv2.IMREAD_GRAYSCALE)
+    assert mask is not None and mask.shape == (60, 100)
+    ys, xs = np.nonzero(mask)
+    assert tuple(int(v) for v in (xs.min(), ys.min(), xs.max(), ys.max())) == (11, 14, 30, 37)
+    assert result["detections"][0]["box_source_px"] == [11, 14, 31, 38]
+
+
+def test_the_api_key_appears_in_no_saved_file(
+    tmp_path: Path, credentials: HostedSamCredentials
+) -> None:
+    site = make_site(tmp_path)
+    leaky = json.dumps({"error": {"message": f"key {KEY} rejected"}})
+
+    go(site, credentials, FakeTransport((200, reply(detection_text()))))
+    go(site, credentials, FakeTransport((401, leaky)), names=(IMAGE_B,))
+
+    for path in (site / "outputs").rglob("*"):
+        if path.is_file():
+            assert KEY.encode() not in path.read_bytes(), path
+    assert KEY not in json.dumps(runner.list_sam_runs(site))
+
+
+def test_zero_matches_is_a_distinct_state_not_a_failure_or_a_safe_result(
+    tmp_path: Path, credentials: HostedSamCredentials
+) -> None:
+    site = make_site(tmp_path)
+
+    summary = go(site, credentials, FakeTransport((200, reply(""))))
+
+    result = summary["results"][0]
+    assert result["status"] == "no_match" and result["detections"] == []
+    assert "nothing" in result["message"]
+
+
+@pytest.mark.parametrize(
+    ("response", "code"),
+    [
+        ((401, "{}"), "invalid_key"),
+        ((402, "{}"), "insufficient_quota"),
+        ((429, "{}"), "rate_limited"),
+        ((500, "{}"), "provider_error"),
+        ((200, "garbage"), "malformed_response"),
+        ((200, reply("<0f>0<|box;broken|>")), "malformed_response"),
+        ((200, reply(detection_text(x2=60, w=100))), "malformed_response"),
+    ],
+)
+def test_provider_failures_are_distinct_and_leave_core_data_alone(
+    tmp_path: Path, credentials: HostedSamCredentials, response: tuple[int, str], code: str
+) -> None:
+    site = make_site(tmp_path)
+    before = (site / "configs" / "site.json").read_bytes()
+
+    summary = go(site, credentials, FakeTransport(response))
+
+    result = summary["results"][0]
+    assert result["status"] == "failed" and result["error_code"] == code
+    assert (site / "configs" / "site.json").read_bytes() == before
+
+
+def test_a_stopping_error_halts_the_rest_of_the_batch(
+    tmp_path: Path, credentials: HostedSamCredentials
+) -> None:
+    site = make_site(tmp_path)
+    transport = FakeTransport((429, "{}"))
+
+    summary = go(site, credentials, transport, names=(IMAGE_A, IMAGE_B))
+
+    assert len(transport.calls) == 1
+    statuses = [r["status"] for r in summary["results"]]
+    assert statuses == ["failed", "not_attempted"]
+    assert summary["results"][1]["error_code"] == "rate_limited"
+
+
+def test_a_malformed_reply_does_not_stop_the_other_images(
+    tmp_path: Path, credentials: HostedSamCredentials
+) -> None:
+    site = make_site(tmp_path)
+    transport = FakeTransport((200, "garbage"), (200, reply(detection_text())))
+
+    summary = go(site, credentials, transport, names=(IMAGE_A, IMAGE_B))
+
+    assert [r["status"] for r in summary["results"]] == ["failed", "completed"]
+
+
+def test_an_identical_rerun_reuses_saved_results_without_a_paid_request(
+    tmp_path: Path, credentials: HostedSamCredentials
+) -> None:
+    site = make_site(tmp_path)
+    first = go(site, credentials, FakeTransport((200, reply(detection_text()))))
+    transport = FakeTransport((500, "{}"))
+
+    plan = runner.plan_segmentation(site, SEQUENCE_ID, [IMAGE_A], ["water"])
+    second = go(site, credentials, transport)
+
+    assert plan.request_count == 0 and plan.reused_count == 1
+    assert transport.calls == []
+    assert second["run_id"] != first["run_id"]
+    reused = second["results"][0]
+    assert reused["status"] == "completed"
+    assert reused["reused_from"]["run_id"] == first["run_id"]
+    new_dir = site / "outputs" / "hosted-sam-runs" / second["run_id"]
+    assert (new_dir / reused["detections"][0]["mask_png"]).is_file()
+
+
+def test_changed_image_region_prompt_or_failure_is_never_served_from_cache(
+    tmp_path: Path, credentials: HostedSamCredentials
+) -> None:
+    site = make_site(tmp_path)
+    go(site, credentials, FakeTransport((200, reply(detection_text()))))
+    go(site, credentials, FakeTransport((500, "{}")), names=(IMAGE_B,))
+
+    # different concept
+    assert runner.plan_segmentation(site, SEQUENCE_ID, [IMAGE_A], ["riverbank"]).request_count == 1
+    # a failed earlier attempt is retried, not reused
+    assert runner.plan_segmentation(site, SEQUENCE_ID, [IMAGE_B], ["water"]).request_count == 1
+    # changed image bytes
+    image_path = site / "inputs" / "image-sequences" / SEQUENCE_ID / "images" / IMAGE_A
+    assert cv2.imwrite(str(image_path), np.full((60, 100, 3), 200, dtype=np.uint8))
+    assert runner.plan_segmentation(site, SEQUENCE_ID, [IMAGE_A], ["water"]).request_count == 1
+    # changed watch region
+    config_path = site / "configs" / "site.json"
+    config = json.loads(config_path.read_text())
+    config["reference_region"] = {"x": 0, "y": 0, "width": 100, "height": 100}
+    config_path.write_text(json.dumps(config))
+    assert runner.plan_segmentation(site, SEQUENCE_ID, [IMAGE_B], ["water"]).request_count == 1
+
+
+def test_saved_results_stay_unchanged_after_later_runs_and_config_changes(
+    tmp_path: Path, credentials: HostedSamCredentials
+) -> None:
+    site = make_site(tmp_path)
+    first = go(site, credentials, FakeTransport((200, reply(detection_text()))))
+    run_dir = site / "outputs" / "hosted-sam-runs" / first["run_id"]
+    snapshot = {p: p.read_bytes() for p in run_dir.rglob("*") if p.is_file()}
+
+    go(site, credentials, FakeTransport((200, reply(detection_text()))), names=(IMAGE_B,))
+    go(site, credentials, FakeTransport((200, reply(""))))
+    (site / "configs" / "site.json").write_text(json.dumps({"changed": True}))
+
+    assert {p: p.read_bytes() for p in run_dir.rglob("*") if p.is_file()} == snapshot
+
+
+def test_results_refuse_to_overwrite_existing_evidence(tmp_path: Path) -> None:
+    target = tmp_path / "result.json"
+    runner._write_new_json(target, {"a": 1})
+    with pytest.raises(FileExistsError):
+        runner._write_new_json(target, {"a": 2})
+
+
+def test_review_decisions_are_appended_and_never_edit_the_result(
+    tmp_path: Path, credentials: HostedSamCredentials
+) -> None:
+    site = make_site(tmp_path)
+    summary = go(site, credentials, FakeTransport((200, reply(detection_text()))))
+    run_id, result_id = summary["run_id"], summary["results"][0]["result_id"]
+    result_file = site / "outputs" / "hosted-sam-runs" / run_id / "results" / f"{result_id}.json"
+    saved = result_file.read_bytes()
+
+    runner.record_sam_review(site, run_id, result_id, "needs_correction")
+    runner.record_sam_review(site, run_id, result_id, "accepted")
+
+    assert result_file.read_bytes() == saved
+    reread = runner.read_sam_run(site, run_id)["results"][0]
+    assert reread["review_status"] == "accepted"
+    with pytest.raises(ValueError):
+        runner.record_sam_review(site, run_id, result_id, "trusted_label")
+    with pytest.raises(ValueError):
+        runner.record_sam_review(site, run_id, "missing", "accepted")
+    with pytest.raises(ValueError):
+        runner.read_sam_run(site, "../../etc")
+
+
+def test_overlay_draws_masks_on_the_source_image_and_leaves_the_guide_config_alone(
+    tmp_path: Path, credentials: HostedSamCredentials
+) -> None:
+    site = make_site(tmp_path)
+    summary = go(site, credentials, FakeTransport((200, reply(detection_text()))))
+    config_before = (site / "configs" / "site.json").read_bytes()
+
+    png = runner.render_overlay(site, summary["run_id"], summary["results"][0]["result_id"])
+
+    image = cv2.imdecode(np.frombuffer(png, dtype=np.uint8), cv2.IMREAD_COLOR)
+    assert image is not None and image.shape == (60, 100, 3)
+    assert (site / "configs" / "site.json").read_bytes() == config_before
+    original = cv2.imread(
+        str(site / "inputs" / "image-sequences" / SEQUENCE_ID / "images" / IMAGE_A)
+    )
+    assert original is not None and not np.array_equal(image, original)
+    # The raw mask file is separate and still pure 0/255.
+    run_dir = site / "outputs" / "hosted-sam-runs" / summary["run_id"]
+    raw = cv2.imread(str(run_dir / "masks" / f"{summary['results'][0]['result_id']}-0.png"), 0)
+    assert raw is not None and {int(v) for v in np.unique(raw)} <= {0, 255}
+
+
+def test_a_run_with_the_official_decoder_saves_a_correctly_placed_real_mask(
+    tmp_path: Path, credentials: HostedSamCredentials
+) -> None:
+    from openfloodai.vision.hosted_sam import official_mask_decoder
+
+    decoder = official_mask_decoder()
+    assert decoder is not None
+    site = make_site(tmp_path)
+
+    summary = go(site, credentials, FakeTransport((200, reply(detection_text()))), decoder=decoder)
+
+    result = summary["results"][0]
+    assert result["status"] == "completed"
+    run_dir = site / "outputs" / "hosted-sam-runs" / summary["run_id"]
+    mask = cv2.imread(str(run_dir / result["detections"][0]["mask_png"]), cv2.IMREAD_GRAYSCALE)
+    assert mask is not None
+    assert int(np.count_nonzero(mask)) == 20 * 24  # the whole box-sized mask
+    ys, xs = np.nonzero(mask)
+    assert (int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())) == (11, 14, 30, 37)
+
+
+def failed_reply(message: str) -> str:
+    event = {"type": "response.failed", "response": {"error": {"message": message}}}
+    return "data: " + json.dumps(event) + "\n\n"
+
+
+def test_streamed_failure_text_that_echoes_the_key_is_never_stored(
+    tmp_path: Path, credentials: HostedSamCredentials
+) -> None:
+    site = make_site(tmp_path)
+
+    # The key straddles the 200-character cut as well as appearing plainly.
+    summary = go(
+        site,
+        credentials,
+        FakeTransport((200, failed_reply(f"{'x' * 190} {KEY} bad key {KEY}"))),
+    )
+
+    result = summary["results"][0]
+    assert result["status"] == "failed" and result["error_code"] == "provider_error"
+    assert KEY not in json.dumps(summary)
+    assert KEY[:10] not in result["message"]
+    for path in (site / "outputs").rglob("*"):
+        if path.is_file():
+            assert KEY.encode() not in path.read_bytes(), path
+
+
+def test_parser_warnings_that_echo_the_key_are_redacted(
+    tmp_path: Path, credentials: HostedSamCredentials
+) -> None:
+    site = make_site(tmp_path)
+    text = detection_text().replace("c=0.9", f"c=0.9;{KEY}=1")
+
+    summary = go(site, credentials, FakeTransport((200, reply(text))))
+
+    result = summary["results"][0]
+    assert result["status"] == "completed"
+    assert result["provider_warnings"], "the unknown field should have produced a warning"
+    for path in (site / "outputs").rglob("*"):
+        if path.is_file():
+            assert KEY.encode() not in path.read_bytes(), path
+
+
+def test_a_stored_record_is_scrubbed_even_if_a_message_slips_through() -> None:
+    record = {"message": f"oops {KEY}", "nested": [{"x": KEY}], "n": 3}
+
+    scrubbed = runner._scrub(record, KEY)
+
+    assert KEY not in json.dumps(scrubbed) and scrubbed["n"] == 3
+
+
+def test_the_run_saves_the_guides_it_used_and_overlays_use_only_those(
+    tmp_path: Path, credentials: HostedSamCredentials
+) -> None:
+    site = make_site(tmp_path)
+    config_path = site / "configs" / "site.json"
+    config = json.loads(config_path.read_text())
+    config["normal_waterline_guides"] = [
+        {
+            "id": "g1",
+            "label": "Left bank",
+            "points": [{"x": 15, "y": 30}, {"x": 40, "y": 30}],
+            "video_id": "video-001",
+            "video_time_seconds": 4.5,
+            "site_id": "site-demo-01",
+            "camera_id": "camera-demo-01",
+            "status": "confirmed",
+            "normal_condition": True,
+            "notes": "",
+            "confirmed_at": "2026-08-01T00:00:00+00:00",
+            "invalidated_at": None,
+            "invalidation_reason": None,
+        }
+    ]
+    config_path.write_text(json.dumps(config))
+    summary = go(site, credentials, FakeTransport((200, reply(detection_text()))))
+    run_id, result_id = summary["run_id"], summary["results"][0]["result_id"]
+    before = runner.render_overlay(site, run_id, result_id)
+    snapshot = (
+        site / "outputs" / "hosted-sam-runs" / run_id / "inputs-used" / "guides.snapshot.json"
+    )
+    assert json.loads(snapshot.read_text())["normal_waterline_guides"][0]["id"] == "g1"
+
+    # The guide is later moved and then removed: the old overlay does not change.
+    config["normal_waterline_guides"][0]["points"] = [{"x": 15, "y": 45}, {"x": 40, "y": 45}]
+    config_path.write_text(json.dumps(config))
+    assert runner.render_overlay(site, run_id, result_id) == before
+    config["normal_waterline_guides"] = []
+    config_path.write_text(json.dumps(config))
+    assert runner.render_overlay(site, run_id, result_id) == before
+
+
+def test_an_overlay_is_refused_if_the_source_image_changed(
+    tmp_path: Path, credentials: HostedSamCredentials
+) -> None:
+    site = make_site(tmp_path)
+    summary = go(site, credentials, FakeTransport((200, reply(detection_text()))))
+    run_id, result_id = summary["run_id"], summary["results"][0]["result_id"]
+    runner.render_overlay(site, run_id, result_id)  # fine while the image is unchanged
+    image_path = site / "inputs" / "image-sequences" / SEQUENCE_ID / "images" / IMAGE_A
+    assert cv2.imwrite(str(image_path), np.full((60, 100, 3), 250, dtype=np.uint8))
+
+    with pytest.raises(runner.OverlayUnavailable, match="changed"):
+        runner.render_overlay(site, run_id, result_id)
+    # The saved masks themselves are untouched and still listed.
+    assert runner.read_sam_run(site, run_id)["results"][0]["status"] == "completed"
+
+
+def test_removing_the_key_mid_batch_stops_the_remaining_uploads(
+    tmp_path: Path, credentials: HostedSamCredentials
+) -> None:
+    site = make_site(tmp_path)
+    calls = 0
+
+    def transport(url: str, headers: dict[str, str], body: bytes, timeout: float):  # type: ignore[no-untyped-def]
+        nonlocal calls
+        calls += 1
+        credentials.remove_session_key()  # the user removes the key after the first response
+        return 200, reply(detection_text())
+
+    summary = go(site, credentials, transport, names=(IMAGE_A, IMAGE_B))  # type: ignore[arg-type]
+
+    assert calls == 1
+    statuses = [r["status"] for r in summary["results"]]
+    assert statuses == ["completed", "not_attempted"]
+    assert summary["results"][1]["error_code"] == "not_configured"
+    assert "removed" in summary["results"][1]["message"]
+    for path in (site / "outputs").rglob("*"):
+        if path.is_file():
+            assert KEY.encode() not in path.read_bytes(), path
+
+
+def test_turning_the_plugin_off_mid_batch_stops_the_remaining_uploads(
+    tmp_path: Path, credentials: HostedSamCredentials
+) -> None:
+    site = make_site(tmp_path)
+    state = {"enabled": True}
+    calls = 0
+
+    def transport(url: str, headers: dict[str, str], body: bytes, timeout: float):  # type: ignore[no-untyped-def]
+        nonlocal calls
+        calls += 1
+        state["enabled"] = False
+        return 200, reply(detection_text())
+
+    names = (IMAGE_A, IMAGE_B)
+    plan = runner.plan_segmentation(site, SEQUENCE_ID, names, ("water",))
+    summary = runner.run_segmentation(
+        site,
+        SEQUENCE_ID,
+        names,
+        ["water"],
+        plugin_enabled=lambda: state["enabled"],
+        credentials=credentials,
+        confirmed_request_count=plan.request_count,
+        decoder=ones_decoder,
+        transport=transport,
+    )
+
+    assert calls == 1
+    assert [r["status"] for r in summary["results"]] == ["completed", "not_attempted"]
+    assert summary["results"][1]["error_code"] == "plugin_disabled"
+
+
+def test_unreadable_settings_mid_batch_stop_uploads_instead_of_allowing_them(
+    tmp_path: Path, credentials: HostedSamCredentials
+) -> None:
+    site = make_site(tmp_path)
+    flips = iter([True, True, RuntimeError("settings file broken")])
+
+    def enabled() -> bool:
+        value = next(flips)
+        if isinstance(value, Exception):
+            raise value
+        return bool(value)
+
+    names = (IMAGE_A, IMAGE_B)
+    plan = runner.plan_segmentation(site, SEQUENCE_ID, names, ("water",))
+    transport = FakeTransport((200, reply(detection_text())))
+    summary = runner.run_segmentation(
+        site,
+        SEQUENCE_ID,
+        names,
+        ["water"],
+        plugin_enabled=enabled,
+        credentials=credentials,
+        confirmed_request_count=plan.request_count,
+        decoder=ones_decoder,
+        transport=transport,
+    )
+
+    assert len(transport.calls) == 1
+    assert summary["results"][1]["status"] == "not_attempted"

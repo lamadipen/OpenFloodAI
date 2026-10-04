@@ -11,6 +11,7 @@
 <script src="/console/shared.js"></script>
 <script>
 let adapters = [];
+let samStatus = null;
 
 async function main() {
   const content = mountShell({ active: "settings", crumbs: [{ label: "Settings" }, { label: "Evidence adapters" }] });
@@ -22,9 +23,83 @@ async function load() {
   try {
     const data = await api("/api/evidence-adapters");
     adapters = data.adapters || [];
+    try {
+      samStatus = await api("/api/hosted-sam/status");
+    } catch (error) {
+      samStatus = null;
+    }
     render();
   } catch (error) {
     $("content").innerHTML = `<div class="card" style="padding:24px;color:var(--bad);font-size:13px;">Could not load adapters: ${escapeHtml(error.message)}</div>`;
+  }
+}
+
+// The key is sent once to the local backend and kept only in its memory. This
+// page never stores it (no localStorage) and only ever sees a masked hint back.
+function hostedSamHtml() {
+  if (!samStatus) return "";
+  const cred = samStatus.credential;
+  const provider = samStatus.provider;
+  const samAdapter = adapters.find((a) => a.plugin_id === samStatus.plugin_id);
+  const enabled = samAdapter ? samAdapter.global_enabled : samStatus.enabled;
+  const source = cred.source === "environment" ? "set by the OPENFLOODAI_SAM_API_KEY environment variable" : "kept in this app's memory until it closes";
+  return `
+    <div class="card" style="margin-top:18px;padding:18px;">
+      <div style="font-size:16px;font-weight:600;">Hosted SAM segmentation (optional)</div>
+      <div style="font-size:12px;color:var(--ink-soft);margin-top:4px;max-width:640px;line-height:1.5;">
+        Sends images you choose to Meta's hosted SAM service to outline a concept such as water or riverbank,
+        to speed up human review. It is off by default, needs your own API key and account, and uploads
+        nothing until you start a batch. Everything else works without it, offline.
+      </div>
+      <div style="margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span class="pill ${enabled ? "ok" : "gray"}">${enabled ? "Enabled" : "Disabled"}</span>
+        <span class="pill ${cred.configured ? "ok" : "warn"}">${cred.configured ? "API key configured" : "API key not configured"}</span>
+        ${samStatus.decoder_available ? "" : '<span class="pill warn">SAM parser not installed</span>'}
+      </div>
+      ${enabled && !cred.configured ? '<div class="hint" style="margin-top:10px;">Add your API key below. Segmentation stays unavailable until you do.</div>' : ""}
+      ${samStatus.decoder_available ? "" : '<div class="hint" style="margin-top:10px;max-width:640px;">Meta\'s SAM parser package is not installed in this copy (pip install meta_sam_parser), so runs are blocked before anything is uploaded.</div>'}
+      <div style="margin-top:14px;font-size:12px;font-weight:600;">API key</div>
+      ${cred.configured ? `<div style="font-family:var(--mono);font-size:13px;margin-top:4px;">${escapeHtml(cred.masked || "")} <span style="color:var(--ink-muted);font-family:inherit;font-size:12px;">(${escapeHtml(source)})</span></div>` : ""}
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;">
+        <input id="samKey" type="password" autocomplete="off" spellcheck="false" placeholder="${cred.configured ? "Paste a new key to replace it" : "Paste your Meta API key"}" style="min-width:280px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;">
+        <button class="btn primary" id="samSave">${cred.configured ? "Replace key" : "Save key"}</button>
+        ${cred.source === "session" ? '<button class="btn" id="samRemove">Remove key</button>' : ""}
+      </div>
+      <div style="margin-top:16px;font-size:12px;line-height:1.6;color:var(--ink-soft);max-width:680px;">
+        <div><strong>Billing:</strong> you pay Meta through your own account; OpenFloodAI does not bill you. ${escapeHtml(provider.pricing_note)}</div>
+        <div><strong>Privacy:</strong> images you select leave this device. ${escapeHtml(provider.retention_note)}</div>
+        <div>Disabling the plugin stops new uploads. Removing the key clears it from this app. Neither reverses charges for requests already sent.</div>
+        <div style="margin-top:6px;">
+          <a href="${escapeHtml(provider.signup_url)}" target="_blank" rel="noopener noreferrer">Sign up and see pricing</a> &middot;
+          <a href="${escapeHtml(provider.terms_url)}" target="_blank" rel="noopener noreferrer">Provider terms</a> &middot;
+          <a href="${escapeHtml(provider.privacy_url)}" target="_blank" rel="noopener noreferrer">Provider privacy policy</a>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function saveSamKey() {
+  const input = $("samKey");
+  const key = input.value;
+  input.value = "";
+  try {
+    await api("/api/hosted-sam/credential", { api_key: key });
+    samStatus = await api("/api/hosted-sam/status");
+    render();
+    toast("API key saved for this session.");
+  } catch (error) {
+    toast(`Could not save the key: ${error.message}`);
+  }
+}
+
+async function removeSamKey() {
+  try {
+    await api("/api/hosted-sam/credential", { remove: true });
+    samStatus = await api("/api/hosted-sam/status");
+    render();
+    toast("API key removed.");
+  } catch (error) {
+    toast(`Could not remove the key: ${error.message}`);
   }
 }
 
@@ -45,7 +120,10 @@ function render() {
     <div class="card" style="margin-top:18px;overflow:hidden;">
       ${adapters.map(rowHtml).join("")}
     </div>
+    ${hostedSamHtml()}
   `;
+  if ($("samSave")) $("samSave").addEventListener("click", saveSamKey);
+  if ($("samRemove")) $("samRemove").addEventListener("click", removeSamKey);
 
   content.querySelectorAll("[data-toggle-plugin]").forEach((btn) => {
     btn.addEventListener("click", () => toggleGlobal(btn.dataset.togglePlugin, btn.dataset.nextState === "true"));
@@ -83,6 +161,7 @@ async function toggleGlobal(pluginId, nextState) {
       enabled: nextState
     });
     adapters = data.adapters || adapters;
+    if (samStatus) samStatus = await api("/api/hosted-sam/status");
     render();
     toast(`${pluginId} ${nextState ? "enabled" : "disabled"} globally.`);
   } catch (error) {
