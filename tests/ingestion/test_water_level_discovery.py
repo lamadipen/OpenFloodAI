@@ -410,8 +410,26 @@ def test_listing_exposes_each_images_group_for_the_baseline_picker(tmp_path: Pat
         json.dumps(
             {
                 "samples": [
-                    {"filename": "a.jpg", "group": "high"},
-                    {"filename": "b.jpg", "group": "low"},
+                    {
+                        "filename": "a.jpg",
+                        "group": "high",
+                        "motivating_reading": {"value": 9.0, "unit": "ft"},
+                        "image_reading": {
+                            "value": 8.9,
+                            "unit": "ft",
+                            "quality_status": "provisional",
+                        },
+                    },
+                    {
+                        "filename": "b.jpg",
+                        "group": "low",
+                        "motivating_reading": {
+                            "value": 1.5,
+                            "unit": "ft",
+                            "quality_status": "approved",
+                        },
+                        "image_reading": None,
+                    },
                 ]
             }
         )
@@ -420,4 +438,21 @@ def test_listing_exposes_each_images_group_for_the_baseline_picker(tmp_path: Pat
     by_id = {row["sequence_id"]: row for row in list_site_image_sequences(tmp_path)}
 
     assert by_id[water.name]["water_level_groups"] == {"a.jpg": "high", "b.jpg": "low"}
-    assert "water_level_groups" not in by_id[regular.name]
+    samples = by_id[water.name]["water_level_samples"]
+    # the image's own reading is preferred; the motivating reading is the fallback
+    assert samples["a.jpg"] == {
+        "group": "high",
+        "level": 8.9,
+        "unit": "ft",
+        "quality_status": "provisional",
+    }
+    assert samples["b.jpg"] == {
+        "group": "low",
+        "level": 1.5,
+        "unit": "ft",
+        "quality_status": "approved",
+    }
+    assert (
+        "water_level_groups" not in by_id[regular.name]
+        and "water_level_samples" not in by_id[regular.name]
+    )

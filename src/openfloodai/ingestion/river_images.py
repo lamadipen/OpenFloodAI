@@ -920,16 +920,24 @@ def list_site_image_sequences(site_dir: Path) -> list[dict[str, Any]]:
         except (OSError, ValueError):
             continue
         if isinstance(summary, dict):
-            groups = _water_level_groups(child)
-            if groups is not None:
-                # Lets a baseline picker label each image with why it was sampled.
-                summary["water_level_groups"] = groups
+            samples = _water_level_samples(child)
+            if samples is not None:
+                # Lets a baseline picker label and order images by group and gauge level.
+                summary["water_level_samples"] = samples
+                summary["water_level_groups"] = {
+                    name: info["group"] for name, info in samples.items()
+                }
             summaries.append(summary)
     return summaries
 
 
-def _water_level_groups(sequence_dir: Path) -> dict[str, str] | None:
-    """File name -> collection group for a water-level sample set, else None."""
+def _water_level_samples(sequence_dir: Path) -> dict[str, dict[str, Any]] | None:
+    """File name -> {group, level, unit, quality_status} for a water-level sample set.
+
+    `level` is the image's OWN nearest gauge reading (falling back to the reading that
+    motivated the pick), so a picker can order images by the level they actually show.
+    None when the sequence is not a water-level sample set.
+    """
 
     path = sequence_dir / WATER_LEVEL_SELECTION_FILENAME
     if not path.is_file():
@@ -939,8 +947,19 @@ def _water_level_groups(sequence_dir: Path) -> dict[str, str] | None:
     except (OSError, ValueError):
         return {}
     samples = saved.get("samples") if isinstance(saved, dict) else None
-    return {
-        str(sample["filename"]): str(sample.get("group", ""))
-        for sample in (samples if isinstance(samples, list) else [])
-        if isinstance(sample, dict) and sample.get("filename")
-    }
+    found: dict[str, dict[str, Any]] = {}
+    for sample in samples if isinstance(samples, list) else []:
+        if not isinstance(sample, dict) or not sample.get("filename"):
+            continue
+        own = sample.get("image_reading")
+        reading = own if isinstance(own, dict) and own.get("value") is not None else None
+        reading = reading or sample.get("motivating_reading")
+        reading = reading if isinstance(reading, dict) else {}
+        value = reading.get("value")
+        found[str(sample["filename"])] = {
+            "group": str(sample.get("group", "")),
+            "level": float(value) if isinstance(value, int | float) else None,
+            "unit": str(reading.get("unit") or ""),
+            "quality_status": reading.get("quality_status"),
+        }
+    return found

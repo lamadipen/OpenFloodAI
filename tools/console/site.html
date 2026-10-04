@@ -369,14 +369,22 @@ function isWaterLevelSequence(seq) {
 // A water-level sample set is picked for level variety, so its earliest image is
 // not a meaningful "normal" reference. The reviewer chooses the baseline.
 function baselineOptionsHtml(seq) {
-  const groups = seq.water_level_groups || {};
+  const samples = seq.water_level_samples || {};
   const images = (seq.records || [])
     .filter((r) => r.download_status === "downloaded" && r.filename)
-    .sort((a, b) => String(a.captured_at_utc).localeCompare(String(b.captured_at_utc)));
-  return `<option value="">Choose a baseline image&hellip;</option>` + images.map((r) => {
+    .map((r) => ({ r, info: samples[r.filename] || {} }));
+  // Lowest gauge level first; images without a level go last, then by time.
+  images.sort((a, b) => {
+    const la = typeof a.info.level === "number" ? a.info.level : Infinity;
+    const lb = typeof b.info.level === "number" ? b.info.level : Infinity;
+    return la - lb || String(a.r.captured_at_utc).localeCompare(String(b.r.captured_at_utc));
+  });
+  return `<option value="">Choose a baseline image&hellip;</option>` + images.map(({ r, info }) => {
     const when = String(r.captured_at_utc || "").slice(0, 16).replace("T", " ");
-    const group = groups[r.filename] ? ` &middot; ${escapeHtml(GROUP_LABEL[groups[r.filename]] || groups[r.filename])} water sample` : "";
-    return `<option value="${escapeHtml(r.filename)}">${escapeHtml(when)} UTC${group}</option>`;
+    const level = typeof info.level === "number" ? `${info.level.toFixed(2)} ${info.unit || ""}`.trim() : "level not recorded";
+    const provisional = info.quality_status === "provisional" ? " (provisional)" : "";
+    const group = info.group ? ` &middot; ${escapeHtml(GROUP_LABEL[info.group] || info.group)} water sample` : "";
+    return `<option value="${escapeHtml(r.filename)}">${escapeHtml(level)}${provisional}${group} &middot; ${escapeHtml(when)} UTC</option>`;
   }).join("");
 }
 
@@ -386,7 +394,7 @@ function sequenceRowHtml(seq) {
   return `<tr class="row">
     <td style="font-family:var(--mono);font-size:12px;">${id}
       ${needsBaseline ? `<div style="font-family:inherit;margin-top:6px;">
-        <label style="font-size:11px;color:var(--ink-soft);display:block;margin-bottom:3px;">Baseline image &mdash; pick a typical-day image. A water-level set has no assumed normal first image.</label>
+        <label style="font-size:11px;color:var(--ink-soft);display:block;margin-bottom:3px;">Baseline image &mdash; pick a typical-day image (listed lowest gauge level first). A water-level set has no assumed normal first image.</label>
         <select data-baseline-for="${id}" style="max-width:340px;font-size:12px;">${baselineOptionsHtml(seq)}</select></div>` : ""}
       <div class="err" data-run-error="${id}" hidden style="margin-top:8px;font-family:inherit;"></div>
     </td>

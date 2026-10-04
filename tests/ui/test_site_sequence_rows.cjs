@@ -18,10 +18,16 @@ function context() {
 const waterSet = {
   sequence_id: "usgs-CAM-2025-01-01-2025-12-31-water_level",
   downloaded_count: 3,
-  water_level_groups: { "b.jpg": "high", "a.jpg": "low" },
+  water_level_groups: { "b.jpg": "high", "a.jpg": "low", "c.jpg": "middle" },
+  water_level_samples: {
+    "b.jpg": { group: "high", level: 12.5, unit: "ft", quality_status: "provisional" },
+    "a.jpg": { group: "low", level: 3.1, unit: "ft", quality_status: "approved" },
+    "c.jpg": { group: "middle", level: 7.25, unit: "ft", quality_status: "approved" }
+  },
   records: [
     { filename: "b.jpg", captured_at_utc: "2025-06-02T12:05:00+00:00", download_status: "downloaded" },
     { filename: "a.jpg", captured_at_utc: "2025-03-01T12:05:00+00:00", download_status: "downloaded" },
+    { filename: "c.jpg", captured_at_utc: "2025-09-09T12:05:00+00:00", download_status: "downloaded" },
     { filename: "", captured_at_utc: "2025-04-01T00:00:00+00:00", download_status: "missing" }
   ]
 };
@@ -34,12 +40,23 @@ test("a water-level set needs a baseline choice before it can run", () => {
   assert.match(out, /no assumed normal first image/);
 });
 
-test("baseline options are in time order, label the sample group, and skip missing images", () => {
+test("baseline options show the gauge level and are ordered lowest level first", () => {
   const out = context().baselineOptionsHtml(waterSet);
   const values = [...out.matchAll(/value="([^"]+)"/g)].map((m) => m[1]).filter(Boolean);
-  assert.deepEqual(values, ["a.jpg", "b.jpg"]);
-  assert.match(out, /2025-03-01 12:05 UTC &middot; Low water sample/);
-  assert.match(out, /2025-06-02 12:05 UTC &middot; High water sample/);
+  assert.deepEqual(values, ["a.jpg", "c.jpg", "b.jpg"]); // 3.10, 7.25, 12.50 ft
+  assert.match(out, /3\.10 ft &middot; Low water sample &middot; 2025-03-01 12:05 UTC/);
+  assert.match(out, /7\.25 ft &middot; Middle water sample/);
+  assert.match(out, /12\.50 ft \(provisional\) &middot; High water sample/);
+  assert.doesNotMatch(out, /value=""[^>]*>[^<]*missing/);
+});
+
+test("images without a recorded level are listed last and say so", () => {
+  const seq = { ...waterSet, water_level_samples: { "a.jpg": { group: "low", level: 3.1, unit: "ft" } } };
+  const out = context().baselineOptionsHtml(seq);
+  const values = [...out.matchAll(/value="([^"]+)"/g)].map((m) => m[1]).filter(Boolean);
+  assert.equal(values[0], "a.jpg");
+  assert.equal(values.length, 3);
+  assert.match(out, /level not recorded/);
 });
 
 test("a regular sequence is unchanged: no picker, button enabled", () => {
