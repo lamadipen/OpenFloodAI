@@ -458,49 +458,108 @@ def test_listing_exposes_each_images_group_for_the_baseline_picker(tmp_path: Pat
     )
 
 
-def test_month_windows_cover_the_range_without_gaps_or_overlap() -> None:
-    start = datetime(2025, 11, 20, 7, 0, tzinfo=UTC)
-    end = datetime(2026, 2, 3, 7, 0, tzinfo=UTC)
+def counting_lister(calls: list[tuple[datetime, datetime]]) -> Any:
+    everything = images()
 
-    windows = wld._month_windows(start, end)
+    def lister(slug: str, start: datetime, end: datetime) -> list[ImageSequenceCandidate]:
+        calls.append((start, end))
+        return [i for i in everything if start <= i.captured_utc < end]
 
-    assert windows[0][0] == start and windows[-1][1] == end
-    assert all(a[1] == b[0] for a, b in zip(windows, windows[1:], strict=False))
-    assert [w[0].month for w in windows] == [11, 12, 1, 2]
+    return lister
 
 
-def test_a_long_range_is_listed_by_month_so_the_per_request_cap_is_not_hit(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_discovery_checks_the_archive_only_around_candidate_readings(tmp_path: Path) -> None:
     calls: list[tuple[datetime, datetime]] = []
 
-    def one_month(slug: str, start: datetime, end: datetime) -> list[ImageSequenceCandidate]:
+    out = run(context(tmp_path), list_images=counting_lister(calls))
+
+    assert out["state"] == "ok"
+    # 60 days of readings, three groups of three: a handful of day listings, never one per day.
+    assert 0 < len(calls) <= 30
+    assert out["archive"]["days_checked"] == len({c[0] for c in calls})
+    assert out["archive"]["images_seen"] > 0 and "no image was downloaded" in out["archive"]["note"]
+    # every request is a single UTC day plus the 15-minute margins -- never the whole range
+    assert all(timedelta(hours=24) < (end - start) < timedelta(hours=26) for start, end in calls)
+
+
+def test_a_huge_range_never_lists_the_whole_archive(tmp_path: Path) -> None:
+    ctx = wld.build_context(
+        URL, "2026-01-01", "2026-12-31", "America/Denver", write_registry(tmp_path)
+    )
+    big = [
+        GageReading(
+            (datetime(2026, 1, 1, 12, tzinfo=UTC) + timedelta(days=d)).isoformat(),
+            float(d),
+            ("A",),
+            "approved",
+        )
+        for d in range(365)
+    ]
+    big_series = GageSeries("09999999", "00065", "gage height", "ft", False, big, "https://u")
+    calls: list[tuple[datetime, datetime]] = []
+
+    def lister(slug: str, start: datetime, end: datetime) -> list[ImageSequenceCandidate]:
         calls.append((start, end))
-        # ~3,000 images a month: fine per call, but 36,000 for a year is over the 20,000 cap.
-        return [
-            ImageSequenceCandidate(f"https://x.test/{slug}___{start:%Y%m%d}_{n}.jpg", start, 1)
-            for n in range(3000)
-        ]
+        d = start + timedelta(minutes=15)
+        stamp = (d + timedelta(hours=12, minutes=5)).strftime("%Y-%m-%dT%H-%M-%SZ")
+        when = d + timedelta(hours=12, minutes=5)
+        return [ImageSequenceCandidate(f"https://x/{CAMERA}___{stamp}.jpg", when, 1)]
 
-    monkeypatch.setattr(wld, "list_archive_images_between", one_month)
-
-    listed = wld.list_archive_images_chunked(
-        CAMERA, datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 10, 5, tzinfo=UTC)
+    out = wld.discover(
+        ctx,
+        groups=["low", "middle", "high"],
+        images_per_group=3,
+        fetch_gauge=lambda *_: big_series,
+        list_images=lister,
     )
 
-    assert len(calls) == 10 and len(listed) == 30_000
-    assert calls[-1][1] == datetime(2026, 10, 5, tzinfo=UTC)
+    assert out["state"] == "ok"
+    assert len(calls) < 60  # a year of days, but only the candidate days were checked
 
 
-def test_a_month_that_is_still_too_large_gives_a_water_level_message(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def too_many(*_: Any) -> Any:
-        raise RiverImageError("This date range has too many images to list. Narrow it.")
+def test_day_finder_covers_a_midnight_boundary_and_caches_each_day() -> None:
+    calls: list[tuple[datetime, datetime]] = []
+    near_midnight = datetime(2026, 3, 2, 0, 10, tzinfo=UTC)
+    before_midnight = datetime(2026, 3, 1, 23, 50, tzinfo=UTC)
+    pool = [
+        ImageSequenceCandidate(f"https://x/a___{t:%Y-%m-%dT%H-%M-%SZ}.jpg", t, 1)
+        for t in (before_midnight, near_midnight)
+    ]
 
-    monkeypatch.setattr(wld, "list_archive_images_between", too_many)
+    def lister(slug: str, start: datetime, end: datetime) -> list[ImageSequenceCandidate]:
+        calls.append((start, end))
+        return [i for i in pool if start <= i.captured_utc < end]
 
-    with pytest.raises(RiverImageError, match="water-level sampling"):
-        wld.list_archive_images_chunked(
-            CAMERA, datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 2, 1, tzinfo=UTC)
-        )
+    finder = wld.ArchiveDayFinder("a", lister)
+    epoch = datetime(2026, 3, 2, 0, 0, tzinfo=UTC).timestamp()
+
+    found = finder(epoch)
+    assert [i.captured_utc for i in found] == [before_midnight, near_midnight]  # both days used
+    assert len(calls) == 2
+    finder(epoch)
+    finder(epoch + 60)
+    assert len(calls) == 2  # each day is listed once
+
+
+def test_the_day_finder_stops_after_its_day_limit_and_the_group_says_so() -> None:
+    finder = wld.ArchiveDayFinder("a", lambda *_: [], max_days=2)
+    base = datetime(2026, 3, 1, 12, tzinfo=UTC)
+    finder(base.timestamp())
+    finder((base + timedelta(days=5)).timestamp())
+    with pytest.raises(wls.LookupLimitReached):
+        finder((base + timedelta(days=9)).timestamp())
+
+    # In a selection, an archive with no usable images hits the limit and reports it.
+    readings = [
+        GageReading((base + timedelta(days=d)).isoformat(), float(d), ("A",), "approved")
+        for d in range(60)
+    ]
+    result = wls.select_samples(
+        readings,
+        wld.ArchiveDayFinder("a", lambda *_: [], max_days=4),
+        groups=["high"],
+        images_per_group=3,
+        timezone_name="America/Denver",
+    )
+    high = result.groups[0]
+    assert high.selected == [] and high.shortfall_reason == wls.SHORTFALL_LOOKUP_LIMIT

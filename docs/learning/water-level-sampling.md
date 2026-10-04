@@ -28,8 +28,10 @@ machine's result and from any human label, and it never creates a label.
 2. Choose **Sample by water level** (instead of Regular sampling).
 3. Tick Low, Middle, and/or High, and set **Images per group** (default 3,
    at most 10).
-4. Select **Find samples**. This reads gauge data and the archive's image list.
-   **It downloads no images.**
+4. Select **Find samples**. This reads the gauge data, ranks the readings, and
+   then checks the camera archive only around the readings it is considering, one
+   day at a time, until each group has its picks. It never lists or downloads the
+   whole period, and **it downloads no images.**
 5. Review the preview. Each row shows the group, the gauge reading time, gauge
    height and unit, USGS quality (provisional readings are marked), the image time,
    and the exact gap between them.
@@ -68,6 +70,7 @@ every selection.
 | Re-check | The image's **own** nearest reading must also fall in the group. Both readings are saved when they differ, and the group reflects the image's own reading. |
 | Uniqueness | An image is chosen once and never fills two groups. Groups fill in the order low, middle, high. |
 | Shortfall | A group that cannot reach its count is reported, never padded with unsuitable duplicates. |
+| Archive checks | Only days around candidate readings are listed (at most 300 separate days per search). If many top readings have no usable image, the search stops and says so. |
 
 ## After the download
 

@@ -51,7 +51,7 @@ from __future__ import annotations
 
 import math
 from bisect import bisect_left
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -89,6 +89,7 @@ SHORTFALL_NO_READINGS = "no_valid_gauge_height_readings"
 SHORTFALL_LIMITED_VARIATION = "limited_level_variation"
 SHORTFALL_NO_ELIGIBLE = "no_reading_in_this_group"
 SHORTFALL_NOT_ENOUGH = "not_enough_distinct_dates_with_images"
+SHORTFALL_LOOKUP_LIMIT = "archive_lookup_limit_reached"
 
 NOTE_RELATIVE = (
     "Low, middle, and high are relative to this station and date range only. They are "
@@ -215,6 +216,22 @@ class ImageIndex:
         return [item[2] for item in found]
 
 
+ImageFinder = Callable[[float], list[ImageSequenceCandidate]]
+"""Images within the match window of a reading's epoch, nearest first (earlier on a tie)."""
+
+
+class LookupLimitReached(Exception):  # noqa: N818 -- a control-flow signal, not an error type
+    """The archive finder stopped checking: too many separate days were needed."""
+
+
+def as_finder(images: Sequence[ImageSequenceCandidate] | ImageFinder) -> ImageFinder:
+    """Accept either a ready list of images or a lazy finder (so a big archive is never listed)."""
+
+    if callable(images):
+        return images
+    return ImageIndex(images).within
+
+
 def _reading_record(reading: GageReading, unit: str) -> dict[str, Any]:
     return {
         "datetime_utc": reading.datetime_utc,
@@ -300,7 +317,7 @@ class SelectionResult:
     thresholds: LevelThresholds | None
     unit: str
     reading_count: int
-    image_count: int
+    image_count: int | None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -312,7 +329,7 @@ class SelectionResult:
                 "note": NOTE_RELATIVE,
             },
             "reading_count": self.reading_count,
-            "archive_image_count": self.image_count,
+            **({"archive_image_count": self.image_count} if self.image_count is not None else {}),
             "thresholds": self.thresholds.to_dict() if self.thresholds else None,
             "unit": self.unit,
             "groups": [group.to_dict() for group in self.groups],
@@ -351,7 +368,7 @@ def _evaluate(
 
 def select_samples(
     readings: Sequence[GageReading],
-    images: Sequence[ImageSequenceCandidate],
+    images: Sequence[ImageSequenceCandidate] | ImageFinder,
     *,
     groups: Sequence[str],
     images_per_group: int,
@@ -376,12 +393,13 @@ def select_samples(
     kept = kept or {}
     index = GageReadingIndex(readings)
     valid = index.readings
-    image_index = ImageIndex(images)
+    find_images = as_finder(images)
+    image_count = None if callable(images) else len(images)
     results = [GroupResult(group, images_per_group) for group in requested]
     if not valid:
         for result in results:
             result.shortfall_reason = SHORTFALL_NO_READINGS
-        return SelectionResult(results, None, unit, 0, len(image_index.images))
+        return SelectionResult(results, None, unit, 0, image_count)
     thresholds = compute_thresholds(valid)
 
     used_images: set[str] = {
@@ -408,7 +426,11 @@ def select_samples(
             if _too_close(ordinal, taken):
                 result.skip(SKIP_SPACING)
                 continue
-            nearby = image_index.within(_epoch(reading.datetime_utc))
+            try:
+                nearby = find_images(_epoch(reading.datetime_utc))
+            except LookupLimitReached:
+                result.shortfall_reason = SHORTFALL_LOOKUP_LIMIT
+                break
             if not nearby:
                 result.skip(SKIP_NO_IMAGE, reading, unit)
                 continue
@@ -433,15 +455,15 @@ def select_samples(
             result.selected.append(chosen)
             used_images.add(chosen.image.source_url)
             taken.append(ordinal)
-        if len(result.selected) < images_per_group:
+        if len(result.selected) < images_per_group and result.shortfall_reason is None:
             result.shortfall_reason = SHORTFALL_NOT_ENOUGH
-    return SelectionResult(results, thresholds, unit, len(valid), len(image_index.images))
+    return SelectionResult(results, thresholds, unit, len(valid), image_count)
 
 
 def verify_approved(
     approved: Sequence[Mapping[str, str]],
     readings: Sequence[GageReading],
-    images: Sequence[ImageSequenceCandidate],
+    images: Sequence[ImageSequenceCandidate] | ImageFinder,
     *,
     timezone_name: str,
     unit: str = "ft",
@@ -458,8 +480,7 @@ def verify_approved(
         raise SamplingError("There are no valid gauge-height readings to verify against.")
     thresholds = compute_thresholds(index.readings)
     by_time = {reading.datetime_utc: reading for reading in index.readings}
-    by_name = {image.source_url.rsplit("/", 1)[-1]: image for image in images}
-    image_index = ImageIndex(images)
+    find_images = as_finder(images)
     zone = ZoneInfo(timezone_name)
     verified: list[SelectedSample] = []
     seen_images: set[str] = set()
@@ -469,13 +490,20 @@ def verify_approved(
         if group not in GROUPS:
             raise SamplingError(f"Unknown group: {group!r}.")
         reading = by_time.get(str(item.get("reading_datetime_utc", "")))
-        image = by_name.get(str(item.get("filename", "")))
-        if reading is None or image is None:
+        if reading is None:
             raise SamplingError("An approved sample no longer matches the gauge or image data.")
+        try:
+            nearby = find_images(_epoch(reading.datetime_utc))
+        except LookupLimitReached as error:
+            raise SamplingError("Too many separate days to verify against the archive.") from error
+        wanted = str(item.get("filename", ""))
+        image = next((i for i in nearby if i.source_url.rsplit("/", 1)[-1] == wanted), None)
+        if image is None:
+            raise SamplingError(
+                "An approved image is not in the archive within 15 minutes of its reading."
+            )
         if not group_accepts(group, reading.value, thresholds):
             raise SamplingError(f"A reading no longer belongs to the {group} group.")
-        if image not in image_index.within(_epoch(reading.datetime_utc)):
-            raise SamplingError("An approved image is not within 15 minutes of its reading.")
         if image.source_url in seen_images:
             raise SamplingError("The same image was approved more than once.")
         sample, reason = _evaluate(group, reading, image, thresholds, index, unit)

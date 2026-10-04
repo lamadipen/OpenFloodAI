@@ -448,3 +448,14 @@ def test_approved_samples_that_no_longer_qualify_are_rejected(case: str) -> None
 
     with pytest.raises(wls.SamplingError):
         verified(readings, images, items)
+
+
+def test_a_lazy_image_finder_gives_the_same_picks_as_a_full_image_list() -> None:
+    readings, images = ramp()
+    kwargs = {"groups": list(wls.GROUPS), "images_per_group": 3, "timezone_name": TZ}
+
+    eager = wls.select_samples(readings, images, **kwargs)  # type: ignore[arg-type]
+    lazy = wls.select_samples(readings, wls.ImageIndex(images).within, **kwargs)  # type: ignore[arg-type]
+
+    assert [s.to_dict() for s in lazy.all_samples()] == [s.to_dict() for s in eager.all_samples()]
+    assert "archive_image_count" in eager.to_dict() and "archive_image_count" not in lazy.to_dict()

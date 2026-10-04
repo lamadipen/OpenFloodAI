@@ -36,6 +36,7 @@ from openfloodai.ingestion.river_images import (
 )
 from openfloodai.ingestion.river_registry import CameraRecord, find_camera
 from openfloodai.ingestion.usgs_gage_data import (
+    MATCH_TOLERANCE_SECONDS,
     GageDataError,
     GageReading,
     GageSeries,
@@ -44,6 +45,7 @@ from openfloodai.ingestion.usgs_gage_data import (
 from openfloodai.ingestion.water_level_sampling import (
     NOTE_RELATIVE,
     POLICY_VERSION,
+    LookupLimitReached,
     SamplingError,
     SelectedSample,
     select_samples,
@@ -59,48 +61,74 @@ STATE_SERVICE_UNAVAILABLE = "gauge_service_unavailable"
 STATE_NO_GAUGE_HEIGHT = "gauge_height_unavailable"
 STATE_NO_IMAGES = "no_images_in_range"
 
-# One whole-year listing can exceed the downloader's per-request listing cap on a camera
-# that archives every few minutes. Discovery only needs names and times, so it lists one
-# UTC month at a time, with a total bound so a runaway range still stops.
-MAX_DISCOVERY_IMAGES = 300_000
+# The archive can hold tens of thousands of images a year, and only a handful are ever
+# needed. So images are NOT listed for the whole range: gauge readings are ranked first, and
+# the archive is checked only around the candidate readings being considered, one UTC day at
+# a time (about a hundred names), stopping as soon as each group has its picks.
+MAX_ARCHIVE_DAYS_CHECKED = 300
 
 
-def _month_windows(start: datetime, end: datetime) -> list[tuple[datetime, datetime]]:
-    windows: list[tuple[datetime, datetime]] = []
-    current = start
-    while current < end:
-        following = (
-            datetime(current.year + 1, 1, 1, tzinfo=UTC)
-            if current.month == 12
-            else datetime(current.year, current.month + 1, 1, tzinfo=UTC)
+class ArchiveDayFinder:
+    """Find archive images near a reading by listing only that reading's UTC day(s).
+
+    Each day's listing is fetched once and cached for this discovery. Names, times and
+    sizes only; no image is downloaded. Stops with `LookupLimitReached` if candidates
+    would need more than `max_days` separate days, so a camera with a long archive gap
+    cannot turn one request into thousands.
+    """
+
+    def __init__(
+        self,
+        slug: str,
+        lister: ImageLister,
+        max_days: int = MAX_ARCHIVE_DAYS_CHECKED,
+    ) -> None:
+        self._slug = slug
+        self._lister = lister
+        self.max_days = max_days
+        self._days: dict[date, list[ImageSequenceCandidate]] = {}
+
+    @property
+    def days_checked(self) -> int:
+        return len(self._days)
+
+    @property
+    def images_seen(self) -> int:
+        return len({image.source_url for images in self._days.values() for image in images})
+
+    def _load(self, day: date) -> list[ImageSequenceCandidate]:
+        cached = self._days.get(day)
+        if cached is not None:
+            return cached
+        if len(self._days) >= self.max_days:
+            raise LookupLimitReached
+        margin = timedelta(seconds=MATCH_TOLERANCE_SECONDS)
+        day_start = datetime(day.year, day.month, day.day, tzinfo=UTC)
+        # +1 second: the listing's end is exclusive and the match window is inclusive.
+        listed = self._lister(
+            self._slug,
+            day_start - margin,
+            day_start + timedelta(days=1) + margin + timedelta(seconds=1),
         )
-        windows.append((current, min(following, end)))
-        current = following
-    return windows
+        self._days[day] = listed
+        return listed
 
-
-def list_archive_images_chunked(
-    slug: str, start_utc: datetime, end_utc: datetime
-) -> list[ImageSequenceCandidate]:
-    """Archive image listing for [start, end), fetched one UTC month at a time."""
-
-    images: list[ImageSequenceCandidate] = []
-    for window_start, window_end in _month_windows(start_utc, end_utc):
-        try:
-            images.extend(list_archive_images_between(slug, window_start, window_end))
-        except RiverImageError as error:
-            if "too many images" in str(error):
-                raise RiverImageError(
-                    "This camera archives too many images in one month to list for "
-                    "water-level sampling. Choose a shorter date range."
-                ) from error
-            raise
-        if len(images) > MAX_DISCOVERY_IMAGES:
-            raise RiverImageError(
-                "This date range covers too many archive images to list. "
-                "Choose a shorter date range."
-            )
-    return images
+    def __call__(self, epoch: float) -> list[ImageSequenceCandidate]:
+        low = epoch - MATCH_TOLERANCE_SECONDS
+        high = epoch + MATCH_TOLERANCE_SECONDS
+        days = {
+            datetime.fromtimestamp(low, tz=UTC).date(),
+            datetime.fromtimestamp(high, tz=UTC).date(),
+        }
+        found: dict[str, ImageSequenceCandidate] = {}
+        for day in sorted(days):
+            for image in self._load(day):
+                if low <= image.captured_utc.timestamp() <= high:
+                    found[image.source_url] = image
+        return sorted(
+            found.values(),
+            key=lambda i: (abs(i.captured_utc.timestamp() - epoch), i.captured_utc.timestamp()),
+        )
 
 
 GaugeFetcher = Callable[[str, str, str], GageSeries]
@@ -191,7 +219,7 @@ def discover(
     """Propose samples, or explain why water-level sampling cannot be used here."""
 
     fetch_gauge = fetch_gauge or fetch_gage_readings
-    list_images = list_images or list_archive_images_chunked
+    list_images = list_images or list_archive_images_between
     out = _base(context, groups, images_per_group)
     out["selected_at_utc"] = datetime.now(tz=UTC).isoformat()
     camera = context.camera
@@ -216,13 +244,9 @@ def discover(
         "rejected_reading_count": series.rejected_reading_count,
         "valid_reading_count": len(readings),
     }
-    images = list_images(context.slug, context.start_utc, context.end_utc)
-    if not images:
-        out["state"] = STATE_NO_IMAGES
-        out["message"] = "The camera archive lists no images for this date range."
-        return out
+    finder = ArchiveDayFinder(context.slug, list_images)
     kept_samples = (
-        verify_approved(kept, readings, images, timezone_name=context.timezone, unit=series.unit)
+        verify_approved(kept, readings, finder, timezone_name=context.timezone, unit=series.unit)
         if kept
         else []
     )
@@ -231,7 +255,7 @@ def discover(
         kept_by_group.setdefault(sample.group, []).append(sample)
     result = select_samples(
         readings,
-        images,
+        finder,
         groups=groups,
         images_per_group=images_per_group,
         timezone_name=context.timezone,
@@ -239,6 +263,19 @@ def discover(
         kept=kept_by_group,
         declined_images=frozenset(declined),
     )
+    out["archive"] = {
+        "days_checked": finder.days_checked,
+        "images_seen": finder.images_seen,
+        "day_limit": finder.max_days,
+        "note": "Only days around candidate readings were checked; no image was downloaded.",
+    }
+    if finder.days_checked > 0 and finder.images_seen == 0:
+        out["state"] = STATE_NO_IMAGES
+        out["message"] = (
+            "The camera archive has no images near any of the gauge readings that were "
+            "checked, so nothing can be proposed. Try a different date range."
+        )
+        return out
     out["state"] = STATE_OK
     out["selection"] = result.to_dict()
     out["declined_images"] = sorted(set(declined))
@@ -337,7 +374,7 @@ def download_approved(
     """Verify the approved set from fresh data, then download only those images."""
 
     fetch_gauge = fetch_gauge or fetch_gage_readings
-    list_images = list_images or list_archive_images_chunked
+    list_images = list_images or list_archive_images_between
     download = download or download_river_image_sequence
     if not approved:
         raise RiverImageError("Approve at least one sample before downloading.")
@@ -347,10 +384,13 @@ def download_approved(
     series, readings, problem = _load_gauge(context, camera, fetch_gauge)
     if problem is not None or series is None:
         raise RiverImageError(problem[1] if problem else "Gauge data is unavailable.")
-    images = list_images(context.slug, context.start_utc, context.end_utc)
     try:
         samples = verify_approved(
-            approved, readings, images, timezone_name=context.timezone, unit=series.unit
+            approved,
+            readings,
+            ArchiveDayFinder(context.slug, list_images),
+            timezone_name=context.timezone,
+            unit=series.unit,
         )
     except SamplingError as error:
         raise RiverImageError(f"{error} Run Find samples again before downloading.") from error
@@ -362,7 +402,7 @@ def download_approved(
         images_per_group=images_per_group,
         declined=declined,
         fetch_gauge=lambda *_: series,
-        list_images=lambda *_: images,
+        list_images=list_images,
     )
     provenance = build_provenance(context, discovery, samples, declined=declined)
     result = download(
