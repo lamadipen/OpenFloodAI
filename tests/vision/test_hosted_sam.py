@@ -15,13 +15,35 @@ from openfloodai.vision import hosted_sam as sam
 KEY = "sk-test-0123456789abcdef"
 
 
-def reply(text: str) -> str:
-    event = {"type": "response.output_text.delta", "delta": text}
-    return f"data: {json.dumps(event)}\n\ndata: [DONE]\n\n"
+def reply(text: str, *, complete: bool = True) -> str:
+    lane = {"item_id": "m1", "output_index": 0, "content_index": 0}
+    events: list[dict[str, Any]] = [
+        {"type": "response.output_text.delta", **lane, "delta": text},
+        {"type": "response.output_text.done", **lane, "text": text},
+    ]
+    if complete:
+        events.append({"type": "response.completed"})
+    return "".join(f"data: {json.dumps(event)}\n\n" for event in events)
 
 
-def one_object(w: int = 40, h: int = 30, x: int = 3, y: int = 4, mh: int = 5, mw: int = 6) -> str:
-    return f"<0f>0<|box;x1=1;y1=2;x2=20;y2=25;w={w};h={h}|><|mask;x={x};y={y};data={mh},{mw},!AB|>"
+def mask_payload(width: int, height: int) -> str:
+    from meta_sam_parser._mask_codec import _encode_raster
+
+    return str(_encode_raster([1] * (width * height), width, height))
+
+
+def one_object(
+    x1: int = 1, y1: int = 2, x2: int = 20, y2: int = 25, w: int = 40, h: int = 30
+) -> str:
+    mask_w, mask_h = x2 - x1 + 1, y2 - y1 + 1
+    return (
+        f"<0f>0<|box;x1={x1};y1={y1};x2={x2};y2={y2};w={w};h={h};c=0.8|>"
+        f"<|mask;x=0;y=0;data={mask_h},{mask_w},{mask_payload(mask_w, mask_h)}|>\n"
+    )
+
+
+def parse(text: str, **kwargs: Any) -> list[sam.RawDetection]:
+    return sam.parse_events(sam.extract_events(reply(text, **kwargs)))[0]
 
 
 def ones_decoder(height: int, width: int, encoding: str, payload: str) -> Any:
@@ -46,38 +68,50 @@ def test_request_body_matches_the_documented_shape_and_has_one_concept() -> None
     assert content[1] == {"type": "input_image", "image_url": "data:image/jpeg;base64,AAAA"}
 
 
-def test_parse_reads_boxes_and_masks_from_the_special_token_text() -> None:
-    text = one_object() + "<1f>" + one_object(x=0, y=0).replace("<0f>0", "1")
-    detections = sam.parse_segmentation_text(text)
+def test_parse_reads_inclusive_boxes_masks_and_confidence_with_the_official_parser() -> None:
+    detections = parse(one_object())
 
-    assert len(detections) == 2
-    first = detections[0]
-    assert first.box_xyxy == (1, 2, 20, 25)
-    assert first.frame_size == (40, 30)
-    assert (first.mask_x, first.mask_y, first.mask_height, first.mask_width) == (3, 4, 5, 6)
-    assert first.mask_encoding == "!"
-    assert first.mask_payload == "AB"
-
-
-def test_a_reply_with_no_objects_is_a_real_no_match() -> None:
-    assert sam.parse_segmentation_text("") == []
-    assert sam.parse_segmentation_text("<0f>") == []
+    assert len(detections) == 1
+    d = detections[0]
+    # inclusive corners (1,2)-(20,25) become the half-open box [1,21) x [2,26)
+    assert (d.left, d.top, d.right, d.bottom) == (1, 2, 21, 26)
+    assert (d.mask_width, d.mask_height) == (20, 24)
+    assert d.mask_encoding == "one_bit" and d.mask_payload.startswith("!")
+    assert d.confidence == 0.8
 
 
-def test_unparseable_markers_are_malformed_not_an_empty_match() -> None:
+def test_a_completed_reply_with_no_objects_is_a_real_no_match() -> None:
+    assert parse("") == []
+    assert parse("plain text, no objects\n") == []
+
+
+def test_a_reply_that_never_completes_is_not_mistaken_for_no_match() -> None:
     with pytest.raises(sam.SamError) as raised:
-        sam.parse_segmentation_text("<0f>0<|box;broken|>")
+        parse(one_object(), complete=False)
     assert raised.value.code == sam.ERROR_MALFORMED
 
 
-def test_output_text_joins_stream_deltas_or_reads_plain_json() -> None:
-    body = reply("<0f>") + reply("0")
-    assert sam.extract_output_text(body) == "<0f>0"
-    assert sam.extract_output_text(json.dumps({"output_text": "hi"})) == "hi"
-    assert sam.extract_output_text("   ") == ""
-    for broken in ("data: {not json}\n", "not a reply", json.dumps({"other": 1})):
+def test_an_unreadable_object_line_is_malformed_not_silently_dropped() -> None:
+    with pytest.raises(sam.SamError) as raised:
+        parse("<0f>0<|box;broken|><|mask;x=0;y=0;data=1,1,!|>\n")
+    assert raised.value.code == sam.ERROR_MALFORMED
+
+
+def test_a_failed_or_refused_response_is_a_provider_error() -> None:
+    failed = {"type": "response.failed", "response": {"error": {"message": "boom"}}}
+    refused = {"type": "response.refusal.done", "refusal": "no"}
+    for event in (failed, refused):
         with pytest.raises(sam.SamError) as raised:
-            sam.extract_output_text(broken)
+            sam.parse_events([event])
+        assert raised.value.code == sam.ERROR_PROVIDER
+
+
+def test_events_are_read_from_server_sent_data_lines() -> None:
+    events = sam.extract_events(reply(""))
+    assert [e["type"] for e in events][-1] == "response.completed"
+    for broken in ("data: {not json}\n", "not a reply", ""):
+        with pytest.raises(sam.SamError) as raised:
+            sam.extract_events(broken)
         assert raised.value.code == sam.ERROR_MALFORMED
 
 
@@ -100,37 +134,54 @@ def test_mask_is_placed_in_original_pixels_using_the_crop_origin() -> None:
         100, 60, {"x": 10, "y": 20, "width": 40, "height": 50}, jpeg_quality=90
     )
     assert (transform.width, transform.height) == (40, 30)
-    detection = sam.parse_segmentation_text(one_object(w=40, h=30))[0]
+    detection = parse(one_object())[0]
 
     canvas = sam.place_mask_in_source(detection, ones_decoder, transform)
 
     assert canvas.shape == (60, 100)
     ys, xs = np.nonzero(canvas)
-    # mask offset (3, 4) inside the crop whose origin is (10, 12)
-    assert (int(xs.min()), int(ys.min())) == (13, 16)
-    assert (int(xs.max()), int(ys.max())) == (13 + 6 - 1, 16 + 5 - 1)
-    assert sam.box_in_source(detection, transform) == [11, 14, 30, 37]
-    # Nothing lands outside the watch region.
+    # box-local mask anchored at box (1,2) inside the crop whose origin is (10,12)
+    assert (int(xs.min()), int(ys.min())) == (11, 14)
+    assert (int(xs.max()), int(ys.max())) == (30, 37)
+    assert sam.box_in_source(detection, transform) == [11, 14, 31, 38]
     outside = canvas.copy()
     outside[12:42, 10:50] = 0
     assert not outside.any()
 
 
-def test_masks_that_do_not_fit_the_crop_or_the_declared_size_are_rejected() -> None:
+def test_boxes_outside_the_crop_and_mismatched_masks_are_rejected() -> None:
     transform = sam.crop_transform(
         100, 60, {"x": 10, "y": 20, "width": 40, "height": 50}, jpeg_quality=90
     )
-    wrong_frame = sam.parse_segmentation_text(one_object(w=41, h=30))[0]
-    too_far = sam.parse_segmentation_text(one_object(w=40, h=30, x=38))[0]
-    for detection in (wrong_frame, too_far):
-        with pytest.raises(sam.SamError) as raised:
-            sam.place_mask_in_source(detection, ones_decoder, transform)
-        assert raised.value.code == sam.ERROR_MALFORMED
+    too_far = parse(one_object(x2=60, w=100))[0]  # right edge 61 > crop width 40
+    with pytest.raises(sam.SamError) as raised:
+        sam.place_mask_in_source(too_far, ones_decoder, transform)
+    assert raised.value.code == sam.ERROR_MALFORMED
 
-    good = sam.parse_segmentation_text(one_object(w=40, h=30))[0]
+    good = parse(one_object())[0]
+    resized = sam.RawDetection(**{**good.__dict__, "mask_width": 5})
+    with pytest.raises(sam.SamError) as raised:
+        sam.place_mask_in_source(resized, ones_decoder, transform)
+    assert raised.value.code == sam.ERROR_MALFORMED
+
     with pytest.raises(sam.SamError) as raised:
         sam.place_mask_in_source(good, lambda h, w, e, p: np.ones((1, 1)), transform)
     assert raised.value.code == sam.ERROR_MALFORMED
+
+
+def test_the_official_decoder_reads_real_masks_and_rejects_corrupt_ones() -> None:
+    decoder = sam.official_mask_decoder()
+    assert decoder is not None
+    good = parse(one_object())[0]
+
+    raster = decoder(good.mask_height, good.mask_width, good.mask_encoding, good.mask_payload)
+    assert raster.shape == (24, 20) and int(raster.sum()) == 24 * 20
+
+    with pytest.raises(sam.SamError) as raised:
+        decoder(24, 20, "one_bit", "!not-a-real-payload")
+    assert raised.value.code == sam.ERROR_MALFORMED
+    with pytest.raises(sam.SamError):
+        decoder(24, 20, "mystery", good.mask_payload)
 
 
 def test_the_default_decoder_is_explicitly_unavailable() -> None:

@@ -77,7 +77,7 @@ test("starting needs the upload acknowledgement and shows the request count", ()
 test("a missing decoder blocks the start button", () => {
   const out = context({ decoder_available: false }, { plan: { request_count: 1 }, ackChecked: true }).samPanelHtml();
   assert.match(out, /id="samStart" disabled/);
-  assert.match(out, /decoder is not installed/);
+  assert.match(out, /SAM parser package is not installed/);
 });
 
 test("no match, failure, and success are shown as different states", () => {

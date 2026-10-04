@@ -917,7 +917,7 @@ function samPanelHtml() {
       ${concepts.map((c) => `<label><input type="checkbox" data-sam-concept="${c}" ${samState.concepts.includes(c) ? "checked" : ""}> ${escapeHtml(c)}</label>`).join("")}
     </div>
     <div class="hint" style="margin-top:6px;">One request per concept for the selected image: ${count == null ? "calculating" : escapeHtml(String(count))} paid request(s)${samState.plan && samState.plan.reused_from_earlier_runs ? `, ${escapeHtml(String(samState.plan.reused_from_earlier_runs))} reused from earlier identical runs` : ""}. Meta's pricing and your account apply: <a href="${escapeHtml(st.provider.signup_url)}" target="_blank" rel="noopener noreferrer">pricing</a>.</div>
-    ${st.decoder_available ? "" : `<div class="hint" style="margin-top:6px;">The mask decoder is not installed, so nothing can be started.</div>`}
+    ${st.decoder_available ? "" : `<div class="hint" style="margin-top:6px;">Meta's SAM parser package is not installed, so nothing can be started.</div>`}
     ${samState.ack ? "" : `<label style="display:block;font-size:12px;margin-top:8px;"><input type="checkbox" id="samAck" ${samState.ackChecked ? "checked" : ""}> I understand the selected image, cropped to the watched area, will be uploaded to Meta and my account may be charged.</label>`}
     <div style="margin-top:8px;"><button class="btn primary" id="samStart" ${ready ? "" : "disabled"}>${samState.busy ? "Segmenting&hellip;" : `Start segmentation${count == null ? "" : ` (${escapeHtml(String(count))} request${count === 1 ? "" : "s"})`}`}</button></div>
     ${samState.message ? `<div class="hint" style="margin-top:6px;color:var(--bad);">${escapeHtml(samState.message)}</div>` : ""}

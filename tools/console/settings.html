@@ -54,10 +54,10 @@ function hostedSamHtml() {
       <div style="margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
         <span class="pill ${enabled ? "ok" : "gray"}">${enabled ? "Enabled" : "Disabled"}</span>
         <span class="pill ${cred.configured ? "ok" : "warn"}">${cred.configured ? "API key configured" : "API key not configured"}</span>
-        ${samStatus.decoder_available ? "" : '<span class="pill warn">Mask decoder not installed</span>'}
+        ${samStatus.decoder_available ? "" : '<span class="pill warn">SAM parser not installed</span>'}
       </div>
       ${enabled && !cred.configured ? '<div class="hint" style="margin-top:10px;">Add your API key below. Segmentation stays unavailable until you do.</div>' : ""}
-      ${samStatus.decoder_available ? "" : '<div class="hint" style="margin-top:10px;max-width:640px;">Meta\'s official mask decoder is not installed in this copy, so runs are blocked before anything is uploaded.</div>'}
+      ${samStatus.decoder_available ? "" : '<div class="hint" style="margin-top:10px;max-width:640px;">Meta\'s SAM parser package is not installed in this copy (pip install meta_sam_parser), so runs are blocked before anything is uploaded.</div>'}
       <div style="margin-top:14px;font-size:12px;font-weight:600;">API key</div>
       ${cred.configured ? `<div style="font-family:var(--mono);font-size:13px;margin-top:4px;">${escapeHtml(cred.masked || "")} <span style="color:var(--ink-muted);font-family:inherit;font-size:12px;">(${escapeHtml(source)})</span></div>` : ""}
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;">

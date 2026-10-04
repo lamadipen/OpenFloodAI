@@ -27,11 +27,32 @@ REGION = {"x": 10, "y": 20, "width": 40, "height": 50}
 
 
 def reply(text: str) -> str:
-    return "data: " + json.dumps({"type": "response.output_text.delta", "delta": text}) + "\n\n"
+    lane = {"item_id": "m1", "output_index": 0, "content_index": 0}
+    events = [
+        {"type": "response.output_text.delta", **lane, "delta": text},
+        {"type": "response.output_text.done", **lane, "text": text},
+        {"type": "response.completed"},
+    ]
+    return "".join(f"data: {json.dumps(event)}\n\n" for event in events)
 
 
-def detection_text(w: int = 40, h: int = 30) -> str:
-    return f"<0f>0<|box;x1=1;y1=2;x2=20;y2=25;w={w};h={h}|><|mask;x=3;y=4;data=5,6,!AB|>"
+def mask_payload(width: int, height: int) -> str:
+    from meta_sam_parser._mask_codec import _encode_raster
+
+    return str(_encode_raster([1] * (width * height), width, height))
+
+
+def detection_text(
+    x1: int = 1, y1: int = 2, x2: int = 20, y2: int = 25, w: int = 40, h: int = 30
+) -> str:
+    """One object. Box corners are inclusive; the mask is the size of the box."""
+
+    mask_w, mask_h = x2 - x1 + 1, y2 - y1 + 1
+    box = f"x1={x1};y1={y1};x2={x2};y2={y2};w={w};h={h};c=0.9"
+    return (
+        f"<0f>0<|box;{box}|>"
+        f"<|mask;x=0;y=0;data={mask_h},{mask_w},{mask_payload(mask_w, mask_h)}|>\n"
+    )
 
 
 def ones_decoder(height: int, width: int, encoding: str, payload: str) -> Any:

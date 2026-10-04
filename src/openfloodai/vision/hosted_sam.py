@@ -4,23 +4,22 @@ One provider, one model, one concept per request. Everything here is pure or
 takes its collaborators (HTTP transport, mask decoder) as arguments, so the
 normal test suite never needs a paid API call or a real key.
 
-What was verified against Meta's public documentation (dev.meta.ai/docs/sam,
-read while building this): the endpoint, the bearer-token header, the request
-body, the streamed special-token text output, the `<H>,<W>,<codec>payload`
-mask header, and that boxes and masks are in source pixels. NOT verified
-against the live service, because that needs a paid key: the exact SSE JSON
-wrapper and the HTTP status codes for quota and rate limiting. Parsing is
-therefore tolerant, and anything it cannot understand becomes a
-`malformed_response` state rather than a guess.
+The streamed reply is read with Meta's own `meta_sam_parser` package, which
+defines the Responses event wrapper, the `<|box|>`/`<|mask|>` tokens, the
+inclusive box coordinates, the optional confidence field, and the mask codec.
+This module does not re-implement any of that. Without the package installed,
+nothing can be sent (see `official_mask_decoder`).
 
-The mask codec itself is not published as a specification, only as Meta's own
-decoder library. This module does not re-implement it. Masks are decoded
-through a `MaskDecoder` the caller supplies; without one, a request is still
-sent only when the caller says a decoder exists (see `decoder_available`).
+Verified against Meta's public documentation and that package: the endpoint,
+the bearer-token header, the request body, and the reply format. NOT verified
+against the live service, because that needs a paid key: the HTTP status codes
+for quota and rate limiting. Unrecognized replies become `malformed_response`
+rather than a guess.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 import re
@@ -84,17 +83,24 @@ class MaskDecoder(Protocol):
 
 @dataclass(frozen=True)
 class RawDetection:
-    """One returned object: its box, and its mask still in the provider's encoding."""
+    """One returned object, in the pixels of the cropped image that was sent.
 
-    ordinal: int
-    box_xyxy: tuple[int, int, int, int]
-    frame_size: tuple[int, int]  # (width, height) of the frame the box refers to
-    mask_x: int
-    mask_y: int
-    mask_height: int
-    mask_width: int
-    mask_encoding: str
+    The box is `[left, right) x [top, bottom)` (the provider sends inclusive
+    corners; the parser converts them). The mask is box-local: its raster is the
+    size of the box and is anchored at the box's top-left corner. The payload is
+    kept exactly as emitted, marker character included.
+    """
+
+    object_id: str
+    left: int
+    top: int
+    right: int
+    bottom: int
+    mask_encoding: str  # "one_bit" | "lossless"
     mask_payload: str
+    mask_width: int
+    mask_height: int
+    confidence: float | None  # as reported by the provider; not calibrated accuracy
 
 
 @dataclass(frozen=True)
@@ -191,64 +197,10 @@ def build_request_body(concept: str, image_data_url: str) -> dict[str, Any]:
     }
 
 
-_OBJECT = re.compile(
-    r"(?P<ordinal>\d+)<\|box;(?P<box>[^|]*)\|>"
-    r"<\|mask;x=(?P<x>\d+);y=(?P<y>\d+);data=(?P<h>\d+),(?P<w>\d+),(?P<enc>[~!])"
-    r"(?P<payload>.*?)\|>(?=\d*<\|box;|<\d+f>|\Z)",
-    re.DOTALL,
-)
+def extract_events(body: str) -> list[dict[str, Any]]:
+    """The JSON events of a server-sent-event reply, in order."""
 
-
-def parse_segmentation_text(text: str) -> list[RawDetection]:
-    """Parse the provider's special-token text into detections.
-
-    An empty or object-free reply is a real, valid "no match". Text that has
-    box or mask markers but cannot be parsed raises `malformed_response`.
-    """
-
-    detections: list[RawDetection] = []
-    for match in _OBJECT.finditer(text):
-        fields = dict(part.split("=", 1) for part in match.group("box").split(";") if "=" in part)
-        try:
-            box = (
-                int(fields["x1"]),
-                int(fields["y1"]),
-                int(fields["x2"]),
-                int(fields["y2"]),
-            )
-            frame = (int(fields["w"]), int(fields["h"]))
-        except (KeyError, ValueError) as error:
-            raise SamError(ERROR_MALFORMED, "The provider returned an unreadable box.") from error
-        detections.append(
-            RawDetection(
-                ordinal=int(match.group("ordinal")),
-                box_xyxy=box,
-                frame_size=frame,
-                mask_x=int(match.group("x")),
-                mask_y=int(match.group("y")),
-                mask_height=int(match.group("h")),
-                mask_width=int(match.group("w")),
-                mask_encoding=match.group("enc"),
-                mask_payload=match.group("payload"),
-            )
-        )
-    if not detections and ("<|box" in text or "<|mask" in text):
-        raise SamError(ERROR_MALFORMED, "The provider reply could not be parsed.")
-    return detections
-
-
-def extract_output_text(body: str) -> str:
-    """Join the streamed text deltas; also accept a plain JSON reply carrying `output_text`.
-
-    The stream is server-sent events; each `data:` line is JSON whose text is in
-    `delta` for `response.output_text.delta` events (per the provider docs).
-    """
-
-    stripped = body.strip()
-    if not stripped:
-        return ""
-    pieces: list[str] = []
-    saw_event = False
+    events: list[dict[str, Any]] = []
     for line in body.splitlines():
         line = line.strip()
         if not line.startswith("data:"):
@@ -256,25 +208,84 @@ def extract_output_text(body: str) -> str:
         payload = line[5:].strip()
         if not payload or payload == "[DONE]":
             continue
-        saw_event = True
         try:
             event = json.loads(payload)
         except ValueError as error:
             raise SamError(ERROR_MALFORMED, "The provider stream was not valid.") from error
-        if isinstance(event, dict) and event.get("type") == "response.output_text.delta":
-            delta = event.get("delta")
-            if isinstance(delta, str):
-                pieces.append(delta)
-    if saw_event:
-        return "".join(pieces)
+        if isinstance(event, dict):
+            events.append(event)
+    if not events:
+        raise SamError(ERROR_MALFORMED, "The provider reply contained no events.")
+    return events
+
+
+def parse_events(events: list[dict[str, Any]]) -> tuple[list[RawDetection], list[str]]:
+    """Parse reply events with Meta's parser into detections and warnings.
+
+    A completed reply with no objects is a real "no match". A failed, refused,
+    unfinished, or partly unreadable reply is an error state instead, so a
+    missing mask is never mistaken for "nothing there".
+    """
+
     try:
-        whole = json.loads(stripped)
-    except ValueError as error:
-        raise SamError(ERROR_MALFORMED, "The provider reply was not valid.") from error
-    text = whole.get("output_text") if isinstance(whole, dict) else None
-    if isinstance(text, str):
-        return text
-    raise SamError(ERROR_MALFORMED, "The provider reply had no segmentation text.")
+        from meta_sam_parser import (
+            CompletedOutcome,
+            ResponsesStreamError,
+            ResponsesStreamFailedError,
+            ResponsesStreamRefusalError,
+            image_segmentation_format,
+            parse_responses_stream,
+        )
+    except ImportError as error:
+        raise SamError(ERROR_DECODER_UNAVAILABLE, unavailable_decoder_message()) from error
+
+    async def source() -> Any:
+        for event in events:
+            yield event
+
+    async def run() -> Any:
+        stream = parse_responses_stream(source(), image_segmentation_format())
+        return await stream.final_result()
+
+    try:
+        result = asyncio.run(run())
+    except (ResponsesStreamFailedError, ResponsesStreamRefusalError) as error:
+        raise SamError(
+            ERROR_PROVIDER, f"The provider could not finish: {str(error)[:200]}"
+        ) from error
+    except ResponsesStreamError as error:
+        raise SamError(ERROR_MALFORMED, "The provider reply could not be parsed.") from error
+
+    if not isinstance(result.outcome, CompletedOutcome):
+        raise SamError(ERROR_MALFORMED, "The provider reply ended before it finished.")
+    problems = [d for d in result.diagnostics if d.severity == "error"]
+    if problems:
+        raise SamError(ERROR_MALFORMED, "Part of the provider reply could not be read.")
+    boxes = {r.object_id: r for r in result.records if r.kind == "box"}
+    detections: list[RawDetection] = []
+    for record in result.records:
+        if record.kind != "mask":
+            continue
+        box = boxes.get(record.object_id)
+        confidence = record.confidence
+        if confidence is None and box is not None:
+            confidence = box.confidence
+        detections.append(
+            RawDetection(
+                object_id=record.object_id,
+                left=int(record.bounds.left),
+                top=int(record.bounds.top),
+                right=int(record.bounds.right),
+                bottom=int(record.bounds.bottom),
+                mask_encoding=record.mask.encoding,
+                mask_payload=record.mask.payload,
+                mask_width=record.mask.width,
+                mask_height=record.mask.height,
+                confidence=confidence,
+            )
+        )
+    warnings = [d.message for d in result.diagnostics if d.severity == "warning"]
+    return detections, warnings[:5]
 
 
 def place_mask_in_source(
@@ -284,17 +295,27 @@ def place_mask_in_source(
 ) -> npt.NDArray[np.uint8]:
     """Decode one mask and place it on a full-size canvas in ORIGINAL image pixels.
 
-    The provider's box and mask are in the cropped image it was sent, so the
-    mask offset inside that crop is shifted by the crop origin. Anything that
-    does not fit inside the crop is rejected, never clipped, so a mask can
-    never land outside the watch region or on the wrong image.
+    The provider's box and mask are in the cropped image it was sent, and the
+    mask is anchored at the box's top-left corner, so it is shifted by the crop
+    origin. A box that falls outside the crop, or a mask whose size is not the
+    box's size, is rejected rather than clipped: a mask can never land outside
+    the watch region or on the wrong image.
     """
 
-    if detection.frame_size != (transform.width, transform.height):
-        raise SamError(
-            ERROR_MALFORMED,
-            "The provider's frame size does not match the cropped image that was sent.",
-        )
+    if (
+        detection.left < 0
+        or detection.top < 0
+        or detection.right > transform.width
+        or detection.bottom > transform.height
+        or detection.right <= detection.left
+        or detection.bottom <= detection.top
+    ):
+        raise SamError(ERROR_MALFORMED, "A returned box falls outside the cropped image.")
+    if (detection.mask_width, detection.mask_height) != (
+        detection.right - detection.left,
+        detection.bottom - detection.top,
+    ):
+        raise SamError(ERROR_MALFORMED, "A returned mask does not match its box size.")
     raster = np.asarray(
         decoder(
             detection.mask_height,
@@ -305,16 +326,9 @@ def place_mask_in_source(
     )
     if raster.shape != (detection.mask_height, detection.mask_width):
         raise SamError(ERROR_MALFORMED, "The decoded mask does not match its declared size.")
-    if (
-        detection.mask_x < 0
-        or detection.mask_y < 0
-        or detection.mask_x + detection.mask_width > transform.width
-        or detection.mask_y + detection.mask_height > transform.height
-    ):
-        raise SamError(ERROR_MALFORMED, "A mask falls outside the cropped image.")
     canvas = np.zeros((transform.source_height, transform.source_width), dtype=np.uint8)
-    top = transform.y0 + detection.mask_y
-    left = transform.x0 + detection.mask_x
+    top = transform.y0 + detection.top
+    left = transform.x0 + detection.left
     canvas[top : top + detection.mask_height, left : left + detection.mask_width] = (
         raster > 0
     ).astype(np.uint8)
@@ -322,15 +336,51 @@ def place_mask_in_source(
 
 
 def box_in_source(detection: RawDetection, transform: CropTransform) -> list[int]:
-    x1, y1, x2, y2 = detection.box_xyxy
-    return [x1 + transform.x0, y1 + transform.y0, x2 + transform.x0, y2 + transform.y0]
+    """`[left, top, right, bottom]` in original pixels; right and bottom are exclusive."""
+
+    return [
+        detection.left + transform.x0,
+        detection.top + transform.y0,
+        detection.right + transform.x0,
+        detection.bottom + transform.y0,
+    ]
 
 
 def unavailable_decoder_message() -> str:
     return (
-        "No mask decoder is installed. Masks cannot be read until Meta's official "
-        "decoder is added to this installation, so no paid request is sent."
+        "Meta's official SAM parser is not installed (pip install meta_sam_parser), "
+        "so masks cannot be read and no paid request is sent."
     )
+
+
+def official_mask_decoder() -> MaskDecoder | None:
+    """Meta's own mask decoder, or None when `meta_sam_parser` is not installed."""
+
+    try:
+        from meta_sam_parser import (
+            InvalidSegmentationMaskError,
+            SegmentationMask,
+            decode_mask_to_raster,
+        )
+    except ImportError:
+        return None
+
+    def decode(height: int, width: int, encoding: str, payload: str) -> npt.NDArray[Any]:
+        if encoding not in ("one_bit", "lossless"):
+            raise SamError(ERROR_MALFORMED, "A returned mask used an unknown encoding.")
+        mask = SegmentationMask(
+            encoding=encoding,  # type: ignore[arg-type]
+            payload=payload,
+            width=width,
+            height=height,
+        )
+        try:
+            raw = decode_mask_to_raster(mask)
+        except InvalidSegmentationMaskError as error:
+            raise SamError(ERROR_MALFORMED, "A returned mask could not be decoded.") from error
+        return np.frombuffer(raw, dtype=np.uint8).reshape(height, width)
+
+    return decode
 
 
 def unavailable_mask_decoder(height: int, width: int, encoding: str, payload: str) -> Any:
@@ -408,8 +458,8 @@ def segment(
     image_data_url: str,
     transport: Transport = urllib_transport,
     timeout: float = REQUEST_TIMEOUT_SECONDS,
-) -> tuple[list[RawDetection], str]:
-    """Send ONE paid request for ONE concept; return detections and the reply's text.
+) -> tuple[list[RawDetection], list[str]]:
+    """Send ONE paid request for ONE concept; return detections and parser warnings.
 
     The key is only ever placed in the Authorization header, and any provider
     text that is kept is redacted first. There is no automatic retry.
@@ -426,5 +476,4 @@ def segment(
     status, text = transport(ENDPOINT, headers, body, timeout)
     if status != 200:
         raise classify_http_error(status, text, api_key)
-    output = extract_output_text(text)
-    return parse_segmentation_text(output), redact(output, api_key)
+    return parse_events(extract_events(text))

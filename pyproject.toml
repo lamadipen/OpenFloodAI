@@ -22,12 +22,19 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+  "meta_sam_parser>=0.0.6,<0.1",
   "mkdocs>=1.6",
   "mkdocs-material>=9.5",
   "mypy>=1.11",
   "pytest>=8.3",
   "ruff>=0.6",
   "types-jsonschema>=4.23",
+]
+# Optional hosted SAM segmentation (off by default). Meta's parser and mask decoder
+# are distributed under Meta's SAM License, not this project's MIT license, so it is
+# an opt-in extra rather than a required dependency.
+sam = [
+  "meta_sam_parser>=0.0.6,<0.1",
 ]
 desktop = [
   "pystray>=0.19.5",

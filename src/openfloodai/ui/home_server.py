@@ -127,10 +127,10 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
     sites_dir: Path
     ui_path: Path
     # Hosted SAM (Issue #210). The credential holder lives in this process's memory;
-    # the decoder is None until Meta's official mask decoder is supplied, which keeps
-    # paid requests off. Tests replace the transport so no real call is ever made.
+    # the decoder is Meta's official one when `meta_sam_parser` is installed, else None,
+    # which keeps paid requests off. Tests replace the transport so no real call is ever made.
     hosted_sam_credentials: HostedSamCredentials = HostedSamCredentials()
-    hosted_sam_decoder: hosted_sam.MaskDecoder | None = None
+    hosted_sam_decoder: hosted_sam.MaskDecoder | None = hosted_sam.official_mask_decoder()
     hosted_sam_transport: hosted_sam.Transport = staticmethod(hosted_sam.urllib_transport)
 
     def do_GET(self) -> None:

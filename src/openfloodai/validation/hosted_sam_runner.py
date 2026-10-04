@@ -319,7 +319,7 @@ def _segment_item(
         if not ok:
             raise sam.SamError(sam.ERROR_MALFORMED, "The cropped image could not be encoded.")
         data_url = "data:image/jpeg;base64," + base64.b64encode(encoded.tobytes()).decode("ascii")
-        detections, _ = sam.segment(
+        detections, warnings = sam.segment(
             api_key=api_key,
             concept=item.concept,
             image_data_url=data_url,
@@ -334,17 +334,20 @@ def _segment_item(
             placed.append((detection, mask_name))
         record["detections"] = [
             {
-                "ordinal": detection.ordinal,
+                "object_id": detection.object_id,
                 "box_source_px": sam.box_in_source(detection, transform),
-                "box_crop_px": list(detection.box_xyxy),
+                "box_crop_px": [detection.left, detection.top, detection.right, detection.bottom],
+                "box_note": "[left, top, right, bottom); right and bottom are exclusive",
                 "mask_png": f"masks/{mask_name}",
-                "mask_offset_in_crop": [detection.mask_x, detection.mask_y],
                 "mask_size": [detection.mask_width, detection.mask_height],
                 "mask_encoding": detection.mask_encoding,
                 "mask_payload": detection.mask_payload,
+                "confidence": detection.confidence,
             }
             for detection, mask_name in placed
         ]
+        record["scores_provided"] = any(d.confidence is not None for d, _ in placed)
+        record["provider_warnings"] = warnings
         record["status"] = STATUS_COMPLETED if placed else STATUS_NO_MATCH
         record["message"] = (
             None if placed else "The provider found nothing for this concept in the watched area."
@@ -394,6 +397,7 @@ def _reuse_result(
     record["status"] = original["status"]
     record["message"] = original.get("message")
     record["model_returned"] = original.get("model_returned")
+    record["scores_provided"] = bool(original.get("scores_provided"))
     record["reused_from"] = {"run_id": source_run, "result_id": source_result}
     detections = []
     for index, detection in enumerate(original.get("detections", [])):

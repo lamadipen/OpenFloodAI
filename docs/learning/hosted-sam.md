@@ -19,7 +19,12 @@ no water-level change.
 3. Paste your API key and select **Save key**. The key field is masked. Only the
    last four characters are shown afterward. Use **Replace key** or **Remove
    key** to change it.
-4. Optional, for a local operator: set the `OPENFLOODAI_SAM_API_KEY`
+4. Install Meta's SAM parser, which reads replies and decodes masks. It is
+   an optional extra, because it is distributed under Meta's own SAM License
+   rather than this project's MIT license:
+   `pip install "openfloodai[sam]"` (or `pip install meta_sam_parser`). Without
+   it, the Start button stays unavailable and nothing is sent.
+5. Optional, for a local operator: set the `OPENFLOODAI_SAM_API_KEY`
    environment variable instead. A key saved in Settings wins over it.
 
 ## Run segmentation
@@ -67,8 +72,8 @@ edited afterward. A rerun is a new run.
   overlay, which is drawn on request.
 - Human review decisions in an append-only `reviews.jsonl`.
 - The model Meta returns is not yet read from the reply, so only the requested
-  model (`sam-3.1`) is recorded. No score is stored, because the service
-  documents none.
+  model (`sam-3.1`) is recorded. A confidence is saved only when the service
+  sends one, exactly as sent. It is not calibrated accuracy.
 
 An identical request (same image bytes, model, prompt, and crop) reuses the
 saved result without a new paid request. Any change to the image, the watched
@@ -78,7 +83,8 @@ area, or the prompt makes a new request. Failed attempts are never reused.
 
 The service accepts text concepts, not boxes or points. OpenFloodAI crops the
 image to the site's watched area, sends the crop, then shifts each returned box
-and mask by the crop origin to place it on the original image. A mask that does
+and mask by the crop origin (a mask is the size of its box and anchored at the
+box's top-left corner) to place it on the original image. A mask that does
 not fit inside the crop is rejected rather than clipped, so a mask can never
 land outside the watched area or on the wrong image. The crop is a rectangle:
 a bank-region outline is not a waterline, and its vegetation-facing edge is not
@@ -93,14 +99,14 @@ a detected water boundary.
   Service terms are separate from the downloadable SAM model license.
 - The provider page listed `$2.50/1k images` when this was written. Check the
   current price with Meta.
-- The streamed reply format and mask header follow Meta's public docs, but the
-  exact stream wrapper and the status codes for quota and rate limits could not
-  be confirmed without a paid key. Anything unrecognized is reported as a
-  malformed response rather than guessed.
-- Meta publishes its mask decoder as a separate library rather than as a format
-  specification. This copy of OpenFloodAI does not include or reimplement it,
-  so the **Start** button stays unavailable, and no request is sent, until a
-  decoder is supplied.
+- Replies are read with Meta's own `meta_sam_parser` package, which defines the
+  stream format, the inclusive box corners, and the mask codec. The HTTP status
+  codes the service uses for quota and rate limits could not be confirmed
+  without a paid key, so any unexpected reply is reported as a malformed
+  response or provider error rather than guessed. A reply that ends early, fails,
+  is refused, or has an unreadable object is never shown as "no match".
+- The meaning of an empty successful reply is also unconfirmed against the live
+  service. Only a finished reply with no objects is shown as "no match".
 - A small pilot on representative images, authorized separately, should record
   review effort, processing time, and cost before any claim about usefulness.
   One successful image says nothing about accuracy.

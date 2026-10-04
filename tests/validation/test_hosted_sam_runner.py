@@ -21,11 +21,32 @@ REGION = {"x": 10, "y": 20, "width": 40, "height": 50}
 
 
 def reply(text: str) -> str:
-    return "data: " + json.dumps({"type": "response.output_text.delta", "delta": text}) + "\n\n"
+    lane = {"item_id": "m1", "output_index": 0, "content_index": 0}
+    events = [
+        {"type": "response.output_text.delta", **lane, "delta": text},
+        {"type": "response.output_text.done", **lane, "text": text},
+        {"type": "response.completed"},
+    ]
+    return "".join(f"data: {json.dumps(event)}\n\n" for event in events)
 
 
-def detection_text(w: int = 40, h: int = 30) -> str:
-    return f"<0f>0<|box;x1=1;y1=2;x2=20;y2=25;w={w};h={h}|><|mask;x=3;y=4;data=5,6,!AB|>"
+def mask_payload(width: int, height: int) -> str:
+    from meta_sam_parser._mask_codec import _encode_raster
+
+    return str(_encode_raster([1] * (width * height), width, height))
+
+
+def detection_text(
+    x1: int = 1, y1: int = 2, x2: int = 20, y2: int = 25, w: int = 40, h: int = 30
+) -> str:
+    """One object. Box corners are inclusive; the mask is the size of the box."""
+
+    mask_w, mask_h = x2 - x1 + 1, y2 - y1 + 1
+    box = f"x1={x1};y1={y1};x2={x2};y2={y2};w={w};h={h};c=0.9"
+    return (
+        f"<0f>0<|box;{box}|>"
+        f"<|mask;x=0;y=0;data={mask_h},{mask_w},{mask_payload(mask_w, mask_h)}|>\n"
+    )
 
 
 def ones_decoder(height: int, width: int, encoding: str, payload: str) -> Any:
@@ -210,7 +231,8 @@ def test_a_completed_run_saves_provenance_and_masks_in_original_pixels(
     result = summary["results"][0]
     assert result["status"] == "completed"
     assert result["review_status"] == "unreviewed"
-    assert result["scores_provided"] is False
+    assert result["scores_provided"] is True  # the provider sent c=0.9
+    assert result["detections"][0]["confidence"] == 0.9
     assert result["provider"] == "meta_sam_hosted" and result["model_requested"] == "sam-3.1"
     assert result["prompt"] == "water" and len(result["image_sha256"]) == 64
     assert result["transform"]["crop_px"] == [10, 12, 50, 42]
@@ -220,8 +242,8 @@ def test_a_completed_run_saves_provenance_and_masks_in_original_pixels(
     mask = cv2.imread(str(run_dir / result["detections"][0]["mask_png"]), cv2.IMREAD_GRAYSCALE)
     assert mask is not None and mask.shape == (60, 100)
     ys, xs = np.nonzero(mask)
-    assert tuple(int(v) for v in (xs.min(), ys.min(), xs.max(), ys.max())) == (13, 16, 18, 20)
-    assert result["detections"][0]["box_source_px"] == [11, 14, 30, 37]
+    assert tuple(int(v) for v in (xs.min(), ys.min(), xs.max(), ys.max())) == (11, 14, 30, 37)
+    assert result["detections"][0]["box_source_px"] == [11, 14, 31, 38]
 
 
 def test_the_api_key_appears_in_no_saved_file(
@@ -260,7 +282,7 @@ def test_zero_matches_is_a_distinct_state_not_a_failure_or_a_safe_result(
         ((500, "{}"), "provider_error"),
         ((200, "garbage"), "malformed_response"),
         ((200, reply("<0f>0<|box;broken|>")), "malformed_response"),
-        ((200, reply(detection_text(w=99))), "malformed_response"),
+        ((200, reply(detection_text(x2=60, w=100))), "malformed_response"),
     ],
 )
 def test_provider_failures_are_distinct_and_leave_core_data_alone(
@@ -409,3 +431,24 @@ def test_overlay_draws_masks_on_the_source_image_and_leaves_the_guide_config_alo
     run_dir = site / "outputs" / "hosted-sam-runs" / summary["run_id"]
     raw = cv2.imread(str(run_dir / "masks" / f"{summary['results'][0]['result_id']}-0.png"), 0)
     assert raw is not None and {int(v) for v in np.unique(raw)} <= {0, 255}
+
+
+def test_a_run_with_the_official_decoder_saves_a_correctly_placed_real_mask(
+    tmp_path: Path, credentials: HostedSamCredentials
+) -> None:
+    from openfloodai.vision.hosted_sam import official_mask_decoder
+
+    decoder = official_mask_decoder()
+    assert decoder is not None
+    site = make_site(tmp_path)
+
+    summary = go(site, credentials, FakeTransport((200, reply(detection_text()))), decoder=decoder)
+
+    result = summary["results"][0]
+    assert result["status"] == "completed"
+    run_dir = site / "outputs" / "hosted-sam-runs" / summary["run_id"]
+    mask = cv2.imread(str(run_dir / result["detections"][0]["mask_png"]), cv2.IMREAD_GRAYSCALE)
+    assert mask is not None
+    assert int(np.count_nonzero(mask)) == 20 * 24  # the whole box-sized mask
+    ys, xs = np.nonzero(mask)
+    assert (int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())) == (11, 14, 30, 37)
