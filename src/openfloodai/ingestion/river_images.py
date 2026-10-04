@@ -30,11 +30,14 @@ MAX_VIDEO_SECONDS = 120
 MAX_METADATA_BYTES = 2 * 1024 * 1024
 REQUEST_TIMEOUT_SECONDS = 15
 
+WATER_LEVEL_SAMPLING_MODE = "water_level"
+WATER_LEVEL_SELECTION_FILENAME = "water-level-selection.json"
 ALLOWED_SEQUENCE_SAMPLING_MODES = {
     "one_per_day",
     "one_per_hour",
     "all",
     "one_daylight_image_per_day",
+    WATER_LEVEL_SAMPLING_MODE,
 }
 _DAY_BUCKET_SAMPLING_MODES = {"one_per_day", "one_daylight_image_per_day"}
 MAX_SEQUENCE_CANDIDATES = 20_000
@@ -557,6 +560,11 @@ def sample_image_sequence_candidates(
     if mode not in ALLOWED_SEQUENCE_SAMPLING_MODES:
         allowed = ", ".join(sorted(ALLOWED_SEQUENCE_SAMPLING_MODES))
         raise RiverImageError(f"Invalid sampling mode: use one of {allowed}.")
+    if mode == WATER_LEVEL_SAMPLING_MODE:
+        raise RiverImageError(
+            "Water-level sampling picks images from gauge readings; use Find samples, "
+            "then download the approved images."
+        )
     if mode == "all":
         return list(candidates)
     try:
@@ -688,8 +696,16 @@ def download_river_image_sequence(
     resume: bool = False,
     daylight_window_start_hour: int = DEFAULT_DAYLIGHT_WINDOW_START_HOUR,
     daylight_window_end_hour: int = DEFAULT_DAYLIGHT_WINDOW_END_HOUR,
+    selected_candidates: list[ImageSequenceCandidate] | None = None,
+    selection_provenance: dict[str, Any] | None = None,
 ) -> ImageSequenceDownloadResult:
     """Download a sampled, date-ranged image sequence into a site folder.
+
+    For the `water_level` mode the images are not derived from a time bucket but
+    passed in as `selected_candidates` (the reviewer-approved set), with the
+    `selection_provenance` that explains why each was chosen. The same intake,
+    conflict handling, manifest, and downloads are used; no per-bucket "missing"
+    rows are made, since there is no bucket schedule to fall short of.
 
     `overwrite` replaces an existing sequence from scratch (unchanged,
     existing behavior). `resume` is new: when the sequence already exists
@@ -704,14 +720,22 @@ def download_river_image_sequence(
     start = start_date.strip()
     end = end_date.strip()
     start_utc, end_utc = parse_sequence_date_range(start, end, zone_name)
-    candidates = list_archive_images_between_windowed(slug, start_utc, end_utc)
-    sampled = sample_image_sequence_candidates(
-        candidates,
-        sampling_mode,
-        timezone_name=zone_name,
-        daylight_window_start_hour=daylight_window_start_hour,
-        daylight_window_end_hour=daylight_window_end_hour,
-    )
+    water_level = sampling_mode == WATER_LEVEL_SAMPLING_MODE
+    if water_level:
+        if not selected_candidates or selection_provenance is None:
+            raise RiverImageError("Approve at least one water-level sample before downloading.")
+        sampled = sorted(selected_candidates, key=lambda candidate: candidate.captured_utc)
+    else:
+        if selected_candidates is not None:
+            raise RiverImageError("Selected images are only used for water-level sampling.")
+        candidates = list_archive_images_between_windowed(slug, start_utc, end_utc)
+        sampled = sample_image_sequence_candidates(
+            candidates,
+            sampling_mode,
+            timezone_name=zone_name,
+            daylight_window_start_hour=daylight_window_start_hour,
+            daylight_window_end_hour=daylight_window_end_hour,
+        )
     zone = ZoneInfo(zone_name)
 
     sequence_id = f"usgs-{slug}-{start}-{end}-{sampling_mode}"
@@ -746,6 +770,18 @@ def download_river_image_sequence(
             raise RiverImageError(
                 "An image sequence already exists for this camera and date range: "
                 f"{sequence_id}. Use overwrite to replace it."
+            )
+    selection_path = sequence_dir / WATER_LEVEL_SELECTION_FILENAME
+    if water_level and selection_path.is_file():
+        # Saved selection evidence is never rewritten. A resume is only allowed for the
+        # very same approved images; a different set needs an explicit overwrite.
+        existing = json.loads(selection_path.read_text(encoding="utf-8"))
+        existing_names = sorted(entry["filename"] for entry in existing.get("samples", []))
+        requested_names = sorted(candidate.source_url.rsplit("/", 1)[-1] for candidate in sampled)
+        if existing_names != requested_names:
+            raise RiverImageError(
+                "A water-level sample with different images already exists for this camera "
+                f"and date range: {sequence_id}. Use overwrite to replace it."
             )
     images_dir = sequence_dir / "images"
     images_dir.mkdir(parents=True, exist_ok=True)
@@ -789,7 +825,7 @@ def download_river_image_sequence(
                 )
             )
 
-    if sampling_mode != "all":
+    if sampling_mode not in {"all", WATER_LEVEL_SAMPLING_MODE}:
         present_buckets = {
             _sequence_bucket_key(candidate.captured_utc.astimezone(zone), sampling_mode)
             for candidate in sampled
@@ -824,6 +860,11 @@ def download_river_image_sequence(
     if manifest_path.exists():
         manifest_path.unlink()
     write_jsonl_records(manifest_path, [asdict(record) for record in records])
+
+    if water_level and selection_provenance is not None and not selection_path.is_file():
+        selection_path.write_text(
+            json.dumps(selection_provenance, indent=2) + "\n", encoding="utf-8"
+        )
 
     result = ImageSequenceDownloadResult(sequence_dir, sequence_id, zone_name, records)
     summary = result.to_dict() | {

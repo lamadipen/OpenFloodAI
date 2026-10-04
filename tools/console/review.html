@@ -608,6 +608,7 @@ function render() {
               <button class="btn" data-act="next-event">Next event &rarr;</button>
             </div>
           </div>
+          ${waterLevelInfoHtml(sel)}
           ${selectedGaugeHtml(sel)}
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
             <div>
@@ -621,6 +622,8 @@ function render() {
           </div>
           <div class="hint" style="margin-bottom:6px;">Side-by-side comparison, watched area outlined</div>
           ${comparisonQuery ? `<img src="/api/image-sequence-comparison?${comparisonQuery}" style="width:100%;border-radius:8px;display:block;" alt="Side-by-side comparison">` : `<div class="hint">No comparison for this day.</div>`}
+          <div class="hint" style="margin:14px 0 6px;">Overlay comparison &mdash; slide to blend the selected image over the baseline</div>
+          ${onionHtml(summary.baseline_filename ? baselineQuery : null, selectedQuery)}
         </div>
 
         ${riverbankReviewHtml(detail.evidence_records, sel)}
@@ -671,6 +674,7 @@ function render() {
     </div>
   `;
   wireActions();
+  wireOnion();
   renderSamPanel();
   refreshSamPlan();
 }
@@ -1053,6 +1057,99 @@ async function startSam() {
   renderSamPanel();
   refreshSamPlan();
 }
+
+
+// ---- water-level review ----------------------------------------------------
+// The collection group is why an image was sampled (a gauge reading relative to
+// the sampled date range). It is NOT a machine observation or a human label.
+const WL_GROUP_LABEL = { low: "Low", middle: "Middle", high: "High" };
+
+function waterLevelInfoHtml(day) {
+  const selection = detail && detail.water_level_selection;
+  const entry = selection && day && selection.samples ? selection.samples[day.filename] : null;
+  if (!entry) return "";
+  const mr = entry.motivating_reading || {};
+  const ir = entry.image_reading || null;
+  const quality = (r) => ({ approved: "Approved", provisional: "Provisional, may be revised", not_reported: "Quality not reported", unknown: "Unrecognized quality code" }[r.quality_status] || "Quality not reported");
+  const own = entry.readings_differ && ir
+    ? ` The image's own nearest reading is ${escapeHtml(Number(ir.value).toFixed(2))} ${escapeHtml(ir.unit || "")}${typeof entry.image_reading_gap_seconds === "number" ? ` (${escapeHtml(formatGap(entry.image_reading_gap_seconds))})` : ""}.`
+    : "";
+  return `<div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12px;line-height:1.5;">
+    <span class="pill info">${escapeHtml(WL_GROUP_LABEL[entry.group] || String(entry.group))} water collection group</span>
+    <span class="hint"> relative to the sampled date range</span>
+    <div style="margin-top:6px;">Sampled because of a gauge reading of <strong>${escapeHtml(Number(mr.value).toFixed(2))} ${escapeHtml(mr.unit || "")}</strong> at ${escapeHtml(formatUtc(mr.datetime_utc))} (${escapeHtml(quality(mr))}).${own}</div>
+    <div class="hint" style="margin-top:4px;">${escapeHtml(selection.note || "This group is relative to one station and date range.")} It is a collection group only: not a flood finding, a machine observation, or a human label.</div>
+  </div>`;
+}
+// ---- end water-level review ----
+
+// ---- overlay comparison ----------------------------------------------------
+// Onion-skin view: the baseline underneath, the selected image on top at an
+// adjustable opacity, with the run's own saved watched area and guides drawn in
+// the same frame. Nothing here changes the baseline, a guide, or any run.
+let onion = { opacity: 50, area: true, guides: true };
+
+function onionSvgHtml() {
+  const setup = (detail && detail.setup_used) || {};
+  const region = setup.reference_region;
+  const parts = [];
+  if (onion.area && region && [region.x, region.y, region.width, region.height].every((n) => typeof n === "number")) {
+    parts.push(`<rect x="${region.x}" y="${region.y}" width="${region.width}" height="${region.height}" fill="none" stroke="#ffffff" stroke-width="0.6" vector-effect="non-scaling-stroke"/>`);
+  }
+  if (onion.guides) {
+    (setup.normal_waterline_guides || []).filter((g) => g.status !== "invalid" && Array.isArray(g.points) && g.points.length > 1).forEach((g) => {
+      const pts = g.points.map((p) => `${p.x},${p.y}`).join(" ");
+      parts.push(`<polyline points="${pts}" fill="none" stroke="#28dc28" stroke-width="2" vector-effect="non-scaling-stroke"/>`);
+    });
+  }
+  return `<svg viewBox="0 0 100 100" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;">${parts.join("")}</svg>`;
+}
+
+function onionHtml(baselineQuery, selectedQuery) {
+  if (!baselineQuery || !selectedQuery) return `<div class="hint">Overlay needs a baseline and a saved image for this day.</div>`;
+  return `<div id="onionBox">
+    <div style="position:relative;border-radius:8px;overflow:hidden;background:#000;">
+      <img id="onionBase" src="/api/image-sequence-image?${baselineQuery}" style="width:100%;display:block;" alt="Baseline image">
+      <img id="onionTop" src="/api/image-sequence-image?${selectedQuery}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:fill;opacity:${onion.opacity / 100};" alt="Selected image over the baseline">
+      <span id="onionOverlaySvg">${onionSvgHtml()}</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:8px;font-size:12px;flex-wrap:wrap;">
+      <span>Baseline</span>
+      <input id="onionSlider" type="range" min="0" max="100" value="${onion.opacity}" aria-label="Opacity of the selected image" style="flex:1;min-width:140px;">
+      <span>Selected image <strong id="onionPercent">${onion.opacity}%</strong></span>
+      <label><input type="checkbox" id="onionArea" ${onion.area ? "checked" : ""}> Watched area</label>
+      <label><input type="checkbox" id="onionGuides" ${onion.guides ? "checked" : ""}> Riverbank guides</label>
+    </div>
+    <div id="onionWarning" class="hint" style="margin-top:6px;line-height:1.5;">This view assumes the camera did not move between the two images. If the landmarks do not line up, the watched area and guides do not apply to this view; set them up again instead of reusing them. A visual overlay is not a measured water height.</div>
+  </div>`;
+}
+
+function wireOnion() {
+  const slider = $("onionSlider");
+  if (!slider) return;
+  slider.addEventListener("input", () => {
+    onion.opacity = Number(slider.value);
+    $("onionTop").style.opacity = String(onion.opacity / 100);
+    $("onionPercent").textContent = `${onion.opacity}%`;
+  });
+  [["onionArea", "area"], ["onionGuides", "guides"]].forEach(([id, key]) => {
+    $(id).addEventListener("change", () => {
+      onion[key] = $(id).checked;
+      $("onionOverlaySvg").innerHTML = onionSvgHtml();
+    });
+  });
+  const check = () => {
+    const base = $("onionBase");
+    const top = $("onionTop");
+    if (base && top && base.naturalWidth && top.naturalWidth && (base.naturalWidth !== top.naturalWidth || base.naturalHeight !== top.naturalHeight)) {
+      $("onionWarning").innerHTML = "<strong>These two images have different sizes, so they cannot be assumed to line up.</strong> Do not read this overlay as aligned.";
+    }
+  };
+  $("onionBase").addEventListener("load", check);
+  $("onionTop").addEventListener("load", check);
+  check();
+}
+// ---- end overlay comparison ----
 
 function wireActions() {
   const content = $("content");

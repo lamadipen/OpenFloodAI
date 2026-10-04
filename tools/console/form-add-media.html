@@ -87,6 +87,11 @@
             <label for="camera_url">Camera URL</label>
             <input id="camera_url" placeholder="https://apps.usgs.gov/hivis/camera/..." style="width:100%;">
           </div>
+          <div style="display:flex;gap:8px;margin-bottom:14px;" role="radiogroup" aria-label="How to choose images">
+            <button type="button" class="btn" id="modeRegular" data-sampling-kind="regular">Regular sampling</button>
+            <button type="button" class="btn" id="modeWater" data-sampling-kind="water_level">Sample by water level</button>
+          </div>
+          <div id="regularSampling">
           <div style="margin-bottom:8px;">Sampling mode</div>
           <div id="samplingOptions" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;"></div>
           <label style="display:flex;align-items:center;gap:8px;margin-bottom:16px;cursor:pointer;">
@@ -97,6 +102,8 @@
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="2" style="flex-shrink:0;margin-top:1px;"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L2.5 17a2 2 0 001.7 3h15.6a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
             <span>Two of the three image-sequence sites reviewed this month used <code>one_per_day</code> and ended up with 66&ndash;118 "camera or image problem" results out of ~122 &mdash; the sampled frame landed at dawn or local midnight almost every day. Prefer daylight sampling.</span>
           </div>
+          </div>
+          <div id="waterLevelPanel" hidden></div>
           <div id="imagesError" class="err" hidden style="margin-bottom:12px;"></div>
           <button type="submit" id="imagesSubmit" class="btn primary" style="width:100%;justify-content:center;">Start download</button>
         </form>
@@ -135,6 +142,282 @@ function renderSampling() {
     });
   });
 }
+
+
+// ---- water-level sampling ----------------------------------------------
+// Low / middle / high are relative to this station and date range only. This
+// page only ever names an approved sample by group, gauge-reading time and
+// image file name; the server recomputes and re-verifies everything.
+let sampleKind = "regular";
+let wl = { proposal: null, rows: {}, declined: [], busy: false, message: "", groups: ["low", "middle", "high"], perGroup: 3, confirmed: false };
+
+const WL_GROUP_TEXT = { low: "Low", middle: "Middle", high: "High" };
+const WL_SHORTFALL_TEXT = {
+  no_valid_gauge_height_readings: "There were no valid gauge-height readings in this range.",
+  limited_level_variation: "The gauge height barely changed in this range, so there is no meaningful low, middle, or high. Nothing is made up.",
+  no_reading_in_this_group: "No reading in this range falls in this group.",
+  not_enough_distinct_dates_with_images: "Not enough separate dates have an archive image within 15 minutes of a qualifying reading.",
+  fewer_approved: "Fewer samples approved than requested."
+};
+const WL_SKIP_TEXT = {
+  no_image_within_15_minutes: "no image within 15 minutes",
+  image_already_selected: "image already used",
+  image_declined_by_reviewer: "image replaced",
+  image_has_no_matching_reading: "image has no reading within 15 minutes",
+  image_reading_outside_group: "image's own reading is outside the group",
+  too_close_to_a_selected_date: "too close to a selected date"
+};
+const WL_STATE_TEXT = {
+  no_station_association: "No USGS gauge is linked to this camera, so water-level sampling is unavailable. Regular sampling still works.",
+  gauge_service_unavailable: "The USGS gauge service did not respond. Try again later.",
+  gauge_height_unavailable: "",
+  no_images_in_range: "The camera archive lists no images for this date range."
+};
+
+function wlFormatGap(seconds) {
+  if (typeof seconds !== "number") return "";
+  if (seconds === 0) return "same moment as the image";
+  const total = Math.abs(seconds);
+  const text = total % 60 === 0 ? `${total / 60} min` : `${Math.floor(total / 60)} min ${total % 60} s`;
+  return `${text} ${seconds < 0 ? "before" : "after"} the image`;
+}
+
+function wlWhen(iso, timezone) {
+  const parsed = new Date(iso);
+  if (!iso || Number.isNaN(parsed.getTime())) return "unknown time";
+  const utc = parsed.toISOString().slice(0, 16).replace("T", " ") + " UTC";
+  try {
+    const local = new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hour12: false, timeZoneName: "short" }).format(parsed);
+    return `${utc} (${local} local)`;
+  } catch (error) {
+    return utc;
+  }
+}
+
+function wlQualityHtml(reading) {
+  const label = { approved: "Approved", provisional: "Provisional, may be revised", not_reported: "Quality not reported", unknown: "Unrecognized quality code" }[reading.quality_status] || "Quality not reported";
+  const tone = reading.quality_status === "provisional" ? "warn" : reading.quality_status === "approved" ? "ok" : "gray";
+  const codes = (reading.qualifiers || []).join(", ");
+  return `<span class="pill ${tone}" style="font-size:10px;">${escapeHtml(label)}</span>${codes ? ` <span style="font-family:var(--mono);font-size:10px;color:var(--ink-muted);">${escapeHtml(codes)}</span>` : ""}`;
+}
+
+function wlRowKey(sample) {
+  return `${sample.group}|${sample.image.filename}`;
+}
+
+function wlSetRowsFromProposal(proposal) {
+  wl.rows = {};
+  ((proposal.selection || {}).groups || []).forEach((group) => {
+    wl.rows[group.group] = group.samples.map((sample) => ({ sample, approved: true }));
+  });
+}
+
+function wlApproved() {
+  return Object.values(wl.rows).flat().filter((row) => row.approved);
+}
+
+function wlApprovedRefs() {
+  return wlApproved().map((row) => ({
+    group: row.sample.group,
+    reading_datetime_utc: row.sample.motivating_reading.datetime_utc,
+    filename: row.sample.image.filename
+  }));
+}
+
+function wlRequestBody() {
+  return {
+    camera_url: $("camera_url").value.trim(),
+    start_date: $("start_date").value,
+    end_date: $("end_date").value,
+    timezone: "America/Denver",
+    groups: wl.groups,
+    images_per_group: wl.perGroup,
+    declined: wl.declined
+  };
+}
+
+// A replacement fills ONE group only: every other row of that group is kept as
+// it is (approved or not), the replaced image is declined, and other groups are untouched.
+function wlReplacementBody(group, replacedFilename) {
+  const keptRows = (wl.rows[group] || []).filter((row) => row.sample.image.filename !== replacedFilename);
+  return {
+    ...wlRequestBody(),
+    groups: [group],
+    declined: [...wl.declined, replacedFilename],
+    kept: keptRows.map((row) => ({
+      group,
+      reading_datetime_utc: row.sample.motivating_reading.datetime_utc,
+      filename: row.sample.image.filename
+    }))
+  };
+}
+
+function wlRowHtml(row, timezone, index) {
+  const sample = row.sample;
+  const mr = sample.motivating_reading;
+  const ir = sample.image_reading;
+  const own = sample.readings_differ && ir
+    ? `<div class="hint" style="margin-top:2px;">The image's own nearest reading: ${escapeHtml(Number(ir.value).toFixed(2))} ${escapeHtml(ir.unit)}, ${escapeHtml(wlFormatGap(sample.image_reading_gap_seconds))}. ${wlQualityHtml(ir)}</div>`
+    : "";
+  return `<tr style="border-top:1px solid var(--line-soft);vertical-align:top;">
+    <td style="padding:8px;"><input type="checkbox" data-wl-approve="${escapeHtml(sample.group)}:${index}" ${row.approved ? "checked" : ""} aria-label="Approve this sample"></td>
+    <td style="padding:8px;font-size:12px;">${escapeHtml(wlWhen(mr.datetime_utc, timezone))}<br><strong>${escapeHtml(Number(mr.value).toFixed(2))} ${escapeHtml(mr.unit)}</strong> ${wlQualityHtml(mr)}</td>
+    <td style="padding:8px;font-size:12px;">${escapeHtml(wlWhen(sample.image.captured_at_utc, timezone))}<br><span class="hint">Reading is ${escapeHtml(wlFormatGap(sample.gap_seconds))}</span>${own}</td>
+    <td style="padding:8px;"><button type="button" class="btn" data-wl-replace="${escapeHtml(sample.group)}:${index}">Replace</button></td>
+  </tr>`;
+}
+
+function wlGroupHtml(group, timezone) {
+  const rows = wl.rows[group.group] || [];
+  const found = rows.length;
+  const shortfall = found < group.requested
+    ? `<div style="background:var(--warn-soft);border-radius:8px;padding:8px 10px;font-size:12px;margin:6px 0;">Found ${found} of ${group.requested} requested. ${escapeHtml(WL_SHORTFALL_TEXT[(group.shortfall || {}).reason] || "")}</div>`
+    : "";
+  const skipped = Object.entries(group.skipped || {}).filter(([k]) => k !== "too_close_to_a_selected_date").map(([k, n]) => `${escapeHtml(WL_SKIP_TEXT[k] || k)}: ${n}`).join(" &middot; ");
+  return `<div style="margin-top:14px;">
+    <div style="display:flex;align-items:center;gap:8px;"><span class="pill info">${escapeHtml(WL_GROUP_TEXT[group.group])} water</span><span class="hint">relative to this range</span></div>
+    ${shortfall}
+    ${found ? `<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:6px;">
+      <thead><tr style="text-align:left;color:var(--ink-muted);"><th style="padding:6px 8px;">Use</th><th style="padding:6px 8px;">Gauge reading</th><th style="padding:6px 8px;">Image</th><th></th></tr></thead>
+      <tbody>${rows.map((row, i) => wlRowHtml(row, timezone, i)).join("")}</tbody></table>` : ""}
+    ${skipped ? `<div class="hint" style="margin-top:4px;">Candidates passed over: ${skipped}.</div>` : ""}
+  </div>`;
+}
+
+function wlPanelHtml() {
+  const proposal = wl.proposal;
+  const groupChecks = ["low", "middle", "high"].map((g) => `<label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" data-wl-group="${g}" ${wl.groups.includes(g) ? "checked" : ""}> ${WL_GROUP_TEXT[g]}</label>`).join("");
+  let preview = "";
+  if (proposal && proposal.state && proposal.state !== "ok") {
+    const text = proposal.state === "gauge_height_unavailable" ? proposal.message : (WL_STATE_TEXT[proposal.state] || proposal.message || "Water-level sampling is unavailable.");
+    preview = `<div style="background:var(--warn-soft);border-radius:8px;padding:10px 12px;font-size:12px;margin-top:12px;">${escapeHtml(text)}</div>`;
+  } else if (proposal) {
+    const t = proposal.selection.thresholds;
+    const assoc = proposal.association || {};
+    const approved = wlApproved().length;
+    preview = `<div class="hint" style="margin-top:12px;line-height:1.5;">
+        Gauge ${escapeHtml(assoc.nwis_site_id || "")} (${escapeHtml(proposal.gauge.parameter_label)}, ${escapeHtml(proposal.gauge.unit)}), ${escapeHtml(String(proposal.gauge.valid_reading_count))} valid readings${t ? `, ranging ${escapeHtml(Number(t.minimum).toFixed(2))} to ${escapeHtml(Number(t.maximum).toFixed(2))} ${escapeHtml(proposal.gauge.unit)} (median ${escapeHtml(Number(t.median).toFixed(2))})` : ""}.
+        ${assoc.source ? `Association source: ${escapeHtml(assoc.source)}.` : ""}
+        ${proposal.warning ? `<br>${escapeHtml(proposal.warning)}` : ""}
+        <br>${escapeHtml(proposal.note)} Policy ${escapeHtml(proposal.policy_version)}.</div>
+      ${proposal.selection.groups.map((g) => wlGroupHtml(g, proposal.timezone)).join("")}
+      <label style="display:flex;gap:8px;align-items:flex-start;margin-top:16px;font-size:12px;"><input type="checkbox" id="wlConfirm" ${wl.confirmed ? "checked" : ""}> <span>I confirm downloading ${approved} approved image(s) into this site. Each is a collection sample chosen from gauge readings, not a flood finding or a label.</span></label>
+      <button type="button" class="btn primary" id="wlDownload" style="width:100%;justify-content:center;margin-top:10px;" ${approved > 0 && wl.confirmed && !wl.busy ? "" : "disabled"}>${wl.busy ? "Working&hellip;" : `Download ${approved} selected image${approved === 1 ? "" : "s"}`}</button>`;
+  }
+  return `<div style="margin-bottom:10px;font-size:12px;color:var(--ink-soft);line-height:1.5;">Pick low, middle, and high water images from the camera's linked USGS gauge, instead of reviewing every image. These groups are <strong>relative to the date range you chose</strong>. They are not flood thresholds or labels, and a very short range may show little contrast.</div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;font-size:13px;">${groupChecks}
+      <label style="display:flex;align-items:center;gap:6px;">Images per group <input type="number" id="wlPerGroup" min="1" max="10" value="${wl.perGroup}" style="width:64px;"></label>
+      <button type="button" class="btn" id="wlFind" ${wl.busy ? "disabled" : ""}>Find samples</button></div>
+    ${wl.message ? `<div class="err" style="margin-top:10px;">${escapeHtml(wl.message)}</div>` : ""}
+    ${preview}`;
+}
+// ---- end water-level sampling ----
+
+function renderWaterLevel() {
+  const panel = $("waterLevelPanel");
+  panel.innerHTML = wlPanelHtml();
+  panel.querySelectorAll("[data-wl-group]").forEach((box) => box.addEventListener("change", () => {
+    const picked = Array.from(panel.querySelectorAll("[data-wl-group]")).filter((b) => b.checked).map((b) => b.dataset.wlGroup);
+    wl.groups = picked;
+  }));
+  const per = $("wlPerGroup");
+  if (per) per.addEventListener("change", () => { wl.perGroup = Math.max(1, Math.min(10, Number(per.value) || 3)); per.value = wl.perGroup; });
+  $("wlFind").addEventListener("click", wlFind);
+  panel.querySelectorAll("[data-wl-approve]").forEach((box) => box.addEventListener("change", () => {
+    const [group, index] = box.dataset.wlApprove.split(":");
+    wl.rows[group][Number(index)].approved = box.checked;
+    renderWaterLevel();
+  }));
+  panel.querySelectorAll("[data-wl-replace]").forEach((btn) => btn.addEventListener("click", () => {
+    const [group, index] = btn.dataset.wlReplace.split(":");
+    wlReplace(group, Number(index));
+  }));
+  const confirm = $("wlConfirm");
+  if (confirm) confirm.addEventListener("change", () => { wl.confirmed = confirm.checked; renderWaterLevel(); });
+  const download = $("wlDownload");
+  if (download) download.addEventListener("click", wlDownload);
+}
+
+async function wlFind() {
+  if (wl.groups.length === 0) { wl.message = "Choose at least one of low, middle, and high."; renderWaterLevel(); return; }
+  if (!$("start_date").value || !$("end_date").value) { wl.message = "Choose a start and end date first."; renderWaterLevel(); return; }
+  wl.busy = true; wl.message = ""; wl.declined = []; wl.confirmed = false;
+  renderWaterLevel();
+  try {
+    wl.proposal = await api("/api/preview-water-level-sampling", wlRequestBody());
+    wlSetRowsFromProposal(wl.proposal);
+  } catch (error) {
+    wl.proposal = null;
+    wl.message = error.message;
+  }
+  wl.busy = false;
+  renderWaterLevel();
+}
+
+async function wlReplace(group, index) {
+  const row = (wl.rows[group] || [])[index];
+  if (!row) return;
+  wl.busy = true; wl.message = ""; wl.confirmed = false;
+  renderWaterLevel();
+  try {
+    const body = wlReplacementBody(group, row.sample.image.filename);
+    const result = await api("/api/preview-water-level-sampling", body);
+    const fresh = ((result.selection || {}).groups || [])[0];
+    if (fresh) {
+      wl.declined = [...wl.declined, row.sample.image.filename];
+      const keep = new Map((wl.rows[group] || []).map((r) => [wlRowKey(r.sample), r]));
+      wl.rows[group] = fresh.samples.map((sample) => keep.get(wlRowKey(sample)) || { sample, approved: true });
+      const target = wl.proposal.selection.groups.find((g) => g.group === group);
+      if (target) { target.shortfall = fresh.shortfall; target.skipped = fresh.skipped; target.requested = fresh.requested; }
+    }
+  } catch (error) {
+    wl.message = error.message;
+  }
+  wl.busy = false;
+  renderWaterLevel();
+}
+
+async function wlDownload() {
+  const refs = wlApprovedRefs();
+  if (!refs.length || !wl.confirmed || wl.busy) return;
+  wl.busy = true; wl.message = "";
+  renderWaterLevel();
+  try {
+    const result = await api("/api/download-water-level-sampling", {
+      ...wlRequestBody(),
+      folder_name: folderName,
+      approved: refs,
+      confirmed: true,
+      confirmed_count: refs.length
+    });
+    const params = { site: folderName };
+    if (result.gage_available === true) params.gage = "found";
+    else if (result.gage_available === false) params.gage = "unavailable";
+    location.href = `/console/site.html?${new URLSearchParams(params)}`;
+    return;
+  } catch (error) {
+    wl.message = error.message;
+  }
+  wl.busy = false;
+  renderWaterLevel();
+}
+
+function setSampleKind(kind) {
+  sampleKind = kind;
+  const water = kind === "water_level";
+  $("regularSampling").hidden = water;
+  $("waterLevelPanel").hidden = !water;
+  $("imagesSubmit").style.display = water ? "none" : "";
+  [["modeRegular", "regular"], ["modeWater", "water_level"]].forEach(([id, value]) => {
+    const active = kind === value;
+    $(id).style.borderColor = active ? "var(--accent)" : "var(--line)";
+    $(id).style.background = active ? "var(--accent-soft)" : "#fff";
+    $(id).setAttribute("aria-pressed", String(active));
+  });
+  if (water) renderWaterLevel();
+}
+$("modeRegular").addEventListener("click", () => setSampleKind("regular"));
+$("modeWater").addEventListener("click", () => setSampleKind("water_level"));
 
 function fileStem(filename) {
   return filename.replace(/\.[^/.]+$/, "");
@@ -214,6 +497,7 @@ async function main() {
   $("closeLink").href = `/console/site.html?${new URLSearchParams({ site: folderName })}`;
   $("siteLabel").textContent = `${folderName} · watched area and guides stay in place`;
   renderSampling();
+  setSampleKind("regular");
 
   try {
     const configData = await api(`/api/site-config?${new URLSearchParams({ folder_name: folderName })}`);

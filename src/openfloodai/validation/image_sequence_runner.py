@@ -45,6 +45,7 @@ from openfloodai.evidence.settings import (
     resolve_adapter_setting_source,
     resolve_effective_adapter_settings,
 )
+from openfloodai.ingestion.river_images import WATER_LEVEL_SELECTION_FILENAME
 from openfloodai.ingestion.usgs_gage_data import (
     GAUGE_SOURCE_FILENAME,
     RUN_GAUGE_EVIDENCE_FILENAME,
@@ -68,6 +69,7 @@ RESULT_NO_WATER_LEVEL_CHANGE = "no_water_level_change"
 RESULT_CANNOT_JUDGE_WATER_LEVEL = "cannot_judge_water_level"
 RESULT_CAMERA_OR_IMAGE_PROBLEM = "camera_or_image_problem"
 
+WATER_LEVEL_SELECTION_SNAPSHOT = "water-level-selection.snapshot.json"
 _DARK_BRIGHTNESS_THRESHOLD = 0.08
 _RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 _SEQUENCE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -158,6 +160,13 @@ def run_image_sequence_validation(
             "required to run image-sequence validation."
         )
 
+    if baseline_filename is None and (sequence_dir / WATER_LEVEL_SELECTION_FILENAME).is_file():
+        # A water-level sample set is picked for level variety, so its earliest image is not
+        # a meaningful "normal" reference. Never fall back to it silently.
+        raise ImageSequenceValidationError(
+            "Choose a baseline image for this water-level sample set. Its earliest image is "
+            "not assumed to be a normal reference."
+        )
     baseline_record = _select_baseline(downloaded_records, baseline_filename)
     baseline_path = images_dir / str(baseline_record["filename"])
     baseline_frame = cv2.imread(str(baseline_path))
@@ -555,6 +564,7 @@ def run_image_sequence_validation(
         baseline_record=baseline_record,
         records=records,
     )
+    _freeze_water_level_selection(run_dir, sequence_dir)
 
     return report
 
@@ -711,6 +721,8 @@ def read_image_sequence_run_detail(site_dir: Path, run_id: str) -> dict[str, Any
         "review_images": review_images,
         "gauge_evidence": gauge_evidence,
         "gauge_series": legacy_gauge_series(gauge_evidence),
+        "water_level_selection": read_run_water_level_selection(run_dir),
+        "setup_used": read_run_setup_used(run_dir),
         "event_reviews": event_reviews,
         "evidence_records": evidence_records,
         "pilot_evaluation": pilot_evaluation,
@@ -1015,6 +1027,79 @@ def _write_gauge_evidence(
     )
     if source is not None and source_bytes is not None:
         (run_dir / "inputs-used" / "gauge-readings.snapshot.json").write_bytes(source_bytes)
+
+
+def _freeze_water_level_selection(run_dir: Path, sequence_dir: Path) -> None:
+    """Copy the sequence's water-level selection record into the run, byte for byte.
+
+    The collection-group badge shown in review comes from this frozen copy, so it
+    cannot change if the sequence's own file is ever replaced by a later download.
+    """
+
+    try:
+        raw = (sequence_dir / WATER_LEVEL_SELECTION_FILENAME).read_bytes()
+    except OSError:
+        return
+    (run_dir / "inputs-used" / WATER_LEVEL_SELECTION_SNAPSHOT).write_bytes(raw)
+
+
+def read_run_setup_used(run_dir: Path) -> dict[str, Any]:
+    """The watched area and human guides this run was made with (its frozen config copy).
+
+    Drawn over overlay comparisons so they always match the saved run, never a guide
+    edited afterward. Empty values when the run has no readable snapshot.
+    """
+
+    try:
+        snapshot = json.loads(
+            (run_dir / "inputs-used" / "site-config.snapshot.json").read_text(encoding="utf-8")
+        )
+    except (OSError, ValueError):
+        snapshot = {}
+    guides = snapshot.get("normal_waterline_guides") if isinstance(snapshot, dict) else None
+    return {
+        "reference_region": snapshot.get("reference_region")
+        if isinstance(snapshot, dict)
+        else None,
+        "normal_waterline_guides": [
+            {"id": g.get("id"), "status": g.get("status"), "points": g.get("points")}
+            for g in (guides if isinstance(guides, list) else [])
+            if isinstance(g, dict)
+        ],
+    }
+
+
+def read_run_water_level_selection(run_dir: Path) -> dict[str, Any] | None:
+    """The run's frozen water-level selection by file name, or None (a regular sequence)."""
+
+    path = run_dir / "inputs-used" / WATER_LEVEL_SELECTION_SNAPSHOT
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(loaded, dict):
+        return None
+    samples = {
+        str(sample["filename"]): {
+            "group": sample.get("group"),
+            "motivating_reading": sample.get("motivating_reading"),
+            "image_reading": sample.get("image_reading"),
+            "gap_seconds": sample.get("gap_seconds"),
+            "image_reading_gap_seconds": sample.get("image_reading_gap_seconds"),
+            "readings_differ": sample.get("readings_differ"),
+        }
+        for sample in loaded.get("samples", [])
+        if isinstance(sample, dict) and sample.get("filename")
+    }
+    return {
+        "policy_version": loaded.get("policy_version"),
+        "selected_at_utc": loaded.get("selected_at_utc"),
+        "note": loaded.get("note"),
+        "request": loaded.get("request"),
+        "association": loaded.get("association"),
+        "gauge": loaded.get("gauge"),
+        "samples": samples,
+    }
 
 
 def read_run_gauge_evidence(run_dir: Path) -> dict[str, Any]:
