@@ -16,7 +16,8 @@ function context() {
   const sandbox = {
     escapeHtml: (value) => String(value),
     $: (id) => ({ value: values[id] || "" }),
-    Intl, Date, Number, String, Object, Map
+    folderName: "demo",
+    Intl, Date, Number, String, Object, Map, Array, JSON
   };
   vm.createContext(sandbox);
   vm.runInContext(helpers, sandbox);
@@ -172,4 +173,61 @@ test("a group with no daytime reading explains it", () => {
   const ctx = context();
   load(ctx, proposal([group("high", [], 3, { missing: 3, reason: "no_daytime_reading_in_this_group" })]));
   assert.match(vm.runInContext("wlPanelHtml()", ctx), /taken during the daytime window/);
+});
+
+function freshPreview(ctx) {
+  load(ctx, proposal([group("high", [sample("high", "a.jpg", "2026-03-01T18:00:00+00:00", 60)], 1)]));
+  vm.runInContext("wl.settingsKey = wlSettingsKey(); wl.confirmed = true; wl.declined = ['x.jpg'];", ctx);
+}
+
+test("the request always names the site, so the camera can be checked before Find samples", () => {
+  const body = JSON.parse(JSON.stringify(vm.runInContext("wlRequestBody()", context())));
+  assert.equal(body.folder_name, "demo");
+});
+
+test("changing any setting makes the preview's settings key differ", () => {
+  const ctx = context();
+  freshPreview(ctx);
+  const same = vm.runInContext("wl.settingsKey === wlSettingsKey()", ctx);
+  assert.equal(same, true);
+  for (const change of [
+    "wl.groups = ['low']",
+    "wl.perGroup = 1",
+    "wl.timeOfDay = 'daytime'",
+  ]) {
+    freshPreview(ctx);
+    vm.runInContext(change, ctx);
+    assert.equal(vm.runInContext("wl.settingsKey === wlSettingsKey()", ctx), false, change);
+  }
+});
+
+test("invalidating clears the preview, approvals, declined images and the confirmation", () => {
+  const ctx = context();
+  freshPreview(ctx);
+
+  vm.runInContext("wlInvalidate('Groups changed. Select Find samples again.')", ctx);
+
+  assert.equal(vm.runInContext("wl.proposal", ctx), null);
+  assert.deepEqual(JSON.parse(JSON.stringify(vm.runInContext("wl.rows", ctx))), {});
+  assert.deepEqual(JSON.parse(JSON.stringify(vm.runInContext("wl.declined", ctx))), []);
+  assert.equal(vm.runInContext("wl.confirmed", ctx), false);
+  assert.equal(vm.runInContext("wl.message", ctx), "Groups changed. Select Find samples again.");
+  assert.equal(vm.runInContext("wlApproved().length", ctx), 0);
+  assert.doesNotMatch(vm.runInContext("wlPanelHtml()", ctx), /id="wlDownload"/);
+});
+
+test("the form refuses a download whose settings changed after Find samples", () => {
+  assert.match(script, /wl\.settingsKey !== wlSettingsKey\(\)/);
+  const guard = script.slice(script.indexOf("async function wlDownload"), script.indexOf("function setSampleKind"));
+  assert.match(guard, /Select Find samples again before downloading/);
+  assert.ok(guard.indexOf("wlSettingsKey()") < guard.indexOf("/api/download-water-level-sampling"));
+});
+
+test("camera, dates, groups, count and time of day all clear the preview", () => {
+  const handlers = script.slice(script.indexOf("function renderWaterLevel"), script.indexOf("async function wlFind"));
+  for (const message of ["Groups changed", "Images per group changed", "Time of day changed"]) {
+    assert.match(handlers, new RegExp(message));
+  }
+  assert.match(script, /\["camera_url", "start_date", "end_date"\]\.forEach/);
+  assert.match(script, /The camera or dates changed\. Select Find samples again\./);
 });

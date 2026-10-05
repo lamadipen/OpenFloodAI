@@ -63,6 +63,35 @@ def _parse(data: dict[str, Any], reference_dir: Any) -> tuple[Any, list[str], in
     return context, groups, per_group, declined, time_of_day
 
 
+def _site_config(handler: Any, data: dict[str, Any]) -> Any | None:
+    """The named site's saved config, or None when the request names no site."""
+
+    folder_name = str(data.get("folder_name", "")).strip()
+    if not folder_name:
+        return None
+    site_dir = handler._resolve_site_dir(folder_name)
+    config_paths = sorted((site_dir / "configs").glob("*.json"))
+    if not config_paths:
+        raise SiteConfigError(f"Site config was not found under {site_dir / 'configs'}")
+    return load_site_config(config_paths[0])
+
+
+def _require_same_camera(context: Any, site_config: Any | None) -> None:
+    """One camera throughout: the URL's camera must be this site's configured camera.
+
+    Sampling uses the URL's camera and the registry's station for it; the saved gauge
+    data uses the site's camera. If they differed, one camera's images would be saved
+    with another station's readings, so a mismatch is refused before anything is fetched.
+    """
+
+    if site_config is not None and site_config.camera_id != context.slug:
+        raise ValueError(
+            f"This site is set up for camera {site_config.camera_id}, but the camera URL is for "
+            f"{context.slug}. Use the site's own camera, or add the images to a site made for "
+            "that camera."
+        )
+
+
 def handle_post(handler: Any, path: str) -> bool:
     if path not in {PREVIEW_PATH, DOWNLOAD_PATH}:
         return False
@@ -71,6 +100,8 @@ def handle_post(handler: Any, path: str) -> bool:
         return True
     try:
         context, groups, per_group, declined, time_of_day = _parse(data, handler._reference_dir())
+        site_config = _site_config(handler, data)
+        _require_same_camera(context, site_config)
         if path == PREVIEW_PATH:
             kept = _sample_refs(data.get("kept"), "kept")
             result = discovery.discover(
@@ -83,7 +114,7 @@ def handle_post(handler: Any, path: str) -> bool:
             )
             handler._send_json({"success": True, **result}, status_code=200)
         else:
-            _download(handler, data, context, groups, per_group, declined, time_of_day)
+            _download(handler, data, context, groups, per_group, declined, time_of_day, site_config)
     except (
         ValueError,
         sampling.SamplingError,
@@ -108,17 +139,16 @@ def _download(
     per_group: int,
     declined: list[str],
     time_of_day: str,
+    site_config: Any | None,
 ) -> None:
+    if site_config is None:
+        raise ValueError("Choose the site to download into.")
     approved = _sample_refs(data.get("approved"), "approved")
     if data.get("confirmed") is not True or data.get("confirmed_count") != len(approved):
         raise ValueError(
             f"Confirm the download of exactly {len(approved)} approved image(s) to continue."
         )
     site_dir = handler._resolve_site_dir(str(data.get("folder_name", "")).strip())
-    config_paths = sorted((site_dir / "configs").glob("*.json"))
-    if not config_paths:
-        raise SiteConfigError(f"Site config was not found under {site_dir / 'configs'}")
-    site_config = load_site_config(config_paths[0])
     result, _ = discovery.download_approved(
         context,
         approved=approved,

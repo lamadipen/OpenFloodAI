@@ -598,3 +598,33 @@ def test_an_unknown_time_of_day_is_rejected() -> None:
             timezone_name=TZ,
             time_of_day="night",
         )
+
+
+def refs_for(group: str, count: int) -> list[dict[str, str]]:
+    return [
+        {"group": group, "reading_datetime_utc": f"t{n}", "filename": f"{group}{n}.jpg"}
+        for n in range(count)
+    ]
+
+
+def test_approved_samples_must_fit_the_requested_groups_and_counts() -> None:
+    wls.validate_approved_against_request(
+        refs_for("low", 1) + refs_for("high", 3), ["low", "high"], 3
+    )
+
+    with pytest.raises(wls.SamplingError, match="not requested"):
+        wls.validate_approved_against_request(refs_for("high", 3), ["low"], 3)
+    with pytest.raises(
+        wls.SamplingError, match="3 high samples were approved but 1 were requested"
+    ):
+        wls.validate_approved_against_request(refs_for("high", 3), ["high"], 1)
+    with pytest.raises(wls.SamplingError):
+        wls.validate_approved_against_request(refs_for("low", 1), [], 3)
+    with pytest.raises(wls.SamplingError):
+        wls.validate_approved_against_request(refs_for("low", 1), ["extreme"], 3)
+    with pytest.raises(wls.SamplingError):
+        wls.validate_approved_against_request(
+            refs_for("low", 1), ["low"], wls.MAX_IMAGES_PER_GROUP + 1
+        )
+    with pytest.raises(wls.SamplingError, match="unknown"):
+        wls.validate_approved_against_request([{"filename": "x.jpg"}], ["low"], 3)

@@ -312,3 +312,90 @@ def test_downloading_again_never_hits_an_already_exists_error(env: dict[str, Any
         first[1]["sequence_id"],
         other[1]["sequence_id"],
     }
+
+
+def test_a_camera_url_for_a_different_camera_is_refused_before_anything_is_fetched(
+    env: dict[str, Any],
+) -> None:
+    other = {
+        **BASE,
+        "camera_url": "https://apps.usgs.gov/hivis/camera/CO_Other_Camera",
+        "folder_name": "demo",
+    }
+    with serve(env["sites"]) as base:
+        preview = post(f"{base}/api/preview-water-level-sampling", other)
+        _, proposal = post(
+            f"{base}/api/preview-water-level-sampling", {**BASE, "folder_name": "demo"}
+        )
+        approved = refs(proposal, "high")[:1]
+        download = post(
+            f"{base}/api/download-water-level-sampling",
+            {**other, "approved": approved, "confirmed": True, "confirmed_count": 1},
+        )
+
+    for code, body in (preview, download):
+        assert code == 400 and body["success"] is False
+        assert "CO_Other_Camera" in body["message"] and CAMERA in body["message"]
+    assert env["fetched"] == []
+    assert not (env["site"] / "inputs" / "image-sequences").exists()
+
+
+def test_the_site_is_required_to_download_and_a_matching_camera_works(env: dict[str, Any]) -> None:
+    with serve(env["sites"]) as base:
+        _, proposal = post(f"{base}/api/preview-water-level-sampling", BASE)
+        approved = refs(proposal, "high")[:1]
+        no_site = post(
+            f"{base}/api/download-water-level-sampling",
+            {**BASE, "approved": approved, "confirmed": True, "confirmed_count": 1},
+        )
+        ok = post(
+            f"{base}/api/download-water-level-sampling",
+            {
+                **BASE,
+                "folder_name": "demo",
+                "approved": approved,
+                "confirmed": True,
+                "confirmed_count": 1,
+            },
+        )
+
+    assert no_site[0] == 400 and "site" in no_site[1]["message"]
+    assert ok[0] == 200
+
+
+def test_one_low_image_requested_cannot_download_three_high_images(env: dict[str, Any]) -> None:
+    with serve(env["sites"]) as base:
+        _, proposal = post(
+            f"{base}/api/preview-water-level-sampling", {**BASE, "images_per_group": 3}
+        )
+        three_high = refs(proposal, "high")[:3]
+        assert len(three_high) == 3
+        wrong_group = post(
+            f"{base}/api/download-water-level-sampling",
+            {
+                **BASE,
+                "groups": ["low"],
+                "images_per_group": 1,
+                "folder_name": "demo",
+                "approved": three_high,
+                "confirmed": True,
+                "confirmed_count": 3,
+            },
+        )
+        too_many = post(
+            f"{base}/api/download-water-level-sampling",
+            {
+                **BASE,
+                "groups": ["high"],
+                "images_per_group": 1,
+                "folder_name": "demo",
+                "approved": three_high,
+                "confirmed": True,
+                "confirmed_count": 3,
+            },
+        )
+
+    for code, body in (wrong_group, too_many):
+        assert code == 400 and "Run Find samples again" in body["message"]
+    assert env["fetched"] == []
+    assert not (env["site"] / "inputs" / "image-sequences").exists()

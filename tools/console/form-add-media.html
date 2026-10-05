@@ -149,7 +149,7 @@ function renderSampling() {
 // page only ever names an approved sample by group, gauge-reading time and
 // image file name; the server recomputes and re-verifies everything.
 let sampleKind = "regular";
-let wl = { proposal: null, rows: {}, declined: [], busy: false, message: "", groups: ["low", "middle", "high"], perGroup: 3, confirmed: false, timeOfDay: "any" };
+let wl = { proposal: null, rows: {}, declined: [], busy: false, message: "", groups: ["low", "middle", "high"], perGroup: 3, confirmed: false, timeOfDay: "any", settingsKey: "" };
 
 const WL_GROUP_TEXT = { low: "Low", middle: "Middle", high: "High" };
 const WL_SHORTFALL_TEXT = {
@@ -227,8 +227,23 @@ function wlApprovedRefs() {
   }));
 }
 
+// Everything the preview depends on. If any of it differs from what Find samples used, the
+// preview and its confirmation are stale and must not be downloaded.
+function wlSettingsKey() {
+  return JSON.stringify([
+    $("camera_url").value.trim(), $("start_date").value, $("end_date").value,
+    [...wl.groups].sort(), wl.perGroup, wl.timeOfDay
+  ]);
+}
+
+function wlInvalidate(message) {
+  wl.proposal = null; wl.rows = {}; wl.declined = []; wl.confirmed = false; wl.settingsKey = "";
+  wl.message = message || "Settings changed. Select Find samples again.";
+}
+
 function wlRequestBody() {
   return {
+    folder_name: folderName,
     camera_url: $("camera_url").value.trim(),
     start_date: $("start_date").value,
     end_date: $("end_date").value,
@@ -335,17 +350,21 @@ function renderWaterLevel() {
   panel.querySelectorAll("[data-wl-group]").forEach((box) => box.addEventListener("change", () => {
     const picked = Array.from(panel.querySelectorAll("[data-wl-group]")).filter((b) => b.checked).map((b) => b.dataset.wlGroup);
     wl.groups = picked;
+    if (wl.proposal) { wlInvalidate("Groups changed. Select Find samples again."); renderWaterLevel(); }
   }));
   panel.querySelectorAll("[data-wl-time]").forEach((radio) => radio.addEventListener("change", () => {
     if (!radio.checked || wl.timeOfDay === radio.value) return;
     wl.timeOfDay = radio.value;
     // The old preview was made for a different time of day; it cannot be downloaded as is.
-    wl.proposal = null; wl.rows = {}; wl.declined = []; wl.confirmed = false;
-    wl.message = "Time of day changed. Select Find samples again.";
+    if (wl.proposal) wlInvalidate("Time of day changed. Select Find samples again.");
     renderWaterLevel();
   }));
   const per = $("wlPerGroup");
-  if (per) per.addEventListener("change", () => { wl.perGroup = Math.max(1, Math.min(10, Number(per.value) || 3)); per.value = wl.perGroup; });
+  if (per) per.addEventListener("change", () => {
+    wl.perGroup = Math.max(1, Math.min(10, Number(per.value) || 3));
+    per.value = wl.perGroup;
+    if (wl.proposal) { wlInvalidate("Images per group changed. Select Find samples again."); renderWaterLevel(); }
+  });
   $("wlFind").addEventListener("click", wlFind);
   panel.querySelectorAll("[data-wl-approve]").forEach((box) => box.addEventListener("change", () => {
     const [group, index] = box.dataset.wlApprove.split(":");
@@ -367,8 +386,10 @@ async function wlFind() {
   if (!$("start_date").value || !$("end_date").value) { wl.message = "Choose a start and end date first."; renderWaterLevel(); return; }
   wl.busy = true; wl.message = ""; wl.declined = []; wl.confirmed = false;
   renderWaterLevel();
+  const keyAtStart = wlSettingsKey();
   try {
     wl.proposal = await api("/api/preview-water-level-sampling", wlRequestBody());
+    wl.settingsKey = keyAtStart;
     wlSetRowsFromProposal(wl.proposal);
   } catch (error) {
     wl.proposal = null;
@@ -404,6 +425,11 @@ async function wlReplace(group, index) {
 async function wlDownload() {
   const refs = wlApprovedRefs();
   if (!refs.length || !wl.confirmed || wl.busy) return;
+  if (wl.settingsKey !== wlSettingsKey()) {
+    wlInvalidate("The settings changed after Find samples. Select Find samples again before downloading.");
+    renderWaterLevel();
+    return;
+  }
   wl.busy = true; wl.message = "";
   renderWaterLevel();
   try {
@@ -440,6 +466,12 @@ function setSampleKind(kind) {
   });
   if (water) renderWaterLevel();
 }
+["camera_url", "start_date", "end_date"].forEach((id) => $(id).addEventListener("input", () => {
+  if (sampleKind === "water_level" && wl.proposal) {
+    wlInvalidate("The camera or dates changed. Select Find samples again.");
+    renderWaterLevel();
+  }
+}));
 $("modeRegular").addEventListener("click", () => setSampleKind("regular"));
 $("modeWater").addEventListener("click", () => setSampleKind("water_level"));
 

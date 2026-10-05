@@ -630,3 +630,55 @@ def test_a_night_time_sample_cannot_be_downloaded_under_a_daytime_request(tmp_pa
             list_images=lambda *_: images(),
             download=fake_download({}),
         )
+
+
+def never(*_: Any) -> Any:
+    raise AssertionError("no gauge or archive call may happen before the request is validated")
+
+
+def test_a_request_for_one_low_image_cannot_download_three_high_images(tmp_path: Path) -> None:
+    ctx = context(tmp_path)
+    three_high = approved_from(run(ctx), "high", 3)
+
+    with pytest.raises(RiverImageError, match="not requested"):
+        wld.download_approved(
+            ctx,
+            approved=three_high,
+            declined=[],
+            groups=["low"],
+            images_per_group=1,
+            site_id="s",
+            site_dir=tmp_path / "site",
+            fetch_gauge=never,
+            list_images=never,
+            download=never,
+        )
+
+
+def test_more_approved_samples_than_the_requested_count_are_refused_before_any_fetch(
+    tmp_path: Path,
+) -> None:
+    ctx = context(tmp_path)
+    three_high = approved_from(run(ctx), "high", 3)
+
+    with pytest.raises(RiverImageError, match="were requested"):
+        wld.download_approved(
+            ctx,
+            approved=three_high,
+            declined=[],
+            groups=["high"],
+            images_per_group=2,
+            site_id="s",
+            site_dir=tmp_path / "site",
+            fetch_gauge=never,
+            list_images=never,
+            download=never,
+        )
+
+
+def test_replacement_keeps_must_belong_to_the_requested_group(tmp_path: Path) -> None:
+    ctx = context(tmp_path)
+    high = approved_from(run(ctx), "high", 1)
+
+    with pytest.raises(wls.SamplingError, match="not requested"):
+        run(ctx, groups=["low"], kept=high)

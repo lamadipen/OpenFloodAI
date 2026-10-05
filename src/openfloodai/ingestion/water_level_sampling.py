@@ -512,6 +512,37 @@ def select_samples(
     return SelectionResult(results, thresholds, unit, len(valid), image_count, time_of_day)
 
 
+def validate_approved_against_request(
+    approved: Sequence[Mapping[str, str]], groups: Sequence[str], images_per_group: int
+) -> None:
+    """Approved samples must fit the request they claim to answer.
+
+    Every item's group must be one that was asked for, no group may exceed the
+    requested count, and the request itself must be valid. Checked before any
+    network call, so a changed form can never download a stale selection.
+    """
+
+    if not groups or any(group not in GROUPS for group in groups):
+        raise SamplingError("Choose one or more of low, middle, and high.")
+    if not 1 <= images_per_group <= MAX_IMAGES_PER_GROUP:
+        raise SamplingError(f"Images per group must be from 1 to {MAX_IMAGES_PER_GROUP}.")
+    counts: dict[str, int] = {}
+    for item in approved:
+        group = str(item.get("group", ""))
+        if group not in groups:
+            raise SamplingError(
+                f"An approved sample is in the {group or 'unknown'} group, which was not "
+                "requested. Run Find samples again."
+            )
+        counts[group] = counts.get(group, 0) + 1
+    for group, count in counts.items():
+        if count > images_per_group:
+            raise SamplingError(
+                f"{count} {group} samples were approved but {images_per_group} were requested. "
+                "Run Find samples again."
+            )
+
+
 def verify_approved(
     approved: Sequence[Mapping[str, str]],
     readings: Sequence[GageReading],

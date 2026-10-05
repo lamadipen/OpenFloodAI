@@ -50,6 +50,7 @@ from openfloodai.ingestion.water_level_sampling import (
     SelectedSample,
     select_samples,
     time_of_day_description,
+    validate_approved_against_request,
     validate_time_of_day,
     verify_approved,
     water_level_unavailable,
@@ -227,6 +228,7 @@ def discover(
     fetch_gauge = fetch_gauge or fetch_gage_readings
     list_images = list_images or list_archive_images_between
     validate_time_of_day(time_of_day)
+    validate_approved_against_request(kept, groups, images_per_group)
     out = _base(context, groups, images_per_group, time_of_day)
     out["selected_at_utc"] = datetime.now(tz=UTC).isoformat()
     camera = context.camera
@@ -394,6 +396,11 @@ def download_approved(
     download = download or download_river_image_sequence
     if not approved:
         raise RiverImageError("Approve at least one sample before downloading.")
+    try:
+        validate_approved_against_request(approved, groups, images_per_group)
+        validate_time_of_day(time_of_day)
+    except SamplingError as error:
+        raise RiverImageError(str(error)) from error
     camera = context.camera
     if camera is None or camera.gage_relationship == "unavailable":
         raise RiverImageError("This camera has no USGS gauge association.")

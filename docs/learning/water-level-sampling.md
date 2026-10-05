@@ -31,7 +31,8 @@ machine's result and from any human label, and it never creates a label.
 4. Choose the **time of day**: **Any time of day** (the default) or **Daytime
    only**, which keeps both the gauge reading and the image inside the local
    10:00 to 14:00 window, the same daylight window regular daylight sampling uses.
-   Changing it clears the preview, so run Find samples again.
+   Changing it (or the groups, images per group, dates, or camera) clears the
+   preview and the confirmation, so run Find samples again.
 5. Select **Find samples**. This reads the gauge data, ranks the readings, and
    then checks the camera archive only around the readings it is considering, one
    day at a time, until each group has its picks. It never lists or downloads the
@@ -43,12 +44,19 @@ machine's result and from any human label, and it never creates a label.
    for that group. A replacement keeps the group's other rows, respects the same
    rules, and never uses an image hours away.
 8. Tick the confirmation and select **Download N selected images**. Only the
-   approved rows are downloaded, through the existing image-sequence intake.
+   approved rows are downloaded, through the existing image-sequence intake. The
+   server checks them against what you asked for (groups, and no more than the
+   requested images per group) before it fetches anything.
 
 If you ask for more than can be found, the preview shows how many it found and
 why. Requested counts are maximums, not guarantees.
 
 ## What it needs
+
+- The camera URL must be the camera this site is set up for. The images, the
+  gauge station, and the saved gauge data all follow that one camera. If the URL
+  names a different camera, Find samples and Download are refused before anything is
+  fetched.
 
 - The camera must have a USGS gauge association from the river registry. The
   nearest station is never guessed. A gauge the registry marks `nearby` is
