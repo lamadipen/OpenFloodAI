@@ -85,8 +85,11 @@ and its source, the date range and groups requested, the policy version and
 selection time, the gauge parameter and units, every approved image with its
 motivating reading and its own nearest reading and both gaps, the images you
 declined, and the reasons candidates were skipped. That file is never rewritten by
-a later download. A different set for the same camera and dates needs an
-explicit overwrite.
+a later download. Each sample set is saved under its own name, ending in a short
+fingerprint of its approved images (for example `...-water_level-3f91d374`), so a
+different selection for the same camera and dates is a new sequence and never
+replaces an earlier one that runs and reviews may already use. Downloading the
+exact same approved images again simply reuses what is saved.
 
 Then use the normal flow:
 

@@ -280,3 +280,35 @@ def test_time_of_day_is_validated_and_returned_with_the_preview(env: dict[str, A
     assert ok[1]["selection"]["policy"]["time_of_day"]["window_local_hours"] == [10, 14]
     assert bad[0] == 400 and bad[1]["success"] is False
     assert default[1]["request"]["time_of_day"]["mode"] == "any"
+
+
+def test_downloading_again_never_hits_an_already_exists_error(env: dict[str, Any]) -> None:
+    with serve(env["sites"]) as base:
+        _, proposal = post(f"{base}/api/preview-water-level-sampling", BASE)
+        high = refs(proposal, "high")[:2]
+        low = refs(proposal, "low")[:1]
+
+        def download(approved: list[dict[str, str]]) -> tuple[int, dict[str, Any]]:
+            return post(
+                f"{base}/api/download-water-level-sampling",
+                {
+                    **BASE,
+                    "folder_name": "demo",
+                    "approved": approved,
+                    "confirmed": True,
+                    "confirmed_count": len(approved),
+                },
+            )
+
+        first = download(high)
+        same = download(high)  # the exact same approved images again
+        other = download(low)  # a different selection for the same camera and dates
+
+    assert first[0] == same[0] == other[0] == 200
+    assert same[1]["sequence_id"] == first[1]["sequence_id"]
+    assert other[1]["sequence_id"] != first[1]["sequence_id"]
+    sequences = env["site"] / "inputs" / "image-sequences"
+    assert {p.name for p in sequences.iterdir()} == {
+        first[1]["sequence_id"],
+        other[1]["sequence_id"],
+    }

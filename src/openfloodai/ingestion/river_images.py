@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -47,9 +48,17 @@ DEFAULT_DAYLIGHT_WINDOW_START_HOUR = 10
 DEFAULT_DAYLIGHT_WINDOW_END_HOUR = 14
 _NOON_SECONDS = 12 * 3600
 _SEQUENCE_DATE_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}")
+# A water-level sample set is named with a short fingerprint of its approved images, so a
+# different selection for the same camera and dates is a separate sequence, never a collision.
+_SEQUENCE_MODE_PATTERN = "|".join(
+    sorted(
+        mode if mode != WATER_LEVEL_SAMPLING_MODE else mode + r"(?:-[0-9a-f]{8})?"
+        for mode in ALLOWED_SEQUENCE_SAMPLING_MODES
+    )
+)
 _SEQUENCE_ID_PATTERN = re.compile(
     r"usgs-[A-Za-z0-9_-]{1,160}-\d{4}-\d{2}-\d{2}-\d{4}-\d{2}-\d{2}-"
-    r"(?:" + "|".join(sorted(ALLOWED_SEQUENCE_SAMPLING_MODES)) + ")"
+    r"(?:" + _SEQUENCE_MODE_PATTERN + ")"
 )
 
 
@@ -683,6 +692,13 @@ class ImageSequenceDownloadResult:
         }
 
 
+def _selection_fingerprint(candidates: list[ImageSequenceCandidate]) -> str:
+    """Eight hex characters identifying exactly this set of images, order independent."""
+
+    names = sorted(candidate.source_url.rsplit("/", 1)[-1] for candidate in candidates)
+    return hashlib.sha256("\n".join(names).encode("utf-8")).hexdigest()[:8]
+
+
 def download_river_image_sequence(
     *,
     camera_url: str,
@@ -739,8 +755,14 @@ def download_river_image_sequence(
     zone = ZoneInfo(zone_name)
 
     sequence_id = f"usgs-{slug}-{start}-{end}-{sampling_mode}"
+    if water_level:
+        sequence_id += "-" + _selection_fingerprint(sampled)
     sequence_dir = (site_dir / "inputs" / "image-sequences" / sequence_id).resolve()
     already_downloaded: dict[str, ImageSequenceRecord] = {}
+    if water_level and sequence_dir.is_dir() and not overwrite:
+        # Same camera, dates, and approved images as an earlier download: reuse what is
+        # already saved instead of failing. Different images get a different name above.
+        resume = True
     if sequence_dir.exists():
         if overwrite:
             shutil.rmtree(sequence_dir)

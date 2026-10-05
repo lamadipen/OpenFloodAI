@@ -59,6 +59,11 @@ test("images without a recorded level are listed last and say so", () => {
   assert.match(out, /level not recorded/);
 });
 
+test("a fingerprinted water-level sequence name is recognised too", () => {
+  const out = context().sequenceRowHtml({ sequence_id: "usgs-CAM-2026-01-01-2026-10-04-water_level-0a1b2c3d", downloaded_count: 9, records: [] });
+  assert.match(out, /data-baseline-for=/);
+});
+
 test("a regular sequence is unchanged: no picker, button enabled", () => {
   const out = context().sequenceRowHtml({ sequence_id: "usgs-CAM-2026-08-01-2026-09-03-one_daylight_image_per_day", downloaded_count: 29 });
   assert.doesNotMatch(out, /data-baseline-for/);

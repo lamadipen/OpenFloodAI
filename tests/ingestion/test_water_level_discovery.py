@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -317,7 +318,7 @@ def test_a_download_needs_at_least_one_approved_sample(tmp_path: Path) -> None:
         )
 
 
-def test_the_real_intake_saves_selection_evidence_and_never_rewrites_it(
+def test_the_real_intake_saves_selection_evidence_and_never_collides_or_rewrites_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from openfloodai.ingestion import river_images
@@ -346,7 +347,7 @@ def test_the_real_intake_saves_selection_evidence_and_never_rewrites_it(
     result, provenance = go()
 
     sequence = result.directory
-    assert result.sequence_id.endswith("-water_level")
+    assert re.search(r"-water_level-[0-9a-f]{8}$", result.sequence_id)
     saved = json.loads((sequence / WATER_LEVEL_SELECTION_FILENAME).read_text())
     assert saved["policy_version"] == wls.POLICY_VERSION and len(saved["samples"]) == 2
     manifest = [
@@ -356,28 +357,58 @@ def test_the_real_intake_saves_selection_evidence_and_never_rewrites_it(
     assert not any(r["download_status"] == "missing" for r in manifest)
     before = (sequence / WATER_LEVEL_SELECTION_FILENAME).read_bytes()
 
-    # The same sequence again is refused by the existing intake rules, never silently replaced.
-    with pytest.raises(RiverImageError, match="already exists"):
-        go()
-    # A resume of the SAME approved images works and leaves the saved evidence untouched.
-    go(resume=True)
+    # Downloading the SAME approved images again reuses them: no error, nothing rewritten.
+    again, _ = go()
+    assert again.sequence_id == result.sequence_id
     assert (sequence / WATER_LEVEL_SELECTION_FILENAME).read_bytes() == before
-    # A DIFFERENT approved set cannot slip in without an explicit overwrite.
-    other = approved_from(run(ctx), "low", 1)
-    with pytest.raises(RiverImageError, match="different images"):
-        wld.download_approved(
-            ctx,
-            approved=other,
-            declined=[],
-            groups=["low"],
-            images_per_group=1,
-            site_id="site-1",
-            site_dir=site,
-            resume=True,
-            fetch_gauge=lambda *_: series(),
-            list_images=lambda *_: images(),
-            download=download_river_image_sequence,
-        )
+    # A DIFFERENT selection for the same camera and dates is its own sequence, not a collision,
+    # and the first sample set (which analysis runs may already point at) is left untouched.
+    other_approved = approved_from(run(ctx), "low", 1)
+    other, _ = wld.download_approved(
+        ctx,
+        approved=other_approved,
+        declined=[],
+        groups=["low"],
+        images_per_group=1,
+        site_id="site-1",
+        site_dir=site,
+        fetch_gauge=lambda *_: series(),
+        list_images=lambda *_: images(),
+        download=download_river_image_sequence,
+    )
+    assert other.sequence_id != result.sequence_id
+    assert other.directory.is_dir() and sequence.is_dir()
+    assert (sequence / WATER_LEVEL_SELECTION_FILENAME).read_bytes() == before
+    # Both are listed and valid for the existing image/review endpoints.
+    from openfloodai.ingestion.river_images import list_site_image_sequences, resolve_sequence_image
+
+    ids = {row["sequence_id"] for row in list_site_image_sequences(site)}
+    assert {result.sequence_id, other.sequence_id} <= ids
+    first_image = next(r.filename for r in result.records)
+    assert resolve_sequence_image(site, result.sequence_id, first_image).is_file()
+
+
+def test_a_legacy_unfingerprinted_water_level_sequence_name_is_still_valid(tmp_path: Path) -> None:
+    from openfloodai.ingestion.river_images import _SEQUENCE_ID_PATTERN
+
+    for name in (
+        "usgs-CAM-2025-01-01-2025-12-31-water_level",
+        "usgs-CAM-2025-01-01-2025-12-31-water_level-0a1b2c3d",
+    ):
+        assert _SEQUENCE_ID_PATTERN.fullmatch(name)
+    for bad in (
+        "usgs-CAM-2025-01-01-2025-12-31-water_level-xyz",
+        "usgs-CAM-2025-01-01-2025-12-31-all-0a1b2c3d",
+    ):
+        assert not _SEQUENCE_ID_PATTERN.fullmatch(bad)
+
+
+def test_the_fingerprint_depends_only_on_which_images_are_approved() -> None:
+    from openfloodai.ingestion.river_images import _selection_fingerprint
+
+    imgs = images()
+    assert _selection_fingerprint(imgs[:3]) == _selection_fingerprint(list(reversed(imgs[:3])))
+    assert _selection_fingerprint(imgs[:3]) != _selection_fingerprint(imgs[:4])
 
 
 def test_regular_sampling_still_rejects_the_water_level_mode_and_stray_selections() -> None:

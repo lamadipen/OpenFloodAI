@@ -363,7 +363,7 @@ function renderSequences() {
 const GROUP_LABEL = { low: "Low", middle: "Middle", high: "High" };
 
 function isWaterLevelSequence(seq) {
-  return !!seq.water_level_groups || /-water_level$/.test(String(seq.sequence_id || ""));
+  return !!seq.water_level_groups || /-water_level(-[0-9a-f]{8})?$/.test(String(seq.sequence_id || ""));
 }
 
 // A water-level sample set is picked for level variety, so its earliest image is
