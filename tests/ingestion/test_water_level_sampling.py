@@ -628,3 +628,152 @@ def test_approved_samples_must_fit_the_requested_groups_and_counts() -> None:
         )
     with pytest.raises(wls.SamplingError, match="unknown"):
         wls.validate_approved_against_request([{"filename": "x.jpg"}], ["low"], 3)
+
+
+def boundary_series() -> tuple[list[GageReading], datetime, datetime]:
+    """Days 3..40 (value = day) give a distribution; the period is 2026-03-02 .. 2026-04-15 UTC."""
+
+    start = datetime(2026, 3, 2, 0, 0, tzinfo=UTC)
+    end = datetime(2026, 4, 15, 0, 0, tzinfo=UTC)
+    base = [reading(day(d), float(d)) for d in range(3, 41)]
+    return base, start, end
+
+
+def test_an_image_at_the_start_boundary_uses_the_nearer_reading_just_before_the_range() -> None:
+    base, start, end = boundary_series()
+    before = reading(
+        datetime(2026, 3, 1, 23, 59, tzinfo=UTC), 1.0
+    )  # outside the range, LOW, 2 min away
+    inside = reading(
+        datetime(2026, 3, 2, 0, 15, tzinfo=UTC), 99.0
+    )  # inside the range, HIGH, 14 min away
+    image_at = image(datetime(2026, 3, 2, 0, 1, tzinfo=UTC))
+    readings = [*base, inside]
+    images = [*[image(day(d, minute=5)) for d in range(3, 41)], image_at]
+    kwargs = {
+        "groups": ["high"],
+        "images_per_group": 1,
+        "timezone_name": "UTC",
+        "period": (start, end),
+    }
+
+    # The old behaviour (matching only against in-range readings) mislabels the image as high.
+    old = wls.select_samples(readings, images, **kwargs)  # type: ignore[arg-type]
+    assert picked(old, "high") == [99]
+
+    fixed = wls.select_samples(
+        readings,
+        images,
+        matching_readings=[*readings, before],
+        **kwargs,  # type: ignore[arg-type]
+    )
+    high = fixed.groups[0]
+    assert picked(fixed, "high") != [99]
+    assert wls.SKIP_IMAGE_OUTSIDE_GROUP in high.skip_counts
+
+
+def test_an_image_at_the_end_boundary_uses_the_nearer_reading_just_after_the_range() -> None:
+    base, start, end = boundary_series()
+    inside = reading(datetime(2026, 4, 14, 23, 50, tzinfo=UTC), 99.0)  # in range, HIGH, 9 min away
+    after = reading(
+        datetime(2026, 4, 15, 0, 0, 30, tzinfo=UTC), 1.0
+    )  # outside, LOW, 31 s from the image
+    image_at = image(datetime(2026, 4, 14, 23, 59, 59, tzinfo=UTC))
+    readings = [*base, inside]
+    images = [*[image(day(d, minute=5)) for d in range(3, 41)], image_at]
+    kwargs = {
+        "groups": ["high"],
+        "images_per_group": 1,
+        "timezone_name": "UTC",
+        "period": (start, end),
+    }
+
+    assert picked(wls.select_samples(readings, images, **kwargs), "high") == [99]  # type: ignore[arg-type]
+    fixed = wls.select_samples(
+        readings,
+        images,
+        matching_readings=[*readings, after],
+        **kwargs,  # type: ignore[arg-type]
+    )
+    assert picked(fixed, "high") != [99]
+    assert wls.SKIP_IMAGE_OUTSIDE_GROUP in fixed.groups[0].skip_counts
+
+
+def test_group_bands_and_ranking_use_only_in_range_readings() -> None:
+    base, start, end = boundary_series()
+    outside_flood = reading(
+        datetime(2026, 3, 1, 12, 0, tzinfo=UTC), 5000.0
+    )  # outside: must not shift bands
+    images = [image(day(d, minute=5)) for d in range(3, 41)]
+
+    plain = wls.select_samples(
+        base, images, groups=["high"], images_per_group=2, timezone_name="UTC", period=(start, end)
+    )
+    with_surround = wls.select_samples(
+        base,
+        images,
+        groups=["high"],
+        images_per_group=2,
+        timezone_name="UTC",
+        matching_readings=[*base, outside_flood],
+        period=(start, end),
+    )
+
+    assert plain.thresholds == with_surround.thresholds
+    assert picked(plain, "high") == picked(with_surround, "high") == [40, 37]
+
+
+def test_an_image_outside_the_date_range_is_never_chosen() -> None:
+    base, start, end = boundary_series()
+    # The top reading is 5 minutes inside the range, but its only image is 5 minutes before it.
+    top = reading(datetime(2026, 3, 2, 0, 5, tzinfo=UTC), 99.0)
+    images = [
+        *[image(day(d, minute=5)) for d in range(3, 41)],
+        image(datetime(2026, 3, 1, 23, 58, tzinfo=UTC)),
+    ]
+
+    result = wls.select_samples(
+        [*base, top],
+        images,
+        groups=["high"],
+        images_per_group=1,
+        timezone_name="UTC",
+        period=(start, end),
+    )
+
+    assert picked(result, "high") != [99]
+    assert wls.SKIP_IMAGE_OUT_OF_RANGE in result.groups[0].skip_counts
+
+
+def test_approved_samples_are_verified_with_the_surrounding_readings_and_the_range() -> None:
+    base, start, end = boundary_series()
+    before = reading(datetime(2026, 3, 1, 23, 59, tzinfo=UTC), 1.0)
+    inside = reading(datetime(2026, 3, 2, 0, 15, tzinfo=UTC), 99.0)
+    image_at = image(datetime(2026, 3, 2, 0, 1, tzinfo=UTC))
+    readings = [*base, inside]
+    item = {
+        "group": "high",
+        "reading_datetime_utc": inside.datetime_utc,
+        "filename": image_at.source_url.rsplit("/", 1)[-1],
+    }
+    images = [image_at]
+
+    ok = wls.verify_approved([item], readings, images, timezone_name="UTC", period=(start, end))
+    assert len(ok) == 1  # without the surrounding reading it looks valid
+    with pytest.raises(wls.SamplingError, match="group re-check"):
+        wls.verify_approved(
+            [item],
+            readings,
+            images,
+            timezone_name="UTC",
+            period=(start, end),
+            matching_readings=[*readings, before],
+        )
+    with pytest.raises(wls.SamplingError, match="date range"):
+        wls.verify_approved(
+            [item],
+            readings,
+            images,
+            timezone_name="UTC",
+            period=(datetime(2026, 3, 2, 0, 2, tzinfo=UTC), end),
+        )

@@ -95,6 +95,7 @@ SKIP_IMAGE_NO_READING = "image_has_no_matching_reading"
 SKIP_IMAGE_OUTSIDE_GROUP = "image_reading_outside_group"
 SKIP_SPACING = "too_close_to_a_selected_date"
 SKIP_NOT_DAYTIME = "outside_daytime_window"
+SKIP_IMAGE_OUT_OF_RANGE = "image_outside_date_range"
 
 SHORTFALL_NO_READINGS = "no_valid_gauge_height_readings"
 SHORTFALL_LIMITED_VARIATION = "limited_level_variation"
@@ -413,12 +414,21 @@ def select_samples(
     kept: Mapping[str, Sequence[SelectedSample]] | None = None,
     declined_images: frozenset[str] = frozenset(),
     time_of_day: str = TIME_OF_DAY_ANY,
+    matching_readings: Sequence[GageReading] | None = None,
+    period: tuple[datetime, datetime] | None = None,
 ) -> SelectionResult:
     """Choose up to `images_per_group` images for each requested group.
 
     `kept` holds samples a reviewer approved and wants to keep (already
     verified); they count toward the quota and the spacing rule. Images in
     `declined_images` (by file name) are never chosen. Used for replacements.
+
+    `readings` are the in-range readings: they set the group bands and are ranked.
+    `matching_readings` (default: `readings`) are those PLUS the readings just outside
+    the range, used only to find each image's own nearest reading, so an image near a
+    date boundary is never matched to a farther in-range reading when a nearer one
+    sits just across the boundary. `period` is the [start, end) range; an image
+    outside it is not chosen.
     """
 
     requested = [group for group in GROUPS if group in set(groups)]
@@ -429,8 +439,8 @@ def select_samples(
     validate_time_of_day(time_of_day)
     zone = ZoneInfo(timezone_name)
     kept = kept or {}
-    index = GageReadingIndex(readings)
-    valid = index.readings
+    valid = GageReadingIndex(readings).readings
+    index = GageReadingIndex(matching_readings if matching_readings is not None else readings)
     find_images = as_finder(images)
     image_count = None if callable(images) else len(images)
     results = [GroupResult(group, images_per_group) for group in requested]
@@ -493,6 +503,9 @@ def select_samples(
                 if image.source_url in used_images:
                     last_reason = SKIP_IMAGE_USED
                     continue
+                if period is not None and not period[0] <= image.captured_utc < period[1]:
+                    last_reason = SKIP_IMAGE_OUT_OF_RANGE
+                    continue
                 if time_of_day == TIME_OF_DAY_DAYTIME and not _in_daytime(image.captured_utc, zone):
                     last_reason = SKIP_NOT_DAYTIME
                     continue
@@ -551,6 +564,8 @@ def verify_approved(
     timezone_name: str,
     unit: str = "ft",
     time_of_day: str = TIME_OF_DAY_ANY,
+    matching_readings: Sequence[GageReading] | None = None,
+    period: tuple[datetime, datetime] | None = None,
 ) -> list[SelectedSample]:
     """Re-derive approved samples from fresh data; never trust the browser's copy.
 
@@ -559,11 +574,12 @@ def verify_approved(
     recomputed here. An item that no longer qualifies raises `SamplingError`.
     """
 
-    index = GageReadingIndex(readings)
-    if not index.readings:
+    in_range = GageReadingIndex(readings)
+    if not in_range.readings:
         raise SamplingError("There are no valid gauge-height readings to verify against.")
-    thresholds = compute_thresholds(index.readings)
-    by_time = {reading.datetime_utc: reading for reading in index.readings}
+    index = GageReadingIndex(matching_readings if matching_readings is not None else readings)
+    thresholds = compute_thresholds(in_range.readings)
+    by_time = {reading.datetime_utc: reading for reading in in_range.readings}
     find_images = as_finder(images)
     validate_time_of_day(time_of_day)
     zone = ZoneInfo(timezone_name)
@@ -589,6 +605,8 @@ def verify_approved(
             )
         if not group_accepts(group, reading.value, thresholds):
             raise SamplingError(f"A reading no longer belongs to the {group} group.")
+        if period is not None and not period[0] <= image.captured_utc < period[1]:
+            raise SamplingError("An approved image is outside the requested date range.")
         if time_of_day == TIME_OF_DAY_DAYTIME and not (
             _in_daytime(datetime.fromisoformat(reading.datetime_utc), zone)
             and _in_daytime(image.captured_utc, zone)

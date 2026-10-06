@@ -262,6 +262,8 @@ def discover(
             timezone_name=context.timezone,
             unit=series.unit,
             time_of_day=time_of_day,
+            matching_readings=series.readings,
+            period=(context.start_utc, context.end_utc),
         )
         if kept
         else []
@@ -279,6 +281,8 @@ def discover(
         kept=kept_by_group,
         declined_images=frozenset(declined),
         time_of_day=time_of_day,
+        matching_readings=series.readings,
+        period=(context.start_utc, context.end_utc),
     )
     out["archive"] = {
         "days_checked": finder.days_checked,
@@ -415,6 +419,8 @@ def download_approved(
             timezone_name=context.timezone,
             unit=series.unit,
             time_of_day=time_of_day,
+            matching_readings=series.readings,
+            period=(context.start_utc, context.end_utc),
         )
     except SamplingError as error:
         raise RiverImageError(f"{error} Run Find samples again before downloading.") from error

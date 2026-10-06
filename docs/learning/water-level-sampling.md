@@ -79,6 +79,7 @@ every selection.
 | Limited variation | If the range is under 0.20 ft, no group is filled. |
 | Spacing | A group never takes two readings fewer than 3 local calendar days apart. This is a spacing rule, not a claim of independent events. |
 | Image match | The image nearest the reading within 15 minutes, an equal distance going to the earlier image. |
+| Date edges | Group bands and ranking use only the readings inside your date range. Finding an image's own nearest reading also uses the readings just outside the range, so an image at 00:01 is matched to the 23:59 reading the night before, not to a farther reading inside the range. An image outside the date range is never chosen. |
 | Re-check | The image's **own** nearest reading must also fall in the group. Both readings are saved when they differ, and the group reflects the image's own reading. |
 | Time of day | **Any time** (default) changes nothing. **Daytime only** keeps a candidate only if its gauge reading and its image are both within 10:00 to 14:00 on the camera's local clock (ends included, daylight saving handled). The group bands are still set by all readings in the range, so a night-time peak still shapes what "high" means; it just is not sampled. If no reading in a group is in the window, the group is a shortfall, not a night-time pick. The choice is saved with the request. |
 | Uniqueness | An image is chosen once and never fills two groups. Groups fill in the order low, middle, high. |

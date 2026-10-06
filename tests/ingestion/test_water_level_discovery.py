@@ -682,3 +682,42 @@ def test_replacement_keeps_must_belong_to_the_requested_group(tmp_path: Path) ->
 
     with pytest.raises(wls.SamplingError, match="not requested"):
         run(ctx, groups=["low"], kept=high)
+
+
+def test_discovery_matches_boundary_images_using_readings_just_outside_the_range(
+    tmp_path: Path,
+) -> None:
+    # Range 2026-03-10..2026-03-20 in Denver starts at 06:00 UTC (00:00 MDT; DST began March 8).
+    ctx = wld.build_context(
+        URL, "2026-03-10", "2026-03-20", "America/Denver", write_registry(tmp_path)
+    )
+    assert ctx.start_utc == datetime(2026, 3, 10, 6, 0, tzinfo=UTC)
+    base = [GageReading(day(d).isoformat(), float(d), ("A",), "approved") for d in range(10, 21)]
+    before = GageReading(
+        datetime(2026, 3, 10, 5, 59, tzinfo=UTC).isoformat(), 0.5, ("A",), "approved"
+    )
+    high = GageReading(
+        datetime(2026, 3, 10, 6, 15, tzinfo=UTC).isoformat(), 999.0, ("A",), "approved"
+    )
+    full = GageSeries(
+        "09999999", "00065", "gage height", "ft", False, [before, *base, high], "https://u"
+    )
+    boundary_image = ImageSequenceCandidate(
+        f"https://x/{CAMERA}___2026-03-10T06-01-00Z.jpg", datetime(2026, 3, 10, 6, 1, tzinfo=UTC), 1
+    )
+    pool = [*images(), boundary_image]
+
+    out = wld.discover(
+        ctx,
+        groups=["high"],
+        images_per_group=1,
+        fetch_gauge=lambda *_: full,
+        list_images=lambda s, a, b: [i for i in pool if a <= i.captured_utc < b],
+    )
+
+    samples = out["selection"]["groups"][0]["samples"]
+    assert out["state"] == "ok" and out["gauge"]["valid_reading_count"] == 12  # in range only
+    # the 06:01 image is closer to the 05:59 reading (low) than to the 06:15 reading (high)
+    assert all(s["motivating_reading"]["value"] != 999.0 for s in samples)
+    skipped = out["selection"]["groups"][0]["skipped"]
+    assert skipped.get("image_reading_outside_group", 0) >= 1
