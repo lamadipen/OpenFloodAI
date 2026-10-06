@@ -241,3 +241,38 @@ def test_image_sequence_image_rejects_unknown_files(tmp_path: Path) -> None:
         with pytest.raises(HTTPError) as error:
             urlopen(f"{base}/api/image-sequence-image?{query}")
     assert error.value.code == 404
+
+
+def test_gauge_lookup_uses_the_url_camera_not_the_sites_internal_label(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A site labelled `<camera>_camid` must still find the registry entry for the USGS camera."""
+
+    from openfloodai.ui import home_server
+
+    looked_up: list[str] = []
+
+    def fake_find(camera_id: str, reference_dir: object) -> None:
+        looked_up.append(camera_id)
+
+    monkeypatch.setattr(river, "_fetch", _fetch)
+    monkeypatch.setattr(home_server, "find_camera", fake_find)
+    sites_dir = tmp_path / "sites"
+    site_dir = sites_dir / "example-site"
+    _make_site(site_dir)  # internal camera id is "camera-demo-01", never the USGS id
+
+    with serve_home_ui(sites_dir) as base:
+        result = _post(
+            base,
+            "/api/download-image-sequence",
+            {
+                "folder_name": "example-site",
+                "camera_url": river.DEFAULT_CAMERA_URL,
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-01",
+                "timezone": "UTC",
+                "sampling_mode": "all",
+            },
+        )
+    assert result["success"] is True
+    assert looked_up == [SLUG]

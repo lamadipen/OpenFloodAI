@@ -40,6 +40,7 @@ from openfloodai.ingestion.live_camera_schedule import read_schedule, write_sche
 from openfloodai.ingestion.river_bootstrap import preview_bootstrap_run, run_bootstrap
 from openfloodai.ingestion.river_images import (
     RiverImageError,
+    camera_slug,
     download_latest_timelapse,
     download_river_image_sequence,
     download_river_images,
@@ -1009,7 +1010,9 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             payload["gage_available"] = (
                 self._write_gage_data_if_camera_registered(
                     result.directory,
-                    site_config.camera_id,
+                    # The USGS camera the images came from, not the site's internal label
+                    # (which may carry a suffix such as `_camid` that no registry lists).
+                    camera_slug(str(data.get("camera_url", ""))),
                     str(data.get("start_date", "")),
                     str(data.get("end_date", "")),
                 )
