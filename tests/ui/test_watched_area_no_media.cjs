@@ -190,3 +190,11 @@ test("the watched-area page has the sequence dropdown, the caption and the image
   assert.match(html, /id="imageCaption"/);
   assert.match(html, /id="scrub"/);
 });
+
+test("the gauge line shows the level, unit, group and quality, or says none is saved", () => {
+  const { gaugeReadingText } = areaHelpers();
+  assert.equal(gaugeReadingText({ level: 3.15, unit: "ft", group: "low", quality_status: "approved" }), "Gauge 3.15 ft \u00b7 low \u00b7 approved");
+  assert.equal(gaugeReadingText({ level: 11.549999999999999, unit: "ft" }), "Gauge 11.55 ft");
+  assert.equal(gaugeReadingText(undefined), "No gauge reading saved for this image");
+  assert.equal(gaugeReadingText({}), "No gauge reading saved for this image");
+});
