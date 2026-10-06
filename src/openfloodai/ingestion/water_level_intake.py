@@ -81,6 +81,8 @@ STATUS_RETRY = (
 )
 
 PENDING_PREFIX = ".batch-"
+PENDING_GAUGE_PREFIX = ".gauge-"
+_GAUGE_FILES = ("gauge-matches.json", "gauge-readings.json", "gauge-readings-summary.json")
 PENDING_SUFFIX = ".pending"
 
 
@@ -640,11 +642,35 @@ def _summary(
 # --- append -----------------------------------------------------------------
 
 
-def recover_pending_batches(sequence_dir: Path) -> None:
-    """Finish or discard a batch file left by an interrupted append (call under the lock).
+def _pending_gauge_dir(sequence_dir: Path, number: str) -> Path:
+    return sequence_dir / BATCHES_DIRNAME / f"{PENDING_GAUGE_PREFIX}{number}{PENDING_SUFFIX}"
 
-    A pending batch is only made real if every image it claims is in the manifest;
-    otherwise the append never committed and its provenance is dropped.
+
+def _finalize_pending_gauge(pending_dir: Path, sequence_dir: Path) -> None:
+    """Move staged gauge files into place, then remove the staging folder.
+
+    Safe to repeat: a file already moved is simply no longer in the staging folder, so
+    a crash half way through is finished by the next call.
+    """
+
+    if not pending_dir.is_dir():
+        return
+    for name in _GAUGE_FILES:
+        staged = pending_dir / name
+        if staged.is_file():
+            os.replace(staged, sequence_dir / name)
+    shutil.rmtree(pending_dir, ignore_errors=True)
+
+
+def recover_pending_batches(sequence_dir: Path) -> None:
+    """Finish or discard what an interrupted append left pending (call under the lock).
+
+    An append stages its sampling-batch record AND its gauge changes (merged readings,
+    summary, per-image matches) as pending files and only moves them into place after
+    the manifest commits. So recovery goes by the manifest: if every image the pending
+    batch claims is in it, the batch and its gauge files are finalized together;
+    otherwise the append never committed and BOTH are discarded, leaving the sequence's
+    gauge data exactly as it was.
     """
 
     batches = sequence_dir / BATCHES_DIRNAME
@@ -652,19 +678,31 @@ def recover_pending_batches(sequence_dir: Path) -> None:
         return
     records = _read_manifest(sequence_dir) or []
     present = {r.get("filename") for r in records if r.get("download_status") == "downloaded"}
+    claimed_numbers: set[str] = set()
     for pending in sorted(batches.glob(f"{PENDING_PREFIX}*{PENDING_SUFFIX}")):
         number = pending.name[len(PENDING_PREFIX) : -len(PENDING_SUFFIX)]
+        claimed_numbers.add(number)
+        gauge_dir = _pending_gauge_dir(sequence_dir, number)
         try:
             loaded = json.loads(pending.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             pending.unlink(missing_ok=True)
+            shutil.rmtree(gauge_dir, ignore_errors=True)
             continue
         claimed = _sample_names(loaded.get("samples", []))
         target = batches / f"batch-{number}.json"
         if claimed and claimed <= present and not target.exists():
+            _finalize_pending_gauge(gauge_dir, sequence_dir)
             os.replace(pending, target)
         else:
             pending.unlink(missing_ok=True)
+            shutil.rmtree(gauge_dir, ignore_errors=True)
+    # A staging folder with no pending batch beside it belongs to an append that was
+    # abandoned (or already finalized): nothing may be applied from it.
+    for stray in batches.glob(f"{PENDING_GAUGE_PREFIX}*{PENDING_SUFFIX}"):
+        number = stray.name[len(PENDING_GAUGE_PREFIX) : -len(PENDING_SUFFIX)]
+        if number not in claimed_numbers:
+            shutil.rmtree(stray, ignore_errors=True)
 
 
 def recover_interrupted_append(sequence_dir: Path) -> None:
@@ -826,10 +864,16 @@ def append_to_sequence(
             existing_matches = load_gauge_matches(sequence_dir)
             entries = freeze_current_matches(sequence_dir, records, already=existing_matches)
             entries.update(_new_image_matches(provenance, set(result.added), number))
+            # Everything below is STAGED in a pending folder, not written to the sequence:
+            # if the manifest commit fails, the sequence's gauge data is untouched, and
+            # recovery discards these together with the pending batch.
+            gauge_stage = _pending_gauge_dir(sequence_dir, f"{number:04d}")
+            shutil.rmtree(gauge_stage, ignore_errors=True)
             write_gauge_matches(
                 sequence_dir,
                 entries,
                 protect={str(r.get("filename")) for r in records},
+                output_dir=gauge_stage,
             )
             try:
                 gauge = merge_batch_into_gauge_source(
@@ -842,6 +886,7 @@ def append_to_sequence(
                     gage_relationship=gage_relationship,
                     gage_relationship_note=gage_relationship_note,
                     batch_id=batch_id,
+                    output_dir=gauge_stage,
                 )
                 result.gauge_available = gauge.available
             except GageDataError:
@@ -853,6 +898,7 @@ def append_to_sequence(
                 "".join(json.dumps(row) + "\n" for row in merged_rows),
             )
             result.batch_number = number
+            _finalize_pending_gauge(gauge_stage, sequence_dir)
             os.replace(pending, sequence_dir / BATCHES_DIRNAME / f"{batch_id}.json")
             atomic_write_json(
                 sequence_dir / "download-summary.json",

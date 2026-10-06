@@ -670,3 +670,177 @@ def test_recovery_leaves_a_healthy_sequence_untouched(world: dict[str, Any]) -> 
     intake.recover_interrupted_append(directory)
 
     assert folder_hashes(directory) == before
+
+
+# ---- a failed append must not change gauge results (review on d6fe7a7) ----------------------
+
+
+GAUGE_FILES = ("gauge-readings.json", "gauge-readings-summary.json", "gauge-matches.json")
+
+
+def flood_series() -> GageSeries:
+    """The usual series plus one huge reading at a NEW timestamp (the review's 999 ft)."""
+
+    base = series()
+    base.readings.append(
+        GageReading(
+            datetime(2026, 3, 20, 6, 0, tzinfo=UTC).isoformat(), 999.0, ("P",), "provisional"
+        )
+    )
+    return base
+
+
+def gauge_bytes(world: dict[str, Any]) -> dict[str, bytes]:
+    directory = world["site"] / "inputs" / "image-sequences" / world["sequence_id"]
+    return {name: (directory / name).read_bytes() for name in GAUGE_FILES}
+
+
+def highest(detail: dict[str, Any]) -> float:
+    return float(detail["gauge_evidence"]["peak_events"]["highest"]["event_reading"]["value"])
+
+
+def fail_manifest_commit(monkeypatch: pytest.MonkeyPatch) -> None:
+    real_write = store.atomic_write_text
+
+    def crash(path: Path, text: str) -> None:
+        if path.name == "sequence-manifest.jsonl":
+            raise OSError("power loss at the manifest commit")
+        real_write(path, text)
+
+    monkeypatch.setattr(WRITE_TEXT, crash)
+
+
+def test_a_failed_append_leaves_the_gauge_results_exactly_as_they_were(
+    world: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory = world["site"] / "inputs" / "image-sequences" / world["sequence_id"]
+    before_run = read_image_sequence_run_detail(world["site"], run(world).run_id)
+    assert (
+        highest(before_run) == 3.0 + 0 or highest(before_run) == 28.0
+    )  # the usual series peaks at 28
+    gauge_before = gauge_bytes(world)
+    manifest_before = (directory / "sequence-manifest.jsonl").read_bytes()
+    summary_before = (directory / "download-summary.json").read_bytes()
+
+    with monkeypatch.context() as patch:
+        fail_manifest_commit(patch)
+        with pytest.raises(OSError):
+            append(world, [world["archive"].candidate(12, 130)], series=flood_series())
+
+    # nothing about the sequence changed, including the gauge files (the 999 was only staged)
+    assert gauge_bytes(world) == gauge_before
+    assert (directory / "sequence-manifest.jsonl").read_bytes() == manifest_before
+    assert (directory / "download-summary.json").read_bytes() == summary_before
+
+    # a validation run WITHOUT retrying the append: recovery discards the staged gauge data
+    after = read_image_sequence_run_detail(world["site"], run(world).run_id)
+    assert highest(after) == highest(before_run) == 28.0
+    assert len(filenames(after)) == 2 and after["water_level_selection"]["batch_count"] == 1
+    assert gauge_bytes(world) == gauge_before
+    batches = directory / "sampling-batches"
+    assert not list(batches.glob(".batch-*")) and not list(batches.glob(".gauge-*"))
+    assert json.loads((directory / "download-summary.json").read_text())["downloaded_count"] == 3
+    assert json.loads((directory / "download-summary.json").read_text())["batch_count"] == 1
+
+
+def test_a_failed_append_then_a_successful_retry_still_applies_its_gauge_data_once(
+    world: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    new = world["archive"].candidate(12, 130)
+    with monkeypatch.context() as patch:
+        fail_manifest_commit(patch)
+        with pytest.raises(OSError):
+            append(world, [new], series=flood_series())
+
+    result = append(world, [new], series=flood_series())
+
+    detail = read_image_sequence_run_detail(world["site"], run(world).run_id)
+    assert len(result.added) == 1 and highest(detail) == 999.0  # applied now, once, with the image
+    source = json.loads(
+        (
+            world["site"]
+            / "inputs"
+            / "image-sequences"
+            / world["sequence_id"]
+            / "gauge-readings.json"
+        ).read_text()
+    )
+    assert [b["batch_id"] for b in source["appended_batches"]] == ["batch-0001", "batch-0002"]
+    stamps = [r["datetime_utc"] for r in source["readings"]]
+    assert len(stamps) == len(set(stamps))
+
+
+def test_a_committed_append_whose_gauge_move_was_interrupted_is_finished_by_the_next_run(
+    world: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    new = world["archive"].candidate(12, 130)
+    directory = world["site"] / "inputs" / "image-sequences" / world["sequence_id"]
+    gauge_before = gauge_bytes(world)
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            intake,
+            "_finalize_pending_gauge",
+            lambda *_: (_ for _ in ()).throw(OSError("power loss")),
+        )
+        with pytest.raises(OSError):
+            append(world, [new], series=flood_series())
+    # the manifest committed (the image is in it) but the gauge files were not moved yet
+    assert new.source_url.rsplit("/", 1)[-1] in (directory / "sequence-manifest.jsonl").read_text()
+    assert gauge_bytes(world) == gauge_before
+    assert list((directory / "sampling-batches").glob(".gauge-*"))
+
+    detail = read_image_sequence_run_detail(world["site"], run(world).run_id)
+
+    assert highest(detail) == 999.0  # the committed append's gauge data is now in place
+    assert gauge_bytes(world) != gauge_before
+    assert len(filenames(detail)) == 3 and detail["water_level_selection"]["batch_count"] == 2
+    assert not list((directory / "sampling-batches").glob(".gauge-*"))
+    assert not list((directory / "sampling-batches").glob(".batch-*"))
+
+
+def test_a_gauge_move_interrupted_half_way_is_completed_without_losing_or_repeating_anything(
+    world: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import os
+
+    new = world["archive"].candidate(12, 130)
+    directory = world["site"] / "inputs" / "image-sequences" / world["sequence_id"]
+    real_replace = os.replace
+    calls = {"gauge": 0}
+
+    def replace(src: Any, dst: Any) -> None:
+        if Path(dst).parent == directory and Path(dst).name in GAUGE_FILES:
+            calls["gauge"] += 1
+            if calls["gauge"] == 2:
+                raise OSError("power loss in the middle of moving the gauge files")
+        real_replace(src, dst)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "replace", replace)
+        with pytest.raises(OSError):
+            append(world, [new], series=flood_series())
+    staged = list((directory / "sampling-batches").glob(".gauge-*/*.json"))
+    assert staged  # some files are still waiting
+
+    detail = read_image_sequence_run_detail(world["site"], run(world).run_id)
+
+    assert highest(detail) == 999.0 and len(filenames(detail)) == 3
+    assert not list((directory / "sampling-batches").glob(".gauge-*"))
+    source = json.loads((directory / "gauge-readings.json").read_text())
+    stamps = [r["datetime_utc"] for r in source["readings"]]
+    batch_ids = [b["batch_id"] for b in source["appended_batches"]]
+    assert len(stamps) == len(set(stamps)) and batch_ids == ["batch-0001", "batch-0002"]
+
+
+def test_a_staged_gauge_folder_with_no_pending_batch_is_never_applied(
+    world: dict[str, Any],
+) -> None:
+    directory = world["site"] / "inputs" / "image-sequences" / world["sequence_id"]
+    gauge_before = gauge_bytes(world)
+    stray = directory / "sampling-batches" / ".gauge-0009.pending"
+    stray.mkdir(parents=True)
+    (stray / "gauge-readings.json").write_text('{"readings": [], "poison": true}')
+
+    run(world)
+
+    assert not stray.exists() and gauge_bytes(world) == gauge_before

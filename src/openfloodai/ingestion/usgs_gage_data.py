@@ -1170,8 +1170,13 @@ def merge_batch_into_gauge_source(
     gage_relationship: str,
     gage_relationship_note: str | None,
     batch_id: str,
+    output_dir: Path | None = None,
 ) -> GageReadingsSummary:
     """Add one appended batch's readings to a sequence's gauge source, changing nothing old.
+
+    With `output_dir`, the merged source and summary are written THERE and the sequence's
+    own files are left exactly as they are, so an append can stage its gauge changes and
+    only move them into place after the image manifest commits.
 
     Readings already in the source keep their exact saved value and qualifiers, even if
     USGS has since revised them: an earlier image's gauge evidence must not change as a
@@ -1278,8 +1283,10 @@ def merge_batch_into_gauge_source(
     summary = _build_summary_from_series(merged_series, empty, manifest_records)
     # The source is written first: the summary is derived from it, and a crash between the
     # two leaves a source that is still consistent (the summary is rebuilt on the next append).
-    atomic_write_json(sequence_dir / GAUGE_SOURCE_FILENAME, payload)
-    atomic_write_json(sequence_dir / "gauge-readings-summary.json", summary.to_dict())
+    target = output_dir if output_dir is not None else sequence_dir
+    target.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(target / GAUGE_SOURCE_FILENAME, payload)
+    atomic_write_json(target / "gauge-readings-summary.json", summary.to_dict())
     return summary
 
 
@@ -1435,8 +1442,12 @@ def write_gauge_matches(
     entries: Mapping[str, Mapping[str, Any]],
     *,
     protect: set[str],
+    output_dir: Path | None = None,
 ) -> None:
     """Save matches, never replacing one for an image in `protect` (already in the sequence).
+
+    With `output_dir` the merged file is written there (staged) and the sequence's own
+    file is not touched.
 
     Entries for images not yet committed may be replaced, so a retried append records
     the evidence shown in the retry's own preview.
@@ -1447,7 +1458,9 @@ def write_gauge_matches(
         if name in protect and name in merged:
             continue
         merged[name] = dict(entry)
+    target = output_dir if output_dir is not None else sequence_dir
+    target.mkdir(parents=True, exist_ok=True)
     atomic_write_json(
-        sequence_dir / GAUGE_MATCHES_FILENAME,
+        target / GAUGE_MATCHES_FILENAME,
         {"schema_version": GAUGE_MATCHES_SCHEMA_VERSION, "matches": dict(sorted(merged.items()))},
     )

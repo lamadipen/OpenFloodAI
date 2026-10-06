@@ -119,6 +119,9 @@ have, without making a separate one.
 - Images with different times on the same day stay separate.
 - Changing the destination, the groups, the count, the time of day, the dates, or the
   camera clears the preview and your confirmation.
+- A failed add changes nothing: its gauge readings, summary and saved matches are staged
+  and only applied after the image list is committed, so a run made after a failed add
+  sees exactly the gauge data it had before.
 - Retrying is safe. If an add is interrupted, the sequence's list of images is never
   left pointing at a missing file, and the retry reuses files already downloaded
   instead of duplicating them. If another add or a validation run is using the
