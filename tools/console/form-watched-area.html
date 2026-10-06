@@ -222,8 +222,9 @@ async function main() {
       }
     }
     if (!baselineFilename && !videoId) {
-      $("body").innerHTML = `<div style="padding:24px;font-size:13px;color:var(--ink-soft);">This site has no downloaded image sequence and no video yet, so there is no image to draw a watched area on here. Add media first from Site &rarr; Setup &rarr; Add media.</div>`;
-      $("saveBtn").disabled = true;
+      // Replacing the body also removes the Save button, so there is nothing left to disable.
+      $("body").innerHTML = `<div style="padding:24px;font-size:13px;color:var(--ink-soft);">This site has no downloaded image sequence and no video yet. Add media first from Site &rarr; Setup &rarr; Add media.</div>`;
+      return;
     }
   } catch (error) {
     $("body").innerHTML = `<div style="padding:24px;font-size:13px;color:var(--bad);">Could not load this site: ${escapeHtml(error.message)}</div>`;
