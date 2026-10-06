@@ -13,7 +13,6 @@ import pytest
 from openfloodai.ingestion import water_level_discovery as wld
 from openfloodai.ingestion import water_level_sampling as wls
 from openfloodai.ingestion.river_images import (
-    WATER_LEVEL_SELECTION_FILENAME,
     ImageSequenceCandidate,
     RiverImageError,
     download_river_image_sequence,
@@ -244,11 +243,19 @@ def fake_download(captured: dict[str, Any]) -> Any:
     return download
 
 
+def jpeg_fetcher(calls: list[str]) -> Any:
+    def fetch(url: str) -> bytes:
+        calls.append(url)
+        return b"\xff\xd8\xff" + url.encode()[-20:]
+
+    return fetch
+
+
 def test_only_approved_images_are_downloaded_with_verified_provenance(tmp_path: Path) -> None:
     ctx = context(tmp_path)
     proposal = run(ctx)
     approved = approved_from(proposal, "high", 2) + approved_from(proposal, "low", 1)
-    captured: dict[str, Any] = {}
+    fetched: list[str] = []
 
     result, provenance = wld.download_approved(
         ctx,
@@ -260,14 +267,12 @@ def test_only_approved_images_are_downloaded_with_verified_provenance(tmp_path: 
         site_dir=tmp_path / "site",
         fetch_gauge=lambda *_: series(),
         list_images=lambda *_: images(),
-        download=fake_download(captured),
+        fetch_image=jpeg_fetcher(fetched),
     )
 
-    assert str(result) == "result"
-    assert captured["sampling_mode"] == "water_level"
-    sent = {c.source_url.rsplit("/", 1)[-1] for c in captured["selected_candidates"]}
+    sent = {u.rsplit("/", 1)[-1] for u in fetched}
     assert sent == {a["filename"] for a in approved}  # only the approved set, not the proposal
-    assert len(captured["selected_candidates"]) == 3
+    assert len(fetched) == 3 and result.mode == "new" and len(result.added) == 3
     assert provenance["policy_version"] == wls.POLICY_VERSION
     assert provenance["association"]["source"] == "https://example.test/registry"
     assert provenance["gauge"]["parameter_code"] == "00065"
@@ -301,7 +306,7 @@ def test_a_sample_that_no_longer_qualifies_blocks_the_download(tmp_path: Path) -
             site_dir=tmp_path / "site",
             fetch_gauge=lambda *_: revised,
             list_images=lambda *_: images(),
-            download=fake_download({}),
+            fetch_image=never,
         )
 
 
@@ -318,15 +323,13 @@ def test_a_download_needs_at_least_one_approved_sample(tmp_path: Path) -> None:
         )
 
 
-def test_the_real_intake_saves_selection_evidence_and_never_collides_or_rewrites_it(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_the_real_intake_saves_selection_evidence_and_repeats_make_separate_sequences(
+    tmp_path: Path,
 ) -> None:
-    from openfloodai.ingestion import river_images
+    from openfloodai.ingestion.river_images import list_site_image_sequences, resolve_sequence_image
 
     ctx = context(tmp_path)
     approved = approved_from(run(ctx), "high", 2)
-    jpeg = b"\xff\xd8\xff" + b"0" * 20
-    monkeypatch.setattr(river_images, "_fetch", lambda url, **_: (jpeg, "image/jpeg"))
     site = tmp_path / "site"
 
     def go(**kwargs: Any) -> Any:
@@ -340,52 +343,32 @@ def test_the_real_intake_saves_selection_evidence_and_never_collides_or_rewrites
             site_dir=site,
             fetch_gauge=lambda *_: series(),
             list_images=lambda *_: images(),
-            download=download_river_image_sequence,
+            fetch_image=jpeg_fetcher([]),
             **kwargs,
         )
 
-    result, provenance = go()
-
-    sequence = result.directory
-    assert re.search(r"-water_level-[0-9a-f]{8}$", result.sequence_id)
-    saved = json.loads((sequence / WATER_LEVEL_SELECTION_FILENAME).read_text())
-    assert saved["policy_version"] == wls.POLICY_VERSION and len(saved["samples"]) == 2
+    first, provenance = go()
+    sequence = site / "inputs" / "image-sequences" / first.sequence_id
+    assert re.search(r"-water_level-[0-9a-f]{8}$", first.sequence_id)
+    batch = json.loads((sequence / "sampling-batches" / "batch-0001.json").read_text())
+    assert batch["policy_version"] == wls.POLICY_VERSION and len(batch["samples"]) == 2
     manifest = [
         json.loads(line) for line in (sequence / "sequence-manifest.jsonl").read_text().splitlines()
     ]
     assert [r["download_status"] for r in manifest] == ["downloaded", "downloaded"]
     assert not any(r["download_status"] == "missing" for r in manifest)
-    before = (sequence / WATER_LEVEL_SELECTION_FILENAME).read_bytes()
 
-    # Downloading the SAME approved images again reuses them: no error, nothing rewritten.
-    again, _ = go()
-    assert again.sequence_id == result.sequence_id
-    assert (sequence / WATER_LEVEL_SELECTION_FILENAME).read_bytes() == before
-    # A DIFFERENT selection for the same camera and dates is its own sequence, not a collision,
-    # and the first sample set (which analysis runs may already point at) is left untouched.
-    other_approved = approved_from(run(ctx), "low", 1)
-    other, _ = wld.download_approved(
-        ctx,
-        approved=other_approved,
-        declined=[],
-        groups=["low"],
-        images_per_group=1,
-        site_id="site-1",
-        site_dir=site,
-        fetch_gauge=lambda *_: series(),
-        list_images=lambda *_: images(),
-        download=download_river_image_sequence,
+    # The very same request again is a SEPARATE sequence (nothing is silently replaced).
+    second, _ = go(display_name="Second try")
+    assert second.sequence_id != first.sequence_id and second.display_name == "Second try"
+    ids = {row["sequence_id"]: row for row in list_site_image_sequences(site)}
+    assert {first.sequence_id, second.sequence_id} <= set(ids)
+    assert (
+        ids[second.sequence_id]["label"] == "Second try"
+        and ids[first.sequence_id]["label"] == first.sequence_id
     )
-    assert other.sequence_id != result.sequence_id
-    assert other.directory.is_dir() and sequence.is_dir()
-    assert (sequence / WATER_LEVEL_SELECTION_FILENAME).read_bytes() == before
-    # Both are listed and valid for the existing image/review endpoints.
-    from openfloodai.ingestion.river_images import list_site_image_sequences, resolve_sequence_image
-
-    ids = {row["sequence_id"] for row in list_site_image_sequences(site)}
-    assert {result.sequence_id, other.sequence_id} <= ids
-    first_image = next(r.filename for r in result.records)
-    assert resolve_sequence_image(site, result.sequence_id, first_image).is_file()
+    assert resolve_sequence_image(site, first.sequence_id, manifest[0]["filename"]).is_file()
+    assert provenance["policy_version"] == wls.POLICY_VERSION
 
 
 def test_a_legacy_unfingerprinted_water_level_sequence_name_is_still_valid(tmp_path: Path) -> None:
@@ -403,29 +386,20 @@ def test_a_legacy_unfingerprinted_water_level_sequence_name_is_still_valid(tmp_p
         assert not _SEQUENCE_ID_PATTERN.fullmatch(bad)
 
 
-def test_the_fingerprint_depends_only_on_which_images_are_approved() -> None:
-    from openfloodai.ingestion.river_images import _selection_fingerprint
-
-    imgs = images()
-    assert _selection_fingerprint(imgs[:3]) == _selection_fingerprint(list(reversed(imgs[:3])))
-    assert _selection_fingerprint(imgs[:3]) != _selection_fingerprint(imgs[:4])
-
-
-def test_regular_sampling_still_rejects_the_water_level_mode_and_stray_selections() -> None:
+def test_regular_sampling_still_rejects_the_water_level_mode() -> None:
     from openfloodai.ingestion.river_images import sample_image_sequence_candidates
 
     with pytest.raises(RiverImageError, match="Find samples"):
         sample_image_sequence_candidates([], "water_level")
-    with pytest.raises(RiverImageError, match="only used for water-level"):
+    with pytest.raises(RiverImageError, match="Find samples"):
         download_river_image_sequence(
             camera_url=URL,
             start_date=START,
             end_date=END,
             timezone_name="America/Denver",
-            sampling_mode="all",
+            sampling_mode="water_level",
             site_id="s",
             site_dir=Path("/nonexistent"),
-            selected_candidates=[],
         )
 
 
@@ -476,12 +450,14 @@ def test_listing_exposes_each_images_group_for_the_baseline_picker(tmp_path: Pat
         "level": 8.9,
         "unit": "ft",
         "quality_status": "provisional",
+        "batch_number": 0,
     }
     assert samples["b.jpg"] == {
         "group": "low",
         "level": 1.5,
         "unit": "ft",
         "quality_status": "approved",
+        "batch_number": 0,
     }
     assert (
         "water_level_groups" not in by_id[regular.name]
@@ -628,7 +604,7 @@ def test_a_night_time_sample_cannot_be_downloaded_under_a_daytime_request(tmp_pa
             time_of_day="daytime",
             fetch_gauge=lambda *_: series(),
             list_images=lambda *_: images(),
-            download=fake_download({}),
+            fetch_image=never,
         )
 
 
@@ -651,7 +627,7 @@ def test_a_request_for_one_low_image_cannot_download_three_high_images(tmp_path:
             site_dir=tmp_path / "site",
             fetch_gauge=never,
             list_images=never,
-            download=never,
+            fetch_image=never,
         )
 
 
@@ -672,7 +648,7 @@ def test_more_approved_samples_than_the_requested_count_are_refused_before_any_f
             site_dir=tmp_path / "site",
             fetch_gauge=never,
             list_images=never,
-            download=never,
+            fetch_image=never,
         )
 
 

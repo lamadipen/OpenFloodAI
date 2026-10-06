@@ -24,6 +24,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
+from openfloodai.ingestion.sequence_store import atomic_write_json
+
 # USGS permanently redirects the bare "waterservices.usgs.gov" host to this
 # one; request it directly so a redirect is never needed (redirects are
 # refused outright by _NoRedirects for safety).
@@ -1145,3 +1147,127 @@ def _peak_event(
                     event["image_change_score_status"] = "scored"
                 break
     return event
+
+
+def merge_batch_into_gauge_source(
+    sequence_dir: Path,
+    *,
+    series: GageSeries,
+    batch_start_date: str,
+    batch_end_date: str,
+    association: dict[str, Any],
+    manifest_records: Sequence[Mapping[str, Any]],
+    gage_relationship: str,
+    gage_relationship_note: str | None,
+    batch_id: str,
+) -> GageReadingsSummary:
+    """Add one appended batch's readings to a sequence's gauge source, changing nothing old.
+
+    Readings already in the source keep their exact saved value and qualifiers, even if
+    USGS has since revised them: an earlier image's gauge evidence must not change as a
+    side effect of appending later images. Only timestamps not yet present are added.
+    The range widens to cover both, and the summary (extremes, rises, nearest images) is
+    rebuilt from the merged readings and the whole current manifest.
+
+    A source for a different parameter is refused (stage and discharge are never mixed).
+    A missing or "unavailable" source is replaced, since there was no evidence to keep.
+    """
+
+    if series.parameter_code != PARAMETER_GAGE_HEIGHT or series.used_fallback_discharge:
+        raise GageDataError("Only gauge-height readings can be added to a water-level sample.")
+    existing = load_gauge_source(sequence_dir)
+    kept: list[GageReading] = []
+    start_date, end_date = batch_start_date, batch_end_date
+    retrieved = datetime.now(tz=UTC).isoformat()
+    appended: list[Any] = []
+    rejected = series.rejected_reading_count
+    source_url = series.source_url
+    if existing is not None and existing.get("status") == GAUGE_STATUS_AVAILABLE:
+        parameter = existing.get("parameter") or {}
+        if parameter.get("code") != series.parameter_code:
+            raise GageDataError(
+                "This sequence's saved gauge data is for a different parameter, so gauge "
+                "height cannot be added to it."
+            )
+        kept = _readings_from_source(existing)
+        start_date = min(str(existing.get("start_date") or batch_start_date), batch_start_date)
+        end_date = max(str(existing.get("end_date") or batch_end_date), batch_end_date)
+        retrieved = str(existing.get("retrieved_at_utc") or retrieved)
+        appended = list(existing.get("appended_batches") or [])
+        rejected = int(existing.get("rejected_reading_count") or 0) + series.rejected_reading_count
+        source_url = str(existing.get("source_url") or series.source_url)
+    present = {reading.datetime_utc for reading in kept}
+    added = [reading for reading in series.readings if reading.datetime_utc not in present]
+    merged = dedupe_readings([*kept, *added])
+    appended.append(
+        {
+            "batch_id": batch_id,
+            "added_reading_count": len(added),
+            "start_date": batch_start_date,
+            "end_date": batch_end_date,
+            "retrieved_at_utc": datetime.now(tz=UTC).isoformat(),
+        }
+    )
+    payload: dict[str, Any] = {
+        "schema_version": GAUGE_SOURCE_SCHEMA_VERSION,
+        "status": GAUGE_STATUS_AVAILABLE,
+        "reason": None,
+        "retrieved_at_utc": retrieved,
+        "camera_id": association.get("camera_id"),
+        "association": association,
+        "parameter": {
+            "code": series.parameter_code,
+            "label": series.parameter_label,
+            "unit": series.unit,
+            "used_fallback_discharge": False,
+        },
+        "source_url": source_url,
+        "start_date": start_date,
+        "end_date": end_date,
+        "rejected_reading_count": rejected,
+        "appended_batches": appended,
+        "readings": [
+            {
+                "datetime_utc": reading.datetime_utc,
+                "value": reading.value,
+                "qualifiers": list(reading.qualifiers),
+                "quality_status": reading.quality_status,
+            }
+            for reading in merged
+        ],
+    }
+    merged_series = GageSeries(
+        nwis_site_id=series.nwis_site_id,
+        parameter_code=series.parameter_code,
+        parameter_label=series.parameter_label,
+        unit=series.unit,
+        used_fallback_discharge=False,
+        readings=merged,
+        source_url=source_url,
+        rejected_reading_count=rejected,
+    )
+    empty = GageReadingsSummary(
+        nwis_site_id=series.nwis_site_id,
+        parameter_code="",
+        parameter_label="unavailable",
+        unit="",
+        gage_relationship=gage_relationship,
+        gage_relationship_note=gage_relationship_note,
+        used_fallback_discharge=False,
+        source_url="",
+        start_date=start_date,
+        end_date=end_date,
+        point_count=0,
+        available=False,
+        unavailable_reason=None,
+        highest=None,
+        lowest=None,
+        largest_increases=[],
+        largest_decreases=[],
+    )
+    summary = _build_summary_from_series(merged_series, empty, manifest_records)
+    # The source is written first: the summary is derived from it, and a crash between the
+    # two leaves a source that is still consistent (the summary is rebuilt on the next append).
+    atomic_write_json(sequence_dir / GAUGE_SOURCE_FILENAME, payload)
+    atomic_write_json(sequence_dir / "gauge-readings-summary.json", summary.to_dict())
+    return summary

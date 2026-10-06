@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
@@ -21,6 +20,12 @@ from xml.etree import ElementTree
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from openfloodai.contracts import read_jsonl_records, write_jsonl_records
+from openfloodai.ingestion.sequence_store import (
+    read_batches,
+    read_display_name,
+    samples_by_filename,
+    sequence_label,
+)
 
 DEFAULT_CAMERA_URL = "https://apps.usgs.gov/hivis/camera/CO_Colorado_River_near_Cameo"
 ARCHIVE_URL = "https://usgs-nims-images.s3.amazonaws.com/"
@@ -556,6 +561,16 @@ def list_archive_images_between_windowed(
     return candidates
 
 
+def _reject_water_level_mode(mode: str) -> None:
+    """Water-level samples come from gauge readings, never from this time-bucket sampler."""
+
+    if mode == WATER_LEVEL_SAMPLING_MODE:
+        raise RiverImageError(
+            "Water-level sampling picks images from gauge readings; use Find samples, "
+            "then download the approved images."
+        )
+
+
 def sample_image_sequence_candidates(
     candidates: list[ImageSequenceCandidate],
     mode: str,
@@ -569,11 +584,7 @@ def sample_image_sequence_candidates(
     if mode not in ALLOWED_SEQUENCE_SAMPLING_MODES:
         allowed = ", ".join(sorted(ALLOWED_SEQUENCE_SAMPLING_MODES))
         raise RiverImageError(f"Invalid sampling mode: use one of {allowed}.")
-    if mode == WATER_LEVEL_SAMPLING_MODE:
-        raise RiverImageError(
-            "Water-level sampling picks images from gauge readings; use Find samples, "
-            "then download the approved images."
-        )
+    _reject_water_level_mode(mode)
     if mode == "all":
         return list(candidates)
     try:
@@ -628,6 +639,7 @@ def preview_river_image_sequence(
 ) -> ImageSequencePreview:
     """Report how many images a sequence request would fetch, without downloading."""
 
+    _reject_water_level_mode(sampling_mode)
     slug = camera_slug(camera_url)
     zone_name = timezone_name.strip() or camera_timezone(slug)
     start_utc, end_utc = parse_sequence_date_range(start_date.strip(), end_date.strip(), zone_name)
@@ -692,13 +704,6 @@ class ImageSequenceDownloadResult:
         }
 
 
-def _selection_fingerprint(candidates: list[ImageSequenceCandidate]) -> str:
-    """Eight hex characters identifying exactly this set of images, order independent."""
-
-    names = sorted(candidate.source_url.rsplit("/", 1)[-1] for candidate in candidates)
-    return hashlib.sha256("\n".join(names).encode("utf-8")).hexdigest()[:8]
-
-
 def download_river_image_sequence(
     *,
     camera_url: str,
@@ -712,16 +717,8 @@ def download_river_image_sequence(
     resume: bool = False,
     daylight_window_start_hour: int = DEFAULT_DAYLIGHT_WINDOW_START_HOUR,
     daylight_window_end_hour: int = DEFAULT_DAYLIGHT_WINDOW_END_HOUR,
-    selected_candidates: list[ImageSequenceCandidate] | None = None,
-    selection_provenance: dict[str, Any] | None = None,
 ) -> ImageSequenceDownloadResult:
     """Download a sampled, date-ranged image sequence into a site folder.
-
-    For the `water_level` mode the images are not derived from a time bucket but
-    passed in as `selected_candidates` (the reviewer-approved set), with the
-    `selection_provenance` that explains why each was chosen. The same intake,
-    conflict handling, manifest, and downloads are used; no per-bucket "missing"
-    rows are made, since there is no bucket schedule to fall short of.
 
     `overwrite` replaces an existing sequence from scratch (unchanged,
     existing behavior). `resume` is new: when the sequence already exists
@@ -729,40 +726,30 @@ def download_river_image_sequence(
     (matched by source URL) and only fetches what is missing or previously
     failed, instead of raising. Neither flag set, and an existing sequence,
     still raises exactly as before.
+
+    Water-level samples are not made here: they come from gauge readings and are
+    created or appended through `water_level_intake`.
     """
 
+    _reject_water_level_mode(sampling_mode)
     slug = camera_slug(camera_url)
     zone_name = timezone_name.strip() or camera_timezone(slug)
     start = start_date.strip()
     end = end_date.strip()
     start_utc, end_utc = parse_sequence_date_range(start, end, zone_name)
-    water_level = sampling_mode == WATER_LEVEL_SAMPLING_MODE
-    if water_level:
-        if not selected_candidates or selection_provenance is None:
-            raise RiverImageError("Approve at least one water-level sample before downloading.")
-        sampled = sorted(selected_candidates, key=lambda candidate: candidate.captured_utc)
-    else:
-        if selected_candidates is not None:
-            raise RiverImageError("Selected images are only used for water-level sampling.")
-        candidates = list_archive_images_between_windowed(slug, start_utc, end_utc)
-        sampled = sample_image_sequence_candidates(
-            candidates,
-            sampling_mode,
-            timezone_name=zone_name,
-            daylight_window_start_hour=daylight_window_start_hour,
-            daylight_window_end_hour=daylight_window_end_hour,
-        )
+    candidates = list_archive_images_between_windowed(slug, start_utc, end_utc)
+    sampled = sample_image_sequence_candidates(
+        candidates,
+        sampling_mode,
+        timezone_name=zone_name,
+        daylight_window_start_hour=daylight_window_start_hour,
+        daylight_window_end_hour=daylight_window_end_hour,
+    )
     zone = ZoneInfo(zone_name)
 
     sequence_id = f"usgs-{slug}-{start}-{end}-{sampling_mode}"
-    if water_level:
-        sequence_id += "-" + _selection_fingerprint(sampled)
     sequence_dir = (site_dir / "inputs" / "image-sequences" / sequence_id).resolve()
     already_downloaded: dict[str, ImageSequenceRecord] = {}
-    if water_level and sequence_dir.is_dir() and not overwrite:
-        # Same camera, dates, and approved images as an earlier download: reuse what is
-        # already saved instead of failing. Different images get a different name above.
-        resume = True
     if sequence_dir.exists():
         if overwrite:
             shutil.rmtree(sequence_dir)
@@ -792,18 +779,6 @@ def download_river_image_sequence(
             raise RiverImageError(
                 "An image sequence already exists for this camera and date range: "
                 f"{sequence_id}. Use overwrite to replace it."
-            )
-    selection_path = sequence_dir / WATER_LEVEL_SELECTION_FILENAME
-    if water_level and selection_path.is_file():
-        # Saved selection evidence is never rewritten. A resume is only allowed for the
-        # very same approved images; a different set needs an explicit overwrite.
-        existing = json.loads(selection_path.read_text(encoding="utf-8"))
-        existing_names = sorted(entry["filename"] for entry in existing.get("samples", []))
-        requested_names = sorted(candidate.source_url.rsplit("/", 1)[-1] for candidate in sampled)
-        if existing_names != requested_names:
-            raise RiverImageError(
-                "A water-level sample with different images already exists for this camera "
-                f"and date range: {sequence_id}. Use overwrite to replace it."
             )
     images_dir = sequence_dir / "images"
     images_dir.mkdir(parents=True, exist_ok=True)
@@ -847,7 +822,7 @@ def download_river_image_sequence(
                 )
             )
 
-    if sampling_mode not in {"all", WATER_LEVEL_SAMPLING_MODE}:
+    if sampling_mode != "all":
         present_buckets = {
             _sequence_bucket_key(candidate.captured_utc.astimezone(zone), sampling_mode)
             for candidate in sampled
@@ -882,11 +857,6 @@ def download_river_image_sequence(
     if manifest_path.exists():
         manifest_path.unlink()
     write_jsonl_records(manifest_path, [asdict(record) for record in records])
-
-    if water_level and selection_provenance is not None and not selection_path.is_file():
-        selection_path.write_text(
-            json.dumps(selection_provenance, indent=2) + "\n", encoding="utf-8"
-        )
 
     result = ImageSequenceDownloadResult(sequence_dir, sequence_id, zone_name, records)
     summary = result.to_dict() | {
@@ -942,6 +912,11 @@ def list_site_image_sequences(site_dir: Path) -> list[dict[str, Any]]:
         except (OSError, ValueError):
             continue
         if isinstance(summary, dict):
+            display_name = read_display_name(child)
+            summary["display_name"] = display_name
+            summary["label"] = sequence_label(
+                str(summary.get("sequence_id") or child.name), display_name
+            )
             samples = _water_level_samples(child)
             if samples is not None:
                 # Lets a baseline picker label and order images by group and gauge level.
@@ -954,34 +929,29 @@ def list_site_image_sequences(site_dir: Path) -> list[dict[str, Any]]:
 
 
 def _water_level_samples(sequence_dir: Path) -> dict[str, dict[str, Any]] | None:
-    """File name -> {group, level, unit, quality_status} for a water-level sample set.
+    """File name -> {group, level, unit, quality_status, batch_number} for sampled images.
 
-    `level` is the image's OWN nearest gauge reading (falling back to the reading that
-    motivated the pick), so a picker can order images by the level they actually show.
-    None when the sequence is not a water-level sample set.
+    Built from every sampling batch of the sequence (and the older single selection
+    file). `level` is the image's OWN nearest gauge reading, falling back to the reading
+    that motivated the pick, so a picker can order images by the level they actually
+    show. None when the sequence has no sampling batches at all.
     """
 
-    path = sequence_dir / WATER_LEVEL_SELECTION_FILENAME
-    if not path.is_file():
+    batches = read_batches(sequence_dir)
+    if not batches:
         return None
-    try:
-        saved = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    samples = saved.get("samples") if isinstance(saved, dict) else None
     found: dict[str, dict[str, Any]] = {}
-    for sample in samples if isinstance(samples, list) else []:
-        if not isinstance(sample, dict) or not sample.get("filename"):
-            continue
+    for name, sample in samples_by_filename(batches).items():
         own = sample.get("image_reading")
         reading = own if isinstance(own, dict) and own.get("value") is not None else None
         reading = reading or sample.get("motivating_reading")
         reading = reading if isinstance(reading, dict) else {}
         value = reading.get("value")
-        found[str(sample["filename"])] = {
+        found[name] = {
             "group": str(sample.get("group", "")),
             "level": float(value) if isinstance(value, int | float) else None,
             "unit": str(reading.get("unit") or ""),
             "quality_status": reading.get("quality_status"),
+            "batch_number": sample.get("batch_number"),
         }
     return found

@@ -149,7 +149,7 @@ function renderSampling() {
 // page only ever names an approved sample by group, gauge-reading time and
 // image file name; the server recomputes and re-verifies everything.
 let sampleKind = "regular";
-let wl = { proposal: null, rows: {}, declined: [], busy: false, message: "", groups: ["low", "middle", "high"], perGroup: 3, confirmed: false, timeOfDay: "any", settingsKey: "" };
+let wl = { proposal: null, rows: {}, declined: [], busy: false, message: "", groups: ["low", "middle", "high"], perGroup: 3, confirmed: false, timeOfDay: "any", settingsKey: "", destMode: "new", destinations: [], destinationId: "", name: "", plan: null, planKey: "", result: null };
 
 const WL_GROUP_TEXT = { low: "Low", middle: "Middle", high: "High" };
 const WL_SHORTFALL_TEXT = {
@@ -232,13 +232,83 @@ function wlApprovedRefs() {
 function wlSettingsKey() {
   return JSON.stringify([
     $("camera_url").value.trim(), $("start_date").value, $("end_date").value,
-    [...wl.groups].sort(), wl.perGroup, wl.timeOfDay
+    [...wl.groups].sort(), wl.perGroup, wl.timeOfDay, wl.destMode, wl.destinationId
   ]);
 }
 
 function wlInvalidate(message) {
   wl.proposal = null; wl.rows = {}; wl.declined = []; wl.confirmed = false; wl.settingsKey = "";
+  wl.plan = null; wl.planKey = ""; wl.result = null;
   wl.message = message || "Settings changed. Select Find samples again.";
+}
+
+// ---- destination: a new sequence (default) or an existing compatible one ----
+function wlCameraSlug() {
+  const m = /\/camera\/([^/?#]+)/.exec($("camera_url").value.trim());
+  return m ? m[1] : "camera";
+}
+
+// The ID is generated; a name is optional display text. Blank means "use the default".
+function wlDefaultIdText() {
+  return `usgs-${wlCameraSlug()}-${$("start_date").value || "start"}-${$("end_date").value || "end"}-water_level-xxxxxxxx`;
+}
+
+function wlDestination() {
+  if (wl.destMode === "append") return { mode: "append", sequence_id: wl.destinationId };
+  return { mode: "new", name: wl.name };
+}
+
+function wlDestinationLabel() {
+  const d = wl.destinations.find((x) => x.sequence_id === wl.destinationId);
+  return d ? d.label : wl.destinationId;
+}
+
+// What the confirmed download will do. For a new sequence everything approved is new.
+function wlCurrentPlan() {
+  if (wl.destMode === "append") return wl.plan;
+  const n = wlApproved().length;
+  return { new: n, duplicates: 0, conflicts: 0 };
+}
+
+function wlIntakeSummary(plan) {
+  if (!plan) return "Checking what would be added&hellip;";
+  if (wl.destMode === "new") {
+    const named = wl.name.trim() ? ` named &ldquo;${escapeHtml(wl.name.trim())}&rdquo;` : "";
+    return `Create a new sequence${named} with ${plan.new} image${plan.new === 1 ? "" : "s"}. Other sequences and previous runs are not affected.`;
+  }
+  const label = escapeHtml(wlDestinationLabel());
+  if (plan.new === 0) return `Nothing new to add: ${plan.duplicates} image${plan.duplicates === 1 ? " is" : "s are"} already in ${label}${plan.conflicts ? `, and ${plan.conflicts} conflict${plan.conflicts === 1 ? "" : "s"} will not be added` : ""}.`;
+  return `Add ${plan.new} new image${plan.new === 1 ? "" : "s"} to ${label}. Skip ${plan.duplicates} already present.${plan.conflicts ? ` ${plan.conflicts} conflict${plan.conflicts === 1 ? "" : "s"} will not be added.` : ""} Existing images and previous runs will remain unchanged.`;
+}
+
+function wlDestinationOptionsHtml() {
+  const usable = wl.destinations.filter((d) => d.compatible);
+  const blocked = wl.destinations.filter((d) => !d.compatible);
+  const options = usable.map((d) => {
+    const named = d.display_name ? ` &middot; ${escapeHtml(d.sequence_id.slice(-8))}` : "";
+    return `<option value="${escapeHtml(d.sequence_id)}" ${wl.destinationId === d.sequence_id ? "selected" : ""}>${escapeHtml(d.label)}${named} (${escapeHtml(String(d.downloaded_count))} images)</option>`;
+  }).join("");
+  const why = blocked.length ? `<div class="hint" style="margin-top:6px;line-height:1.5;">Not available: ${blocked.map((d) => `<div><strong>${escapeHtml(d.label)}</strong> &mdash; ${escapeHtml((d.reasons || []).join(" "))}</div>`).join("")}</div>` : "";
+  const none = usable.length ? "" : `<div class="hint" style="margin-top:6px;">No existing sequence for this site and camera can take these images yet. Create a new one instead.</div>`;
+  return `<select id="wlDestination" style="max-width:100%;font-size:13px;" ${usable.length ? "" : "disabled"}>
+      <option value="">Choose a sequence&hellip;</option>${options}</select>
+    ${wl.destinationId ? `<div class="hint" style="margin-top:4px;font-family:var(--mono);">${escapeHtml(wl.destinationId)}</div>` : ""}${none}${why}`;
+}
+
+function wlResultHtml(result) {
+  const lines = [];
+  if (result.conflict_count) lines.push(`<div><strong>Not added (conflicts):</strong> ${result.conflicts.map((c) => `${escapeHtml(c.filename)} &mdash; ${escapeHtml(c.reason)}`).join("; ")}</div>`);
+  if (result.failed_count) lines.push(`<div><strong>Could not be downloaded:</strong> ${result.failed.map((f) => escapeHtml(f.filename)).join(", ")}. Try again to add them.</div>`);
+  return `<div style="border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-top:12px;font-size:13px;line-height:1.6;">
+    <div style="font-weight:600;">${escapeHtml(result.message)}</div>
+    <div class="hint" style="font-family:var(--mono);margin-top:2px;">${escapeHtml(result.sequence_id)}</div>
+    ${lines.join("")}
+    <div class="hint" style="margin-top:6px;">New images start unreviewed. Nothing was run or labeled automatically. The next step is to run validation on this sequence from Sequences &amp; runs.</div>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+      <a class="btn primary" href="/console/site.html?${new URLSearchParams({ site: folderName, tab: "sequences" })}">Open Sequences &amp; runs</a>
+      <button type="button" class="btn" id="wlAgain">Add more samples</button>
+    </div>
+  </div>`;
 }
 
 function wlRequestBody() {
@@ -320,6 +390,7 @@ function wlPanelHtml() {
     const t = proposal.selection.thresholds;
     const assoc = proposal.association || {};
     const approved = wlApproved().length;
+    const plan = wlCurrentPlan();
     preview = `<div class="hint" style="margin-top:12px;line-height:1.5;">
         Gauge ${escapeHtml(assoc.nwis_site_id || "")} (${escapeHtml(proposal.gauge.parameter_label)}, ${escapeHtml(proposal.gauge.unit)}), ${escapeHtml(String(proposal.gauge.valid_reading_count))} valid readings${t ? `, ranging ${escapeHtml(Number(t.minimum).toFixed(2))} to ${escapeHtml(Number(t.maximum).toFixed(2))} ${escapeHtml(proposal.gauge.unit)} (median ${escapeHtml(Number(t.median).toFixed(2))})` : ""}.
         ${assoc.source ? `Association source: ${escapeHtml(assoc.source)}.` : ""}
@@ -327,8 +398,9 @@ function wlPanelHtml() {
         <br>Time of day: ${wlTimeOfDayText(proposal)}.
         <br>${escapeHtml(proposal.note)} Policy ${escapeHtml(proposal.policy_version)}.</div>
       ${proposal.selection.groups.map((g) => wlGroupHtml(g, proposal.timezone)).join("")}
-      <label style="display:flex;gap:8px;align-items:flex-start;margin-top:16px;font-size:12px;"><input type="checkbox" id="wlConfirm" ${wl.confirmed ? "checked" : ""}> <span>I confirm downloading ${approved} approved image(s) into this site. Each is a collection sample chosen from gauge readings, not a flood finding or a label.</span></label>
-      <button type="button" class="btn primary" id="wlDownload" style="width:100%;justify-content:center;margin-top:10px;" ${approved > 0 && wl.confirmed && !wl.busy ? "" : "disabled"}>${wl.busy ? "Working&hellip;" : `Download ${approved} selected image${approved === 1 ? "" : "s"}`}</button>`;
+      <div style="background:var(--paper);border-radius:8px;padding:10px 12px;margin-top:16px;font-size:13px;line-height:1.5;">${approved > 0 ? wlIntakeSummary(plan) : "Approve at least one sample to continue."}</div>
+      <label style="display:flex;gap:8px;align-items:flex-start;margin-top:10px;font-size:12px;"><input type="checkbox" id="wlConfirm" ${wl.confirmed ? "checked" : ""}> <span>I confirm this. Each image is a collection sample chosen from gauge readings, not a flood finding or a label.</span></label>
+      <button type="button" class="btn primary" id="wlDownload" style="width:100%;justify-content:center;margin-top:10px;" ${approved > 0 && plan && wl.confirmed && !wl.busy && (wl.destMode === "new" || wl.destinationId) ? "" : "disabled"}>${wl.busy ? "Working&hellip;" : wl.destMode === "append" ? (plan && plan.new === 0 ? "Nothing new to add" : `Add ${plan ? plan.new : approved} image${plan && plan.new === 1 ? "" : "s"}`) : `Download ${approved} selected image${approved === 1 ? "" : "s"}`}</button>`;
   }
   return `<div style="margin-bottom:10px;font-size:12px;color:var(--ink-soft);line-height:1.5;">Pick low, middle, and high water images from the camera's linked USGS gauge, instead of reviewing every image. These groups are <strong>relative to the date range you chose</strong>. They are not flood thresholds or labels, and a very short range may show little contrast.</div>
     <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;font-size:13px;">${groupChecks}
@@ -339,8 +411,20 @@ function wlPanelHtml() {
       <label style="display:flex;align-items:center;gap:6px;"><input type="radio" name="wlTimeOfDay" value="any" data-wl-time ${wl.timeOfDay === "any" ? "checked" : ""}> Any time of day</label>
       <label style="display:flex;align-items:center;gap:6px;"><input type="radio" name="wlTimeOfDay" value="daytime" data-wl-time ${wl.timeOfDay === "daytime" ? "checked" : ""}> Daytime only (10:00&ndash;14:00 local)</label>
     </fieldset>
+    <fieldset style="border:0;padding:0;margin:12px 0 0;font-size:13px;">
+      <legend style="font-size:12px;color:var(--ink-soft);padding:0;margin-bottom:4px;">Destination</legend>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;">
+        <label style="display:flex;align-items:center;gap:6px;"><input type="radio" name="wlDest" value="new" data-wl-dest ${wl.destMode === "new" ? "checked" : ""}> Create new sequence</label>
+        <label style="display:flex;align-items:center;gap:6px;"><input type="radio" name="wlDest" value="append" data-wl-dest ${wl.destMode === "append" ? "checked" : ""}> Add to existing sequence</label>
+      </div>
+      ${wl.destMode === "new" ? `<div style="margin-top:8px;">
+        <label for="wlName" style="font-size:12px;color:var(--ink-soft);">Sequence name (optional)</label>
+        <input id="wlName" maxlength="80" autocomplete="off" value="${escapeHtml(wl.name)}" placeholder="Leave blank to use the generated name" style="width:100%;">
+        <div class="hint" style="margin-top:4px;line-height:1.5;">Default: <span style="font-family:var(--mono);word-break:break-all;">${escapeHtml(wlDefaultIdText())}</span> (the last 8 characters are assigned when you download). A name is only a label; the generated ID stays the sequence's identity.</div>
+      </div>` : `<div style="margin-top:8px;">${wlDestinationOptionsHtml()}</div>`}
+    </fieldset>
     ${wl.message ? `<div class="err" style="margin-top:10px;">${escapeHtml(wl.message)}</div>` : ""}
-    ${preview}`;
+    ${wl.result ? wlResultHtml(wl.result) : preview}`;
 }
 // ---- end water-level sampling ----
 
@@ -375,10 +459,61 @@ function renderWaterLevel() {
     const [group, index] = btn.dataset.wlReplace.split(":");
     wlReplace(group, Number(index));
   }));
+  panel.querySelectorAll("[data-wl-dest]").forEach((radio) => radio.addEventListener("change", () => {
+    if (!radio.checked || wl.destMode === radio.value) return;
+    wl.destMode = radio.value;
+    wl.destinationId = "";
+    if (wl.proposal || wl.result) wlInvalidate("The destination changed. Select Find samples again.");
+    else wl.message = "";
+    renderWaterLevel();
+    if (wl.destMode === "append") wlLoadDestinations();
+  }));
+  const nameBox = $("wlName");
+  if (nameBox) nameBox.addEventListener("input", () => { wl.name = nameBox.value; wl.confirmed = false; });
+  const destBox = $("wlDestination");
+  if (destBox) destBox.addEventListener("change", () => {
+    wl.destinationId = destBox.value;
+    if (wl.proposal) wlInvalidate("The destination changed. Select Find samples again.");
+    renderWaterLevel();
+  });
+  const again = $("wlAgain");
+  if (again) again.addEventListener("click", () => { wl.result = null; wl.confirmed = false; wl.message = ""; renderWaterLevel(); });
   const confirm = $("wlConfirm");
   if (confirm) confirm.addEventListener("change", () => { wl.confirmed = confirm.checked; renderWaterLevel(); });
   const download = $("wlDownload");
   if (download) download.addEventListener("click", wlDownload);
+  wlSyncPlan();
+}
+
+async function wlLoadDestinations() {
+  try {
+    const out = await api("/api/water-level-destinations", {
+      folder_name: folderName, camera_url: $("camera_url").value.trim(),
+      start_date: $("start_date").value, end_date: $("end_date").value, timezone: "America/Denver"
+    });
+    wl.destinations = out.destinations || [];
+    wl.message = "";
+  } catch (error) {
+    wl.destinations = [];
+    wl.message = error.message;
+  }
+  renderWaterLevel();
+}
+
+// For an existing sequence, ask the server what the approved set would do (new / duplicate / conflict).
+async function wlSyncPlan() {
+  if (!wl.proposal || wl.proposal.state !== "ok" || wl.destMode !== "append" || !wl.destinationId) return;
+  const refs = wlApprovedRefs();
+  if (!refs.length) { wl.plan = null; return; }
+  const key = JSON.stringify([refs, wl.destinationId, wl.settingsKey]);
+  if (wl.planKey === key) return;
+  wl.planKey = key; wl.plan = null; wl.confirmed = false;
+  try {
+    wl.plan = (await api("/api/plan-water-level-intake", { ...wlRequestBody(), approved: refs, destination: wlDestination() })).plan;
+  } catch (error) {
+    wl.message = error.message;
+  }
+  if (wl.planKey === key) renderWaterLevel();
 }
 
 async function wlFind() {
@@ -424,7 +559,8 @@ async function wlReplace(group, index) {
 
 async function wlDownload() {
   const refs = wlApprovedRefs();
-  if (!refs.length || !wl.confirmed || wl.busy) return;
+  const plan = wlCurrentPlan();
+  if (!refs.length || !plan || !wl.confirmed || wl.busy) return;
   if (wl.settingsKey !== wlSettingsKey()) {
     wlInvalidate("The settings changed after Find samples. Select Find samples again before downloading.");
     renderWaterLevel();
@@ -433,18 +569,17 @@ async function wlDownload() {
   wl.busy = true; wl.message = "";
   renderWaterLevel();
   try {
-    const result = await api("/api/download-water-level-sampling", {
+    wl.result = await api("/api/download-water-level-sampling", {
       ...wlRequestBody(),
       folder_name: folderName,
       approved: refs,
+      destination: wlDestination(),
       confirmed: true,
-      confirmed_count: refs.length
+      confirmed_plan: { new: plan.new, duplicates: plan.duplicates, conflicts: plan.conflicts }
     });
-    const params = { site: folderName };
-    if (result.gage_available === true) params.gage = "found";
-    else if (result.gage_available === false) params.gage = "unavailable";
-    location.href = `/console/site.html?${new URLSearchParams(params)}`;
-    return;
+    wl.proposal = null; wl.rows = {}; wl.plan = null; wl.planKey = ""; wl.confirmed = false; wl.declined = [];
+    wl.destinations = [];
+    if (wl.destMode === "append") wlLoadDestinations();
   } catch (error) {
     wl.message = error.message;
   }
@@ -469,7 +604,10 @@ function setSampleKind(kind) {
 ["camera_url", "start_date", "end_date"].forEach((id) => $(id).addEventListener("input", () => {
   if (sampleKind === "water_level" && wl.proposal) {
     wlInvalidate("The camera or dates changed. Select Find samples again.");
+    wl.destinationId = "";
+    wl.destinations = [];
     renderWaterLevel();
+    if (wl.destMode === "append") wlLoadDestinations();
   }
 }));
 $("modeRegular").addEventListener("click", () => setSampleKind("regular"));

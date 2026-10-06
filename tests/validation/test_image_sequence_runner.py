@@ -1316,7 +1316,7 @@ def test_a_run_freezes_the_water_level_selection_and_shows_groups_per_image(tmp_
     assert selection["samples"]["b.jpg"]["group"] == "high"
     assert selection["samples"]["b.jpg"]["readings_differ"] is True
     assert selection["samples"]["b.jpg"]["motivating_reading"]["quality_status"] == "provisional"
-    assert (report.run_dir / "inputs-used" / "water-level-selection.snapshot.json").is_file()
+    assert (report.run_dir / "inputs-used" / "sampling" / "water-level-selection.json").is_file()
 
     # A later change to the sequence's own record never alters a finished run.
     write_water_level_selection(sequence_dir, {"a.jpg": "middle", "b.jpg": "low", "c.jpg": "low"})

@@ -43,10 +43,10 @@ machine's result and from any human label, and it never creates a label.
 7. Untick a row to leave it out, or select **Replace** to get another candidate
    for that group. A replacement keeps the group's other rows, respects the same
    rules, and never uses an image hours away.
-8. Tick the confirmation and select **Download N selected images**. Only the
-   approved rows are downloaded, through the existing image-sequence intake. The
-   server checks them against what you asked for (groups, and no more than the
-   requested images per group) before it fetches anything.
+8. Choose the **destination** (see below), read the summary of what will happen,
+   tick the confirmation, and select the button. Only the approved rows are
+   downloaded. The server checks them against what you asked for (groups, and no
+   more than the requested images per group) before it fetches anything.
 
 If you ask for more than can be found, the preview shows how many it found and
 why. Requested counts are maximums, not guarantees.
@@ -86,19 +86,82 @@ every selection.
 | Shortfall | A group that cannot reach its count is reported, never padded with unsuitable duplicates. |
 | Archive checks | Only days around candidate readings are listed (at most 300 separate days per search). If many top readings have no usable image, the search stops and says so. |
 
-## After the download
+## Destination: a new sequence, or add to an existing one
 
-The sample set is saved as an ordinary image sequence (mode `water_level`) with
-`water-level-selection.json` beside it. It records the camera/station association
-and its source, the date range and groups requested, the policy version and
-selection time, the gauge parameter and units, every approved image with its
-motivating reading and its own nearest reading and both gaps, the images you
-declined, and the reasons candidates were skipped. That file is never rewritten by
-a later download. Each sample set is saved under its own name, ending in a short
-fingerprint of its approved images (for example `...-water_level-3f91d374`), so a
-different selection for the same camera and dates is a new sequence and never
-replaces an earlier one that runs and reviews may already use. Downloading the
-exact same approved images again simply reuses what is saved.
+**Create new sequence** (the default) makes a fresh sequence from the approved images.
+Every request gets its own generated ID, such as `...-water_level-3f91d374`, even if
+you repeat exactly the same request, so nothing is ever replaced or overwritten.
+
+- **Sequence name (optional).** The generated name is shown. Leave the box blank to
+  keep it. A name you type is only a display label: it is shown in the sequence list,
+  the destination picker, and the review header, with the generated ID underneath.
+  It is never a file or folder name and never replaces the ID, so two sequences with
+  the same name stay distinguishable. Names can be up to 80 characters, without
+  control characters. Older sequences have no name and keep showing their ID.
+
+**Add to existing sequence** appends the approved images to a sequence you already
+have, without making a separate one.
+
+- Only sequences from the same site and the same camera are offered. The server checks
+  this again: the camera, the time zone, the source, the gauge station and parameter,
+  and that every saved local time matches the time zone. A sequence that cannot take
+  the images is listed under "Not available" with the reason, and is never mixed in.
+- Before anything changes, you see the plan, for example: "Add 8 new images to Windy
+  Gap 2026. Skip 3 already present. Existing images and previous runs will remain
+  unchanged." You confirm those exact numbers; if they change before you press the
+  button, the request is refused and you review again.
+- **Duplicates** (the same archive image, already saved with the same size) are
+  skipped. If every image is already there, nothing at all is written: no new batch,
+  no manifest entry.
+- **Conflicts** are reported, never overwritten or renamed: another image with the
+  same capture time from a different source, or a saved file with the same name but
+  different content. Conflicting images are not added; the rest of the batch is.
+- Images with different times on the same day stay separate.
+- Changing the destination, the groups, the count, the time of day, the dates, or the
+  camera clears the preview and your confirmation.
+- Retrying is safe. If an add is interrupted, the sequence's list of images is never
+  left pointing at a missing file, and the retry reuses files already downloaded
+  instead of duplicating them. If another add or a validation run is using the
+  sequence at that moment, the add waits briefly for it.
+
+New images start **unreviewed**. Nothing is run, labeled, or re-matched automatically.
+After the add, the page shows the result and a link to Sequences & runs, where you can
+run validation when you are ready.
+
+## What is saved
+
+A sequence keeps one saved record per download batch in `sampling-batches/`
+(`batch-0001.json`, `batch-0002.json`, ...). Each batch records the camera and station
+association and its source, the date range and groups requested, the policy version
+and selection time, the thresholds, the gauge parameter and units, every image it
+added with its motivating reading, its own nearest reading and both gaps, the images
+you declined, the reasons candidates were skipped, and the duplicates, conflicts and
+failed downloads of that batch. A batch file is never rewritten.
+
+- **Low, middle, and high are relative to that batch's date range**, not to the whole
+  sequence. A later batch does not change an earlier batch's thresholds, and an image
+  stays in the category of the batch that first added it, even if a later batch picks
+  the same image again.
+- **Gauge readings:** each batch's readings are added to the sequence's gauge data
+  without changing any reading already saved, even if USGS has since revised it. An
+  earlier image's matched gauge evidence therefore does not change when you append.
+- Each new image keeps its own capture time and its own nearest reading within 15
+  minutes, with the station association, units and quality flags.
+
+## Runs and history
+
+A validation run first holds the sequence while it reads it, so it never sees an add
+half finished. It then freezes everything it used in its own folder: the image list,
+the gauge data and matches, the sampling batches, the watched area and guides, and the
+sequence's display name.
+
+- A run made **before** an add keeps showing exactly its original images, gauge
+  matches, categories and results. New images never appear in an older run.
+- A run made **after** an add gets a new run ID and includes the new images. Earlier
+  images keep the same gauge matches they had.
+- Because a water-level sequence has no assumed "normal" first image, a run always
+  needs you to choose the baseline, including after an add. Your earlier choice, the
+  watched area, the guides and any labels are not changed by an add.
 
 Then use the normal flow:
 

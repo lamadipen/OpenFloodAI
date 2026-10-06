@@ -23,14 +23,12 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from openfloodai.contracts import read_jsonl_records
 from openfloodai.ingestion.river_images import (
-    WATER_LEVEL_SAMPLING_MODE,
     ImageSequenceCandidate,
-    ImageSequenceDownloadResult,
     RiverImageError,
     camera_slug,
     camera_timezone,
-    download_river_image_sequence,
     list_archive_images_between,
     parse_sequence_date_range,
 )
@@ -41,6 +39,17 @@ from openfloodai.ingestion.usgs_gage_data import (
     GageReading,
     GageSeries,
     fetch_gage_readings,
+)
+from openfloodai.ingestion.water_level_intake import (
+    ImageFetcher,
+    IntakeError,
+    IntakePlan,
+    IntakeResult,
+    _destination_dir,
+    append_to_sequence,
+    compatibility_problems,
+    create_sequence,
+    plan_for_destination,
 )
 from openfloodai.ingestion.water_level_sampling import (
     NOTE_RELATIVE,
@@ -377,27 +386,18 @@ def build_provenance(
     }
 
 
-def download_approved(
+def _verified(
     context: DiscoveryContext,
     *,
     approved: Sequence[Mapping[str, str]],
-    declined: Sequence[str],
     groups: Sequence[str],
     images_per_group: int,
-    site_id: str,
-    site_dir: Path,
-    overwrite: bool = False,
-    resume: bool = False,
-    time_of_day: str = "any",
-    fetch_gauge: GaugeFetcher | None = None,
-    list_images: ImageLister | None = None,
-    download: Callable[..., ImageSequenceDownloadResult] | None = None,
-) -> tuple[ImageSequenceDownloadResult, dict[str, Any]]:
-    """Verify the approved set from fresh data, then download only those images."""
+    time_of_day: str,
+    fetch_gauge: GaugeFetcher,
+    list_images: ImageLister,
+) -> tuple[CameraRecord, GageSeries, list[SelectedSample]]:
+    """Check the request, then re-derive every approved sample from fresh data."""
 
-    fetch_gauge = fetch_gauge or fetch_gage_readings
-    list_images = list_images or list_archive_images_between
-    download = download or download_river_image_sequence
     if not approved:
         raise RiverImageError("Approve at least one sample before downloading.")
     try:
@@ -424,6 +424,91 @@ def download_approved(
         )
     except SamplingError as error:
         raise RiverImageError(f"{error} Run Find samples again before downloading.") from error
+    return camera, series, samples
+
+
+def plan_intake(
+    context: DiscoveryContext,
+    *,
+    approved: Sequence[Mapping[str, str]],
+    groups: Sequence[str],
+    images_per_group: int,
+    site_dir: Path,
+    destination_id: str | None,
+    time_of_day: str = "any",
+    fetch_gauge: GaugeFetcher | None = None,
+    list_images: ImageLister | None = None,
+) -> IntakePlan:
+    """What approving this set would do: new images, duplicates skipped, conflicts.
+
+    Verifies the set first, so a plan is only ever given for samples that still qualify.
+    Nothing is downloaded or written.
+    """
+
+    camera, series, samples = _verified(
+        context,
+        approved=approved,
+        groups=groups,
+        images_per_group=images_per_group,
+        time_of_day=time_of_day,
+        fetch_gauge=fetch_gauge or fetch_gage_readings,
+        list_images=list_images or list_archive_images_between,
+    )
+    if destination_id is not None:
+        problems = compatibility_problems(
+            _destination_dir(site_dir, destination_id),
+            camera_slug=context.slug,
+            timezone_name=context.timezone,
+            site_id=_site_id_of(site_dir, destination_id),
+            nwis_site_id=camera.nwis_id,
+        )
+        if problems:
+            raise IntakeError("This sequence cannot take these images: " + " ".join(problems))
+    return plan_for_destination(site_dir, destination_id, [sample.image for sample in samples])
+
+
+def _site_id_of(site_dir: Path, sequence_id: str) -> str:
+    """The site id the destination's own records use (so the check is about camera/zone, not id)."""
+
+    records = read_jsonl_records(
+        site_dir / "inputs" / "image-sequences" / sequence_id / "sequence-manifest.jsonl"
+    )
+    return next((str(r["site_id"]) for r in records if r.get("site_id")), "")
+
+
+def download_approved(
+    context: DiscoveryContext,
+    *,
+    approved: Sequence[Mapping[str, str]],
+    declined: Sequence[str],
+    groups: Sequence[str],
+    images_per_group: int,
+    site_id: str,
+    site_dir: Path,
+    destination_id: str | None = None,
+    display_name: object = None,
+    time_of_day: str = "any",
+    fetch_gauge: GaugeFetcher | None = None,
+    list_images: ImageLister | None = None,
+    fetch_image: ImageFetcher | None = None,
+) -> tuple[IntakeResult, dict[str, Any]]:
+    """Verify the approved set from fresh data, then create or extend a sequence with it.
+
+    `destination_id` None creates a new, uniquely named sequence (optionally with a
+    display name); otherwise the new images are appended to that existing sequence.
+    """
+
+    fetch_gauge = fetch_gauge or fetch_gage_readings
+    list_images = list_images or list_archive_images_between
+    camera, series, samples = _verified(
+        context,
+        approved=approved,
+        groups=groups,
+        images_per_group=images_per_group,
+        time_of_day=time_of_day,
+        fetch_gauge=fetch_gauge,
+        list_images=list_images,
+    )
     # A clean policy run from the same data supplies the thresholds and skip reasons, so the
     # saved provenance is ours, not the browser's. The approved set is recorded separately.
     discovery = discover(
@@ -436,17 +521,38 @@ def download_approved(
         list_images=list_images,
     )
     provenance = build_provenance(context, discovery, samples, declined=declined)
-    result = download(
-        camera_url=f"https://apps.usgs.gov/hivis/camera/{context.slug}",
-        start_date=context.start_date,
-        end_date=context.end_date,
-        timezone_name=context.timezone,
-        sampling_mode=WATER_LEVEL_SAMPLING_MODE,
-        site_id=site_id,
-        site_dir=site_dir,
-        overwrite=overwrite,
-        resume=resume,
-        selected_candidates=[sample.image for sample in samples],
-        selection_provenance=provenance,
-    )
+    candidates = [sample.image for sample in samples]
+    if destination_id is None:
+        result = create_sequence(
+            site_dir=site_dir,
+            site_id=site_id,
+            camera_slug=context.slug,
+            timezone_name=context.timezone,
+            start_date=context.start_date,
+            end_date=context.end_date,
+            candidates=candidates,
+            provenance=provenance,
+            series=series,
+            gage_relationship=camera.gage_relationship,
+            gage_relationship_note=camera.gage_relationship_note,
+            display_name=display_name,
+            fetch=fetch_image,
+        )
+    else:
+        result = append_to_sequence(
+            site_dir=site_dir,
+            sequence_id=destination_id,
+            site_id=site_id,
+            camera_slug=context.slug,
+            timezone_name=context.timezone,
+            nwis_site_id=camera.nwis_id,
+            start_date=context.start_date,
+            end_date=context.end_date,
+            candidates=candidates,
+            provenance=provenance,
+            series=series,
+            gage_relationship=camera.gage_relationship,
+            gage_relationship_note=camera.gage_relationship_note,
+            fetch=fetch_image,
+        )
     return result, provenance

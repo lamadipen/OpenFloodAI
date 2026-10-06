@@ -512,6 +512,8 @@ async function main() {
     return;
   }
 
+  const sequenceLabel = detail.summary.sequence_label || detail.summary.sequence_id;
+  $("topbarActions").innerHTML = `<span style="font-size:12px;color:var(--ink-soft);">${escapeHtml(sequenceLabel)} &middot; <span style="font-family:var(--mono);">${escapeHtml(runId)}</span></span>`;
   days = buildDays(detail.records);
   events = buildEvents(days);
   changeInfo = findChangeStart(days);
