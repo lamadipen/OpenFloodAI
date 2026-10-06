@@ -17,7 +17,7 @@ function context() {
     escapeHtml: (value) => String(value),
     $: (id) => ({ value: values[id] || "" }),
     folderName: "demo",
-    Intl, Date, Number, String, Object, Map, Array, JSON
+    Intl, Date, Number, String, Object, Map, Array, JSON, URLSearchParams
   };
   vm.createContext(sandbox);
   vm.runInContext(helpers, sandbox);
@@ -102,7 +102,7 @@ test("unavailable states replace the preview and offer no download", () => {
   vm.runInContext("wl.proposal = p;", ctx);
   const out = vm.runInContext("wlPanelHtml()", ctx);
   assert.match(out, /discharge/);
-  assert.doesNotMatch(out, /wlDownload/);
+  assert.match(out, /id="wlDownload" disabled/); // visible but disabled: nothing can be downloaded
   ctx.p = { state: "no_station_association" };
   vm.runInContext("wl.proposal = p;", ctx);
   assert.match(vm.runInContext("wlPanelHtml()", ctx), /No USGS gauge is linked/);
@@ -124,7 +124,8 @@ test("only approved rows are sent for download, and the download needs the confi
   const ready = vm.runInContext("wlPanelHtml()", ctx);
   assert.doesNotMatch(ready, /id="wlDownload"[^>]* disabled/);
   assert.match(ready, /Download 1 selected image/);
-  assert.match(ready, /confirm downloading 1 approved image/);
+  assert.match(ready, /Create a new sequence with 1 image/);
+  assert.match(ready, /I confirm this/);
 });
 
 test("a replacement request is scoped to one group, keeps the others, and declines the replaced image", () => {
@@ -213,7 +214,7 @@ test("invalidating clears the preview, approvals, declined images and the confir
   assert.equal(vm.runInContext("wl.confirmed", ctx), false);
   assert.equal(vm.runInContext("wl.message", ctx), "Groups changed. Select Find samples again.");
   assert.equal(vm.runInContext("wlApproved().length", ctx), 0);
-  assert.doesNotMatch(vm.runInContext("wlPanelHtml()", ctx), /id="wlDownload"/);
+  assert.match(vm.runInContext("wlPanelHtml()", ctx), /id="wlDownload" disabled/);
 });
 
 test("the form refuses a download whose settings changed after Find samples", () => {
@@ -230,4 +231,149 @@ test("camera, dates, groups, count and time of day all clear the preview", () =>
   }
   assert.match(script, /\["camera_url", "start_date", "end_date"\]\.forEach/);
   assert.match(script, /The camera or dates changed\. Select Find samples again\./);
+});
+
+function withApproved(ctx) {
+  load(ctx, proposal([group("high", [
+    sample("high", "a.jpg", "2026-03-01T18:00:00+00:00", 60),
+    sample("high", "b.jpg", "2026-03-04T18:00:00+00:00", 57),
+    sample("high", "c.jpg", "2026-03-07T18:00:00+00:00", 54)
+  ], 3)]));
+  vm.runInContext("wl.settingsKey = wlSettingsKey();", ctx);
+}
+
+test("a new sequence is the default and shows the generated default name", () => {
+  const ctx = context();
+  withApproved(ctx);
+  const out = vm.runInContext("wlPanelHtml()", ctx);
+  assert.match(out, /value="new" data-wl-dest checked/);
+  assert.match(out, /Sequence name \(optional\)/);
+  assert.match(out, /usgs-CAM-2026-03-01-2026-04-29-water_level-xxxxxxxx/);
+  assert.match(out, /Leave blank to use the generated name/);
+  assert.match(out, /A name is only a label; the generated ID stays the sequence's identity/);
+  assert.deepEqual(JSON.parse(JSON.stringify(vm.runInContext("wlDestination()", ctx))), { mode: "new", name: "" });
+});
+
+test("a custom name is sent as plain text and shown escaped in the summary", () => {
+  const ctx = context();
+  withApproved(ctx);
+  vm.runInContext("wl.name = '<img src=x onerror=1> Windy';", ctx);
+  assert.deepEqual(JSON.parse(JSON.stringify(vm.runInContext("wlDestination()", ctx))), { mode: "new", name: "<img src=x onerror=1> Windy" });
+  assert.match(vm.runInContext("wlIntakeSummary(wlCurrentPlan())", ctx), /named &ldquo;/);
+});
+
+test("adding to an existing sequence shows what will be added, skipped and left alone", () => {
+  const ctx = context();
+  withApproved(ctx);
+  vm.runInContext(`wl.destMode = 'append'; wl.destinationId = 'usgs-CAM-2026-01-01-2026-02-01-water_level-0a1b2c3d';
+    wl.destinations = [{ sequence_id: wl.destinationId, label: 'Windy Gap 2026', display_name: 'Windy Gap 2026', compatible: true, downloaded_count: 5, reasons: [] }];
+    wl.plan = { new: 8, duplicates: 3, conflicts: 0 };`, ctx);
+  const summary = vm.runInContext("wlIntakeSummary(wlCurrentPlan())", ctx);
+  assert.match(summary, /Add 8 new images to Windy Gap 2026\. Skip 3 already present\./);
+  assert.match(summary, /Existing images and previous runs will remain unchanged\./);
+  assert.deepEqual(JSON.parse(JSON.stringify(vm.runInContext("wlDestination()", ctx))), { mode: "append", sequence_id: "usgs-CAM-2026-01-01-2026-02-01-water_level-0a1b2c3d" });
+  vm.runInContext("wl.plan = { new: 0, duplicates: 4, conflicts: 1 };", ctx);
+  assert.match(vm.runInContext("wlIntakeSummary(wlCurrentPlan())", ctx), /Nothing new to add: 4 images are already in Windy Gap 2026, and 1 conflict will not be added\./);
+  vm.runInContext("wl.plan = { new: 2, duplicates: 0, conflicts: 2 };", ctx);
+  assert.match(vm.runInContext("wlIntakeSummary(wlCurrentPlan())", ctx), /2 conflicts will not be added/);
+});
+
+test("the download stays disabled until the server's plan is known and confirmed", () => {
+  const ctx = context();
+  withApproved(ctx);
+  vm.runInContext("wl.destMode = 'append'; wl.destinationId = 'usgs-CAM-2026-01-01-2026-02-01-water_level-0a1b2c3d'; wl.confirmed = true; wl.plan = null;", ctx);
+  assert.match(vm.runInContext("wlPanelHtml()", ctx), /id="wlDownload"[^>]* disabled/);
+  assert.match(vm.runInContext("wlPanelHtml()", ctx), /Checking what would be added/);
+  vm.runInContext("wl.plan = { new: 2, duplicates: 1, conflicts: 0 };", ctx);
+  const ready = vm.runInContext("wlPanelHtml()", ctx);
+  assert.doesNotMatch(ready, /id="wlDownload"[^>]* disabled/);
+  assert.match(ready, /Add 2 images/);
+  vm.runInContext("wl.destinationId = '';", ctx);
+  assert.match(vm.runInContext("wlPanelHtml()", ctx), /id="wlDownload"[^>]* disabled/);
+});
+
+test("destinations are listed by name with their stable id, and exclusions explain themselves", () => {
+  const ctx = context();
+  vm.runInContext(`wl.destMode = 'append'; wl.destinations = [
+    { sequence_id: 'usgs-CAM-2026-01-01-2026-02-01-water_level-0a1b2c3d', label: 'Same name', display_name: 'Same name', compatible: true, downloaded_count: 5, reasons: [] },
+    { sequence_id: 'usgs-CAM-2026-03-01-2026-04-01-water_level-99887766', label: 'Same name', display_name: 'Same name', compatible: true, downloaded_count: 3, reasons: [] },
+    { sequence_id: 'usgs-OTHER-2026-01-01-2026-02-01-all', label: 'usgs-OTHER-2026-01-01-2026-02-01-all', display_name: null, compatible: false, downloaded_count: 9, reasons: ['It holds images from a different camera (OTHER), not CAM.'] }
+  ];`, ctx);
+  const out = vm.runInContext("wlDestinationOptionsHtml()", ctx);
+  assert.match(out, /Same name &middot; 0a1b2c3d \(5 images\)/);
+  assert.match(out, /Same name &middot; 99887766 \(3 images\)/);  // duplicate names stay distinguishable
+  assert.match(out, /Not available:/);
+  assert.match(out, /different camera \(OTHER\), not CAM/);
+  assert.doesNotMatch(out, /<option[^>]*>usgs-OTHER/);  // an incompatible sequence cannot be chosen
+});
+
+test("changing the destination invalidates the preview and the confirmation", () => {
+  const handlers = script.slice(script.indexOf("function renderWaterLevel"), script.indexOf("async function wlLoadDestinations"));
+  assert.match(handlers, /The destination changed\. Select Find samples again\./);
+  assert.match(script, /destMode, wl\.destinationId/);
+  const ctx = context();
+  withApproved(ctx);
+  const before = vm.runInContext("wl.settingsKey", ctx);
+  vm.runInContext("wl.destMode = 'append';", ctx);
+  assert.notEqual(vm.runInContext("wlSettingsKey()", ctx), before);
+  vm.runInContext("wl.destMode = 'new'; wl.destinationId = 'x';", ctx);
+  assert.notEqual(vm.runInContext("wlSettingsKey()", ctx), before);
+});
+
+test("the result panel reports counts, conflicts and failures, never runs anything, and offers the next step", () => {
+  const ctx = context();
+  const out = ctx.wlResultHtml({
+    message: "Added 8 new image(s) to Windy Gap 2026. Skipped 3 already present.",
+    sequence_id: "usgs-CAM-2026-01-01-2026-02-01-water_level-0a1b2c3d",
+    conflict_count: 1, conflicts: [{ filename: "x.jpg", reason: "Another image already has this capture time." }],
+    failed_count: 1, failed: [{ filename: "y.jpg" }]
+  });
+  assert.match(out, /Added 8 new image\(s\) to Windy Gap 2026\./);
+  assert.match(out, /Not added \(conflicts\):<\/strong> x\.jpg/);
+  assert.match(out, /Could not be downloaded:<\/strong> y\.jpg/);
+  assert.match(out, /New images start unreviewed\. Nothing was run or labeled automatically/);
+  assert.match(out, /tab=sequences/);
+  assert.doesNotMatch(out, /run-image-sequence-validation/);
+});
+
+test("the download sends the destination and the exact plan the person confirmed", () => {
+  const guard = script.slice(script.indexOf("async function wlDownload"), script.indexOf("function setSampleKind"));
+  assert.match(guard, /destination: wlDestination\(\)/);
+  assert.match(guard, /confirmed_plan: \{ new: plan\.new, duplicates: plan\.duplicates, conflicts: plan\.conflicts \}/);
+  assert.ok(guard.indexOf("wlSettingsKey()") < guard.indexOf("/api/download-water-level-sampling"));
+});
+
+test("the action button is always visible: disabled with a hint before any preview", () => {
+  const ctx = context();
+  const out = vm.runInContext("wlPanelHtml()", ctx);
+  assert.equal((out.match(/id="wlDownload"/g) || []).length, 1);
+  assert.match(out, /id="wlDownload" disabled/);
+  assert.match(out, />Create sequence<\/button>/);
+  assert.match(out, /Next: select <strong>Find samples<\/strong> to preview the images/);
+  vm.runInContext("wl.destMode = 'append';", ctx);
+  const append = vm.runInContext("wlPanelHtml()", ctx);
+  assert.match(append, />Add images to sequence<\/button>/);
+  assert.match(append, /adds them to the chosen sequence/);
+});
+
+test("there is exactly one action button when the preview is shown, and when a gauge is unavailable", () => {
+  const ctx = context();
+  load(ctx, proposal([group("high", [sample("high", "a.jpg", "2026-03-01T18:00:00+00:00", 60)], 1)]));
+  const shown = vm.runInContext("wlPanelHtml()", ctx);
+  assert.equal((shown.match(/id="wlDownload"/g) || []).length, 1);
+  assert.doesNotMatch(shown, /Next: select <strong>Find samples/);
+
+  ctx.p = { state: "no_station_association" };
+  vm.runInContext("wl.proposal = p;", ctx);
+  const unavailable = vm.runInContext("wlPanelHtml()", ctx);
+  assert.equal((unavailable.match(/id="wlDownload"/g) || []).length, 1);
+  assert.match(unavailable, /id="wlDownload" disabled/);
+});
+
+test("the action button is replaced by the result after a download", () => {
+  const ctx = context();
+  vm.runInContext("wl.result = { message: 'Added 2 new image(s) to X.', sequence_id: 'usgs-CAM-2026-01-01-2026-02-01-water_level-0a1b2c3d', conflict_count: 0, failed_count: 0, conflicts: [], failed: [] };", ctx);
+  const out = vm.runInContext("wlPanelHtml()", ctx);
+  assert.doesNotMatch(out, /id="wlDownload"/);
+  assert.match(out, /Open Sequences &amp; runs/);
 });

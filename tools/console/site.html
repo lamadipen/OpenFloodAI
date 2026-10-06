@@ -11,7 +11,7 @@
 <script src="/console/shared.js"></script>
 <script>
 const folderName = qs("site");
-let state = { tab: "overview", config: null, status: null, sequences: [], runsBySequence: {}, manifest: [], evidenceAdapters: [] };
+let state = { tab: ["overview", "setup", "sequences", "dataset", "settings"].includes(qs("tab")) ? qs("tab") : "overview", config: null, status: null, sequences: [], runsBySequence: {}, manifest: [], evidenceAdapters: [] };
 
 async function main() {
   if (!folderName) {
@@ -384,7 +384,8 @@ function baselineOptionsHtml(seq) {
     const level = typeof info.level === "number" ? `${info.level.toFixed(2)} ${info.unit || ""}`.trim() : "level not recorded";
     const provisional = info.quality_status === "provisional" ? " (provisional)" : "";
     const group = info.group ? ` &middot; ${escapeHtml(GROUP_LABEL[info.group] || info.group)} water sample` : "";
-    return `<option value="${escapeHtml(r.filename)}">${escapeHtml(level)}${provisional}${group} &middot; ${escapeHtml(when)} UTC</option>`;
+    const batch = info.batch_number ? ` &middot; batch ${escapeHtml(String(info.batch_number))}` : "";
+    return `<option value="${escapeHtml(r.filename)}">${escapeHtml(level)}${provisional}${group}${batch} &middot; ${escapeHtml(when)} UTC</option>`;
   }).join("");
 }
 
@@ -392,7 +393,7 @@ function sequenceRowHtml(seq) {
   const id = escapeHtml(seq.sequence_id);
   const needsBaseline = isWaterLevelSequence(seq);
   return `<tr class="row">
-    <td style="font-family:var(--mono);font-size:12px;">${id}
+    <td style="font-family:var(--mono);font-size:12px;">${seq.display_name ? `<div style="font-family:inherit;font-size:13px;font-weight:600;">${escapeHtml(seq.display_name)}</div><div style="color:var(--ink-muted);word-break:break-all;">${id}</div>` : id}
       ${needsBaseline ? `<div style="font-family:inherit;margin-top:6px;">
         <label style="font-size:11px;color:var(--ink-soft);display:block;margin-bottom:3px;">Baseline image &mdash; pick a typical-day image (listed lowest gauge level first). A water-level set has no assumed normal first image.</label>
         <select data-baseline-for="${id}" style="max-width:340px;font-size:12px;">${baselineOptionsHtml(seq)}</select></div>` : ""}
@@ -430,8 +431,8 @@ function renderImageSequenceOption() {
             ${sequences
               .flatMap((seq) => (state.runsBySequence[seq.sequence_id] || []).map((run) => ({ run, seq })))
               .map(
-                ({ run }) => `<tr class="row">
-              <td style="font-family:var(--mono);font-size:12px;">${escapeHtml(run.run_id)}</td>
+                ({ run, seq }) => `<tr class="row">
+              <td style="font-family:var(--mono);font-size:12px;">${escapeHtml(run.run_id)}<div style="font-family:inherit;color:var(--ink-muted);margin-top:2px;">${escapeHtml(run.sequence_label || seq.label || seq.sequence_id)}</div></td>
               <td style="color:var(--ink-soft);">${run.created_at ? new Date(run.created_at).toLocaleString() : ""}</td>
               <td>${run.no_water_level_change_count || 0} no-change &middot; ${run.camera_or_image_problem_count || 0} problem</td>
               <td style="text-align:right;"><a href="/console/review.html?${new URLSearchParams({ site: folderName, run_id: run.run_id })}" style="font-size:12px;font-weight:600;color:var(--accent);">Review &rarr;</a></td>

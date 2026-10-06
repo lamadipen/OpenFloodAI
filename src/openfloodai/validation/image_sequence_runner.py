@@ -46,12 +46,22 @@ from openfloodai.evidence.settings import (
     resolve_effective_adapter_settings,
 )
 from openfloodai.ingestion.river_images import WATER_LEVEL_SELECTION_FILENAME
+from openfloodai.ingestion.sequence_store import (
+    SequenceBusyError,
+    read_batches,
+    read_display_name,
+    samples_by_filename,
+    sequence_label,
+    sequence_lock,
+)
 from openfloodai.ingestion.usgs_gage_data import (
     GAUGE_SOURCE_FILENAME,
     RUN_GAUGE_EVIDENCE_FILENAME,
     build_run_gauge_evidence,
+    load_gauge_matches,
     parse_gauge_source,
 )
+from openfloodai.ingestion.water_level_intake import recover_interrupted_append
 from openfloodai.review.event_reviews import (
     EventReviewError,
     compute_evidence_key,
@@ -70,6 +80,7 @@ RESULT_CANNOT_JUDGE_WATER_LEVEL = "cannot_judge_water_level"
 RESULT_CAMERA_OR_IMAGE_PROBLEM = "camera_or_image_problem"
 
 WATER_LEVEL_SELECTION_SNAPSHOT = "water-level-selection.snapshot.json"
+WATER_LEVEL_SAMPLING_SNAPSHOT_DIR = "sampling"
 _DARK_BRIGHTNESS_THRESHOLD = 0.08
 _RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 _SEQUENCE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -121,12 +132,40 @@ def run_image_sequence_validation(
     *,
     baseline_filename: str | None = None,
 ) -> ImageSequenceValidationReport:
-    """Run local validation against one saved image sequence in a site folder."""
+    """Run local validation against one saved image sequence in a site folder.
+
+    The sequence is held while the run reads it, so an append that is committing at
+    the same moment cannot change the manifest, images, gauge data, or sampling record
+    half way through. Every run therefore sees one consistent snapshot, which it then
+    freezes in its own folder.
+    """
 
     if not site_dir.exists() or not site_dir.is_dir():
         raise ImageSequenceValidationError(f"Site folder does not exist: {site_dir}")
     if not _SEQUENCE_ID_PATTERN.fullmatch(sequence_id or ""):
         raise ImageSequenceValidationError("Invalid sequence_id.")
+    sequence_dir = site_dir / "inputs" / "image-sequences" / sequence_id
+    if not sequence_dir.is_dir():
+        raise ImageSequenceValidationError(f"Image sequence not found: {sequence_id}")
+    try:
+        with sequence_lock(sequence_dir):
+            # An interrupted append may have committed images whose sampling history is
+            # still pending, or left a stale summary. Repair that first, under the lock, so
+            # this run reads (and freezes) one complete, consistent sequence.
+            recover_interrupted_append(sequence_dir)
+            return _run_image_sequence_validation(
+                site_dir, sequence_id, baseline_filename=baseline_filename
+            )
+    except SequenceBusyError as error:
+        raise ImageSequenceValidationError(str(error)) from error
+
+
+def _run_image_sequence_validation(
+    site_dir: Path,
+    sequence_id: str,
+    *,
+    baseline_filename: str | None = None,
+) -> ImageSequenceValidationReport:
 
     config_path = _find_config_path(site_dir)
     site_config = load_site_config(config_path)
@@ -160,7 +199,7 @@ def run_image_sequence_validation(
             "required to run image-sequence validation."
         )
 
-    if baseline_filename is None and (sequence_dir / WATER_LEVEL_SELECTION_FILENAME).is_file():
+    if baseline_filename is None and read_batches(sequence_dir):
         # A water-level sample set is picked for level variety, so its earliest image is not
         # a meaningful "normal" reference. Never fall back to it silently.
         raise ImageSequenceValidationError(
@@ -547,6 +586,7 @@ def run_image_sequence_validation(
         pixel_change_adapter_source=pixel_change_adapter_source,
         riverbank_crossing_enabled=riverbank_crossing_enabled,
         riverbank_crossing_adapter_source=riverbank_crossing_adapter_source,
+        display_name=read_display_name(sequence_dir),
     )
     _write_report_markdown(
         run_dir=run_dir, report=report, review_images_generated=review_images_generated
@@ -807,10 +847,13 @@ def _write_run_summary(
     pixel_change_adapter_source: str,
     riverbank_crossing_enabled: bool,
     riverbank_crossing_adapter_source: str,
+    display_name: str | None = None,
 ) -> None:
     summary = {
         "run_id": report.run_id,
         "sequence_id": report.sequence_id,
+        "sequence_display_name": display_name,
+        "sequence_label": sequence_label(report.sequence_id, display_name),
         "site_name": report.site_name,
         "site_id": site_config.site_id,
         "camera_id": site_config.camera_id,
@@ -1021,26 +1064,52 @@ def _write_gauge_evidence(
         if source_bytes is not None and source is not None
         else None
     )
-    evidence = build_run_gauge_evidence(source, images, source_sha256=source_sha256)
+    # Matches saved when each image was added are reused as they are, so a later append
+    # (which can bring a closer reading into the sequence) never changes an earlier match.
+    fixed_matches = load_gauge_matches(sequence_dir)
+    evidence = build_run_gauge_evidence(
+        source, images, source_sha256=source_sha256, fixed_matches=fixed_matches
+    )
     (run_dir / RUN_GAUGE_EVIDENCE_FILENAME).write_text(
         json.dumps(evidence, indent=2) + "\n", encoding="utf-8"
     )
     if source is not None and source_bytes is not None:
         (run_dir / "inputs-used" / "gauge-readings.snapshot.json").write_bytes(source_bytes)
+    if fixed_matches:
+        used = {str(image["filename"]) for image in images}
+        (run_dir / "inputs-used" / "gauge-matches.snapshot.json").write_text(
+            json.dumps(
+                {"matches": {k: v for k, v in sorted(fixed_matches.items()) if k in used}},
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
 
 
 def _freeze_water_level_selection(run_dir: Path, sequence_dir: Path) -> None:
-    """Copy the sequence's water-level selection record into the run, byte for byte.
+    """Copy the sequence's sampling batches into the run, byte for byte.
 
-    The collection-group badge shown in review comes from this frozen copy, so it
-    cannot change if the sequence's own file is ever replaced by a later download.
+    The collection-group badges shown in review come from this frozen copy, so they
+    cannot change when a later append adds batches, or if a sequence file is replaced.
+    A run sees exactly the batches that existed when it started.
     """
 
-    try:
-        raw = (sequence_dir / WATER_LEVEL_SELECTION_FILENAME).read_bytes()
-    except OSError:
+    target = run_dir / "inputs-used" / WATER_LEVEL_SAMPLING_SNAPSHOT_DIR
+    legacy = sequence_dir / WATER_LEVEL_SELECTION_FILENAME
+    batches = sequence_dir / "sampling-batches"
+    copied = False
+    if legacy.is_file():
+        target.mkdir(parents=True, exist_ok=True)
+        (target / WATER_LEVEL_SELECTION_FILENAME).write_bytes(legacy.read_bytes())
+        copied = True
+    if batches.is_dir():
+        for path in sorted(batches.glob("batch-*.json")):
+            (target / "sampling-batches").mkdir(parents=True, exist_ok=True)
+            (target / "sampling-batches" / path.name).write_bytes(path.read_bytes())
+            copied = True
+    if not copied:
         return
-    (run_dir / "inputs-used" / WATER_LEVEL_SELECTION_SNAPSHOT).write_bytes(raw)
 
 
 def read_run_setup_used(run_dir: Path) -> dict[str, Any]:
@@ -1070,34 +1139,55 @@ def read_run_setup_used(run_dir: Path) -> dict[str, Any]:
 
 
 def read_run_water_level_selection(run_dir: Path) -> dict[str, Any] | None:
-    """The run's frozen water-level selection by file name, or None (a regular sequence)."""
+    """The run's frozen sampling record by file name, or None (a sequence with no batches).
 
-    path = run_dir / "inputs-used" / WATER_LEVEL_SELECTION_SNAPSHOT
-    try:
-        loaded = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    if not isinstance(loaded, dict):
-        return None
+    Reads only the run's own frozen copy: every batch the sequence had when the run
+    started, each image attributed to the batch that first added it. Runs made before
+    batches existed fall back to their single frozen selection file.
+    """
+
+    frozen = run_dir / "inputs-used" / WATER_LEVEL_SAMPLING_SNAPSHOT_DIR
+    batches = read_batches(frozen) if frozen.is_dir() else []
+    if not batches:
+        legacy = run_dir / "inputs-used" / WATER_LEVEL_SELECTION_SNAPSHOT
+        try:
+            loaded = json.loads(legacy.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        if not isinstance(loaded, dict):
+            return None
+        batches = [{"batch_number": 0, "legacy": True, **loaded}]
+    first = batches[0]
     samples = {
-        str(sample["filename"]): {
+        name: {
             "group": sample.get("group"),
             "motivating_reading": sample.get("motivating_reading"),
             "image_reading": sample.get("image_reading"),
             "gap_seconds": sample.get("gap_seconds"),
             "image_reading_gap_seconds": sample.get("image_reading_gap_seconds"),
             "readings_differ": sample.get("readings_differ"),
+            "batch_number": sample.get("batch_number"),
         }
-        for sample in loaded.get("samples", [])
-        if isinstance(sample, dict) and sample.get("filename")
+        for name, sample in samples_by_filename(batches).items()
     }
     return {
-        "policy_version": loaded.get("policy_version"),
-        "selected_at_utc": loaded.get("selected_at_utc"),
-        "note": loaded.get("note"),
-        "request": loaded.get("request"),
-        "association": loaded.get("association"),
-        "gauge": loaded.get("gauge"),
+        "policy_version": first.get("policy_version"),
+        "selected_at_utc": first.get("selected_at_utc"),
+        "note": first.get("note"),
+        "request": first.get("request"),
+        "association": first.get("association"),
+        "gauge": first.get("gauge"),
+        "batch_count": len(batches),
+        "batches": [
+            {
+                "batch_number": b.get("batch_number"),
+                "selected_at_utc": b.get("selected_at_utc"),
+                "request": b.get("request"),
+                "policy_version": b.get("policy_version"),
+                "thresholds": b.get("thresholds"),
+            }
+            for b in batches
+        ],
         "samples": samples,
     }
 

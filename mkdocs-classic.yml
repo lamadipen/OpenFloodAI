@@ -19,6 +19,7 @@ nav:
       - Learning Home: learning/index.md
       - Your First End-to-End Review: learning/end-to-end-workflow.html
       - OpenFloodAI Pipeline Basics: learning/openfloodai-pipeline-learning.html
+      - Sample Images By Water Level: learning/water-level-sampling.md
   - Privacy And Retention: privacy-retention.md
   - V1 Requirements: product/requirements.md
   - Labelled Data Quality Checklist: product/data-quality-checklist.md

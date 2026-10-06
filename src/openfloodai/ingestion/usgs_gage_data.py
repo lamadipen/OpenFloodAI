@@ -24,6 +24,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
+from openfloodai.ingestion.sequence_store import atomic_write_json
+
 # USGS permanently redirects the bare "waterservices.usgs.gov" host to this
 # one; request it directly so a redirect is never needed (redirects are
 # refused outright by _NoRedirects for safety).
@@ -1001,8 +1003,14 @@ def build_run_gauge_evidence(
     images: Sequence[Mapping[str, Any]],
     *,
     source_sha256: str | None,
+    fixed_matches: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Match every image to its own gauge reading and return the record to freeze.
+
+    `fixed_matches` are matches saved when an image was added to its sequence
+    (`gauge-matches.json`). An image with one keeps exactly that match, so appending
+    later images, which can bring a closer reading into the sequence's readings, never
+    changes an earlier image's match. Images without one are matched as before.
 
     `images` are this run's images, each with `filename`, `captured_at_utc`,
     `local_time`, `download_status`, `is_baseline`, and `change_score` (the
@@ -1040,6 +1048,10 @@ def build_run_gauge_evidence(
             continue
         if status != GAUGE_STATUS_AVAILABLE or not index.readings:
             image_records.append(_unmatched_image(image, status, source.get("reason")))
+            continue
+        fixed = (fixed_matches or {}).get(str(image.get("filename") or ""))
+        if fixed is not None:
+            image_records.append(_record_from_fixed_match(image, fixed, parameter_info))
             continue
         match = index.match(str(image.get("captured_at_utc") or ""))
         record = _unmatched_image(image, match.status, match.reason)
@@ -1145,3 +1157,310 @@ def _peak_event(
                     event["image_change_score_status"] = "scored"
                 break
     return event
+
+
+def merge_batch_into_gauge_source(
+    sequence_dir: Path,
+    *,
+    series: GageSeries,
+    batch_start_date: str,
+    batch_end_date: str,
+    association: dict[str, Any],
+    manifest_records: Sequence[Mapping[str, Any]],
+    gage_relationship: str,
+    gage_relationship_note: str | None,
+    batch_id: str,
+    output_dir: Path | None = None,
+) -> GageReadingsSummary:
+    """Add one appended batch's readings to a sequence's gauge source, changing nothing old.
+
+    With `output_dir`, the merged source and summary are written THERE and the sequence's
+    own files are left exactly as they are, so an append can stage its gauge changes and
+    only move them into place after the image manifest commits.
+
+    Readings already in the source keep their exact saved value and qualifiers, even if
+    USGS has since revised them: an earlier image's gauge evidence must not change as a
+    side effect of appending later images. Only timestamps not yet present are added.
+    The range widens to cover both, and the summary (extremes, rises, nearest images) is
+    rebuilt from the merged readings and the whole current manifest.
+
+    A source for a different parameter is refused (stage and discharge are never mixed).
+    A missing or "unavailable" source is replaced, since there was no evidence to keep.
+    """
+
+    if series.parameter_code != PARAMETER_GAGE_HEIGHT or series.used_fallback_discharge:
+        raise GageDataError("Only gauge-height readings can be added to a water-level sample.")
+    existing = load_gauge_source(sequence_dir)
+    kept: list[GageReading] = []
+    start_date, end_date = batch_start_date, batch_end_date
+    retrieved = datetime.now(tz=UTC).isoformat()
+    appended: list[Any] = []
+    rejected = series.rejected_reading_count
+    source_url = series.source_url
+    if existing is not None and existing.get("status") == GAUGE_STATUS_AVAILABLE:
+        parameter = existing.get("parameter") or {}
+        if parameter.get("code") != series.parameter_code:
+            raise GageDataError(
+                "This sequence's saved gauge data is for a different parameter, so gauge "
+                "height cannot be added to it."
+            )
+        kept = _readings_from_source(existing)
+        start_date = min(str(existing.get("start_date") or batch_start_date), batch_start_date)
+        end_date = max(str(existing.get("end_date") or batch_end_date), batch_end_date)
+        retrieved = str(existing.get("retrieved_at_utc") or retrieved)
+        appended = list(existing.get("appended_batches") or [])
+        rejected = int(existing.get("rejected_reading_count") or 0) + series.rejected_reading_count
+        source_url = str(existing.get("source_url") or series.source_url)
+    present = {reading.datetime_utc for reading in kept}
+    added = [reading for reading in series.readings if reading.datetime_utc not in present]
+    merged = dedupe_readings([*kept, *added])
+    appended.append(
+        {
+            "batch_id": batch_id,
+            "added_reading_count": len(added),
+            "start_date": batch_start_date,
+            "end_date": batch_end_date,
+            "retrieved_at_utc": datetime.now(tz=UTC).isoformat(),
+        }
+    )
+    payload: dict[str, Any] = {
+        "schema_version": GAUGE_SOURCE_SCHEMA_VERSION,
+        "status": GAUGE_STATUS_AVAILABLE,
+        "reason": None,
+        "retrieved_at_utc": retrieved,
+        "camera_id": association.get("camera_id"),
+        "association": association,
+        "parameter": {
+            "code": series.parameter_code,
+            "label": series.parameter_label,
+            "unit": series.unit,
+            "used_fallback_discharge": False,
+        },
+        "source_url": source_url,
+        "start_date": start_date,
+        "end_date": end_date,
+        "rejected_reading_count": rejected,
+        "appended_batches": appended,
+        "readings": [
+            {
+                "datetime_utc": reading.datetime_utc,
+                "value": reading.value,
+                "qualifiers": list(reading.qualifiers),
+                "quality_status": reading.quality_status,
+            }
+            for reading in merged
+        ],
+    }
+    merged_series = GageSeries(
+        nwis_site_id=series.nwis_site_id,
+        parameter_code=series.parameter_code,
+        parameter_label=series.parameter_label,
+        unit=series.unit,
+        used_fallback_discharge=False,
+        readings=merged,
+        source_url=source_url,
+        rejected_reading_count=rejected,
+    )
+    empty = GageReadingsSummary(
+        nwis_site_id=series.nwis_site_id,
+        parameter_code="",
+        parameter_label="unavailable",
+        unit="",
+        gage_relationship=gage_relationship,
+        gage_relationship_note=gage_relationship_note,
+        used_fallback_discharge=False,
+        source_url="",
+        start_date=start_date,
+        end_date=end_date,
+        point_count=0,
+        available=False,
+        unavailable_reason=None,
+        highest=None,
+        lowest=None,
+        largest_increases=[],
+        largest_decreases=[],
+    )
+    summary = _build_summary_from_series(merged_series, empty, manifest_records)
+    # The source is written first: the summary is derived from it, and a crash between the
+    # two leaves a source that is still consistent (the summary is rebuilt on the next append).
+    target = output_dir if output_dir is not None else sequence_dir
+    target.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(target / GAUGE_SOURCE_FILENAME, payload)
+    atomic_write_json(target / "gauge-readings-summary.json", summary.to_dict())
+    return summary
+
+
+# --- matches saved once per image, so appending never changes an earlier match ---
+
+GAUGE_MATCHES_FILENAME = "gauge-matches.json"
+GAUGE_MATCHES_SCHEMA_VERSION = 1
+MATCH_ORIGIN_SAMPLING = "sampling_preview"
+MATCH_ORIGIN_BEFORE_APPEND = "existing_before_append"
+
+
+def _record_from_fixed_match(
+    image: Mapping[str, Any], fixed: Mapping[str, Any], parameter: Mapping[str, Any]
+) -> dict[str, Any]:
+    """A run's per-image record built from a match that was saved when the image was added."""
+
+    record = _unmatched_image(
+        image, str(fixed.get("match_status") or "no_matching_reading"), fixed.get("reason")
+    )
+    candidates = fixed.get("candidates_in_window")
+    record["candidates_in_window"] = candidates if isinstance(candidates, int) else 0
+    reading = fixed.get("reading")
+    if isinstance(reading, Mapping):
+        record["reading"] = {
+            "parameter_code": parameter.get("code"),
+            "parameter_label": parameter.get("label"),
+            "unit": parameter.get("unit"),
+            "used_fallback_discharge": bool(parameter.get("used_fallback_discharge")),
+            **reading,
+        }
+        record["time_difference_seconds"] = fixed.get("time_difference_seconds")
+    record["match_frozen_at_utc"] = fixed.get("frozen_at_utc")
+    return record
+
+
+def load_gauge_matches(sequence_dir: Path) -> dict[str, dict[str, Any]]:
+    """Every image's saved match (file name -> match), or {} for a sequence with none."""
+
+    try:
+        loaded = json.loads((sequence_dir / GAUGE_MATCHES_FILENAME).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    matches = loaded.get("matches") if isinstance(loaded, dict) else None
+    return (
+        {str(k): dict(v) for k, v in matches.items() if isinstance(v, dict)}
+        if isinstance(matches, dict)
+        else {}
+    )
+
+
+def match_from_sampling_sample(
+    sample: Mapping[str, Any], parameter: Mapping[str, Any], *, batch_number: int | None
+) -> dict[str, Any]:
+    """The match a sample showed in its preview, saved as that image's gauge evidence.
+
+    It was found by the same inclusive +/-15 minute rule against the readings that
+    were verified at download time, so it is what a run would have computed then.
+    """
+
+    reading = sample.get("image_reading")
+    if not isinstance(reading, Mapping) or reading.get("value") is None:
+        return {
+            "match_status": "no_matching_reading",
+            "reason": "none_within_15_minutes",
+            "reading": None,
+            "time_difference_seconds": None,
+            "candidates_in_window": 0,
+            "origin": MATCH_ORIGIN_SAMPLING,
+            "batch_number": batch_number,
+            "frozen_at_utc": datetime.now(tz=UTC).isoformat(),
+        }
+    return {
+        "match_status": "matched",
+        "reason": None,
+        "reading": {
+            "datetime_utc": reading.get("datetime_utc"),
+            "value": reading.get("value"),
+            "parameter_code": parameter.get("parameter_code") or parameter.get("code"),
+            "parameter_label": parameter.get("parameter_label") or parameter.get("label"),
+            "unit": reading.get("unit") or parameter.get("unit"),
+            "used_fallback_discharge": False,
+            "qualifiers": list(reading.get("qualifiers") or []),
+            "quality_status": reading.get("quality_status"),
+        },
+        "time_difference_seconds": sample.get("image_reading_gap_seconds"),
+        "candidates_in_window": 1,
+        "origin": MATCH_ORIGIN_SAMPLING,
+        "batch_number": batch_number,
+        "frozen_at_utc": datetime.now(tz=UTC).isoformat(),
+    }
+
+
+def freeze_current_matches(
+    sequence_dir: Path,
+    manifest_records: Sequence[Mapping[str, Any]],
+    *,
+    already: Mapping[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """Matches, under the sequence's CURRENT readings, for downloaded images that have none yet.
+
+    Called just before an append adds readings, so each existing image keeps the match
+    it has now even if a closer reading arrives later.
+    """
+
+    source = load_gauge_source(sequence_dir)
+    status = str((source or {}).get("status") or "not_captured")
+    parameter = (source or {}).get("parameter")
+    parameter_info: Mapping[str, Any] = parameter if isinstance(parameter, Mapping) else {}
+    index = (
+        GageReadingIndex(_readings_from_source(source))
+        if source is not None and status == GAUGE_STATUS_AVAILABLE
+        else None
+    )
+    frozen: dict[str, dict[str, Any]] = {}
+    now = datetime.now(tz=UTC).isoformat()
+    for record in manifest_records:
+        name = str(record.get("filename") or "")
+        if record.get("download_status") != "downloaded" or not name or name in already:
+            continue
+        if index is None or not index.readings:
+            frozen[name] = {
+                "match_status": status if source is not None else "not_captured",
+                "reason": (source or {}).get("reason")
+                or "No gauge data was saved for this image before more images were added.",
+                "reading": None,
+                "time_difference_seconds": None,
+                "candidates_in_window": 0,
+                "origin": MATCH_ORIGIN_BEFORE_APPEND,
+                "batch_number": None,
+                "frozen_at_utc": now,
+            }
+            continue
+        match = index.match(str(record.get("captured_at_utc") or ""))
+        frozen[name] = {
+            "match_status": match.status,
+            "reason": match.reason,
+            "reading": (
+                _reading_record(match.reading, parameter_info)
+                if match.reading is not None
+                else None
+            ),
+            "time_difference_seconds": match.time_difference_seconds,
+            "candidates_in_window": match.candidates_in_window,
+            "origin": MATCH_ORIGIN_BEFORE_APPEND,
+            "batch_number": None,
+            "frozen_at_utc": now,
+        }
+    return frozen
+
+
+def write_gauge_matches(
+    sequence_dir: Path,
+    entries: Mapping[str, Mapping[str, Any]],
+    *,
+    protect: set[str],
+    output_dir: Path | None = None,
+) -> None:
+    """Save matches, never replacing one for an image in `protect` (already in the sequence).
+
+    With `output_dir` the merged file is written there (staged) and the sequence's own
+    file is not touched.
+
+    Entries for images not yet committed may be replaced, so a retried append records
+    the evidence shown in the retry's own preview.
+    """
+
+    merged = load_gauge_matches(sequence_dir)
+    for name, entry in entries.items():
+        if name in protect and name in merged:
+            continue
+        merged[name] = dict(entry)
+    target = output_dir if output_dir is not None else sequence_dir
+    target.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(
+        target / GAUGE_MATCHES_FILENAME,
+        {"schema_version": GAUGE_MATCHES_SCHEMA_VERSION, "matches": dict(sorted(merged.items()))},
+    )
