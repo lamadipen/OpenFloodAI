@@ -84,7 +84,7 @@ from openfloodai.review.event_reviews import (
     set_event_review,
 )
 from openfloodai.review.river_tracker import build_river_tracker
-from openfloodai.ui import hosted_sam_routes, review_workspace
+from openfloodai.ui import hosted_sam_routes, review_workspace, water_level_routes
 from openfloodai.validation import (
     build_export_all,
     build_run_export,
@@ -746,6 +746,8 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
 
         if hosted_sam_routes.handle_post(self, self.path):
             return
+        if water_level_routes.handle_post(self, self.path):
+            return
         if review_workspace.handle_post(self, self.path):
             return
         if self.path == "/api/download-river-images":
@@ -842,7 +844,7 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _reject_untrusted_json_post(self) -> dict[str, Any] | None:
+    def _reject_untrusted_json_post(self, max_bytes: int = 4096) -> dict[str, Any] | None:
         """Guard a small local-only JSON POST; send an error response and return None if rejected.
 
         Shared by every handler that may trigger outbound network requests or
@@ -859,7 +861,7 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
             length = 0
-        if not 0 < length <= 4096 or self.headers.get_content_type() != "application/json":
+        if not 0 < length <= max_bytes or self.headers.get_content_type() != "application/json":
             self._send_json({"message": "Send a small JSON request."}, status_code=400)
             return None
         return self._read_json_body()

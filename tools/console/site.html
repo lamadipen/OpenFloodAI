@@ -359,6 +359,53 @@ function renderSequences() {
     </div>`;
 }
 
+// ---- sequence rows ----
+const GROUP_LABEL = { low: "Low", middle: "Middle", high: "High" };
+
+function isWaterLevelSequence(seq) {
+  return !!seq.water_level_groups || /-water_level(-[0-9a-f]{8})?$/.test(String(seq.sequence_id || ""));
+}
+
+// A water-level sample set is picked for level variety, so its earliest image is
+// not a meaningful "normal" reference. The reviewer chooses the baseline.
+function baselineOptionsHtml(seq) {
+  const samples = seq.water_level_samples || {};
+  const images = (seq.records || [])
+    .filter((r) => r.download_status === "downloaded" && r.filename)
+    .map((r) => ({ r, info: samples[r.filename] || {} }));
+  // Lowest gauge level first; images without a level go last, then by time.
+  images.sort((a, b) => {
+    const la = typeof a.info.level === "number" ? a.info.level : Infinity;
+    const lb = typeof b.info.level === "number" ? b.info.level : Infinity;
+    return la - lb || String(a.r.captured_at_utc).localeCompare(String(b.r.captured_at_utc));
+  });
+  return `<option value="">Choose a baseline image&hellip;</option>` + images.map(({ r, info }) => {
+    const when = String(r.captured_at_utc || "").slice(0, 16).replace("T", " ");
+    const level = typeof info.level === "number" ? `${info.level.toFixed(2)} ${info.unit || ""}`.trim() : "level not recorded";
+    const provisional = info.quality_status === "provisional" ? " (provisional)" : "";
+    const group = info.group ? ` &middot; ${escapeHtml(GROUP_LABEL[info.group] || info.group)} water sample` : "";
+    return `<option value="${escapeHtml(r.filename)}">${escapeHtml(level)}${provisional}${group} &middot; ${escapeHtml(when)} UTC</option>`;
+  }).join("");
+}
+
+function sequenceRowHtml(seq) {
+  const id = escapeHtml(seq.sequence_id);
+  const needsBaseline = isWaterLevelSequence(seq);
+  return `<tr class="row">
+    <td style="font-family:var(--mono);font-size:12px;">${id}
+      ${needsBaseline ? `<div style="font-family:inherit;margin-top:6px;">
+        <label style="font-size:11px;color:var(--ink-soft);display:block;margin-bottom:3px;">Baseline image &mdash; pick a typical-day image (listed lowest gauge level first). A water-level set has no assumed normal first image.</label>
+        <select data-baseline-for="${id}" style="max-width:340px;font-size:12px;">${baselineOptionsHtml(seq)}</select></div>` : ""}
+      <div class="err" data-run-error="${id}" hidden style="margin-top:8px;font-family:inherit;"></div>
+    </td>
+    <td>${seq.downloaded_count ?? 0}</td>
+    <td>${seq.missing_count ?? 0}</td>
+    <td>${seq.failed_count ?? 0}</td>
+    <td style="text-align:right;vertical-align:top;"><button class="btn" data-run-sequence="${id}" ${needsBaseline ? "disabled" : ""} style="font-size:12px;padding:5px 10px;">Run validation</button></td>
+  </tr>`;
+}
+// ---- end sequence rows ----
+
 function renderImageSequenceOption() {
   const sequences = state.sequences;
   if (!sequences.length) {
@@ -371,20 +418,9 @@ function renderImageSequenceOption() {
         <table>
           <thead><tr><th>Sequence</th><th>Downloaded</th><th>Missing</th><th>Failed</th><th></th></tr></thead>
           <tbody>
-            ${sequences
-              .map(
-                (seq) => `<tr class="row">
-              <td style="font-family:var(--mono);font-size:12px;">${escapeHtml(seq.sequence_id)}</td>
-              <td>${seq.downloaded_count ?? 0}</td>
-              <td>${seq.missing_count ?? 0}</td>
-              <td>${seq.failed_count ?? 0}</td>
-              <td style="text-align:right;"><button class="btn" data-run-sequence="${escapeHtml(seq.sequence_id)}" style="font-size:12px;padding:5px 10px;">Run validation</button></td>
-            </tr>`
-              )
-              .join("")}
+            ${sequences.map(sequenceRowHtml).join("")}
           </tbody>
         </table>
-        <div id="runSequenceError" class="err" hidden style="margin:0 18px 14px;"></div>
       </div>
       <div class="card" style="overflow:hidden;">
         <div style="padding:14px 18px;border-bottom:1px solid var(--line-soft);font-size:13px;font-weight:600;">Image-sequence runs</div>
@@ -579,20 +615,29 @@ function wireTabActions() {
   document.querySelectorAll("[data-run-sequence]").forEach((btn) => {
     btn.addEventListener("click", () => runSequenceValidation(btn.dataset.runSequence, btn));
   });
+  document.querySelectorAll("[data-baseline-for]").forEach((select) => {
+    select.addEventListener("change", () => {
+      const button = Array.from(document.querySelectorAll("[data-run-sequence]")).find((b) => b.dataset.runSequence === select.dataset.baselineFor);
+      if (button) button.disabled = !select.value;
+    });
+  });
 }
 
 async function runSequenceValidation(sequenceId, btn) {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>Running…';
-  const errorBox = $("runSequenceError");
+  const errorBox = Array.from(document.querySelectorAll("[data-run-error]")).find((el) => el.dataset.runError === sequenceId);
   errorBox.hidden = true;
+  const picker = Array.from(document.querySelectorAll("[data-baseline-for]")).find((el) => el.dataset.baselineFor === sequenceId);
+  const body = { folder_name: folderName, sequence_id: sequenceId };
+  if (picker && picker.value) body.baseline_filename = picker.value;
   try {
-    const result = await api("/api/run-image-sequence-validation", { folder_name: folderName, sequence_id: sequenceId });
+    const result = await api("/api/run-image-sequence-validation", body);
     location.href = `/console/review.html?${new URLSearchParams({ site: folderName, run_id: result.run_id })}`;
   } catch (error) {
     errorBox.hidden = false;
     errorBox.textContent = error.message;
-    btn.disabled = false;
+    btn.disabled = !!(picker && !picker.value);
     btn.textContent = "Run validation";
   }
 }

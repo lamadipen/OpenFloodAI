@@ -1250,3 +1250,101 @@ def test_workspace_image_review_preserves_pair_and_saved_machine_records(tmp_pat
     (sequence / "images" / selected).write_bytes(b"replacement")
     with pytest.raises(ValueError, match="changed since analysis"):
         save_observation(site, request)
+
+
+def write_water_level_selection(sequence_dir: Path, group_by_file: dict[str, str]) -> None:
+    payload = {
+        "schema_version": 1,
+        "policy_version": "water-level-sampling-v1",
+        "selected_at_utc": "2026-10-01T00:00:00+00:00",
+        "note": "Relative to this station and date range only.",
+        "request": {"groups": ["high"], "images_per_group": 2},
+        "association": {"nwis_site_id": "09999999", "source": "https://example.test/registry"},
+        "gauge": {"parameter_code": "00065", "unit": "ft"},
+        "samples": [
+            {
+                "filename": name,
+                "group": group,
+                "motivating_reading": {"value": 5.0, "unit": "ft", "quality_status": "provisional"},
+                "image_reading": {"value": 4.9, "unit": "ft"},
+                "gap_seconds": -300,
+                "image_reading_gap_seconds": -120,
+                "readings_differ": True,
+            }
+            for name, group in group_by_file.items()
+        ],
+    }
+    (sequence_dir / "water-level-selection.json").write_text(json.dumps(payload), encoding="utf-8")
+
+
+def make_water_level_sequence(tmp_path: Path) -> tuple[Path, Path]:
+    site_dir = tmp_path / "site"
+    make_site(site_dir)
+    sequence_dir = site_dir / "inputs" / "image-sequences" / SEQUENCE_ID
+    names = ["a.jpg", "b.jpg", "c.jpg"]
+    for index, name in enumerate(names):
+        write_frame(sequence_dir / "images" / name, 30 + index * 10)
+    write_manifest(
+        sequence_dir,
+        [
+            manifest_record(name, f"2026-09-01T0{index}:00:00+00:00", "downloaded")
+            for index, name in enumerate(names)
+        ],
+    )
+    write_water_level_selection(sequence_dir, {"a.jpg": "low", "b.jpg": "high", "c.jpg": "high"})
+    return site_dir, sequence_dir
+
+
+def test_a_water_level_sample_set_needs_an_explicit_baseline(tmp_path: Path) -> None:
+    site_dir, _ = make_water_level_sequence(tmp_path)
+
+    with pytest.raises(ImageSequenceValidationError, match="Choose a baseline"):
+        run_image_sequence_validation(site_dir, SEQUENCE_ID)
+
+    report = run_image_sequence_validation(site_dir, SEQUENCE_ID, baseline_filename="a.jpg")
+    assert report.baseline_filename == "a.jpg"
+
+
+def test_a_run_freezes_the_water_level_selection_and_shows_groups_per_image(tmp_path: Path) -> None:
+    site_dir, sequence_dir = make_water_level_sequence(tmp_path)
+    report = run_image_sequence_validation(site_dir, SEQUENCE_ID, baseline_filename="a.jpg")
+
+    detail = read_image_sequence_run_detail(site_dir, report.run_id)
+    selection = detail["water_level_selection"]
+
+    assert selection["policy_version"] == "water-level-sampling-v1"
+    assert selection["samples"]["b.jpg"]["group"] == "high"
+    assert selection["samples"]["b.jpg"]["readings_differ"] is True
+    assert selection["samples"]["b.jpg"]["motivating_reading"]["quality_status"] == "provisional"
+    assert (report.run_dir / "inputs-used" / "water-level-selection.snapshot.json").is_file()
+
+    # A later change to the sequence's own record never alters a finished run.
+    write_water_level_selection(sequence_dir, {"a.jpg": "middle", "b.jpg": "low", "c.jpg": "low"})
+    again = read_image_sequence_run_detail(site_dir, report.run_id)["water_level_selection"]
+    assert again == selection
+
+
+def test_regular_sequences_have_no_water_level_selection(tmp_path: Path) -> None:
+    site_dir, sequence_dir = make_water_level_sequence(tmp_path)
+    (sequence_dir / "water-level-selection.json").unlink()
+
+    report = run_image_sequence_validation(site_dir, SEQUENCE_ID)  # default baseline, as before
+
+    detail = read_image_sequence_run_detail(site_dir, report.run_id)
+    assert detail["water_level_selection"] is None
+
+
+def test_run_detail_returns_the_setup_the_run_used_for_overlays(tmp_path: Path) -> None:
+    site_dir, sequence_dir = make_water_level_sequence(tmp_path)
+    report = run_image_sequence_validation(site_dir, SEQUENCE_ID, baseline_filename="a.jpg")
+    config_path = site_dir / "configs" / "site.json"
+    config = json.loads(config_path.read_text())
+
+    detail = read_image_sequence_run_detail(site_dir, report.run_id)
+    used = detail["setup_used"]
+    assert used["reference_region"] == config["reference_region"]
+
+    # Editing the site's watched area afterward does not change the finished run's setup.
+    config["reference_region"] = {"x": 0, "y": 0, "width": 10, "height": 10}
+    config_path.write_text(json.dumps(config))
+    assert read_image_sequence_run_detail(site_dir, report.run_id)["setup_used"] == used
