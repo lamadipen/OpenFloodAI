@@ -28,11 +28,16 @@
             <div id="resizeHandle" style="position:absolute;right:-7px;bottom:-7px;width:14px;height:14px;border-radius:3px;background:#f2c94c;border:2px solid #fff;cursor:nwse-resize;"></div>
           </div>
         </div>
+        <div id="sequenceRow" style="width:640px;display:flex;align-items:center;gap:10px;" hidden>
+          <label for="sequenceSelect" style="font-size:11px;color:var(--ink-muted);white-space:nowrap;">Image sequence</label>
+          <select id="sequenceSelect" style="flex-grow:1;min-width:0;"></select>
+        </div>
         <div id="scrubRow" style="width:640px;display:flex;align-items:center;gap:10px;" hidden>
-          <span style="font-size:11px;color:var(--ink-muted);white-space:nowrap;">Video frame</span>
+          <span id="scrubLabel" style="font-size:11px;color:var(--ink-muted);white-space:nowrap;">Video frame</span>
           <input type="range" id="scrub" min="0" max="1" step="0.1" value="0" style="flex-grow:1;">
           <span id="scrubTime" style="font-size:11px;color:var(--ink-muted);font-family:var(--mono);white-space:nowrap;">0.0s</span>
         </div>
+        <div id="imageCaption" style="width:640px;font-size:12px;color:var(--ink-soft);font-family:var(--mono);overflow-wrap:anywhere;" hidden></div>
         <video id="sourceVideo" style="display:none;" preload="metadata" muted playsinline></video>
         <canvas id="captureCanvas" width="640" height="400" style="display:none;"></canvas>
       </div>
@@ -183,14 +188,63 @@ $("clearBtn").addEventListener("click", () => {
   paintBox();
 });
 
-// The newest sequence that actually has a downloaded image. A newer sequence with none (for
-// example a download that found nothing for a short date range) must not hide older images.
-function pickImageSource(sequences) {
-  for (let i = sequences.length - 1; i >= 0; i -= 1) {
-    const downloaded = (sequences[i].records || []).find((r) => r.download_status === "downloaded");
-    if (downloaded) return { sequenceId: sequences[i].sequence_id, filename: downloaded.filename };
-  }
-  return null;
+// Downloaded images of one sequence, oldest capture first, so the slider runs through time.
+function downloadedImages(sequence) {
+  return ((sequence && sequence.records) || [])
+    .filter((r) => r.download_status === "downloaded" && r.filename)
+    .sort((a, b) => String(a.captured_at_utc || "").localeCompare(String(b.captured_at_utc || "")));
+}
+
+function sequenceOptionLabel(sequence) {
+  return `${sequence.display_name || sequence.sequence_id} (${downloadedImages(sequence).length} images)`;
+}
+
+// "<filename> · captured <local time> (<UTC>)", from whatever the record carries.
+function imageCaptionText(record) {
+  const parts = [record.filename];
+  if (record.local_time) parts.push(`local ${String(record.local_time).replace("T", " ")}`);
+  if (record.captured_at_utc) parts.push(`UTC ${String(record.captured_at_utc).replace("T", " ").replace("+00:00", "")}`);
+  return parts.join(" \u00b7 ");
+}
+
+let imageSequences = [];
+let currentImages = [];
+
+function showImage(index) {
+  const record = currentImages[index];
+  if (!record) return;
+  baselineFilename = record.filename;
+  $("stageImg").src = `/api/image-sequence-image?${new URLSearchParams({ folder_name: folderName, sequence_id: sequenceId, filename: baselineFilename })}`;
+  $("scrubTime").textContent = `${index + 1} / ${currentImages.length}`;
+  $("imageCaption").textContent = imageCaptionText(record);
+  $("imageCaption").hidden = false;
+}
+
+function selectSequence(id) {
+  const sequence = imageSequences.find((s) => s.sequence_id === id);
+  sequenceId = id;
+  currentImages = downloadedImages(sequence);
+  $("scrub").max = Math.max(currentImages.length - 1, 0);
+  $("scrub").value = 0;
+  showImage(0);
+}
+
+function setUpImagePicker(sequences) {
+  imageSequences = sequences.filter((s) => downloadedImages(s).length);
+  const select = $("sequenceSelect");
+  select.innerHTML = imageSequences
+    .map((s) => `<option value="${escapeHtml(s.sequence_id)}">${escapeHtml(sequenceOptionLabel(s))}</option>`)
+    .join("");
+  // Newest sequence that has images first, matching what the editor used to pick on its own.
+  const newest = imageSequences[imageSequences.length - 1];
+  select.value = newest.sequence_id;
+  $("scrubLabel").textContent = "Image";
+  $("scrub").step = 1;
+  $("sequenceRow").hidden = false;
+  $("scrubRow").hidden = false;
+  select.addEventListener("change", () => selectSequence(select.value));
+  $("scrub").addEventListener("input", () => showImage(Number($("scrub").value)));
+  selectSequence(newest.sequence_id);
 }
 
 async function main() {
@@ -214,11 +268,8 @@ async function main() {
     }
     paintBox();
 
-    const source = pickImageSource(sequenceData.sequences || []);
-    if (source) {
-      sequenceId = source.sequenceId;
-      baselineFilename = source.filename;
-      $("stageImg").src = `/api/image-sequence-image?${new URLSearchParams({ folder_name: folderName, sequence_id: sequenceId, filename: baselineFilename })}`;
+    if ((sequenceData.sequences || []).some((seq) => downloadedImages(seq).length)) {
+      setUpImagePicker(sequenceData.sequences);
     }
     if (!baselineFilename) {
       const firstVideo = (manifestData.records || [])[0];

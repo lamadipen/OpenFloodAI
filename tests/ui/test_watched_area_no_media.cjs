@@ -42,14 +42,14 @@ async function runWatchedArea(apiResponses) {
         if (!state.hasSaveButton) return null; // removed together with the replaced body
         return { set disabled(v) { state.saveDisabledSet += 1; } };
       }
-      return { href: "", textContent: "", style: {}, set src(v) {}, setAttribute() {} };
+      return { href: "", textContent: "", style: {}, set src(v) {}, setAttribute() {}, addEventListener() {}, set value(v) {}, set innerHTML(v) {}, set hidden(v) {}, set max(v) {}, set step(v) {} };
     }
   };
   vm.createContext(sandbox);
   const html = read("form-watched-area.html");
   const script = scriptOf(html);
-  const helperStart = script.indexOf("function pickImageSource(");
-  const helperSource = script.slice(helperStart, script.indexOf("\n}\n", helperStart) + 3);
+  const helperStart = script.indexOf("// Downloaded images of one sequence");
+  const helperSource = script.slice(helperStart, script.indexOf("async function main() {"));
   vm.runInContext(helperSource + "\n" + mainSource(html) + "\nmain;", sandbox);
   await vm.runInContext("main()", sandbox);
   return state;
@@ -115,7 +115,7 @@ const OLDER = { sequence_id: "usgs-CAM-2026-08-01-2026-09-03-all", records: [dow
 const NEWER_EMPTY = { sequence_id: "usgs-CAM-2026-10-01-2026-10-02-one_daylight_image_per_day", records: [missing, missing] };
 const NEWEST = { sequence_id: "usgs-CAM-2026-10-01-2026-10-02-water_level-0a1b2c3d", records: [downloaded("new1.jpg")] };
 
-for (const file of ["form-watched-area.html", "form-waterline-guide.html"]) {
+for (const file of ["form-waterline-guide.html"]) {
   test(`${file}: a newer sequence with no downloaded image does not hide an older one`, () => {
     const pick = helperOf(read(file));
     assert.deepEqual(JSON.parse(JSON.stringify(pick([OLDER, NEWER_EMPTY]))), { sequenceId: OLDER.sequence_id, filename: "old1.jpg" });
@@ -142,4 +142,51 @@ test("the watched-area editor loads the older sequence's image when the newest o
   });
   assert.equal(state.body.includes("This site has no downloaded"), false);
   assert.equal(state.body.includes("Could not load"), false);
+});
+
+// ---- sequence dropdown + image slider in the watched-area editor ---------------------------
+
+function areaHelpers() {
+  const script = scriptOf(read("form-watched-area.html"));
+  const start = script.indexOf("// Downloaded images of one sequence");
+  const sandbox = {};
+  vm.createContext(sandbox);
+  vm.runInContext(script.slice(start, script.indexOf("let imageSequences")), sandbox);
+  return sandbox;
+}
+
+test("a sequence's images are ordered oldest capture first, skipping undownloaded ones", () => {
+  const { downloadedImages } = areaHelpers();
+  const out = downloadedImages({
+    records: [
+      { filename: "b.jpg", download_status: "downloaded", captured_at_utc: "2026-03-04T18:05:00+00:00" },
+      { filename: "", download_status: "missing" },
+      { filename: "a.jpg", download_status: "downloaded", captured_at_utc: "2026-03-01T18:05:00+00:00" }
+    ]
+  });
+  assert.deepEqual(out.map((r) => r.filename), ["a.jpg", "b.jpg"]);
+  assert.equal(downloadedImages(null).length, 0);
+});
+
+test("the dropdown label uses the display name when there is one, else the id, with the image count", () => {
+  const { sequenceOptionLabel } = areaHelpers();
+  const records = [{ filename: "a.jpg", download_status: "downloaded" }];
+  assert.equal(sequenceOptionLabel({ sequence_id: "seq-1", records }), "seq-1 (1 images)");
+  assert.equal(sequenceOptionLabel({ sequence_id: "seq-1", display_name: "Spring", records }), "Spring (1 images)");
+});
+
+test("the caption shows the file name with the local time and the UTC time", () => {
+  const { imageCaptionText } = areaHelpers();
+  assert.equal(
+    imageCaptionText({ filename: "a.jpg", local_time: "2026-03-01T11:05:00-07:00", captured_at_utc: "2026-03-01T18:05:00+00:00" }),
+    "a.jpg \u00b7 local 2026-03-01 11:05:00-07:00 \u00b7 UTC 2026-03-01 18:05:00"
+  );
+  assert.equal(imageCaptionText({ filename: "a.jpg" }), "a.jpg");
+});
+
+test("the watched-area page has the sequence dropdown, the caption and the image slider", () => {
+  const html = read("form-watched-area.html");
+  assert.match(html, /id="sequenceSelect"/);
+  assert.match(html, /id="imageCaption"/);
+  assert.match(html, /id="scrub"/);
 });
