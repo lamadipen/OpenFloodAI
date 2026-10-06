@@ -46,7 +46,11 @@ async function runWatchedArea(apiResponses) {
     }
   };
   vm.createContext(sandbox);
-  vm.runInContext(mainSource(read("form-watched-area.html")) + "\nmain;", sandbox);
+  const html = read("form-watched-area.html");
+  const script = scriptOf(html);
+  const helperStart = script.indexOf("function pickImageSource(");
+  const helperSource = script.slice(helperStart, script.indexOf("\n}\n", helperStart) + 3);
+  vm.runInContext(helperSource + "\n" + mainSource(html) + "\nmain;", sandbox);
   await vm.runInContext("main()", sandbox);
   return state;
 }
@@ -91,4 +95,51 @@ test("nothing in main() touches the Save button after the body was replaced", ()
   const src = mainSource(read("form-watched-area.html"));
   const afterReplace = src.slice(src.indexOf("This site has no downloaded"));
   assert.doesNotMatch(afterReplace.split("catch")[0], /saveBtn/);
+});
+
+// ---- which sequence supplies the image ----------------------------------------------------
+
+function helperOf(html) {
+  const script = scriptOf(html);
+  const start = script.indexOf("function pickImageSource(");
+  const end = script.indexOf("\n}\n", start) + 3;
+  const sandbox = {};
+  vm.createContext(sandbox);
+  vm.runInContext(script.slice(start, end), sandbox);
+  return sandbox.pickImageSource;
+}
+
+const downloaded = (name) => ({ filename: name, download_status: "downloaded" });
+const missing = { filename: "", download_status: "missing" };
+const OLDER = { sequence_id: "usgs-CAM-2026-08-01-2026-09-03-all", records: [downloaded("old1.jpg"), downloaded("old2.jpg")] };
+const NEWER_EMPTY = { sequence_id: "usgs-CAM-2026-10-01-2026-10-02-one_daylight_image_per_day", records: [missing, missing] };
+const NEWEST = { sequence_id: "usgs-CAM-2026-10-01-2026-10-02-water_level-0a1b2c3d", records: [downloaded("new1.jpg")] };
+
+for (const file of ["form-watched-area.html", "form-waterline-guide.html"]) {
+  test(`${file}: a newer sequence with no downloaded image does not hide an older one`, () => {
+    const pick = helperOf(read(file));
+    assert.deepEqual(JSON.parse(JSON.stringify(pick([OLDER, NEWER_EMPTY]))), { sequenceId: OLDER.sequence_id, filename: "old1.jpg" });
+  });
+
+  test(`${file}: the newest sequence that has an image is preferred`, () => {
+    const pick = helperOf(read(file));
+    assert.equal(pick([OLDER, NEWER_EMPTY, NEWEST]).sequenceId, NEWEST.sequence_id);
+    assert.equal(pick([NEWEST, NEWER_EMPTY]).sequenceId, NEWEST.sequence_id);
+  });
+
+  test(`${file}: no sequence, only empty ones, or missing records give no image source`, () => {
+    const pick = helperOf(read(file));
+    assert.equal(pick([]), null);
+    assert.equal(pick([NEWER_EMPTY]), null);
+    assert.equal(pick([{ sequence_id: "x" }]), null);
+  });
+}
+
+test("the watched-area editor loads the older sequence's image when the newest one is empty", async () => {
+  const state = await runWatchedArea({
+    ...EMPTY,
+    "/api/site-image-sequences": { sequences: [OLDER, NEWER_EMPTY] }
+  });
+  assert.equal(state.body.includes("This site has no downloaded"), false);
+  assert.equal(state.body.includes("Could not load"), false);
 });

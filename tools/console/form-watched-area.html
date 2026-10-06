@@ -183,6 +183,16 @@ $("clearBtn").addEventListener("click", () => {
   paintBox();
 });
 
+// The newest sequence that actually has a downloaded image. A newer sequence with none (for
+// example a download that found nothing for a short date range) must not hide older images.
+function pickImageSource(sequences) {
+  for (let i = sequences.length - 1; i >= 0; i -= 1) {
+    const downloaded = (sequences[i].records || []).find((r) => r.download_status === "downloaded");
+    if (downloaded) return { sequenceId: sequences[i].sequence_id, filename: downloaded.filename };
+  }
+  return null;
+}
+
 async function main() {
   if (!folderName) {
     document.body.innerHTML = `<div style="padding:40px;">Missing <code>?site=</code> in the URL.</div>`;
@@ -204,15 +214,11 @@ async function main() {
     }
     paintBox();
 
-    const sequences = sequenceData.sequences || [];
-    if (sequences.length) {
-      const seq = sequences[sequences.length - 1];
-      sequenceId = seq.sequence_id;
-      const downloaded = (seq.records || []).find((r) => r.download_status === "downloaded");
-      if (downloaded) {
-        baselineFilename = downloaded.filename;
-        $("stageImg").src = `/api/image-sequence-image?${new URLSearchParams({ folder_name: folderName, sequence_id: sequenceId, filename: baselineFilename })}`;
-      }
+    const source = pickImageSource(sequenceData.sequences || []);
+    if (source) {
+      sequenceId = source.sequenceId;
+      baselineFilename = source.filename;
+      $("stageImg").src = `/api/image-sequence-image?${new URLSearchParams({ folder_name: folderName, sequence_id: sequenceId, filename: baselineFilename })}`;
     }
     if (!baselineFilename) {
       const firstVideo = (manifestData.records || [])[0];
