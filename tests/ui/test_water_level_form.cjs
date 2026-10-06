@@ -102,7 +102,7 @@ test("unavailable states replace the preview and offer no download", () => {
   vm.runInContext("wl.proposal = p;", ctx);
   const out = vm.runInContext("wlPanelHtml()", ctx);
   assert.match(out, /discharge/);
-  assert.doesNotMatch(out, /wlDownload/);
+  assert.match(out, /id="wlDownload" disabled/); // visible but disabled: nothing can be downloaded
   ctx.p = { state: "no_station_association" };
   vm.runInContext("wl.proposal = p;", ctx);
   assert.match(vm.runInContext("wlPanelHtml()", ctx), /No USGS gauge is linked/);
@@ -214,7 +214,7 @@ test("invalidating clears the preview, approvals, declined images and the confir
   assert.equal(vm.runInContext("wl.confirmed", ctx), false);
   assert.equal(vm.runInContext("wl.message", ctx), "Groups changed. Select Find samples again.");
   assert.equal(vm.runInContext("wlApproved().length", ctx), 0);
-  assert.doesNotMatch(vm.runInContext("wlPanelHtml()", ctx), /id="wlDownload"/);
+  assert.match(vm.runInContext("wlPanelHtml()", ctx), /id="wlDownload" disabled/);
 });
 
 test("the form refuses a download whose settings changed after Find samples", () => {
@@ -341,4 +341,39 @@ test("the download sends the destination and the exact plan the person confirmed
   assert.match(guard, /destination: wlDestination\(\)/);
   assert.match(guard, /confirmed_plan: \{ new: plan\.new, duplicates: plan\.duplicates, conflicts: plan\.conflicts \}/);
   assert.ok(guard.indexOf("wlSettingsKey()") < guard.indexOf("/api/download-water-level-sampling"));
+});
+
+test("the action button is always visible: disabled with a hint before any preview", () => {
+  const ctx = context();
+  const out = vm.runInContext("wlPanelHtml()", ctx);
+  assert.equal((out.match(/id="wlDownload"/g) || []).length, 1);
+  assert.match(out, /id="wlDownload" disabled/);
+  assert.match(out, />Create sequence<\/button>/);
+  assert.match(out, /Next: select <strong>Find samples<\/strong> to preview the images/);
+  vm.runInContext("wl.destMode = 'append';", ctx);
+  const append = vm.runInContext("wlPanelHtml()", ctx);
+  assert.match(append, />Add images to sequence<\/button>/);
+  assert.match(append, /adds them to the chosen sequence/);
+});
+
+test("there is exactly one action button when the preview is shown, and when a gauge is unavailable", () => {
+  const ctx = context();
+  load(ctx, proposal([group("high", [sample("high", "a.jpg", "2026-03-01T18:00:00+00:00", 60)], 1)]));
+  const shown = vm.runInContext("wlPanelHtml()", ctx);
+  assert.equal((shown.match(/id="wlDownload"/g) || []).length, 1);
+  assert.doesNotMatch(shown, /Next: select <strong>Find samples/);
+
+  ctx.p = { state: "no_station_association" };
+  vm.runInContext("wl.proposal = p;", ctx);
+  const unavailable = vm.runInContext("wlPanelHtml()", ctx);
+  assert.equal((unavailable.match(/id="wlDownload"/g) || []).length, 1);
+  assert.match(unavailable, /id="wlDownload" disabled/);
+});
+
+test("the action button is replaced by the result after a download", () => {
+  const ctx = context();
+  vm.runInContext("wl.result = { message: 'Added 2 new image(s) to X.', sequence_id: 'usgs-CAM-2026-01-01-2026-02-01-water_level-0a1b2c3d', conflict_count: 0, failed_count: 0, conflicts: [], failed: [] };", ctx);
+  const out = vm.runInContext("wlPanelHtml()", ctx);
+  assert.doesNotMatch(out, /id="wlDownload"/);
+  assert.match(out, /Open Sequences &amp; runs/);
 });

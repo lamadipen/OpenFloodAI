@@ -379,6 +379,14 @@ function wlTimeOfDayText(proposal) {
   return `daytime only (${escapeHtml(String(tod.window_local_hours[0]))}:00&ndash;${escapeHtml(String(tod.window_local_hours[1]))}:00 local, for both the gauge reading and the image)`;
 }
 
+// Shown until there is a preview to act on, so the next step is never hidden: a disabled
+// button plus a line saying what to do first.
+function wlIdleActionHtml() {
+  const label = wl.destMode === "append" ? "Add images to sequence" : "Create sequence";
+  return `<div class="hint" style="margin-top:14px;line-height:1.5;">Next: select <strong>Find samples</strong> to preview the images. Once you have approved some, this button ${wl.destMode === "append" ? "adds them to the chosen sequence" : "creates the new sequence"}.</div>
+    <button type="button" class="btn primary" id="wlDownload" disabled style="width:100%;justify-content:center;margin-top:10px;">${label}</button>`;
+}
+
 function wlPanelHtml() {
   const proposal = wl.proposal;
   const groupChecks = ["low", "middle", "high"].map((g) => `<label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" data-wl-group="${g}" ${wl.groups.includes(g) ? "checked" : ""}> ${WL_GROUP_TEXT[g]}</label>`).join("");
@@ -424,7 +432,7 @@ function wlPanelHtml() {
       </div>` : `<div style="margin-top:8px;">${wlDestinationOptionsHtml()}</div>`}
     </fieldset>
     ${wl.message ? `<div class="err" style="margin-top:10px;">${escapeHtml(wl.message)}</div>` : ""}
-    ${wl.result ? wlResultHtml(wl.result) : preview}`;
+    ${wl.result ? wlResultHtml(wl.result) : preview + (proposal && proposal.state === "ok" ? "" : wlIdleActionHtml())}`;
 }
 // ---- end water-level sampling ----
 
