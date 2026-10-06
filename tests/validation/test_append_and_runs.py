@@ -28,6 +28,8 @@ from openfloodai.validation.image_sequence_runner import (
     run_image_sequence_validation,
 )
 
+WRITE_JSON = "openfloodai.ingestion.water_level_intake.atomic_write_json"
+WRITE_TEXT = "openfloodai.ingestion.water_level_intake.atomic_write_text"
 SLUG = "CO_Test_Camera"
 TZ = "America/Denver"
 SITE = "site-demo-01"
@@ -47,8 +49,10 @@ class Archive:
     def __init__(self) -> None:
         self.files: dict[str, bytes] = {}
 
-    def candidate(self, day: int, value: int, hour: int = 18) -> ImageSequenceCandidate:
-        when = datetime(2026, 3, day, hour, 0, tzinfo=UTC)
+    def candidate(
+        self, day: int, value: int, hour: int = 18, minute: int = 0
+    ) -> ImageSequenceCandidate:
+        when = datetime(2026, 3, day, hour, minute, tzinfo=UTC)
         url = f"https://x.test/720/{SLUG}/{SLUG}___{when:%Y-%m-%dT%H-%M-%SZ}.jpg"
         ok, encoded = cv2.imencode(".jpg", np.full((30, 18, 3), value, dtype=np.uint8))
         assert ok
@@ -71,7 +75,9 @@ def series(days: int = 28) -> GageSeries:
     )
 
 
-def provenance(cands: list[ImageSequenceCandidate], group: str) -> dict[str, Any]:
+def provenance(
+    cands: list[ImageSequenceCandidate], group: str, preview: dict[int, float] | None = None
+) -> dict[str, Any]:
     return {
         "schema_version": 1,
         "policy_version": "water-level-sampling-v1",
@@ -85,7 +91,7 @@ def provenance(cands: list[ImageSequenceCandidate], group: str) -> dict[str, Any
             "images_per_group": 3,
         },
         "association": ASSOCIATION,
-        "gauge": {"parameter_code": "00065", "unit": "ft"},
+        "gauge": {"parameter_code": "00065", "parameter_label": "gage height", "unit": "ft"},
         "thresholds": {"median": 14.0},
         "note": "relative",
         "samples": [
@@ -93,9 +99,18 @@ def provenance(cands: list[ImageSequenceCandidate], group: str) -> dict[str, Any
                 "filename": c.source_url.rsplit("/", 1)[-1],
                 "group": group,
                 "motivating_reading": {"value": float(c.captured_utc.day), "unit": "ft"},
-                "image_reading": {"value": float(c.captured_utc.day), "unit": "ft"},
+                # The reading nearest the image, as the sampling preview found it at download time.
+                "image_reading": {
+                    "datetime_utc": datetime(
+                        2026, 3, c.captured_utc.day, 18, 0, tzinfo=UTC
+                    ).isoformat(),
+                    "value": (preview or {}).get(c.captured_utc.day, float(c.captured_utc.day)),
+                    "unit": "ft",
+                    "qualifiers": ["A"],
+                    "quality_status": "approved",
+                },
                 "gap_seconds": 0,
-                "image_reading_gap_seconds": 0,
+                "image_reading_gap_seconds": -(c.captured_utc.minute * 60),
             }
             for c in cands
         ],
@@ -152,7 +167,7 @@ def append(
         start_date="2026-03-01",
         end_date="2026-03-28",
         candidates=cands,
-        provenance=provenance(cands, group),
+        provenance=provenance(cands, group, kwargs.pop("preview", None)),
         series=kwargs.pop("series", series()),
         gage_relationship="same_site",
         gage_relationship_note=None,
@@ -376,3 +391,282 @@ def test_concurrent_appends_and_runs_always_give_each_run_one_consistent_snapsho
         assert downloaded <= names  # every frozen image has its sampling provenance
     final = read_image_sequence_run_detail(world["site"], run(world).run_id)
     assert len(filenames(final)) == 3 + len(extra) - 1
+
+
+# ---- gauge matches are saved once per image (review: appending must not change a match) ----
+
+
+def match_of(detail: dict[str, Any], name: str) -> tuple[float | None, int | None]:
+    row = next(i for i in detail["gauge_evidence"]["images"] if i["filename"] == name)
+    reading = row["reading"]
+    return (reading["value"] if reading else None, row["time_difference_seconds"])
+
+
+def closer_series(day: int, value: float) -> GageSeries:
+    """The usual series plus a NEW reading at 18:09 on `day`, nearer to an 18:10 image."""
+
+    base = series()
+    base.readings.append(
+        GageReading(
+            datetime(2026, 3, day, 18, 9, tzinfo=UTC).isoformat(), value, ("A",), "approved"
+        )
+    )
+    return base
+
+
+def world_with_offset_image(tmp_path: Path) -> dict[str, Any]:
+    """A sequence whose day-3 image is at 18:10, so its nearest reading is 18:00 (3 ft, 10 min)."""
+
+    site = tmp_path / "site"
+    (site / "configs").mkdir(parents=True)
+    (site / "configs" / "site.json").write_text(
+        json.dumps(
+            {
+                "site_id": SITE,
+                "camera_id": SLUG,
+                "site_name": "Demo",
+                "input_type": "local_video",
+                "reference_region": {"x": 0, "y": 0, "width": 100, "height": 100},
+            }
+        ),
+        encoding="utf-8",
+    )
+    archive = Archive()
+    first = [
+        archive.candidate(3, 70, minute=10),
+        archive.candidate(6, 90),
+        archive.candidate(9, 110),
+    ]
+    created = intake.create_sequence(
+        site_dir=site,
+        site_id=SITE,
+        camera_slug=SLUG,
+        timezone_name=TZ,
+        start_date="2026-03-01",
+        end_date="2026-03-28",
+        candidates=first,
+        provenance=provenance(first, "low"),
+        series=series(),
+        gage_relationship="same_site",
+        gage_relationship_note=None,
+        fetch=archive.fetch,
+    )
+    return {"site": site, "archive": archive, "sequence_id": created.sequence_id, "first": first}
+
+
+def test_an_older_images_match_does_not_change_when_a_closer_reading_is_appended(
+    tmp_path: Path,
+) -> None:
+    world = world_with_offset_image(tmp_path)
+    old_name = baseline_name(world)  # the day-3 image at 18:10 is the first (and the baseline)
+    other = world["first"][1].source_url.rsplit("/", 1)[-1]
+    before = read_image_sequence_run_detail(world["site"], run(world).run_id)
+    assert match_of(before, other) == (6.0, 0)
+
+    # A later batch's fresh readings include one at 18:09 on day 3 (9 ft): closer to the old image.
+    append(world, [world["archive"].candidate(12, 130)], series=closer_series(3, 9.0))
+    readings = {
+        r["datetime_utc"]: r["value"]
+        for r in json.loads(
+            (
+                world["site"]
+                / "inputs"
+                / "image-sequences"
+                / world["sequence_id"]
+                / "gauge-readings.json"
+            ).read_text()
+        )["readings"]
+    }
+    assert (
+        readings[datetime(2026, 3, 3, 18, 9, tzinfo=UTC).isoformat()] == 9.0
+    )  # it is in the source
+
+    after = read_image_sequence_run_detail(world["site"], run(world).run_id)
+    # the baseline image (day 3, 18:10) is not compared, but its evidence is in the run
+    base_row = next(i for i in after["gauge_evidence"]["images"] if i["filename"] == old_name)
+    assert base_row["reading"]["value"] == 3.0 and base_row["time_difference_seconds"] == -600
+    assert match_of(after, other) == match_of(before, other)  # untouched images keep their match
+
+
+def test_a_new_image_keeps_the_reading_its_preview_showed_not_an_older_saved_value(
+    tmp_path: Path,
+) -> None:
+    world = world_with_offset_image(tmp_path)
+    new = world["archive"].candidate(12, 130)
+    new_name = new.source_url.rsplit("/", 1)[-1]
+    # Fresh preview data says the day-12 reading is now 99 ft; the saved source still holds 12 ft.
+    append(world, [new], preview={12: 99.0})
+
+    detail = read_image_sequence_run_detail(world["site"], run(world).run_id)
+
+    assert match_of(detail, new_name) == (99.0, 0)  # what the sampling preview showed
+    row = next(i for i in detail["gauge_evidence"]["images"] if i["filename"] == new_name)
+    assert row["match_status"] == "matched" and row["reading"]["parameter_label"] == "gage height"
+    assert row["reading"]["quality_status"] == "approved" and row["reading"]["unit"] == "ft"
+
+
+def test_images_added_before_matches_were_saved_are_frozen_at_the_first_append(
+    tmp_path: Path,
+) -> None:
+    world = world_with_offset_image(tmp_path)
+    directory = world["site"] / "inputs" / "image-sequences" / world["sequence_id"]
+    (directory / "gauge-matches.json").unlink()  # a sequence made before matches were saved
+    old_name = baseline_name(world)
+    before = read_image_sequence_run_detail(world["site"], run(world).run_id)
+    other = world["first"][1].source_url.rsplit("/", 1)[-1]
+
+    append(world, [world["archive"].candidate(12, 130)], series=closer_series(6, 77.0))
+
+    matches = json.loads((directory / "gauge-matches.json").read_text())["matches"]
+    assert matches[old_name]["origin"] == "existing_before_append"
+    assert matches[old_name]["reading"]["value"] == 3.0
+    after = read_image_sequence_run_detail(world["site"], run(world).run_id)
+    assert match_of(after, other) == match_of(before, other)
+
+
+def test_saved_matches_are_append_only_for_existing_images(tmp_path: Path) -> None:
+    world = world_with_offset_image(tmp_path)
+    directory = world["site"] / "inputs" / "image-sequences" / world["sequence_id"]
+    first = json.loads((directory / "gauge-matches.json").read_text())["matches"]
+
+    append(world, [world["archive"].candidate(12, 130)], preview={12: 5.0})
+    append(
+        world,
+        [world["archive"].candidate(15, 150)],
+        preview={15: 6.0},
+        series=closer_series(3, 9.0),
+    )
+
+    later = json.loads((directory / "gauge-matches.json").read_text())["matches"]
+    assert all(later[name] == entry for name, entry in first.items())  # never rewritten
+    assert len(later) == len(first) + 2
+    assert {
+        later[n]["batch_number"] for n in later if later[n]["origin"] == "sampling_preview"
+    } == {1, 2, 3}
+
+
+def test_a_completed_run_is_unchanged_by_the_new_matches(tmp_path: Path) -> None:
+    world = world_with_offset_image(tmp_path)
+    report = run(world)
+    folder = world["site"] / "outputs" / "image-sequence-runs" / report.run_id
+    before = folder_hashes(folder)
+
+    append(world, [world["archive"].candidate(12, 130)], series=closer_series(3, 9.0))
+    run(world)
+
+    assert folder_hashes(folder) == before
+
+
+# ---- an interrupted append is repaired before the next run reads the sequence ----------------
+
+
+def crash_at(
+    monkeypatch: pytest.MonkeyPatch, *, final_batch: bool = False, summary: bool = False
+) -> None:
+    import os
+
+    real_replace = os.replace
+    real_json = store.atomic_write_json
+
+    def replace(src: Any, dst: Any) -> None:
+        if final_batch and "sampling-batches" in str(dst) and Path(dst).name.startswith("batch-"):
+            raise OSError("power loss before the batch was finalized")
+        real_replace(src, dst)
+
+    def write_json(path: Path, payload: Any) -> None:
+        if summary and path.name == "download-summary.json":
+            raise OSError("power loss before the summary was refreshed")
+        real_json(path, payload)
+
+    monkeypatch.setattr(os, "replace", replace)
+    monkeypatch.setattr(WRITE_JSON, write_json)
+
+
+def test_a_run_recovers_a_batch_left_pending_by_an_interrupted_append(
+    world: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    new = world["archive"].candidate(12, 130)
+    new_name = new.source_url.rsplit("/", 1)[-1]
+    directory = world["site"] / "inputs" / "image-sequences" / world["sequence_id"]
+    with monkeypatch.context() as patch:
+        crash_at(patch, final_batch=True)
+        with pytest.raises(OSError):
+            append(world, [new])
+    # The manifest already lists the image, but its batch is still a pending file.
+    assert new_name in (directory / "sequence-manifest.jsonl").read_text()
+    assert list((directory / "sampling-batches").glob(".batch-*.pending"))
+    assert not (directory / "sampling-batches" / "batch-0002.json").exists()
+
+    report = run(world)
+
+    detail = read_image_sequence_run_detail(world["site"], report.run_id)
+    assert new_name in filenames(detail)  # the run includes the new image...
+    assert (
+        detail["water_level_selection"]["samples"][new_name]["batch_number"] == 2
+    )  # ...and its history
+    assert detail["water_level_selection"]["batch_count"] == 2
+    assert (directory / "sampling-batches" / "batch-0002.json").is_file()
+    assert not list((directory / "sampling-batches").glob(".batch-*.pending"))
+    summary = json.loads((directory / "download-summary.json").read_text())
+    assert summary["downloaded_count"] == 4 and summary["batch_count"] == 2
+    assert len(summary["records"]) == 4
+
+
+def test_a_run_discards_a_pending_batch_whose_append_never_committed(
+    world: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    new = world["archive"].candidate(12, 130)
+    directory = world["site"] / "inputs" / "image-sequences" / world["sequence_id"]
+    manifest_before = (directory / "sequence-manifest.jsonl").read_bytes()
+    real_write = store.atomic_write_text
+
+    def crash_on_manifest(path: Path, text: str) -> None:
+        if path.name == "sequence-manifest.jsonl":
+            raise OSError("power loss")
+        real_write(path, text)
+
+    monkeypatch.setattr(
+        "openfloodai.ingestion.water_level_intake.atomic_write_text", crash_on_manifest
+    )
+    with pytest.raises(OSError):
+        append(world, [new])
+    monkeypatch.undo()
+    assert list((directory / "sampling-batches").glob(".batch-*.pending"))
+
+    report = run(world)
+
+    detail = read_image_sequence_run_detail(world["site"], report.run_id)
+    assert (directory / "sequence-manifest.jsonl").read_bytes() == manifest_before
+    assert detail["water_level_selection"]["batch_count"] == 1 and len(filenames(detail)) == 2
+    assert not list((directory / "sampling-batches").glob(".batch-*.pending"))
+
+
+def test_a_run_refreshes_a_summary_left_stale_by_an_interrupted_append(
+    world: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    new = world["archive"].candidate(12, 130)
+    directory = world["site"] / "inputs" / "image-sequences" / world["sequence_id"]
+    with monkeypatch.context() as patch:
+        crash_at(patch, summary=True)
+        with pytest.raises(OSError):
+            append(world, [new])
+    stale = json.loads((directory / "download-summary.json").read_text())
+    assert stale["downloaded_count"] == 3  # the manifest was committed but the summary was not
+
+    run(world)
+
+    fresh = json.loads((directory / "download-summary.json").read_text())
+    assert (
+        fresh["downloaded_count"] == 4 and fresh["batch_count"] == 2 and len(fresh["records"]) == 4
+    )
+    rows = list_site_image_sequences(world["site"])
+    assert rows[0]["downloaded_count"] == 4 and rows[0]["label"] == "Windy Gap"
+
+
+def test_recovery_leaves_a_healthy_sequence_untouched(world: dict[str, Any]) -> None:
+    directory = world["site"] / "inputs" / "image-sequences" / world["sequence_id"]
+    before = folder_hashes(directory)
+
+    intake.recover_interrupted_append(directory)
+
+    assert folder_hashes(directory) == before

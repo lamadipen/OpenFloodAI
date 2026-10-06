@@ -51,6 +51,7 @@ from openfloodai.ingestion.sequence_store import (
     atomic_write_json,
     atomic_write_text,
     next_batch_number,
+    read_batches,
     read_display_name,
     sequence_label,
     sequence_lock,
@@ -62,8 +63,12 @@ from openfloodai.ingestion.usgs_gage_data import (
     PARAMETER_GAGE_HEIGHT,
     GageDataError,
     GageSeries,
+    freeze_current_matches,
+    load_gauge_matches,
     load_gauge_source,
+    match_from_sampling_sample,
     merge_batch_into_gauge_source,
+    write_gauge_matches,
 )
 
 ImageFetcher = Callable[[str], bytes]
@@ -436,6 +441,21 @@ def _batch_record(
     }
 
 
+def _new_image_matches(
+    provenance: Mapping[str, Any], added_names: set[str], batch_number: int
+) -> dict[str, dict[str, Any]]:
+    """Each added image's matched gauge evidence, exactly as its preview showed it."""
+
+    parameter = provenance.get("gauge") or {}
+    return {
+        str(sample["filename"]): match_from_sampling_sample(
+            sample, parameter, batch_number=batch_number
+        )
+        for sample in provenance.get("samples", [])
+        if isinstance(sample, Mapping) and sample.get("filename") in added_names
+    }
+
+
 def _download_into(
     items: Sequence[ItemPlan], staging_images: Path, fetch: ImageFetcher, result: IntakeResult
 ) -> dict[str, int]:
@@ -525,6 +545,11 @@ def create_sequence(
             result.gauge_available = summary.available
         except GageDataError:
             result.gauge_available = False
+        write_gauge_matches(
+            staging,
+            _new_image_matches(provenance, set(result.added), 1),
+            protect=set(),
+        )
         write_batch(
             staging,
             1,
@@ -642,6 +667,52 @@ def recover_pending_batches(sequence_dir: Path) -> None:
             pending.unlink(missing_ok=True)
 
 
+def recover_interrupted_append(sequence_dir: Path) -> None:
+    """Repair what an interrupted append may have left behind (call under the sequence lock).
+
+    The manifest is the commit point, so recovery goes by it: a pending batch whose
+    images are all in the manifest is finalized (otherwise discarded), and the download
+    summary, which is written last, is rebuilt if it no longer matches the manifest.
+    Runs call this before they read the sequence, so a run never freezes an image
+    without its sampling history, and never reads a stale summary.
+    """
+
+    recover_pending_batches(sequence_dir)
+    records = _read_manifest(sequence_dir)
+    summary = _read_summary(sequence_dir)
+    if records is None or summary is None:
+        return
+    batches = [b for b in read_batches(sequence_dir) if not b.get("legacy")]
+    batch_count = max([int(b["batch_number"]) for b in batches], default=0)
+    downloaded = sum(1 for r in records if r.get("download_status") == "downloaded")
+    if (
+        summary.get("records") == records
+        and summary.get("downloaded_count") == downloaded
+        and (not batches or summary.get("batch_count") == batch_count)
+    ):
+        return
+    requests = [b.get("request") or {} for b in batches]
+    starts = [str(r["start_date"]) for r in requests if r.get("start_date")]
+    ends = [str(r["end_date"]) for r in requests if r.get("end_date")]
+    cameras = {str(r.get("camera_id")) for r in records if r.get("camera_id")}
+    atomic_write_json(
+        sequence_dir / "download-summary.json",
+        _summary(
+            sequence_id=str(summary.get("sequence_id") or sequence_dir.name),
+            timezone_name=str(summary.get("timezone") or ""),
+            camera_slug=next(iter(cameras), ""),
+            start_date=min(starts + [str(summary.get("requested_start_date") or "")]) or "",
+            end_date=max(ends + [str(summary.get("requested_end_date") or "")]) or "",
+            records=records,
+            display_name=read_display_name(sequence_dir),
+            downloaded_at=datetime.now(tz=UTC).isoformat(),
+            directory=sequence_dir,
+            previous=summary,
+            batch_count=batch_count or int(summary.get("batch_count") or 1),
+        ),
+    )
+
+
 def append_to_sequence(
     *,
     site_dir: Path,
@@ -682,7 +753,7 @@ def append_to_sequence(
         to_get = [i for i in plan.items if i.status in (STATUS_NEW, STATUS_RETRY)]
         sizes = _download_into(to_get, staging / "images", fetch, result)
         with sequence_lock(sequence_dir):
-            recover_pending_batches(sequence_dir)
+            recover_interrupted_append(sequence_dir)
             records = _read_manifest(sequence_dir)
             summary_before = _read_summary(sequence_dir)
             if records is None or summary_before is None:
@@ -748,6 +819,18 @@ def append_to_sequence(
                 sequence_dir / BATCHES_DIRNAME / f"{PENDING_PREFIX}{number:04d}{PENDING_SUFFIX}"
             )
             atomic_write_json(pending, batch)
+            # Save every image's gauge match BEFORE new readings are merged in: existing
+            # images keep the match they have now, and each new image keeps the evidence
+            # its own preview showed. Later runs reuse these, so appending can never change
+            # an earlier image's match.
+            existing_matches = load_gauge_matches(sequence_dir)
+            entries = freeze_current_matches(sequence_dir, records, already=existing_matches)
+            entries.update(_new_image_matches(provenance, set(result.added), number))
+            write_gauge_matches(
+                sequence_dir,
+                entries,
+                protect={str(r.get("filename")) for r in records},
+            )
             try:
                 gauge = merge_batch_into_gauge_source(
                     sequence_dir,

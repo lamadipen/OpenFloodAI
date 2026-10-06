@@ -147,11 +147,20 @@ failed downloads of that batch. A batch file is never rewritten.
   earlier image's matched gauge evidence therefore does not change when you append.
 - Each new image keeps its own capture time and its own nearest reading within 15
   minutes, with the station association, units and quality flags.
+- **Each image's gauge match is saved once**, in `gauge-matches.json`, when the image is
+  added: a new image keeps exactly the reading its preview showed, and images already
+  in the sequence are frozen at the match they have just before the first append.
+  Later runs reuse these saved matches instead of matching again, so a closer reading
+  brought in by a later batch can never change an earlier image's match. Saved matches
+  are only ever added to.
 
 ## Runs and history
 
 A validation run first holds the sequence while it reads it, so it never sees an add
-half finished. It then freezes everything it used in its own folder: the image list,
+half finished. If an earlier add was interrupted, the run first repairs it under that
+same hold: a batch record whose images were committed is finalized (otherwise it is
+discarded) and the sequence summary is refreshed, so the run never freezes an image
+without its sampling history. It then freezes everything it used in its own folder: the image list,
 the gauge data and matches, the sampling batches, the watched area and guides, and the
 sequence's display name.
 

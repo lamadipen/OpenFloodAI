@@ -58,8 +58,10 @@ from openfloodai.ingestion.usgs_gage_data import (
     GAUGE_SOURCE_FILENAME,
     RUN_GAUGE_EVIDENCE_FILENAME,
     build_run_gauge_evidence,
+    load_gauge_matches,
     parse_gauge_source,
 )
+from openfloodai.ingestion.water_level_intake import recover_interrupted_append
 from openfloodai.review.event_reviews import (
     EventReviewError,
     compute_evidence_key,
@@ -147,6 +149,10 @@ def run_image_sequence_validation(
         raise ImageSequenceValidationError(f"Image sequence not found: {sequence_id}")
     try:
         with sequence_lock(sequence_dir):
+            # An interrupted append may have committed images whose sampling history is
+            # still pending, or left a stale summary. Repair that first, under the lock, so
+            # this run reads (and freezes) one complete, consistent sequence.
+            recover_interrupted_append(sequence_dir)
             return _run_image_sequence_validation(
                 site_dir, sequence_id, baseline_filename=baseline_filename
             )
@@ -1058,12 +1064,27 @@ def _write_gauge_evidence(
         if source_bytes is not None and source is not None
         else None
     )
-    evidence = build_run_gauge_evidence(source, images, source_sha256=source_sha256)
+    # Matches saved when each image was added are reused as they are, so a later append
+    # (which can bring a closer reading into the sequence) never changes an earlier match.
+    fixed_matches = load_gauge_matches(sequence_dir)
+    evidence = build_run_gauge_evidence(
+        source, images, source_sha256=source_sha256, fixed_matches=fixed_matches
+    )
     (run_dir / RUN_GAUGE_EVIDENCE_FILENAME).write_text(
         json.dumps(evidence, indent=2) + "\n", encoding="utf-8"
     )
     if source is not None and source_bytes is not None:
         (run_dir / "inputs-used" / "gauge-readings.snapshot.json").write_bytes(source_bytes)
+    if fixed_matches:
+        used = {str(image["filename"]) for image in images}
+        (run_dir / "inputs-used" / "gauge-matches.snapshot.json").write_text(
+            json.dumps(
+                {"matches": {k: v for k, v in sorted(fixed_matches.items()) if k in used}},
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
 
 
 def _freeze_water_level_selection(run_dir: Path, sequence_dir: Path) -> None:

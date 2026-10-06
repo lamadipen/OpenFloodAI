@@ -53,6 +53,11 @@ tool says so instead of inventing them.
   earlier batch's thresholds or categories.
 - Gauge readings are only added for new timestamps. Readings already saved, and the
   matches for earlier images, are not changed.
+- Each image's gauge match is saved once when the image is added (`gauge-matches.json`)
+  and reused by later runs, so a closer reading from a later batch never changes an
+  earlier image's match.
+- If an add was interrupted, the next run repairs it first (finalizing a committed batch
+  record, refreshing the summary) so no image is frozen without its sampling history.
 - A validation run reads the sequence under a lock and freezes its images, gauge
   matches, sampling batches, watched area, guides and the sequence name. An older run
   never shows newly added images. A new run after an add includes them.
