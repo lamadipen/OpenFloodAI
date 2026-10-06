@@ -53,11 +53,11 @@ why. Requested counts are maximums, not guarantees.
 
 ## What it needs
 
-- The camera URL must be the camera this site is set up for. The images, the
-  gauge station, and the saved gauge data all follow that one camera. If the URL
-  names a different camera, Find samples and Download are refused before anything is
-  fetched.
-
+- Images and the gauge station both come from the camera in the URL (the USGS camera id),
+  so they always belong together. A site's own camera id is an internal label and does
+  not have to equal it: if it differs, the preview notes that the images will be saved as
+  the URL's USGS camera. A site that already holds images from one USGS camera refuses
+  images from another, so one site never mixes cameras.
 - The camera must have a USGS gauge association from the river registry. The
   nearest station is never guessed. A gauge the registry marks `nearby` is
   allowed, with USGS's note shown.

@@ -318,30 +318,92 @@ def test_repeating_a_download_makes_a_separate_sequence_and_never_an_already_exi
     assert {p.name for p in sequences.iterdir() if not p.name.startswith(".")} == ids
 
 
-def test_a_camera_url_for_a_different_camera_is_refused_before_anything_is_fetched(
+def set_site_camera_label(env: dict[str, Any], label: str) -> None:
+    config_path = env["site"] / "configs" / "site.json"
+    config = json.loads(config_path.read_text())
+    config["camera_id"] = label
+    config_path.write_text(json.dumps(config))
+
+
+def test_a_site_whose_internal_camera_label_differs_still_works_with_a_notice(
     env: dict[str, Any],
 ) -> None:
+    # The site's camera_id is an internal label (here with a suffix), not the USGS camera id.
+    set_site_camera_label(env, f"{CAMERA}_camid")
+    with serve(env["sites"]) as base:
+        code, preview = post(
+            f"{base}/api/preview-water-level-sampling", {**BASE, "folder_name": "demo"}
+        )
+        approved = refs(preview, "high")[:1]
+        body = {**BASE, "folder_name": "demo", "approved": approved}
+        plan = post(f"{base}/api/plan-water-level-intake", body)
+        destinations = post(f"{base}/api/water-level-destinations", body)
+        done = post(
+            f"{base}/api/download-water-level-sampling",
+            {**body, "confirmed": True, "confirmed_count": 1},
+        )
+
+    assert code == 200 and preview["state"] == "ok"
+    assert f"{CAMERA}_camid" in preview["camera_notice"] and CAMERA in preview["camera_notice"]
+    assert plan[0] == 200 and destinations[0] == 200 and done[0] == 200
+    sequence = env["site"] / "inputs" / "image-sequences" / done[1]["sequence_id"]
+    rows = [json.loads(x) for x in (sequence / "sequence-manifest.jsonl").read_text().splitlines()]
+    assert {r["camera_id"] for r in rows} == {CAMERA}  # saved as the USGS camera, from the URL
+    source = json.loads((sequence / "gauge-readings.json").read_text())
+    assert source["association"]["nwis_site_id"] == "09999999"  # the station for that same camera
+
+
+def test_no_notice_when_the_site_camera_id_matches(env: dict[str, Any]) -> None:
+    with serve(env["sites"]) as base:
+        _, preview = post(
+            f"{base}/api/preview-water-level-sampling", {**BASE, "folder_name": "demo"}
+        )
+    assert "camera_notice" not in preview
+
+
+def test_a_site_that_already_holds_another_camera_refuses_a_different_camera_url(
+    env: dict[str, Any],
+) -> None:
+    set_site_camera_label(env, "internal_label")
     other = {
         **BASE,
         "camera_url": "https://apps.usgs.gov/hivis/camera/CO_Other_Camera",
         "folder_name": "demo",
     }
     with serve(env["sites"]) as base:
-        preview = post(f"{base}/api/preview-water-level-sampling", other)
         _, proposal = post(
             f"{base}/api/preview-water-level-sampling", {**BASE, "folder_name": "demo"}
         )
-        approved = refs(proposal, "high")[:1]
+        first = post(
+            f"{base}/api/download-water-level-sampling",
+            {
+                **BASE,
+                "folder_name": "demo",
+                "approved": refs(proposal, "high")[:1],
+                "confirmed": True,
+                "confirmed_count": 1,
+            },
+        )
+        fetched = len(env["fetched"])
+        preview = post(f"{base}/api/preview-water-level-sampling", other)
         download = post(
             f"{base}/api/download-water-level-sampling",
-            {**other, "approved": approved, "confirmed": True, "confirmed_count": 1},
+            {
+                **other,
+                "approved": refs(proposal, "high")[:1],
+                "confirmed": True,
+                "confirmed_count": 1,
+            },
         )
+        again = post(f"{base}/api/preview-water-level-sampling", {**BASE, "folder_name": "demo"})
 
+    assert first[0] == 200
     for code, body in (preview, download):
         assert code == 400 and body["success"] is False
-        assert "CO_Other_Camera" in body["message"] and CAMERA in body["message"]
-    assert env["fetched"] == []
-    assert not (env["site"] / "inputs" / "image-sequences").exists()
+        assert CAMERA in body["message"] and "CO_Other_Camera" in body["message"]
+        assert "already holds images" in body["message"]
+    assert len(env["fetched"]) == fetched  # nothing was fetched for the other camera
+    assert again[0] == 200 and "camera_notice" not in again[1]  # the site's own camera still works
 
 
 def test_the_site_is_required_to_download_and_a_matching_camera_works(env: dict[str, Any]) -> None:

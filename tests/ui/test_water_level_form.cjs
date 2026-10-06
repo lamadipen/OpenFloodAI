@@ -377,3 +377,16 @@ test("the action button is replaced by the result after a download", () => {
   assert.doesNotMatch(out, /id="wlDownload"/);
   assert.match(out, /Open Sequences &amp; runs/);
 });
+
+test("a camera notice is shown in the preview when the site's label differs from the URL's camera", () => {
+  const ctx = context();
+  const p = proposal([group("high", [sample("high", "a.jpg", "2026-03-01T18:00:00+00:00", 60)], 1)]);
+  p.camera_notice = "This site's own camera id is CAM_camid. Its images will be saved as USGS camera CAM, taken from the URL you entered.";
+  load(ctx, p);
+  const out = vm.runInContext("wlPanelHtml()", ctx);
+  assert.match(out, /own camera id is CAM_camid/);
+  assert.match(out, /saved as USGS camera CAM/);
+  const without = proposal([group("high", [sample("high", "a.jpg", "2026-03-01T18:00:00+00:00", 60)], 1)]);
+  load(ctx, without);
+  assert.doesNotMatch(vm.runInContext("wlPanelHtml()", ctx), /own camera id is/);
+});

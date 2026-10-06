@@ -403,6 +403,7 @@ function wlPanelHtml() {
         Gauge ${escapeHtml(assoc.nwis_site_id || "")} (${escapeHtml(proposal.gauge.parameter_label)}, ${escapeHtml(proposal.gauge.unit)}), ${escapeHtml(String(proposal.gauge.valid_reading_count))} valid readings${t ? `, ranging ${escapeHtml(Number(t.minimum).toFixed(2))} to ${escapeHtml(Number(t.maximum).toFixed(2))} ${escapeHtml(proposal.gauge.unit)} (median ${escapeHtml(Number(t.median).toFixed(2))})` : ""}.
         ${assoc.source ? `Association source: ${escapeHtml(assoc.source)}.` : ""}
         ${proposal.warning ? `<br>${escapeHtml(proposal.warning)}` : ""}
+        ${proposal.camera_notice ? `<br>${escapeHtml(proposal.camera_notice)}` : ""}
         <br>Time of day: ${wlTimeOfDayText(proposal)}.
         <br>${escapeHtml(proposal.note)} Policy ${escapeHtml(proposal.policy_version)}.</div>
       ${proposal.selection.groups.map((g) => wlGroupHtml(g, proposal.timezone)).join("")}
