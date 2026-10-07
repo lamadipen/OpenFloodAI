@@ -51,9 +51,10 @@ test("pilot evaluation card shows metrics, conditions, cost, and safety wording"
   assert.match(output, /does not confirm flooding, prove safety, or create a public warning/);
 });
 
-test("pilot evaluation card explains when a run has no saved result", () => {
+test("pilot evaluation says quietly when a run has no saved result, and still names the file", () => {
   const output = context().pilotEvaluationHtml(null);
 
-  assert.match(output, /No pilot evaluation is saved for this run yet/);
-  assert.match(output, /riverbank-pilot-evaluation\.json/);
+  assert.match(output, /Pilot evaluation: not generated for this run yet/);
+  assert.match(output, /riverbank-pilot-evaluation\.json/); // kept in the tooltip for anyone who needs it
+  assert.doesNotMatch(output, /class="card"/); // no longer takes a whole card of prime space
 });

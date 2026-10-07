@@ -6,6 +6,14 @@
 <title>Review evidence · OpenFloodAI console</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap">
 <link rel="stylesheet" href="/console/shared.css">
+<style>
+/* The page itself scrolls, so the right-hand column can stay in view beside the images. */
+#content { overflow: visible; padding-left: 20px; padding-right: 20px; }
+.chart-point { transition: r .1s ease; }
+.chart-point:hover { stroke: #1d2433; stroke-width: 2.5; r: 7; }
+.chart-point:focus-visible { outline: none; stroke: #1d2433; stroke-width: 3; }
+@media (prefers-reduced-motion: reduce) { .chart-point { transition: none; } }
+</style>
 </head>
 <body>
 <script src="/console/shared.js"></script>
@@ -167,11 +175,7 @@ function pilotMetricPercent(value) {
 
 function pilotEvaluationHtml(report) {
   if (!report) {
-    return `
-      <div class="card" style="padding:16px 18px;">
-        <div style="font-size:13px;font-weight:600;">Pilot evaluation</div>
-        <div class="hint" style="margin-top:5px;">No pilot evaluation is saved for this run yet. Review samples first, then generate <code>riverbank-pilot-evaluation.json</code> for this run.</div>
-      </div>`;
+    return `<div class="hint" style="padding:0 4px;" title="Review some images first. The evaluation file riverbank-pilot-evaluation.json is generated afterwards.">Pilot evaluation: not generated for this run yet.</div>`;
   }
   const metrics = report.metrics || {};
   const cost = report.processing_cost || {};
@@ -664,12 +668,14 @@ function imageListHtml() {
       const d = days[i];
       const label = humanLabelFor(d);
       const active = i === state.selectedIndex;
-      return `<button data-act="select-day" data-index="${i}" ${active ? 'data-current="1"' : ""} style="width:100%;text-align:left;border:none;background:${active ? "var(--accent-soft)" : "transparent"};border-bottom:1px solid var(--line-soft);padding:8px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;">
-        <span style="font-size:12px;font-family:var(--mono);">${escapeHtml(d.date)} ${escapeHtml(d.time)}</span>
-        <span style="display:flex;align-items:center;gap:6px;">
+      return `<button data-act="select-day" data-index="${i}" ${active ? 'data-current="1"' : ""} style="width:100%;text-align:left;border:none;border-left:3px solid ${active ? "var(--accent)" : "transparent"};background:${active ? "var(--accent-soft)" : "transparent"};border-bottom:1px solid var(--line-soft);padding:8px 14px 8px 13px;display:flex;flex-direction:column;gap:4px;cursor:pointer;">
+        <span style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+          <span style="font-size:12px;font-weight:600;font-family:var(--mono);">${escapeHtml(d.date)} ${escapeHtml(d.time)}</span>
+          ${label ? `<span style="font-size:11px;font-weight:600;color:#1a7f4b;" title="Human label: ${escapeHtml(label)}">&#10003; ${escapeHtml(label)}</span>` : `<span style="font-size:11px;color:var(--ink-muted);">Not labelled</span>`}
+        </span>
+        <span style="display:flex;flex-wrap:wrap;gap:4px;">
           <span class="pill ${d.code === "P" ? "warn" : d.code === "C" ? "bad" : "gray"}" style="font-size:10px;">${escapeHtml(CODE_LABEL[d.code])}</span>
           ${samPillsHtml(d.filename)}
-          ${label ? `<span class="pill" style="font-size:10px;background:#e3f4ea;color:#1a7f4b;" title="Human label: ${escapeHtml(label)}">&#10003; ${escapeHtml(label)}</span>` : `<span style="font-size:10px;color:var(--ink-muted);">not labelled</span>`}
         </span>
       </button>`;
     })
@@ -749,6 +755,33 @@ function collapseHeaderHtml(section, titleHtml) {
   </button>`;
 }
 
+// The baseline and the selected image side by side, once, at the full width of the card. The
+// comparison image already contains both pictures with the watched area outlined, so the two
+// pictures are not drawn a second time above it. Without a comparison (no baseline, or no saved
+// image for the day) the plain pictures are shown instead.
+function sideBySideHtml({ summary, sel, baselineQuery, selectedQuery, comparisonQuery }) {
+  const baselineSam = samState.target === "baseline" && samState.status && samState.status.enabled
+    ? ' <span class="pill" style="font-size:10px;background:#ede9fe;color:#6d28d9;">Will be segmented</span>' : "";
+  const selectedSam = samHighlightIndex() != null
+    ? ' <span class="pill" style="font-size:10px;background:#ede9fe;color:#6d28d9;">Will be segmented</span>' : "";
+  const captions = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:4px;">
+      <div class="hint">Baseline &mdash; ${escapeHtml(summary.baseline_filename || "not recorded")}${baselineSam}</div>
+      <div class="hint">${escapeHtml(sel.date)}, ${escapeHtml(sel.time)} local (${escapeHtml(sel.resultLabel)})${selectedSam}</div>
+    </div>`;
+  if (comparisonQuery) {
+    const url = `/api/image-sequence-comparison?${comparisonQuery}`;
+    return `${captions}
+      <a href="${url}" target="_blank" rel="noopener" title="Open the full-size comparison in a new tab" style="display:block;margin-bottom:14px;">
+        <img src="${url}" style="width:100%;border-radius:8px;display:block;" alt="Baseline and selected image side by side, watched area outlined">
+      </a>`;
+  }
+  return `${captions}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
+      ${baselineQuery ? `<img src="/api/image-sequence-image?${baselineQuery}" style="width:100%;border-radius:8px;display:block;" alt="Baseline image">` : `<div class="hint">No baseline image.</div>`}
+      ${selectedQuery ? `<img src="/api/image-sequence-image?${selectedQuery}" style="width:100%;border-radius:8px;display:block;" alt="Selected image">` : `<div class="hint">No image for this day.</div>`}
+    </div>`;
+}
+
 function counts() {
   const c = { P: 0, N: 0, C: 0, U: 0 };
   days.forEach((d) => {
@@ -802,7 +835,7 @@ function render() {
 
     ${pilotEvaluationHtml(detail.pilot_evaluation)}
 
-    <div style="display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;flex-grow:1;min-height:0;">
+    <div style="display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;flex-grow:1;min-height:0;">
       <div style="display:flex;flex-direction:column;gap:16px;min-width:0;">
 
         <div class="card" style="padding:14px 18px;">
@@ -840,20 +873,7 @@ function render() {
           ${waterLevelInfoHtml(sel)}
           ${selectedGaugeHtml(sel)}
           ${compareSwitchHtml()}
-          ${showSide ? `
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
-            <div>
-              <div class="hint" style="margin-bottom:4px;">Baseline &mdash; ${escapeHtml(summary.baseline_filename || "not recorded")}${samState.target === "baseline" && samState.status && samState.status.enabled ? ' <span class="pill" style="font-size:10px;background:#ede9fe;color:#6d28d9;">Will be segmented</span>' : ""}</div>
-              <img src="/api/image-sequence-image?${baselineQuery}" style="width:100%;border-radius:8px;display:block;" alt="Baseline image">
-            </div>
-            <div>
-              <div class="hint" style="margin-bottom:4px;">${escapeHtml(sel.date)}, ${escapeHtml(sel.time)} local (${escapeHtml(sel.resultLabel)})${samHighlightIndex() != null ? ' <span class="pill" style="font-size:10px;background:#ede9fe;color:#6d28d9;">Will be segmented</span>' : ""}</div>
-              ${selectedQuery ? `<img src="/api/image-sequence-image?${selectedQuery}" style="width:100%;border-radius:8px;display:block;" alt="Selected image">` : `<div class="hint">No image for this day.</div>`}
-            </div>
-          </div>
-          <div class="hint" style="margin-bottom:6px;">Side-by-side comparison, watched area outlined</div>
-          ${comparisonQuery ? `<img src="/api/image-sequence-comparison?${comparisonQuery}" style="width:100%;border-radius:8px;display:block;" alt="Side-by-side comparison">` : `<div class="hint">No comparison for this day.</div>`}
-` : ""}
+          ${showSide ? sideBySideHtml({ summary, sel, baselineQuery, selectedQuery, comparisonQuery }) : ""}
           ${showOverlay ? `
           <div class="hint" style="margin:14px 0 6px;">Overlay comparison &mdash; slide to blend the selected image over the baseline</div>
           ${onionHtml(summary.baseline_filename ? baselineQuery : null, selectedQuery)}
@@ -870,8 +890,8 @@ function render() {
         </div>
       </div>
 
-      <div style="display:flex;flex-direction:column;gap:16px;min-width:0;">
-        <div class="card" style="overflow:hidden;">
+      <div style="display:flex;flex-direction:column;gap:16px;min-width:0;position:sticky;top:12px;align-self:start;max-height:calc(100vh - 24px);overflow:auto;">
+        <div class="card" style="overflow:hidden;flex-shrink:0;">
           <div style="padding:12px 16px;border-bottom:1px solid var(--line-soft);font-size:13px;font-weight:600;">Events (${visibleEvents().length})</div>
           <div style="max-height:340px;overflow:auto;">
             ${visibleEvents()
@@ -975,6 +995,39 @@ function assignBucketX(buckets, leftPad) {
   return buckets;
 }
 
+// ---- Making the selected chart point obvious --------------------------------------------
+// The selected point gets a column highlight and guide line through the chart, a larger dot with
+// a dark ring, and a tag naming the day and value. Both charts draw the same marks, so the
+// selection reads the same in each. Hovering any point enlarges it and shows its details.
+function bucketIsSelected(bucket) {
+  return bucket.indices.includes(state.selectedIndex);
+}
+
+function pointTitle(bucket, valueText) {
+  const day = days[bucket.indices.includes(state.selectedIndex) ? state.selectedIndex : bucket.repIndex] || {};
+  const when = `${day.date || ""}${day.time ? " " + day.time : ""}`.trim();
+  const count = bucket.dayCount > 1 ? ` (${bucket.dayCount} images, one shown)` : "";
+  return `${when}${valueText ? " \u00b7 " + valueText : ""}${count}`;
+}
+
+function selectionBackdropSvg(x, top, bottom) {
+  return `<rect x="${(x - 9).toFixed(1)}" y="${top}" width="18" height="${(bottom - top).toFixed(1)}" fill="var(--accent)" opacity="0.10" pointer-events="none"/>
+    <line x1="${x.toFixed(1)}" y1="${top}" x2="${x.toFixed(1)}" y2="${bottom}" stroke="var(--accent)" stroke-width="1.5" opacity="0.65" pointer-events="none"/>`;
+}
+
+function selectionMarkerSvg(x, y, r, tag, top, minX, maxX) {
+  const width = Math.max(60, tag.length * 6.3 + 14);
+  const left = Math.min(Math.max(x - width / 2, minX), maxX - width);
+  const above = y - r - 30 >= top;
+  const tagY = above ? y - r - 27 : y + r + 9;
+  return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r + 5}" fill="#fff" opacity="0.9" pointer-events="none"/>
+    <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r + 5}" fill="none" stroke="#1d2433" stroke-width="2.5" pointer-events="none"/>
+    <g pointer-events="none">
+      <rect x="${left.toFixed(1)}" y="${tagY.toFixed(1)}" width="${width.toFixed(1)}" height="19" rx="9.5" fill="#1d2433"/>
+      <text x="${(left + width / 2).toFixed(1)}" y="${(tagY + 13).toFixed(1)}" font-size="11" font-weight="600" fill="#fff" text-anchor="middle">${escapeHtml(tag)}</text>
+    </g>`;
+}
+
 function scoreChartSvg() {
   const daily = state.granularity === "daily";
   const leftPad = 34;
@@ -1001,14 +1054,19 @@ function scoreChartSvg() {
   });
   if (seg.length) segments.push(seg.join(" "));
 
+  const selectedPoint = points.find((p) => bucketIsSelected(p.b));
   const dots = points
     .map((p) => {
-      const selected = p.b.repIndex === state.selectedIndex;
-      const r = daily ? (selected ? 5 : 3) : Math.min(9, 4 + p.b.dayCount / 4);
-      const ring = selected ? 2 : 1;
-      return `<circle cx="${p.b.x.toFixed(1)}" cy="${y(p.b.meanScore).toFixed(1)}" r="${r}" fill="${p.b.color}" stroke="#fff" stroke-width="${ring}" data-act="select-day" data-index="${p.b.repIndex}" style="cursor:pointer;"/>${labelledRingSvg(p.b, p.b.x.toFixed(1), y(p.b.meanScore).toFixed(1), r)}${samRingSvg(p.b, p.b.x.toFixed(1), y(p.b.meanScore).toFixed(1), r)}`;
+      const selected = p === selectedPoint;
+      const r = daily ? (selected ? 6 : 3.5) : Math.min(9, 4 + p.b.dayCount / 4) + (selected ? 2 : 0);
+      const title = pointTitle(p.b, `score ${p.b.meanScore.toFixed(3)}`);
+      return `<circle class="chart-point" cx="${p.b.x.toFixed(1)}" cy="${y(p.b.meanScore).toFixed(1)}" r="${r}" fill="${p.b.color}" stroke="${selected ? "#1d2433" : "#fff"}" stroke-width="${selected ? 2.5 : 1}" data-act="select-day" data-index="${p.b.repIndex}" role="button" aria-label="${escapeHtml(title)}" aria-pressed="${selected}" style="cursor:pointer;"><title>${escapeHtml(title)}</title></circle>${labelledRingSvg(p.b, p.b.x.toFixed(1), y(p.b.meanScore).toFixed(1), r)}${samRingSvg(p.b, p.b.x.toFixed(1), y(p.b.meanScore).toFixed(1), r)}`;
     })
     .join("");
+  const backdrop = selectedPoint ? selectionBackdropSvg(selectedPoint.b.x, topY, bottomY) : "";
+  const marker = selectedPoint
+    ? selectionMarkerSvg(selectedPoint.b.x, y(selectedPoint.b.meanScore), daily ? 6 : Math.min(9, 4 + selectedPoint.b.dayCount / 4) + 2, pointTitle(selectedPoint.b, `score ${selectedPoint.b.meanScore.toFixed(3)}`).replace(/ \(.*\)$/, ""), topY, leftPad, 1040)
+    : "";
   const thresholdY = changeInfo.threshold != null ? y(changeInfo.threshold) : null;
   const changeX = changeXPosition(buckets);
   const ticks = monthTicksFor(buckets);
@@ -1023,8 +1081,10 @@ function scoreChartSvg() {
       <line x1="${leftPad}" y1="${bottomY}" x2="1040" y2="${bottomY}" stroke="var(--line)" stroke-width="1"/>
       ${thresholdY != null ? `<line x1="${leftPad}" y1="${thresholdY.toFixed(1)}" x2="1040" y2="${thresholdY.toFixed(1)}" stroke="#1769aa" stroke-width="1" stroke-dasharray="4,3" opacity="0.7"/><text x="1036" y="${Math.max(topY + 10, thresholdY - 6).toFixed(1)}" font-size="10" fill="#1769aa" text-anchor="end">typical range ends ${changeInfo.threshold.toFixed(3)}</text>` : ""}
       ${changeX != null ? `<line x1="${changeX.toFixed(1)}" y1="${topY}" x2="${changeX.toFixed(1)}" y2="${bottomY}" stroke="#9a5b13" stroke-width="1.5" stroke-dasharray="2,3"/>` : ""}
+      ${backdrop}
       ${segments.map((s) => `<polyline points="${s}" fill="none" stroke="#c3c2b7" stroke-width="1.5"/>`).join("")}
       ${dots}
+      ${marker}
       ${ticks.map((t) => `<text x="${t.x.toFixed(1)}" y="${(bottomY + 18).toFixed(1)}" font-size="11" fill="var(--ink-muted)" text-anchor="middle">${escapeHtml(t.label)}</text>`).join("")}
     </svg>
     <div style="display:flex;gap:16px;margin-top:8px;font-size:12px;color:var(--ink-soft);flex-wrap:wrap;">
@@ -1055,14 +1115,20 @@ function gaugeChartSvg() {
   // Same buckets, same colors, same click target as the region-change chart's
   // dots -- selecting a point here selects the same day there, and vice versa,
   // since both read/write the shared state.selectedIndex.
+  const selectedPoint = points.find((p) => bucketIsSelected(p.b));
+  const unit = gaugeMeta.unit ? ` ${gaugeMeta.unit}` : "";
   const dots = points
     .map((p) => {
-      const selected = p.b.repIndex === state.selectedIndex;
-      const r = daily ? (selected ? 5 : 3) : Math.min(9, 4 + p.b.dayCount / 4);
-      const ring = selected ? 2 : 1;
-      return `<circle cx="${p.b.x.toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="${r}" fill="${p.b.color}" stroke="#fff" stroke-width="${ring}" data-act="select-day" data-index="${p.b.repIndex}" style="cursor:pointer;"/>${labelledRingSvg(p.b, p.b.x.toFixed(1), y(p.v).toFixed(1), r)}${samRingSvg(p.b, p.b.x.toFixed(1), y(p.v).toFixed(1), r)}`;
+      const selected = p === selectedPoint;
+      const r = daily ? (selected ? 6 : 3.5) : Math.min(9, 4 + p.b.dayCount / 4) + (selected ? 2 : 0);
+      const title = pointTitle(p.b, `${p.v.toFixed(2)}${unit}`);
+      return `<circle class="chart-point" cx="${p.b.x.toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="${r}" fill="${p.b.color}" stroke="${selected ? "#1d2433" : "#fff"}" stroke-width="${selected ? 2.5 : 1}" data-act="select-day" data-index="${p.b.repIndex}" role="button" aria-label="${escapeHtml(title)}" aria-pressed="${selected}" style="cursor:pointer;"><title>${escapeHtml(title)}</title></circle>${labelledRingSvg(p.b, p.b.x.toFixed(1), y(p.v).toFixed(1), r)}${samRingSvg(p.b, p.b.x.toFixed(1), y(p.v).toFixed(1), r)}`;
     })
     .join("");
+  const backdrop = selectedPoint ? selectionBackdropSvg(selectedPoint.b.x, topY, bottomY) : "";
+  const marker = selectedPoint
+    ? selectionMarkerSvg(selectedPoint.b.x, y(selectedPoint.v), daily ? 6 : Math.min(9, 4 + selectedPoint.b.dayCount / 4) + 2, pointTitle(selectedPoint.b, `${selectedPoint.v.toFixed(2)}${unit}`).replace(/ \(.*\)$/, ""), topY, leftPad, 1040)
+    : "";
 
   return `<svg viewBox="0 0 1040 130" style="width:100%;height:110px;display:block;">
     <text x="4" y="${(topY + 6).toFixed(1)}" font-size="10" fill="var(--ink-muted)">${max.toFixed(1)}</text>
@@ -1072,8 +1138,10 @@ function gaugeChartSvg() {
     <text x="4" y="${(bottomY + 4).toFixed(1)}" font-size="10" fill="var(--ink-muted)">${min.toFixed(1)}</text>
     <line x1="${leftPad}" y1="${bottomY}" x2="1040" y2="${bottomY}" stroke="var(--line)" stroke-width="1"/>
     ${changeX != null ? `<line x1="${changeX.toFixed(1)}" y1="${topY}" x2="${changeX.toFixed(1)}" y2="${bottomY}" stroke="#9a5b13" stroke-width="1.5" stroke-dasharray="2,3"/>` : ""}
+    ${backdrop}
     <polyline points="${polyline}" fill="none" stroke="#1769aa" stroke-width="1.6"/>
     ${dots}
+    ${marker}
   </svg>`;
 }
 

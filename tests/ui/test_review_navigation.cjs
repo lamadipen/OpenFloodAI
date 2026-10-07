@@ -277,3 +277,108 @@ test("nothing used while the page state is created is declared after it (no temp
   const loaders = script.match(/function load(Compare|Collapsed)[A-Za-z]*\(\) \{[\s\S]*?\n\}/g).join("\n");
   assert.doesNotMatch(loaders, /COMPARE_VIEWS|COLLAPSE_KEY/);
 });
+
+// ---- the side-by-side view shows each picture once ------------------------------------------
+
+function sideContext() {
+  const start = script.indexOf("// The baseline and the selected image side by side, once");
+  const sandbox = {
+    samState: { target: "selected", status: null },
+    samHighlightIndex: () => null,
+    escapeHtml: String
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(script.slice(start, script.indexOf("function counts() {")), sandbox);
+  return sandbox;
+}
+
+const SIDE_ARGS = {
+  summary: { baseline_filename: "base.jpg" },
+  sel: { date: "2026-01-02", time: "13:45", resultLabel: "No water level change" }
+};
+
+test("with a comparison available, only the comparison image is drawn, wrapped in a link to full size", () => {
+  const html = sideContext().sideBySideHtml({ ...SIDE_ARGS, baselineQuery: "b=1", selectedQuery: "s=1", comparisonQuery: "c=1" });
+  assert.equal((html.match(/<img /g) || []).length, 1);
+  assert.match(html, /image-sequence-comparison\?c=1/);
+  assert.doesNotMatch(html, /image-sequence-image\?/);
+  assert.match(html, /<a href="\/api\/image-sequence-comparison\?c=1" target="_blank"/);
+  assert.match(html, /Baseline &mdash; base\.jpg/);
+  assert.match(html, /2026-01-02, 13:45 local \(No water level change\)/);
+});
+
+test("without a comparison the two plain pictures are shown instead", () => {
+  const both = sideContext().sideBySideHtml({ ...SIDE_ARGS, baselineQuery: "b=1", selectedQuery: "s=1", comparisonQuery: null });
+  assert.equal((both.match(/<img /g) || []).length, 2);
+  const noDay = sideContext().sideBySideHtml({ ...SIDE_ARGS, baselineQuery: "b=1", selectedQuery: null, comparisonQuery: null });
+  assert.match(noDay, /No image for this day\./);
+});
+
+test("the segmentation badge follows the image that will be sent", () => {
+  const c = sideContext();
+  c.samHighlightIndex = () => 3;
+  const selected = c.sideBySideHtml({ ...SIDE_ARGS, baselineQuery: "b=1", selectedQuery: "s=1", comparisonQuery: "c=1" });
+  assert.equal((selected.match(/Will be segmented/g) || []).length, 1);
+  c.samHighlightIndex = () => null;
+  c.samState = { target: "baseline", status: { enabled: true } };
+  const baseline = c.sideBySideHtml({ ...SIDE_ARGS, baselineQuery: "b=1", selectedQuery: "s=1", comparisonQuery: "c=1" });
+  assert.equal((baseline.match(/Will be segmented/g) || []).length, 1);
+});
+
+// ---- selected chart point stands out -------------------------------------------------------
+
+function markContext() {
+  const start = script.indexOf("// ---- Making the selected chart point obvious");
+  const sandbox = {
+    state: { selectedIndex: 2 },
+    days: [{ date: "2026-01-01", time: "10:00" }, { date: "2026-01-02", time: "11:00" }, { date: "2026-01-03", time: "12:30" }],
+    escapeHtml: String
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(script.slice(start, script.indexOf("function scoreChartSvg() {")), sandbox);
+  return sandbox;
+}
+
+test("a point is selected when its bucket holds the selected image, not only when it is the representative", () => {
+  const c = markContext();
+  assert.equal(c.bucketIsSelected({ indices: [0, 1, 2], repIndex: 0 }), true);
+  assert.equal(c.bucketIsSelected({ indices: [0, 1], repIndex: 0 }), false);
+});
+
+test("a point's tooltip names the day, time and value, and notes grouped images", () => {
+  const c = markContext();
+  assert.equal(c.pointTitle({ indices: [2], repIndex: 2, dayCount: 1 }, "4.29 ft"), "2026-01-03 12:30 · 4.29 ft");
+  assert.match(c.pointTitle({ indices: [0, 1, 2], repIndex: 0, dayCount: 3 }, "score 0.1"), /\(3 images, one shown\)$/);
+});
+
+test("the selection marks are a column highlight, a guide line, a ring and a tag", () => {
+  const c = markContext();
+  const back = c.selectionBackdropSvg(100, 4, 120);
+  assert.match(back, /<rect[^>]*opacity="0.10"/);
+  assert.match(back, /<line[^>]*x1="100.0"/);
+  const mark = c.selectionMarkerSvg(100, 60, 6, "2026-01-03 12:30 · 4.29 ft", 4, 50, 1040);
+  assert.match(mark, /stroke="#1d2433" stroke-width="2.5"/);
+  assert.match(mark, />2026-01-03 12:30 · 4\.29 ft</);
+  assert.match(mark, /pointer-events="none"/); // the marks never block clicking another point
+});
+
+test("the tag stays inside the chart: flipped below near the top and clamped at the edges", () => {
+  const c = markContext();
+  const nearTop = c.selectionMarkerSvg(100, 10, 6, "tag", 4, 50, 1040);
+  assert.match(nearTop, /<rect x="[\d.]+" y="(2[0-9]|3[0-9])\./); // below the dot
+  const nearLeft = c.selectionMarkerSvg(52, 100, 6, "a long tag text here", 4, 50, 1040);
+  const x = Number(nearLeft.match(/<rect x="([\d.]+)"/)[1]);
+  assert.ok(x >= 50);
+  const nearRight = c.selectionMarkerSvg(1038, 100, 6, "a long tag text here", 4, 50, 1040);
+  const xr = Number(nearRight.match(/<rect x="([\d.]+)" y="[\d.]+" width="([\d.]+)"/)[1]);
+  const wr = Number(nearRight.match(/<rect x="[\d.]+" y="[\d.]+" width="([\d.]+)"/)[1]);
+  assert.ok(xr + wr <= 1040.01);
+});
+
+test("both charts draw the same marks, and every point is a labelled button", () => {
+  assert.equal((script.match(/selectionMarkerSvg\(/g) || []).length, 3); // definition + two charts
+  assert.equal((script.match(/selectionBackdropSvg\(/g) || []).length, 3);
+  assert.equal((script.match(/role="button" aria-label=/g) || []).length, 2);
+  assert.match(html, /\.chart-point:hover/);
+  assert.match(html, /prefers-reduced-motion: reduce\) \{ \.chart-point/);
+});
