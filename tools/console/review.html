@@ -36,7 +36,7 @@ let gaugeEvidence = null;
 let gaugeImages = new Map();
 let gaugeMeta = { label: "Gage height", unit: "", usedFallbackDischarge: false };
 let evidencePoints = [];
-let state = { filter: null, selectedIndex: 0, eventCursor: -1, granularity: "daily" };
+let state = { filter: null, selectedIndex: 0, eventCursor: -1, granularity: "daily", compareView: loadCompareView() };
 
 function isoMean(values) {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
@@ -683,6 +683,39 @@ function imageListHtml() {
   </div>`;
 }
 
+// Which comparison views are shown under the selected image. One view at a time leaves more
+// room; "both" shows everything. The choice is remembered in this browser only.
+const COMPARE_VIEWS = [
+  ["side", "Side by side"],
+  ["overlay", "Overlay"],
+  ["both", "Both"]
+];
+
+function loadCompareView() {
+  try {
+    const saved = localStorage.getItem("openfloodai.reviewCompareView");
+    if (saved === "side" || saved === "overlay" || saved === "both") return saved;
+  } catch (error) {
+    // Storage can be blocked; the default still works.
+  }
+  return "side";
+}
+
+function saveCompareView(view) {
+  try {
+    localStorage.setItem("openfloodai.reviewCompareView", view);
+  } catch (error) {
+    // Remembering the choice is a convenience only.
+  }
+}
+
+function compareSwitchHtml() {
+  return `<div role="group" aria-label="Comparison view" style="display:flex;gap:6px;align-items:center;margin-bottom:12px;">
+    <span class="hint">Comparison view</span>
+    ${COMPARE_VIEWS.map(([id, text]) => `<button class="btn${state.compareView === id ? " primary" : ""}" aria-pressed="${state.compareView === id}" data-act="compare-view" data-value="${id}" style="font-size:12px;padding:5px 12px;">${text}</button>`).join("")}
+  </div>`;
+}
+
 function counts() {
   const c = { P: 0, N: 0, C: 0, U: 0 };
   days.forEach((d) => {
@@ -702,6 +735,8 @@ function render() {
   const c = counts();
   const changeStartDay = changeInfo.index >= 0 ? days[changeInfo.index] : null;
   const hasGauge = days.some((d) => gaugeValueFor(d) != null);
+  const showSide = state.compareView !== "overlay";
+  const showOverlay = state.compareView !== "side";
   const selectedLabel = humanLabelFor(sel);
   const navList = navIndices();
   const navPosition = navList.includes(state.selectedIndex) ? `${navList.indexOf(state.selectedIndex) + 1} / ${navList.length}` : `&ndash; / ${navList.length}`;
@@ -769,6 +804,8 @@ function render() {
           </div>
           ${waterLevelInfoHtml(sel)}
           ${selectedGaugeHtml(sel)}
+          ${compareSwitchHtml()}
+          ${showSide ? `
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
             <div>
               <div class="hint" style="margin-bottom:4px;">Baseline &mdash; ${escapeHtml(summary.baseline_filename || "not recorded")}${samState.target === "baseline" && samState.status && samState.status.enabled ? ' <span class="pill" style="font-size:10px;background:#ede9fe;color:#6d28d9;">Will be segmented</span>' : ""}</div>
@@ -781,8 +818,11 @@ function render() {
           </div>
           <div class="hint" style="margin-bottom:6px;">Side-by-side comparison, watched area outlined</div>
           ${comparisonQuery ? `<img src="/api/image-sequence-comparison?${comparisonQuery}" style="width:100%;border-radius:8px;display:block;" alt="Side-by-side comparison">` : `<div class="hint">No comparison for this day.</div>`}
+` : ""}
+          ${showOverlay ? `
           <div class="hint" style="margin:14px 0 6px;">Overlay comparison &mdash; slide to blend the selected image over the baseline</div>
           ${onionHtml(summary.baseline_filename ? baselineQuery : null, selectedQuery)}
+` : ""}
         </div>
 
         ${riverbankReviewHtml(detail.evidence_records, sel)}
@@ -1335,6 +1375,10 @@ function wireActions() {
       if (act === "filter") {
         const code = el.dataset.code;
         state.filter = state.filter === code ? null : code;
+        render();
+      } else if (act === "compare-view") {
+        state.compareView = el.dataset.value;
+        saveCompareView(state.compareView);
         render();
       } else if (act === "granularity") {
         state.granularity = el.dataset.value;

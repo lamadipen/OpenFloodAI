@@ -177,3 +177,47 @@ test("the SAM result buttons mark the saved decision and the page refreshes afte
   assert.match(script, /aria-pressed="\$\{review === d\}"/);
   assert.match(script, /Review saved\. This is separate from human labels\."\);\s*render\(\);/);
 });
+
+// ---- comparison view switch ----------------------------------------------------------------
+
+function compareContext(stored) {
+  const start = script.indexOf("// Which comparison views are shown");
+  const sandbox = {
+    state: { compareView: "side" },
+    localStorage: {
+      store: stored === undefined ? {} : { "openfloodai.reviewCompareView": stored },
+      getItem(k) { return this.store[k] ?? null; },
+      setItem(k, v) { this.store[k] = v; }
+    }
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(script.slice(start, script.indexOf("function counts() {")), sandbox);
+  return sandbox;
+}
+
+test("the comparison view defaults to side by side and remembers a valid choice", () => {
+  assert.equal(compareContext().loadCompareView(), "side");
+  assert.equal(compareContext("overlay").loadCompareView(), "overlay");
+  assert.equal(compareContext("both").loadCompareView(), "both");
+  assert.equal(compareContext("nonsense").loadCompareView(), "side");
+  const c = compareContext();
+  c.saveCompareView("both");
+  assert.equal(c.loadCompareView(), "both");
+});
+
+test("a blocked browser store does not break the switch", () => {
+  const c = compareContext();
+  c.localStorage = { getItem() { throw new Error("blocked"); }, setItem() { throw new Error("blocked"); } };
+  assert.equal(c.loadCompareView(), "side");
+  assert.doesNotThrow(() => c.saveCompareView("overlay"));
+});
+
+test("the switch marks the active view and each view shows the right blocks", () => {
+  const c = compareContext();
+  c.state.compareView = "overlay";
+  const html = c.compareSwitchHtml();
+  assert.match(html, /data-value="overlay"[^>]*>Overlay/);
+  assert.match(html, /aria-pressed="true" data-act="compare-view" data-value="overlay"/);
+  assert.match(script, /const showSide = state\.compareView !== "overlay"/);
+  assert.match(script, /const showOverlay = state\.compareView !== "side"/);
+});
