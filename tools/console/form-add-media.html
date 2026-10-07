@@ -21,8 +21,8 @@
     </div>
 
     <div style="display:flex;gap:4px;padding:14px 24px 0;border-bottom:1px solid var(--line);">
-      <button data-mode="video" style="border:none;background:none;padding:8px 14px;font-size:13px;font-weight:600;color:var(--accent);border-bottom:2px solid var(--accent);cursor:pointer;">Local video</button>
-      <button data-mode="images" style="border:none;background:none;padding:8px 14px;font-size:13px;font-weight:500;color:var(--ink-soft);border-bottom:2px solid transparent;cursor:pointer;">Timestamped images</button>
+      <button data-mode="images" style="border:none;background:none;padding:8px 14px;font-size:13px;font-weight:500;color:var(--ink-soft);border-bottom:2px solid transparent;cursor:pointer;">Camera images</button>
+      <button data-mode="video" style="border:none;background:none;padding:8px 14px;font-size:13px;font-weight:500;color:var(--ink-soft);border-bottom:2px solid transparent;cursor:pointer;">Local video</button>
     </div>
 
     <div style="padding:22px 24px;">
@@ -100,7 +100,7 @@
           </label>
           <div style="background:var(--warn-soft);border:1px solid #ebd3a0;border-radius:9px;padding:11px 14px;font-size:12px;color:#6b4a12;display:flex;gap:8px;margin-bottom:16px;">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="2" style="flex-shrink:0;margin-top:1px;"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L2.5 17a2 2 0 001.7 3h15.6a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
-            <span>Two of the three image-sequence sites reviewed this month used <code>one_per_day</code> and ended up with 66&ndash;118 "camera or image problem" results out of ~122 &mdash; the sampled frame landed at dawn or local midnight almost every day. Prefer daylight sampling.</span>
+            <span>Daytime sampling is the safest choice. Frames taken at dawn or after dark are usually flagged as camera or image problems and add little to the review.</span>
           </div>
           </div>
           <div id="waterLevelPanel" hidden></div>
@@ -117,10 +117,10 @@ const folderName = qs("site");
 let sampling = "one_daylight_image_per_day";
 
 const SAMPLING_MODES = [
-  { id: "one_daylight_image_per_day", note: "One frame per day, nearest to local solar noon", recommended: true },
-  { id: "one_per_day", note: "First frame available each day — can land at dawn or midnight", recommended: false },
-  { id: "one_per_hour", note: "Dense hourly coverage, larger download", recommended: false },
-  { id: "all", note: "Every archived frame in the range", recommended: false }
+  { id: "one_daylight_image_per_day", title: "One daytime image per day", note: "The frame nearest local solar noon each day.", recommended: true },
+  { id: "one_per_day", title: "First image of each day", note: "Often taken at dawn or midnight, so many come out unusable.", recommended: false },
+  { id: "one_per_hour", title: "One image per hour", note: "More coverage, larger download.", recommended: false },
+  { id: "all", title: "Every image", note: "All archived frames in the date range. Can be very large.", recommended: false }
 ];
 
 function renderSampling() {
@@ -129,8 +129,8 @@ function renderSampling() {
     return `<button type="button" data-sampling="${s.id}" style="text-align:left;border:1.5px solid ${active ? "var(--accent)" : "var(--line)"};background:${active ? "var(--accent-soft)" : "#fff"};border-radius:9px;padding:10px 12px;display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
       <div style="width:16px;height:16px;border-radius:50%;border:1.5px solid ${active ? "var(--accent)" : "var(--line)"};background:${active ? "var(--accent)" : "transparent"};flex-shrink:0;margin-top:1px;"></div>
       <div>
-        <div style="font-size:12px;font-weight:600;font-family:var(--mono);">${s.id}</div>
-        <div style="font-size:11px;color:var(--ink-muted);margin-top:2px;">${s.note}</div>
+        <div style="font-size:13px;font-weight:600;">${s.title}</div>
+        <div style="font-size:12px;color:var(--ink-soft);margin-top:2px;">${s.note}</div>
       </div>
       ${s.recommended ? '<span class="pill ok" style="margin-left:auto;white-space:nowrap;">Recommended</span>' : ""}
     </button>`;
@@ -699,6 +699,7 @@ async function main() {
   }
   $("closeLink").href = `/console/site.html?${new URLSearchParams({ site: folderName })}`;
   $("siteLabel").textContent = `${folderName} · watched area and guides stay in place`;
+  setMode("images"); // camera images are the main way to add media
   renderSampling();
   setSampleKind("regular");
 

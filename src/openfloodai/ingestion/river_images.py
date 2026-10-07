@@ -914,6 +914,7 @@ def list_site_image_sequences(site_dir: Path) -> list[dict[str, Any]]:
         if isinstance(summary, dict):
             display_name = read_display_name(child)
             summary["display_name"] = display_name
+            summary["gauge_status"] = _gauge_status(child)
             summary["label"] = sequence_label(
                 str(summary.get("sequence_id") or child.name), display_name
             )
@@ -926,6 +927,17 @@ def list_site_image_sequences(site_dir: Path) -> list[dict[str, Any]]:
                 }
             summaries.append(summary)
     return summaries
+
+
+def _gauge_status(sequence_dir: Path) -> str | None:
+    """The saved gauge source's status ("available", "no_station_association", ...), or None."""
+
+    try:
+        loaded = json.loads((sequence_dir / "gauge-readings.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    status = loaded.get("status") if isinstance(loaded, dict) else None
+    return status if isinstance(status, str) else None
 
 
 def _water_level_samples(sequence_dir: Path) -> dict[str, dict[str, Any]] | None:

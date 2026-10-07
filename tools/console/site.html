@@ -183,7 +183,7 @@ function renderOverview() {
         <div style="display:flex;flex-direction:column;gap:10px;font-size:13px;">
           ${checklistRow(!!(state.config && state.config.reference_region), "Watched area drawn")}
           ${checklistRow(summarizeBaselineGuides((state.config && state.config.normal_waterline_guides) || []).ready, "Riverbank baseline ready (a guide marked normal condition)")}
-          ${checklistRow(false, "USGS gage attached")}
+          ${checklistRow(state.sequences.some((seq) => seq.gauge_status === "available"), "USGS gage readings attached to an image sequence")}
         </div>
       </div>
     </div>`;

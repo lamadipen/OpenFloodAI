@@ -170,3 +170,34 @@ def test_viewer_rejects_traversal_and_symlinks(tmp_path: Path) -> None:
     for batch_id, name in requests:
         with pytest.raises(river.RiverImageError):
             river.resolve_downloaded_image(tmp_path, batch_id, name)
+
+
+def test_listed_sequences_carry_the_status_of_their_saved_gauge_source(tmp_path: Path) -> None:
+    site = tmp_path / "site"
+    for name, status in (
+        ("seq-with-gauge", "available"),
+        ("seq-no-station", "no_station_association"),
+    ):
+        sequence = site / "inputs" / "image-sequences" / name
+        sequence.mkdir(parents=True)
+        (sequence / "download-summary.json").write_text(
+            json.dumps({"sequence_id": name}), encoding="utf-8"
+        )
+        (sequence / "gauge-readings.json").write_text(
+            json.dumps({"status": status}), encoding="utf-8"
+        )
+    bare = site / "inputs" / "image-sequences" / "seq-bare"
+    bare.mkdir(parents=True)
+    (bare / "download-summary.json").write_text(
+        json.dumps({"sequence_id": "seq-bare"}), encoding="utf-8"
+    )
+
+    found = {
+        row["sequence_id"]: row["gauge_status"] for row in river.list_site_image_sequences(site)
+    }
+
+    assert found == {
+        "seq-with-gauge": "available",
+        "seq-no-station": "no_station_association",
+        "seq-bare": None,
+    }
