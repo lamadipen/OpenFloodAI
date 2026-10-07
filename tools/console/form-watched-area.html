@@ -81,7 +81,7 @@ function captureVideoFrame() {
   $("stageImg").src = canvas.toDataURL("image/jpeg", 0.92);
 }
 
-function loadVideoSource() {
+function loadVideoSource(startAtSeconds) {
   return new Promise((resolve) => {
     const video = $("sourceVideo");
     video.src = `/api/site-video?${new URLSearchParams({ folder_name: folderName, video_id: videoId })}`;
@@ -89,8 +89,9 @@ function loadVideoSource() {
       "loadedmetadata",
       () => {
         $("scrub").max = video.duration || 1;
-        $("scrub").value = 0;
-        video.currentTime = 0;
+        const target = clamp(startAtSeconds || 0, 0, video.duration || 1);
+        $("scrub").value = target;
+        video.currentTime = target;
         resolve();
       },
       { once: true }
@@ -232,31 +233,43 @@ function showImage(index) {
   $("imageCaption").hidden = false;
 }
 
-function selectSequence(id) {
+function selectSequence(id, filename) {
   const sequence = imageSequences.find((s) => s.sequence_id === id);
   sequenceId = id;
   currentImages = downloadedImages(sequence);
+  const found = filename ? currentImages.findIndex((r) => r.filename === filename) : -1;
+  const index = found >= 0 ? found : 0;
   $("scrub").max = Math.max(currentImages.length - 1, 0);
-  $("scrub").value = 0;
-  showImage(0);
+  $("scrub").value = index;
+  showImage(index);
 }
 
-function setUpImagePicker(sequences) {
+// The image the watched area was saved on, when it is still there; otherwise null.
+function savedImageStillAvailable(source, sequences) {
+  if (!source || !source.image_sequence_id || !source.image_filename) return false;
+  const sequence = (sequences || []).find((s) => s.sequence_id === source.image_sequence_id);
+  return downloadedImages(sequence).some((r) => r.filename === source.image_filename);
+}
+
+function setUpImagePicker(sequences, savedSource) {
   imageSequences = sequences.filter((s) => downloadedImages(s).length);
   const select = $("sequenceSelect");
   select.innerHTML = imageSequences
     .map((s) => `<option value="${escapeHtml(s.sequence_id)}">${escapeHtml(sequenceOptionLabel(s))}</option>`)
     .join("");
-  // Newest sequence that has images first, matching what the editor used to pick on its own.
-  const newest = imageSequences[imageSequences.length - 1];
-  select.value = newest.sequence_id;
+  // Open on the image the area was saved on if it still exists, else the newest sequence's first.
+  const saved = savedImageStillAvailable(savedSource, imageSequences) ? savedSource : null;
+  const start = saved
+    ? imageSequences.find((s) => s.sequence_id === saved.image_sequence_id)
+    : imageSequences[imageSequences.length - 1];
+  select.value = start.sequence_id;
   $("scrubLabel").textContent = "Image";
   $("scrub").step = 1;
   $("sequenceRow").hidden = false;
   $("scrubRow").hidden = false;
   select.addEventListener("change", () => selectSequence(select.value));
   $("scrub").addEventListener("input", () => showImage(Number($("scrub").value)));
-  selectSequence(newest.sequence_id);
+  selectSequence(start.sequence_id, saved ? saved.image_filename : null);
 }
 
 async function main() {
@@ -280,8 +293,14 @@ async function main() {
     }
     paintBox();
 
-    if ((sequenceData.sequences || []).some((seq) => downloadedImages(seq).length)) {
-      setUpImagePicker(sequenceData.sequences);
+    const savedSource = cfg.reference_region_source || null;
+    const savedVideo = savedSource && savedSource.video_id && (manifestData.records || []).find((r) => r.video_id === savedSource.video_id);
+    if (savedVideo && !savedImageStillAvailable(savedSource, sequenceData.sequences)) {
+      // The area was drawn on a video moment: reopen that moment.
+      videoId = savedSource.video_id;
+      await loadVideoSource(savedSource.video_time_seconds || 0);
+    } else if ((sequenceData.sequences || []).some((seq) => downloadedImages(seq).length)) {
+      setUpImagePicker(sequenceData.sequences, savedSource);
     }
     if (!baselineFilename) {
       const firstVideo = (manifestData.records || [])[0];

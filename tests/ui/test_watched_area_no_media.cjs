@@ -52,6 +52,7 @@ async function runWatchedArea(apiResponses) {
   const helperSource = script.slice(helperStart, script.indexOf("async function main() {"));
   vm.runInContext(helperSource + "\n" + mainSource(html) + "\nmain;", sandbox);
   await vm.runInContext("main()", sandbox);
+  state.sandbox = sandbox;
   return state;
 }
 
@@ -258,4 +259,42 @@ test("the note names the image and time the watched area was drawn on", () => {
     "Watched area was drawn on b.jpg (2026-03-01 11:05:00-07:00)."
   );
   assert.equal(describeAreaSource(null, SEQS), "");
+});
+
+// ---- reopening on the previously saved image and region -----------------------------------
+
+function savedImageHelper() {
+  const script = scriptOf(read("form-watched-area.html"));
+  const helpers = script.slice(script.indexOf("// Downloaded images of one sequence"), script.indexOf("let imageSequences"));
+  const start = script.indexOf("function savedImageStillAvailable(");
+  const sandbox = {};
+  vm.createContext(sandbox);
+  vm.runInContext(helpers + script.slice(start, script.indexOf("\n}\n", start) + 3), sandbox);
+  return sandbox.savedImageStillAvailable;
+}
+
+test("the saved watched-area image counts as available only while it is still downloaded", () => {
+  const available = savedImageHelper();
+  const seqs = [{ sequence_id: "seq-1", records: [rec("a.jpg"), { filename: "gone.jpg", download_status: "missing" }] }];
+  assert.equal(available({ image_sequence_id: "seq-1", image_filename: "a.jpg" }, seqs), true);
+  assert.equal(available({ image_sequence_id: "seq-1", image_filename: "gone.jpg" }, seqs), false);
+  assert.equal(available({ image_sequence_id: "other", image_filename: "a.jpg" }, seqs), false);
+  assert.equal(available({ video_id: "v1" }, seqs), false);
+  assert.equal(available(null, seqs), false);
+});
+
+test("the watched-area editor opens on the saved image and region", async () => {
+  const state = await runWatchedArea({
+    ...EMPTY,
+    "/api/site-config": {
+      config: {
+        reference_region: { x: 5, y: 6, width: 7, height: 8 },
+        reference_region_source: { image_sequence_id: "seq-1", image_filename: "b.jpg" }
+      }
+    },
+    "/api/site-image-sequences": { sequences: [{ sequence_id: "seq-1", records: [rec("a.jpg"), rec("b.jpg")] }] }
+  });
+  assert.equal(state.body.includes("Could not load"), false);
+  assert.equal(state.sandbox.baselineFilename, "b.jpg");
+  assert.deepEqual(plain(state.sandbox.rect), { x: 5, y: 6, width: 7, height: 8 });
 });
