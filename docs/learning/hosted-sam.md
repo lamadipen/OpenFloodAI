@@ -1,7 +1,7 @@
 # Optional Hosted SAM Segmentation
 
 OpenFloodAI can optionally send images you choose to Meta's hosted SAM 3.1
-service. SAM outlines a concept you name, such as `water` or `riverbank`, so a
+service. SAM outlines a concept you name, such as `river water` or `riverbank`, so a
 person can review an image faster. It is **off by default**. Ingestion,
 validation, and review all work offline with no key and no SAM.
 
@@ -39,7 +39,7 @@ no water-level change.
    - **Baseline image**: the reference the watched area and guide were drawn
      on. It is not a point on the chart, so no ring is shown; its picture is
      marked instead.
-   Then choose `water`, `riverbank`, or both. Each concept is its own paid
+   Then choose `river water`, `riverbank`, or both. Each concept is its own paid
    request. The panel shows the exact number of requests before you start.
 3. The first time, confirm that the selected image, cropped to the watched
    area, will be uploaded to Meta and your account may be charged.

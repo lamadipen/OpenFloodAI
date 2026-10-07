@@ -833,7 +833,7 @@ function gaugeChartSvg() {
 // Predictions are unreviewed machine output beside the unchanged human guide.
 // Nothing is uploaded until the person confirms the request count and presses
 // Start. The API key never reaches this page; only a configured flag does.
-let samState = { status: null, plan: null, planKey: "", results: [], concepts: ["water"], ack: false, busy: false, message: "", target: "selected" };
+let samState = { status: null, plan: null, planKey: "", results: [], concepts: ["river water"], ack: false, busy: false, message: "", target: "selected" };
 
 // Which image would be sent: the point selected on the charts, or the run's
 // baseline (the reference image the watched area and guide were drawn on).
@@ -973,7 +973,7 @@ function samPanelHtml() {
   if (!st) return `${head}<div class="hint">Hosted SAM status is unavailable. Normal review is unaffected.</div>`;
   if (!st.enabled) return `${head}${note}<div class="hint" style="margin-top:6px;">Off. Nothing is uploaded. Turn it on in <a href="/console/settings.html">Settings</a> if you want to use your own Meta account.</div>${samResultsHtml(sel)}`;
   if (!st.credential.configured) return `${head}${note}<div class="hint" style="margin-top:6px;">Add your own API key in <a href="/console/settings.html">Settings</a> to continue. Nothing is uploaded until you start a batch.</div>${samResultsHtml(sel)}`;
-  const concepts = ["water", "riverbank"];
+  const concepts = ["river water", "riverbank"];
   const count = samState.plan ? samState.plan.request_count : null;
   const canImage = !!sel;
   const ready = canImage && count != null && (samState.ack || samState.ackChecked) && !samState.busy && st.decoder_available;
