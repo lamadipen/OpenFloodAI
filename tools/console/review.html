@@ -36,7 +36,7 @@ let gaugeEvidence = null;
 let gaugeImages = new Map();
 let gaugeMeta = { label: "Gage height", unit: "", usedFallbackDischarge: false };
 let evidencePoints = [];
-let state = { filter: null, selectedIndex: 0, eventCursor: -1, granularity: "daily", compareView: loadCompareView() };
+let state = { filter: null, selectedIndex: 0, eventCursor: -1, granularity: "daily", compareView: loadCompareView(), collapsed: loadCollapsed() };
 
 function isoMean(values) {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
@@ -716,6 +716,39 @@ function compareSwitchHtml() {
   </div>`;
 }
 
+// The two charts can be folded away to leave room for the images. The choice is kept in this
+// browser only; both start open.
+function loadCollapsed() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("openfloodai.reviewCollapsed") || "{}");
+    return { gauge: saved.gauge === true, region: saved.region === true };
+  } catch (error) {
+    return { gauge: false, region: false };
+  }
+}
+
+function isCollapsed(section) {
+  return state.collapsed[section] === true;
+}
+
+function toggleCollapsed(section) {
+  state.collapsed[section] = !state.collapsed[section];
+  try {
+    localStorage.setItem("openfloodai.reviewCollapsed", JSON.stringify(state.collapsed));
+  } catch (error) {
+    // Remembering the choice is a convenience only.
+  }
+}
+
+function collapseHeaderHtml(section, titleHtml) {
+  const collapsed = isCollapsed(section);
+  return `<button type="button" data-act="toggle-section" data-section="${section}" aria-expanded="${!collapsed}" style="width:100%;display:flex;align-items:center;gap:8px;border:none;background:transparent;padding:0;margin-bottom:${collapsed ? 0 : 8}px;cursor:pointer;text-align:left;font-size:12px;font-weight:600;color:var(--ink-soft);">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" style="transition:transform .15s;transform:rotate(${collapsed ? -90 : 0}deg);flex-shrink:0;"><path d="M6 9l6 6 6-6"/></svg>
+    <span>${titleHtml}</span>
+    ${collapsed ? '<span style="font-weight:400;color:var(--ink-muted);">hidden &mdash; select to show</span>' : ""}
+  </button>`;
+}
+
 function counts() {
   const c = { P: 0, N: 0, C: 0, U: 0 };
   days.forEach((d) => {
@@ -774,16 +807,18 @@ function render() {
 
         <div class="card" style="padding:14px 18px;">
           ${granularityButtonsHtml()}
-          <div style="font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:6px;">${escapeHtml(gaugeMeta.label)}${gaugeMeta.unit ? ` (${escapeHtml(gaugeMeta.unit)})` : ""}, ${granularityLabelSuffix()}</div>
+          ${collapseHeaderHtml("gauge", `${escapeHtml(gaugeMeta.label)}${gaugeMeta.unit ? ` (${escapeHtml(gaugeMeta.unit)})` : ""}, ${granularityLabelSuffix()}`)}
+          ${isCollapsed("gauge") ? "" : `
           ${hasGauge ? gaugeChartSvg() : `<div style="min-height:44px;display:flex;align-items:center;font-size:12px;color:var(--ink-muted);">${escapeHtml(gaugeEmptyStateText())}</div>`}
           ${hasGauge ? `<div class="hint" style="margin-top:6px;">Each point is the reading matched to one image (within 15 minutes, no interpolation)${state.granularity === "daily" ? "" : "; grouped views show the mean of matched readings only"}.</div>` : ""}
-          ${gaugePeakEventsHtml()}
+          ${gaugePeakEventsHtml()}`}
         </div>
 
         <div class="card" style="padding:16px 18px;">
-          <div style="font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:8px;">Region change score, ${granularityLabelSuffix()}</div>
+          ${collapseHeaderHtml("region", `Region change score, ${granularityLabelSuffix()}`)}
+          ${isCollapsed("region") ? "" : `
           ${selectedDaySummaryHtml()}
-          ${scoreChartSvg()}
+          ${scoreChartSvg()}`}
         </div>
 
         <div class="card" style="padding:16px 18px;flex-grow:1;">
@@ -1375,6 +1410,9 @@ function wireActions() {
       if (act === "filter") {
         const code = el.dataset.code;
         state.filter = state.filter === code ? null : code;
+        render();
+      } else if (act === "toggle-section") {
+        toggleCollapsed(el.dataset.section);
         render();
       } else if (act === "compare-view") {
         state.compareView = el.dataset.value;

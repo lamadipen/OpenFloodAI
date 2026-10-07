@@ -221,3 +221,59 @@ test("the switch marks the active view and each view shows the right blocks", ()
   assert.match(script, /const showSide = state\.compareView !== "overlay"/);
   assert.match(script, /const showOverlay = state\.compareView !== "side"/);
 });
+
+// ---- collapsible charts --------------------------------------------------------------------
+
+function collapseContext(stored) {
+  const start = script.indexOf("// The two charts can be folded away");
+  const sandbox = {
+    state: { collapsed: { gauge: false, region: false } },
+    localStorage: {
+      store: stored === undefined ? {} : { "openfloodai.reviewCollapsed": stored },
+      getItem(k) { return this.store[k] ?? null; },
+      setItem(k, v) { this.store[k] = v; }
+    }
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(script.slice(start, script.indexOf("function counts() {")), sandbox);
+  return sandbox;
+}
+
+test("both charts start open and remember being folded", () => {
+  assert.deepEqual(JSON.parse(JSON.stringify(collapseContext().loadCollapsed())), { gauge: false, region: false });
+  assert.deepEqual(JSON.parse(JSON.stringify(collapseContext('{"gauge":true}').loadCollapsed())), { gauge: true, region: false });
+  assert.deepEqual(JSON.parse(JSON.stringify(collapseContext("not json").loadCollapsed())), { gauge: false, region: false });
+  const c = collapseContext();
+  c.toggleCollapsed("region");
+  assert.equal(c.isCollapsed("region"), true);
+  assert.equal(c.isCollapsed("gauge"), false);
+  assert.deepEqual(JSON.parse(c.localStorage.store["openfloodai.reviewCollapsed"]), { gauge: false, region: true });
+  c.toggleCollapsed("region");
+  assert.equal(c.isCollapsed("region"), false);
+});
+
+test("a blocked browser store does not break folding", () => {
+  const c = collapseContext();
+  c.localStorage = { getItem() { throw new Error("blocked"); }, setItem() { throw new Error("blocked"); } };
+  assert.deepEqual(JSON.parse(JSON.stringify(c.loadCollapsed())), { gauge: false, region: false });
+  assert.doesNotThrow(() => c.toggleCollapsed("gauge"));
+  assert.equal(c.isCollapsed("gauge"), true);
+});
+
+test("the header is a button that says whether its section is open", () => {
+  const c = collapseContext();
+  assert.match(c.collapseHeaderHtml("gauge", "Gage height"), /aria-expanded="true"/);
+  c.toggleCollapsed("gauge");
+  const html = c.collapseHeaderHtml("gauge", "Gage height");
+  assert.match(html, /aria-expanded="false"/);
+  assert.match(html, /select to show/);
+  assert.match(script, /state = \{[^}]*collapsed: loadCollapsed\(\)/);
+});
+
+test("nothing used while the page state is created is declared after it (no temporal dead zone)", () => {
+  const stateLine = script.indexOf("let state = {");
+  const early = script.slice(0, stateLine);
+  assert.doesNotMatch(early, /const COLLAPSE_KEY|const COMPARE_VIEWS/);
+  const loaders = script.match(/function load(Compare|Collapsed)[A-Za-z]*\(\) \{[\s\S]*?\n\}/g).join("\n");
+  assert.doesNotMatch(loaders, /COMPARE_VIEWS|COLLAPSE_KEY/);
+});
