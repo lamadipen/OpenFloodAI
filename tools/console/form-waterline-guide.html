@@ -409,7 +409,7 @@ function pickImageSource(sequences) {
 // baseline is always the frame the area was drawn on. The one exception is a site whose guides
 // were already traced on a different frame: those lines only line up on their own frame, so it
 // keeps showing that one and says where the watched area was drawn.
-function chooseBaselineSource({ areaSource, guide, sequences }) {
+function chooseBaselineSource({ areaSource, guide, sequences, videos }) {
   const guideSource = guide
     ? guide.image_sequence_id
       ? { image_sequence_id: guide.image_sequence_id, image_filename: guide.image_filename }
@@ -424,6 +424,8 @@ function chooseBaselineSource({ areaSource, guide, sequences }) {
       (r) => r.filename === area.image_filename && r.download_status === "downloaded"
     );
     if (!record) area = null; // the image was removed: fall back rather than show a broken frame
+  } else if (area && area.video_id) {
+    if (!(videos || []).some((v) => v.video_id === area.video_id)) area = null;
   }
   if (guideSource && !(area && sourcesMatch(guideSource, area))) {
     return { source: guideSource, areaSource: area, fromWatchedArea: false };
@@ -470,7 +472,8 @@ async function main() {
     const chosen = chooseBaselineSource({
       areaSource: cfg.reference_region_source,
       guide: referenceGuide,
-      sequences: sequenceData.sequences || []
+      sequences: sequenceData.sequences || [],
+      videos: manifestData.records || []
     });
     if (chosen.source && chosen.source.image_sequence_id) {
       sequenceId = chosen.source.image_sequence_id;

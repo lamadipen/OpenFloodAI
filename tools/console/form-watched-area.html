@@ -302,7 +302,7 @@ async function main() {
     } else if ((sequenceData.sequences || []).some((seq) => downloadedImages(seq).length)) {
       setUpImagePicker(sequenceData.sequences, savedSource);
     }
-    if (!baselineFilename) {
+    if (!baselineFilename && !videoId) {
       const firstVideo = (manifestData.records || [])[0];
       if (firstVideo && firstVideo.video_id) {
         videoId = firstVideo.video_id;

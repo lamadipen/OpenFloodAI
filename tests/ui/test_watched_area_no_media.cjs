@@ -18,7 +18,7 @@ function mainSource(html) {
 
 // Runs the page's own main() against a stub page. The Save button lives INSIDE #body, so
 // once the body's content is replaced it no longer exists, exactly as in the real page.
-async function runWatchedArea(apiResponses) {
+async function runWatchedArea(apiResponses, overrides = {}) {
   const state = { body: "<button id=saveBtn></button>", hasSaveButton: true, saveDisabledSet: 0 };
   const sandbox = {
     folderName: "site-a",
@@ -29,6 +29,7 @@ async function runWatchedArea(apiResponses) {
     paintBox() {},
     loadVideoSource: async () => {},
     document: { body: {} },
+    ...overrides,
     api: async (url) => {
       const key = Object.keys(apiResponses).find((k) => url.startsWith(k));
       if (!key) throw new Error("unexpected " + url);
@@ -297,4 +298,46 @@ test("the watched-area editor opens on the saved image and region", async () => 
   assert.equal(state.body.includes("Could not load"), false);
   assert.equal(state.sandbox.baselineFilename, "b.jpg");
   assert.deepEqual(plain(state.sandbox.rect), { x: 5, y: 6, width: 7, height: 8 });
+});
+
+// ---- video sites keep working --------------------------------------------------------------
+
+test("Riverbank: a watched area drawn on a video reopens that video moment", () => {
+  const { chooseBaselineSource } = guideHelpers();
+  const area = { video_id: "v1", video_time_seconds: 4.5 };
+  const out = plain(chooseBaselineSource({ areaSource: area, guide: null, sequences: [], videos: [{ video_id: "v1" }] }));
+  assert.deepEqual(out.source, area);
+  assert.equal(out.fromWatchedArea, true);
+});
+
+test("Riverbank: a video guide on the same video keeps working, and a removed video is not shown", () => {
+  const { chooseBaselineSource } = guideHelpers();
+  const area = { video_id: "v1", video_time_seconds: 4.5 };
+  const guide = { video_id: "v1", video_time_seconds: 9 };
+  assert.equal(chooseBaselineSource({ areaSource: area, guide, sequences: [], videos: [{ video_id: "v1" }] }).fromWatchedArea, true);
+  assert.equal(chooseBaselineSource({ areaSource: area, guide: null, sequences: [], videos: [] }).source, null);
+  const other = { video_id: "v2", video_time_seconds: 1 };
+  const out = chooseBaselineSource({ areaSource: area, guide: other, sequences: [], videos: [{ video_id: "v1" }, { video_id: "v2" }] });
+  assert.equal(out.source.video_id, "v2");
+  assert.equal(out.fromWatchedArea, false);
+});
+
+test("Watched area: a site with only a video still loads that video, at the saved moment", async () => {
+  const calls = [];
+  const state = await runWatchedArea({
+    ...EMPTY,
+    "/api/site-config": { config: { reference_region_source: { video_id: "v1", video_time_seconds: 4.5 } } },
+    "/api/site-manifest": { records: [{ video_id: "v1" }] }
+  }, { loadVideoSource: async (t) => calls.push(t) });
+  assert.equal(state.body.includes("Could not load"), false);
+  assert.equal(state.body.includes("This site has no downloaded"), false);
+  assert.deepEqual(calls, [4.5]);
+  assert.equal(state.sandbox.videoId, "v1");
+});
+
+test("Watched area: a video site with no saved source still loads its first video", async () => {
+  const calls = [];
+  const state = await runWatchedArea({ ...EMPTY, "/api/site-manifest": { records: [{ video_id: "v1" }] } }, { loadVideoSource: async (t) => calls.push(t) });
+  assert.equal(state.sandbox.videoId, "v1");
+  assert.equal(state.body.includes("This site has no downloaded"), false);
 });
