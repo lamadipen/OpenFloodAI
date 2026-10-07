@@ -73,6 +73,7 @@ const mediaId = qs("media_id");
 const sampleKey = qs("sample_key");
 const date = qs("date");
 const time = qs("time");
+const selectName = qs("select");
 
 const LABELS = [
   { id: "water_level_rising", text: "Water level is rising" },
@@ -206,7 +207,9 @@ async function main() {
     document.body.innerHTML = `<div style="padding:40px;">Missing required parameters in the URL.</div>`;
     return;
   }
-  const backHref = `/console/review.html?${new URLSearchParams({ site: folderName, run_id: runId })}`;
+  const backParams = { site: folderName, run_id: runId };
+  if (selectName) backParams.select = selectName;
+  const backHref = `/console/review.html?${new URLSearchParams(backParams)}`;
   $("closeLink").href = backHref;
   $("skipLink").href = backHref;
   $("sampleLabel").textContent = `${date}${time ? ", " + time + " local" : ""} · run ${runId}`;
@@ -255,7 +258,10 @@ $("saveBtn").addEventListener("click", async () => {
       } : {})
     };
     await api("/api/workspace-label", data);
-    location.href = `/console/review.html?${new URLSearchParams({ site: folderName, run_id: runId })}`;
+    // Back to the review page on the same image, ready to move to the next unlabelled one.
+    const savedParams = { site: folderName, run_id: runId };
+    if (selectName) Object.assign(savedParams, { select: selectName, advance: "1" });
+    location.href = `/console/review.html?${new URLSearchParams(savedParams)}`;
   } catch (error) {
     toast(error.message);
     $("saveBtn").disabled = false;

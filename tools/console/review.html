@@ -521,6 +521,9 @@ async function main() {
   gaugeImages = buildGaugeImages(gaugeEvidence);
   gaugeMeta = buildGaugeMeta(gaugeEvidence);
   state.selectedIndex = changeInfo.index >= 0 ? changeInfo.index : 0;
+  const wanted = qs("select");
+  const wantedIndex = wanted ? days.findIndex((d) => d.filename === wanted) : -1;
+  if (wantedIndex >= 0) state.selectedIndex = wantedIndex;
 
   const sequenceId = detail.summary.sequence_id;
   try {
@@ -533,7 +536,116 @@ async function main() {
   }
 
   await loadSam();
+  // Coming back from saving a label: move on to the next image that still needs one.
+  if (qs("advance") === "1" && wantedIndex >= 0) {
+    const next = nextUnlabelledFrom(wantedIndex);
+    if (next >= 0) state.selectedIndex = next;
+    try {
+      const url = new URL(location.href);
+      url.searchParams.set("select", days[state.selectedIndex].filename);
+      url.searchParams.delete("advance");
+      history.replaceState(null, "", url);
+    } catch (error) {
+      // The address bar is a convenience only.
+    }
+  }
   render();
+}
+
+// ---- Human-label progress and image-to-image navigation --------------------
+// A point is "labelled" when the saved evidence carries a human label for that exact
+// image. This is separate from event review (which is per flagged event).
+const HUMAN_LABEL_TEXT = {
+  possible_water_level_change: "Possible water-level change",
+  no_water_level_change: "No water-level change",
+  cannot_judge_water_level: "Cannot judge",
+  camera_video_problem: "Camera or image problem"
+};
+
+function humanLabelFor(day) {
+  const point = evidencePoints.find((p) => p.filename && p.filename === day.filename);
+  const label = point && point.label;
+  if (!label) return null;
+  const value = String(label.human_label || "");
+  return HUMAN_LABEL_TEXT[value] || value.replace(/_/g, " ") || "Labelled";
+}
+
+function isLabelled(index) {
+  const day = days[index];
+  return !!day && day.code !== "M" && humanLabelFor(day) != null;
+}
+
+// Images that can be stepped through: those with a picture, narrowed by the active filter.
+function navIndices() {
+  return days
+    .map((d, i) => i)
+    .filter((i) => days[i].code !== "M" && (!state.filter || days[i].code === state.filter));
+}
+
+function stepSelection(delta) {
+  const list = navIndices();
+  if (!list.length) return;
+  const at = list.indexOf(state.selectedIndex);
+  let target;
+  if (at >= 0) target = list[Math.min(Math.max(at + delta, 0), list.length - 1)];
+  else target = delta > 0 ? list.find((i) => i > state.selectedIndex) ?? list[list.length - 1] : [...list].reverse().find((i) => i < state.selectedIndex) ?? list[0];
+  if (target === state.selectedIndex) return;
+  selectIndex(target);
+}
+
+function nextUnlabelledFrom(index) {
+  const list = navIndices();
+  return list.find((i) => i > index && !isLabelled(i)) ?? list.find((i) => !isLabelled(i)) ?? -1;
+}
+
+function selectIndex(index) {
+  state.selectedIndex = index;
+  state.eventCursor = -1;
+  try {
+    const url = new URL(location.href);
+    url.searchParams.set("select", days[index].filename);
+    url.searchParams.delete("advance");
+    history.replaceState(null, "", url);
+  } catch (error) {
+    // The address bar is a convenience only.
+  }
+  render();
+}
+
+function labelProgress() {
+  const list = days.map((d, i) => i).filter((i) => days[i].code !== "M");
+  return { done: list.filter(isLabelled).length, total: list.length };
+}
+
+function labelledRingSvg(bucket, cx, cy, r) {
+  const mine = bucket.indices.filter((i) => days[i].code !== "M");
+  if (!mine.length || !mine.every(isLabelled)) return "";
+  return `<circle cx="${cx}" cy="${cy}" r="${r + 3}" fill="none" stroke="#1a7f4b" stroke-width="1.5" pointer-events="none"/>`;
+}
+
+function imageListHtml() {
+  const progress = labelProgress();
+  const rows = navIndices()
+    .map((i) => {
+      const d = days[i];
+      const label = humanLabelFor(d);
+      const active = i === state.selectedIndex;
+      return `<button data-act="select-day" data-index="${i}" ${active ? 'data-current="1"' : ""} style="width:100%;text-align:left;border:none;background:${active ? "var(--accent-soft)" : "transparent"};border-bottom:1px solid var(--line-soft);padding:8px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;">
+        <span style="font-size:12px;font-family:var(--mono);">${escapeHtml(d.date)} ${escapeHtml(d.time)}</span>
+        <span style="display:flex;align-items:center;gap:6px;">
+          <span class="pill ${d.code === "P" ? "warn" : d.code === "C" ? "bad" : "gray"}" style="font-size:10px;">${escapeHtml(CODE_LABEL[d.code])}</span>
+          ${label ? `<span class="pill" style="font-size:10px;background:#e3f4ea;color:#1a7f4b;" title="Human label: ${escapeHtml(label)}">&#10003; ${escapeHtml(label)}</span>` : `<span style="font-size:10px;color:var(--ink-muted);">not labelled</span>`}
+        </span>
+      </button>`;
+    })
+    .join("");
+  return `<div class="card" style="overflow:hidden;">
+    <div style="padding:12px 16px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;gap:8px;">
+      <span style="font-size:13px;font-weight:600;">Images</span>
+      <span style="font-size:12px;color:var(--ink-soft);">Human labels: ${progress.done} of ${progress.total}</span>
+    </div>
+    <div id="imageList" style="max-height:300px;overflow:auto;">${rows || `<div style="padding:16px;font-size:12px;color:var(--ink-muted);">No images in this view.</div>`}</div>
+  </div>`;
 }
 
 function counts() {
@@ -555,6 +667,9 @@ function render() {
   const c = counts();
   const changeStartDay = changeInfo.index >= 0 ? days[changeInfo.index] : null;
   const hasGauge = days.some((d) => gaugeValueFor(d) != null);
+  const selectedLabel = humanLabelFor(sel);
+  const navList = navIndices();
+  const navPosition = navList.includes(state.selectedIndex) ? `${navList.indexOf(state.selectedIndex) + 1} / ${navList.length}` : `&ndash; / ${navList.length}`;
 
   const baselineQuery = new URLSearchParams({ folder_name: folderName, sequence_id: sequenceId(), filename: summary.baseline_filename });
   const selectedQuery = sel.filename && sel.code !== "M"
@@ -603,8 +718,15 @@ function render() {
 
         <div class="card" style="padding:16px 18px;flex-grow:1;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-            <div style="font-size:13px;font-weight:600;">Selected image &mdash; ${escapeHtml(sel.date)}, ${escapeHtml(sel.time)} local</div>
-            <div style="display:flex;gap:8px;">
+            <div>
+              <div style="font-size:13px;font-weight:600;">Selected image &mdash; ${escapeHtml(sel.date)}, ${escapeHtml(sel.time)} local</div>
+              <div style="font-size:12px;margin-top:3px;">${selectedLabel ? `<span class="pill" style="background:#e3f4ea;color:#1a7f4b;">&#10003; Human label: ${escapeHtml(selectedLabel)}</span>` : `<span style="color:var(--ink-muted);">No human label for this image yet</span>`}</div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="btn" data-act="prev-image" title="Left arrow key">&larr; Previous image</button>
+              <span style="font-size:12px;color:var(--ink-soft);align-self:center;font-family:var(--mono);">${navPosition}</span>
+              <button class="btn" data-act="next-image" title="Right arrow key">Next image &rarr;</button>
+              <button class="btn" data-act="next-unlabelled" ${nextUnlabelledFrom(state.selectedIndex) < 0 ? "disabled" : ""}>Next unlabelled</button>
               <button class="btn" data-act="biggest">Biggest change detected</button>
               <button class="btn" data-act="prev-event">&larr; Previous event</button>
               <button class="btn" data-act="next-event">Next event &rarr;</button>
@@ -658,6 +780,8 @@ function render() {
           </div>
         </div>
 
+        ${imageListHtml()}
+
         <div class="card" style="padding:16px 18px;">
           ${eventKeyForSelected() ? `
           <div style="font-size:11px;font-weight:600;color:var(--ink-muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px;">Event review</div>
@@ -679,7 +803,20 @@ function render() {
   wireOnion();
   renderSamPanel();
   refreshSamPlan();
+  const current = document.querySelector("#imageList [data-current]");
+  if (current) current.scrollIntoView({ block: "nearest" });
 }
+
+// Left/right arrows step through images, unless the person is typing or using a control.
+document.addEventListener("keydown", (event) => {
+  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+  const target = event.target;
+  if (target && (/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName) || target.isContentEditable)) return;
+  if (!days.length) return;
+  event.preventDefault();
+  stepSelection(event.key === "ArrowRight" ? 1 : -1);
+});
 
 function sequenceId() {
   return detail.summary.sequence_id;
@@ -700,7 +837,8 @@ function humanLabelHref() {
     media_id: sequenceId(),
     sample_key: point.key,
     date: sel.date,
-    time: sel.time
+    time: sel.time,
+    select: sel.filename
   })}`;
 }
 
@@ -758,7 +896,7 @@ function scoreChartSvg() {
       const selected = p.b.repIndex === state.selectedIndex;
       const r = daily ? (selected ? 5 : 3) : Math.min(9, 4 + p.b.dayCount / 4);
       const ring = selected ? 2 : 1;
-      return `<circle cx="${p.b.x.toFixed(1)}" cy="${y(p.b.meanScore).toFixed(1)}" r="${r}" fill="${p.b.color}" stroke="#fff" stroke-width="${ring}" data-act="select-day" data-index="${p.b.repIndex}" style="cursor:pointer;"/>${samRingSvg(p.b, p.b.x.toFixed(1), y(p.b.meanScore).toFixed(1), r)}`;
+      return `<circle cx="${p.b.x.toFixed(1)}" cy="${y(p.b.meanScore).toFixed(1)}" r="${r}" fill="${p.b.color}" stroke="#fff" stroke-width="${ring}" data-act="select-day" data-index="${p.b.repIndex}" style="cursor:pointer;"/>${labelledRingSvg(p.b, p.b.x.toFixed(1), y(p.b.meanScore).toFixed(1), r)}${samRingSvg(p.b, p.b.x.toFixed(1), y(p.b.meanScore).toFixed(1), r)}`;
     })
     .join("");
   const thresholdY = changeInfo.threshold != null ? y(changeInfo.threshold) : null;
@@ -783,6 +921,7 @@ function scoreChartSvg() {
       <span style="display:flex;align-items:center;gap:6px;"><span style="width:9px;height:9px;border-radius:50%;background:${CODE_COLOR.N};display:inline-block;"></span>No change</span>
       <span style="display:flex;align-items:center;gap:6px;"><span style="width:9px;height:9px;border-radius:50%;background:${CODE_COLOR.P};display:inline-block;"></span>Needs a look</span>
       <span style="display:flex;align-items:center;gap:6px;"><span style="width:9px;height:9px;border-radius:50%;background:${CODE_COLOR.C};display:inline-block;"></span>Camera or image issue</span>
+      <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;border-radius:50%;border:1.5px solid #1a7f4b;display:inline-block;"></span>Human-labelled</span>
       ${samHighlightIndex() != null ? `<span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;border-radius:50%;border:2.5px solid #6d28d9;display:inline-block;"></span>Image that Start segmentation will use</span>` : ""}
     </div>`;
 }
@@ -811,7 +950,7 @@ function gaugeChartSvg() {
       const selected = p.b.repIndex === state.selectedIndex;
       const r = daily ? (selected ? 5 : 3) : Math.min(9, 4 + p.b.dayCount / 4);
       const ring = selected ? 2 : 1;
-      return `<circle cx="${p.b.x.toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="${r}" fill="${p.b.color}" stroke="#fff" stroke-width="${ring}" data-act="select-day" data-index="${p.b.repIndex}" style="cursor:pointer;"/>${samRingSvg(p.b, p.b.x.toFixed(1), y(p.v).toFixed(1), r)}`;
+      return `<circle cx="${p.b.x.toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="${r}" fill="${p.b.color}" stroke="#fff" stroke-width="${ring}" data-act="select-day" data-index="${p.b.repIndex}" style="cursor:pointer;"/>${labelledRingSvg(p.b, p.b.x.toFixed(1), y(p.v).toFixed(1), r)}${samRingSvg(p.b, p.b.x.toFixed(1), y(p.v).toFixed(1), r)}`;
     })
     .join("");
 
@@ -1166,9 +1305,14 @@ function wireActions() {
         state.granularity = el.dataset.value;
         render();
       } else if (act === "select-day") {
-        state.selectedIndex = Number(el.dataset.index);
-        state.eventCursor = -1;
-        render();
+        selectIndex(Number(el.dataset.index));
+      } else if (act === "prev-image") {
+        stepSelection(-1);
+      } else if (act === "next-image") {
+        stepSelection(1);
+      } else if (act === "next-unlabelled") {
+        const next = nextUnlabelledFrom(state.selectedIndex);
+        if (next >= 0) selectIndex(next);
       } else if (act === "select-event") {
         const idx = Number(el.dataset.index);
         state.eventCursor = idx;
