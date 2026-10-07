@@ -82,3 +82,58 @@ test("the page wires arrow keys, a navigator and the label link back to the same
   const form = fs.readFileSync(path.join(__dirname, "../../tools/console/form-human-label.html"), "utf8");
   assert.match(form, /advance: "1"/);
 });
+
+const form = fs.readFileSync(path.join(__dirname, "../../tools/console/form-human-label.html"), "utf8");
+const formScript = form.split("<script>").pop().split("</script>")[0];
+
+test("the label form starts from an image's existing label and says it adds a revision", () => {
+  const start = formScript.indexOf("function prefillFrom(");
+  const end = formScript.indexOf("let state = {");
+  const sandbox = {
+    LABELS: [{ id: "no_water_level_change" }, { id: "water_level_rising" }],
+    TRISTATE_FIELDS: [{ key: "camera_stable" }, { key: "riverbank_visible" }],
+    state: { label: null, confidence: "medium", tristate: {}, crossingReview: null, overlayReview: null, pilotConditions: new Set() },
+    $: () => sandbox.note
+  };
+  sandbox.note = { value: "" };
+  vm.createContext(sandbox);
+  vm.runInContext(formScript.slice(start, end), sandbox);
+
+  assert.equal(sandbox.prefillFrom({ label: null }), null);
+  const info = sandbox.prefillFrom({
+    label: { human_label: "water_level_rising", confidence: "high", camera_stable: "yes", note: "looks higher" },
+    review: { label_revision: 2, reviewed_at_utc: "2026-10-07T19:05:58+00:00", crossing_review: "change", pilot_conditions: ["glare"] }
+  });
+  assert.equal(sandbox.state.label, "water_level_rising");
+  assert.equal(sandbox.state.confidence, "high");
+  assert.equal(sandbox.state.tristate.camera_stable, "yes");
+  assert.equal(sandbox.state.crossingReview, "change");
+  assert.equal(sandbox.state.pilotConditions.has("glare"), true);
+  assert.equal(sandbox.note.value, "looks higher");
+  assert.equal(info.revision, 2);
+  const text = sandbox.revisionNoteText(info);
+  assert.match(text, /revision 2/);
+  assert.match(text, /adds revision 3/);
+  assert.match(text, /stays in the review history/);
+});
+
+test("a label that is not one of the choices is not preselected", () => {
+  const start = formScript.indexOf("function prefillFrom(");
+  const sandbox = {
+    LABELS: [{ id: "no_water_level_change" }],
+    TRISTATE_FIELDS: [],
+    state: { label: null, confidence: "medium", tristate: {}, pilotConditions: new Set() },
+    $: () => ({ value: "" })
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(formScript.slice(start, formScript.indexOf("let state = {")), sandbox);
+  const info = sandbox.prefillFrom({ label: { human_label: "something_old" } });
+  assert.equal(sandbox.state.label, null);
+  assert.equal(info.known, false);
+  assert.match(sandbox.revisionNoteText(info), /choose one/);
+});
+
+test("the review page offers Edit human label for a labelled image", () => {
+  assert.match(script, /Edit human label/);
+  assert.match(script, /labelRevisionFor/);
+});

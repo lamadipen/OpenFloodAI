@@ -299,6 +299,18 @@ def evidence(site: Path, kind: str, run_id: str, media_id: str) -> dict[str, Any
                     "reason": record.get("reason"),
                     "has_media": record.get("download_status") == "downloaded",
                     "label": review.get("label") if review else None,
+                    # The latest saved review's own details, so a re-review can start from them.
+                    "review": (
+                        {
+                            "label_revision": review.get("label_revision"),
+                            "reviewed_at_utc": review.get("reviewed_at_utc"),
+                            "crossing_review": review.get("crossing_review"),
+                            "overlay_review": review.get("overlay_review"),
+                            "pilot_conditions": review.get("pilot_conditions") or [],
+                        }
+                        if review
+                        else None
+                    ),
                     "riverbank_evidence_record_id": (
                         riverbank.get("record_id") if riverbank is not None else None
                     ),

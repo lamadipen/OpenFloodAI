@@ -570,6 +570,12 @@ function humanLabelFor(day) {
   return HUMAN_LABEL_TEXT[value] || value.replace(/_/g, " ") || "Labelled";
 }
 
+function labelRevisionFor(day) {
+  const point = evidencePoints.find((p) => p.filename && p.filename === day.filename);
+  const revision = point && point.review && Number(point.review.label_revision);
+  return revision && revision > 1 ? revision : null;
+}
+
 function isLabelled(index) {
   const day = days[index];
   return !!day && day.code !== "M" && humanLabelFor(day) != null;
@@ -720,7 +726,7 @@ function render() {
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
             <div>
               <div style="font-size:13px;font-weight:600;">Selected image &mdash; ${escapeHtml(sel.date)}, ${escapeHtml(sel.time)} local</div>
-              <div style="font-size:12px;margin-top:3px;">${selectedLabel ? `<span class="pill" style="background:#e3f4ea;color:#1a7f4b;">&#10003; Human label: ${escapeHtml(selectedLabel)}</span>` : `<span style="color:var(--ink-muted);">No human label for this image yet</span>`}</div>
+              <div style="font-size:12px;margin-top:3px;">${selectedLabel ? `<span class="pill" style="background:#e3f4ea;color:#1a7f4b;">&#10003; Human label: ${escapeHtml(selectedLabel)}${labelRevisionFor(sel) ? ` (revision ${labelRevisionFor(sel)})` : ""}</span>` : `<span style="color:var(--ink-muted);">No human label for this image yet</span>`}</div>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
               <button class="btn" data-act="prev-image" title="Left arrow key">&larr; Previous image</button>
@@ -794,7 +800,7 @@ function render() {
           <div style="height:1px;background:var(--line-soft);margin-bottom:14px;"></div>
           ` : `<div class="hint" style="margin-bottom:14px;">This day is not part of a flagged event (it was labeled "${escapeHtml(days[state.selectedIndex].resultLabel)}"), so there is nothing to confirm or dismiss here. You can still record a human label below for this exact image.</div>`}
           <div class="hint" style="margin-bottom:8px;">Separate from event review &mdash; record what you personally see in this exact image, whether or not the machine flagged it.</div>
-          ${humanLabelHref() ? `<a class="btn outline-accent" style="width:100%;justify-content:center;" href="${humanLabelHref()}">+ Add human label</a>` : `<div class="hint">This day has no saved image to label.</div>`}
+          ${humanLabelHref() ? `<a class="btn outline-accent" style="width:100%;justify-content:center;" href="${humanLabelHref()}">${humanLabelFor(days[state.selectedIndex]) ? "Edit human label" : "+ Add human label"}</a>` : `<div class="hint">This day has no saved image to label.</div>`}
         </div>
       </div>
     </div>

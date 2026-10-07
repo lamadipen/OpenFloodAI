@@ -21,6 +21,7 @@
     </div>
     <div id="body" style="padding:20px 22px;display:flex;flex-direction:column;gap:20px;max-height:70vh;overflow:auto;">
       <div id="machineNote" class="hint" style="background:var(--paper);border-radius:9px;padding:10px 12px;font-size:12px;"></div>
+      <div id="revisionNote" hidden style="background:var(--warn-soft);border:1px solid #ebd3a0;border-radius:9px;padding:10px 12px;font-size:12px;color:#5c3b08;"></div>
 
       <div>
         <div class="hint" style="text-transform:uppercase;letter-spacing:.03em;margin-bottom:8px;">What do you see?</div>
@@ -106,6 +107,34 @@ const PILOT_CONDITIONS = [
   { id: "snow", text: "Snow" },
   { id: "low_light", text: "Low light" }
 ];
+
+let existing = null;
+
+// Form values from an image's current saved label, so a re-review starts from what was said
+// before. Only values the form can show are used.
+function prefillFrom(point) {
+  const label = point && point.label;
+  if (!label) return null;
+  const review = point.review || {};
+  const known = LABELS.some((l) => l.id === label.human_label);
+  state.label = known ? label.human_label : null;
+  if (["low", "medium", "high"].includes(label.confidence)) state.confidence = label.confidence;
+  TRISTATE_FIELDS.forEach((f) => {
+    if (["yes", "no", "unsure"].includes(label[f.key])) state.tristate[f.key] = label[f.key];
+  });
+  if (["change", "no_change", "unclear"].includes(review.crossing_review)) state.crossingReview = review.crossing_review;
+  if (["accepted", "rejected", "not_reviewed"].includes(review.overlay_review)) state.overlayReview = review.overlay_review;
+  (review.pilot_conditions || []).forEach((c) => state.pilotConditions.add(c));
+  $("note").value = label.note || "";
+  const revision = Number(review.label_revision) || 1;
+  return { revision, savedAt: review.reviewed_at_utc || "", labelName: label.human_label, known };
+}
+
+function revisionNoteText(info) {
+  const when = info.savedAt ? `, saved ${String(info.savedAt).slice(0, 16).replace("T", " ")} UTC` : "";
+  const odd = info.known ? "" : " Its label is not one of the choices below, so choose one.";
+  return `This image already has a human label (revision ${info.revision}${when}). The form starts from it. Saving adds revision ${info.revision + 1}; revision ${info.revision} stays in the review history.${odd}`;
+}
 
 let state = {
   label: null,
@@ -221,6 +250,15 @@ async function main() {
     const evidence = await api(`/api/workspace-evidence?${new URLSearchParams({ folder_name: folderName, kind: "image", run_id: runId, media_id: mediaId })}`);
     const point = (evidence.points || []).find((candidate) => candidate.key === sampleKey);
     state.pilotAvailable = !!(point && point.riverbank_evidence_record_id);
+    existing = prefillFrom(point);
+    if (existing) {
+      $("revisionNote").hidden = false;
+      $("revisionNote").textContent = revisionNoteText(existing);
+      $("saveBtn").textContent = `Save as revision ${existing.revision + 1}`;
+      renderLabels();
+      renderConfidence();
+      renderTristate();
+    }
   } catch (error) {
     state.pilotAvailable = false;
   }
@@ -265,7 +303,7 @@ $("saveBtn").addEventListener("click", async () => {
   } catch (error) {
     toast(error.message);
     $("saveBtn").disabled = false;
-    $("saveBtn").textContent = "Save label";
+    $("saveBtn").textContent = existing ? `Save as revision ${existing.revision + 1}` : "Save label";
   }
 });
 
