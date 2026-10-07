@@ -1,0 +1,21 @@
+{
+  "river_id": "withlacoochee-river",
+  "display_name": "Withlacoochee River",
+  "source": "https://api.waterdata.usgs.gov/nims/v0/cameras?enabled=true",
+  "source_checked": "2026-10-07",
+  "notes": "Added from the public NIMS camera API; the camera's paired USGS gage is the nwisId USGS lists for it. Gage height (00065) and discharge (00060) were both reporting at source_checked.",
+  "cameras": [
+    {
+      "river_id": "withlacoochee-river",
+      "camera_id": "GA_Withlacoochee_River_at_Skipper_Bridge_Road_near_Bemiss",
+      "nwis_id": "023177483",
+      "state": "GA",
+      "latitude": 30.949083,
+      "longitude": -83.271833,
+      "display_name": "Withlacoochee River at Skipper Bridge Road near Bemiss",
+      "folder_name": "withlacoochee-river-ga-skipper-bridge",
+      "gage_relationship": "same_site",
+      "timezone": "America/New_York"
+    }
+  ]
+}

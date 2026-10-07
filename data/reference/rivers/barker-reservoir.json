@@ -1,0 +1,21 @@
+{
+  "river_id": "barker-reservoir",
+  "display_name": "Barker Reservoir",
+  "source": "https://api.waterdata.usgs.gov/nims/v0/cameras?enabled=true",
+  "source_checked": "2026-10-07",
+  "notes": "Added from the public NIMS camera API; the camera's paired USGS gage is the nwisId USGS lists for it. USGS reported only discharge (00060) for this gage at source_checked, with no gage height (00065), so water-level sampling has no gage-height series to match and falls back to discharge.",
+  "cameras": [
+    {
+      "river_id": "barker-reservoir",
+      "camera_id": "TX_Barker_Reservoir_near_Addicks_OUTFLOW_CULVERTS",
+      "nwis_id": "08072500",
+      "state": "TX",
+      "latitude": 29.769951,
+      "longitude": -95.647168,
+      "display_name": "Barker Reservoir near Addicks outflow culverts",
+      "folder_name": "barker-reservoir-tx-addicks-outflow",
+      "gage_relationship": "same_site",
+      "timezone": "America/Chicago"
+    }
+  ]
+}

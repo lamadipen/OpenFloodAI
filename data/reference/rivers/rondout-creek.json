@@ -1,0 +1,21 @@
+{
+  "river_id": "rondout-creek",
+  "display_name": "Rondout Creek",
+  "source": "https://api.waterdata.usgs.gov/nims/v0/cameras?enabled=true",
+  "source_checked": "2026-10-07",
+  "notes": "Added from the public NIMS camera API; the camera's paired USGS gage is the nwisId USGS lists for it. Gage height (00065) was reporting at source_checked.",
+  "cameras": [
+    {
+      "river_id": "rondout-creek",
+      "camera_id": "NY_Rondout_Creek_at_Rondout",
+      "nwis_id": "01372007",
+      "state": "NY",
+      "latitude": 41.918139,
+      "longitude": -73.981722,
+      "display_name": "Rondout Creek at Rondout",
+      "folder_name": "rondout-creek-ny-rondout",
+      "gage_relationship": "same_site",
+      "timezone": "America/New_York"
+    }
+  ]
+}
