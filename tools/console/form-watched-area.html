@@ -307,7 +307,7 @@ $("saveBtn").addEventListener("click", async () => {
   try {
     const source = baselineFilename
       ? { sequence_id: sequenceId, image_filename: baselineFilename }
-      : { video_id: videoId };
+      : { video_id: videoId, video_time_seconds: Number($("scrub").value) || 0 };
     await api("/api/set-watched-area", {
       folder_name: folderName,
       ...source,

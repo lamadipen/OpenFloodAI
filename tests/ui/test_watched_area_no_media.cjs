@@ -198,3 +198,64 @@ test("the gauge line shows the level, unit, group and quality, or says none is s
   assert.equal(gaugeReadingText(undefined), "No gauge reading saved for this image");
   assert.equal(gaugeReadingText({}), "No gauge reading saved for this image");
 });
+
+// ---- the Riverbank editor shows the frame the watched area was drawn on ----------------------
+
+function guideHelpers() {
+  const html = read("form-waterline-guide.html");
+  const script = scriptOf(html);
+  const start = script.indexOf("// Which image or video moment to show.");
+  const sandbox = { ...require("../../tools/console/guide-source-matching.js") };
+  vm.createContext(sandbox);
+  vm.runInContext(script.slice(start, script.indexOf("async function main() {")), sandbox);
+  return sandbox;
+}
+
+const rec = (name) => ({ filename: name, download_status: "downloaded", local_time: "2026-03-01T11:05:00-07:00" });
+const SEQS = [{ sequence_id: "seq-1", records: [rec("a.jpg"), rec("b.jpg")] }];
+const plain = (o) => JSON.parse(JSON.stringify(o));
+
+test("the baseline is the image the watched area was drawn on, even when other images exist", () => {
+  const { chooseBaselineSource } = guideHelpers();
+  const area = { image_sequence_id: "seq-1", image_filename: "b.jpg" };
+  const out = plain(chooseBaselineSource({ areaSource: area, guide: null, sequences: SEQS }));
+  assert.deepEqual(out.source, area);
+  assert.equal(out.fromWatchedArea, true);
+});
+
+test("guides traced on the same image keep that image, which is the watched-area image", () => {
+  const { chooseBaselineSource } = guideHelpers();
+  const area = { image_sequence_id: "seq-1", image_filename: "b.jpg" };
+  const guide = { image_sequence_id: "seq-1", image_filename: "b.jpg" };
+  assert.equal(chooseBaselineSource({ areaSource: area, guide, sequences: SEQS }).fromWatchedArea, true);
+});
+
+test("guides traced on a different image keep their own image so the lines line up", () => {
+  const { chooseBaselineSource } = guideHelpers();
+  const area = { image_sequence_id: "seq-1", image_filename: "b.jpg" };
+  const guide = { image_sequence_id: "seq-1", image_filename: "a.jpg" };
+  const out = plain(chooseBaselineSource({ areaSource: area, guide, sequences: SEQS }));
+  assert.equal(out.source.image_filename, "a.jpg");
+  assert.equal(out.fromWatchedArea, false);
+  assert.equal(out.areaSource.image_filename, "b.jpg");
+});
+
+test("a watched-area image that is no longer on disk is not shown", () => {
+  const { chooseBaselineSource } = guideHelpers();
+  const area = { image_sequence_id: "seq-1", image_filename: "gone.jpg" };
+  assert.equal(chooseBaselineSource({ areaSource: area, guide: null, sequences: SEQS }).source, null);
+});
+
+test("with no recorded watched-area image the editor falls back as before", () => {
+  const { chooseBaselineSource } = guideHelpers();
+  assert.equal(chooseBaselineSource({ areaSource: undefined, guide: null, sequences: SEQS }).source, null);
+});
+
+test("the note names the image and time the watched area was drawn on", () => {
+  const { describeAreaSource } = guideHelpers();
+  assert.equal(
+    describeAreaSource({ image_sequence_id: "seq-1", image_filename: "b.jpg" }, SEQS),
+    "Watched area was drawn on b.jpg (2026-03-01 11:05:00-07:00)."
+  );
+  assert.equal(describeAreaSource(null, SEQS), "");
+});

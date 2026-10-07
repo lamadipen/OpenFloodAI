@@ -645,3 +645,43 @@ def test_evidence_adapter_overrides_rejects_non_boolean_value(tmp_path: Path) ->
 
     with pytest.raises(SiteConfigError, match="must be a boolean"):
         load_site_config(config_path)
+
+
+def test_write_reference_region_records_the_image_it_was_drawn_on(tmp_path: Path) -> None:
+    config_path = write_config(tmp_path / "site.json", valid_config_payload())
+    region = {"x": 10, "y": 20, "width": 30, "height": 40}
+
+    write_reference_region(
+        config_path, region, {"image_sequence_id": "seq-1", "image_filename": "a.jpg"}
+    )
+
+    assert load_site_config(config_path).reference_region_source == {
+        "image_sequence_id": "seq-1",
+        "image_filename": "a.jpg",
+    }
+
+
+def test_a_new_region_without_a_source_clears_the_old_source(tmp_path: Path) -> None:
+    config_path = write_config(tmp_path / "site.json", valid_config_payload())
+    region = {"x": 10, "y": 20, "width": 30, "height": 40}
+    write_reference_region(config_path, region, {"video_id": "v1", "video_time_seconds": 2})
+
+    write_reference_region(config_path, region)
+
+    assert load_site_config(config_path).reference_region_source is None
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"image_sequence_id": "seq-1"},
+        {"image_sequence_id": "s", "image_filename": "a.jpg", "video_id": "v"},
+        {"video_id": "v", "video_time_seconds": -1},
+        {"nonsense": "x"},
+    ],
+)
+def test_an_invalid_region_source_is_rejected(tmp_path: Path, bad: dict[str, object]) -> None:
+    config_path = write_config(tmp_path / "site.json", valid_config_payload())
+
+    with pytest.raises(SiteConfigError):
+        write_reference_region(config_path, {"x": 1, "y": 1, "width": 5, "height": 5}, bad)

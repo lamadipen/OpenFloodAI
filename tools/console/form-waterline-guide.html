@@ -29,6 +29,7 @@
           <g id="lines"></g>
         </svg>
         <div id="statusLine" class="hint" style="width:640px;"></div>
+        <div id="sourceNote" class="hint" style="width:640px;overflow-wrap:anywhere;" hidden></div>
         <div id="scrubRow" style="width:640px;display:flex;align-items:center;gap:10px;" hidden>
           <span style="font-size:11px;color:var(--ink-muted);white-space:nowrap;">Video frame</span>
           <input type="range" id="scrub" min="0" max="1" step="0.1" value="0" style="flex-grow:1;">
@@ -404,6 +405,42 @@ function pickImageSource(sequences) {
   return null;
 }
 
+// Which image or video moment to show. The watched area's own image comes first, so the
+// baseline is always the frame the area was drawn on. The one exception is a site whose guides
+// were already traced on a different frame: those lines only line up on their own frame, so it
+// keeps showing that one and says where the watched area was drawn.
+function chooseBaselineSource({ areaSource, guide, sequences }) {
+  const guideSource = guide
+    ? guide.image_sequence_id
+      ? { image_sequence_id: guide.image_sequence_id, image_filename: guide.image_filename }
+      : guide.video_id
+        ? { video_id: guide.video_id, video_time_seconds: guide.video_time_seconds || 0 }
+        : null
+    : null;
+  let area = areaSource || null;
+  if (area && area.image_sequence_id) {
+    const sequence = (sequences || []).find((s) => s.sequence_id === area.image_sequence_id);
+    const record = ((sequence && sequence.records) || []).find(
+      (r) => r.filename === area.image_filename && r.download_status === "downloaded"
+    );
+    if (!record) area = null; // the image was removed: fall back rather than show a broken frame
+  }
+  if (guideSource && !(area && sourcesMatch(guideSource, area))) {
+    return { source: guideSource, areaSource: area, fromWatchedArea: false };
+  }
+  if (area) return { source: area, areaSource: area, fromWatchedArea: true };
+  return { source: null, areaSource: null, fromWatchedArea: false };
+}
+
+function describeAreaSource(area, sequences) {
+  if (!area) return "";
+  if (area.video_id) return `Watched area was drawn on video ${area.video_id} at ${Number(area.video_time_seconds || 0).toFixed(1)}s.`;
+  const sequence = (sequences || []).find((s) => s.sequence_id === area.image_sequence_id);
+  const record = ((sequence && sequence.records) || []).find((r) => r.filename === area.image_filename) || {};
+  const when = record.local_time ? ` (${String(record.local_time).replace("T", " ")})` : "";
+  return `Watched area was drawn on ${area.image_filename}${when}.`;
+}
+
 async function main() {
   if (!folderName) {
     document.body.innerHTML = `<div style="padding:40px;">Missing <code>?site=</code> in the URL.</div>`;
@@ -426,23 +463,25 @@ async function main() {
     paintWatchedArea();
 
     const existingGuides = cfg.normal_waterline_guides || [];
-    // When guides already exist, load the FIRST one's own saved source --
-    // never just "whatever is newest" -- so opening this editor to fix an
-    // older guide actually shows the image/video it was traced on, instead
-    // of a dead end where saving is refused with no way to see the right
-    // media at all. Only a site with no guides yet falls back to newest.
+    // Show the frame the watched area was drawn on. A site whose guides were traced on a
+    // different frame keeps that frame (see chooseBaselineSource); a site with neither falls
+    // back to the newest sequence that has an image.
     const referenceGuide = existingGuides[0] || null;
-
-    if (referenceGuide && referenceGuide.image_sequence_id) {
-      sequenceId = referenceGuide.image_sequence_id;
-      baselineFilename = referenceGuide.image_filename;
+    const chosen = chooseBaselineSource({
+      areaSource: cfg.reference_region_source,
+      guide: referenceGuide,
+      sequences: sequenceData.sequences || []
+    });
+    if (chosen.source && chosen.source.image_sequence_id) {
+      sequenceId = chosen.source.image_sequence_id;
+      baselineFilename = chosen.source.image_filename;
       $("stageImg").setAttribute(
         "href",
         `/api/image-sequence-image?${new URLSearchParams({ folder_name: folderName, sequence_id: sequenceId, filename: baselineFilename })}`
       );
-    } else if (referenceGuide && referenceGuide.video_id) {
-      videoId = referenceGuide.video_id;
-      await loadVideoSource(referenceGuide.video_time_seconds || 0);
+    } else if (chosen.source && chosen.source.video_id) {
+      videoId = chosen.source.video_id;
+      await loadVideoSource(chosen.source.video_time_seconds || 0);
     } else {
       const source = pickImageSource(sequenceData.sequences || []);
       if (source) {
@@ -460,6 +499,13 @@ async function main() {
           await loadVideoSource(0);
         }
       }
+    }
+    const note = describeAreaSource(chosen.areaSource, sequenceData.sequences || []);
+    if (note) {
+      $("sourceNote").textContent = chosen.fromWatchedArea
+        ? note
+        : `${note} This view shows the frame the existing lines were traced on.`;
+      $("sourceNote").hidden = false;
     }
     if (!baselineFilename && !videoId) {
       $("body").innerHTML = `<div style="padding:24px;font-size:13px;color:var(--ink-soft);">This site has no downloaded image sequence and no video yet. Add media first from Site &rarr; Setup &rarr; Add media.</div>`;
