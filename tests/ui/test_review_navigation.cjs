@@ -137,3 +137,43 @@ test("the review page offers Edit human label for a labelled image", () => {
   assert.match(script, /Edit human label/);
   assert.match(script, /labelRevisionFor/);
 });
+
+// ---- SAM review state shows beside each image ----------------------------------------------
+
+function samContext(results) {
+  const sandbox = {
+    days: [day(1), day(2)],
+    evidencePoints: [],
+    state: { filter: null, selectedIndex: 0, eventCursor: -1 },
+    CODE_LABEL: {},
+    escapeHtml: String,
+    SAM_REVIEW_TEXT: { unreviewed: "Unreviewed", accepted: "Accepted", rejected: "Rejected", needs_correction: "Needs correction" },
+    samState: { results, status: {} }
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(slice, sandbox);
+  return sandbox;
+}
+
+test("each image's SAM state is the newest completed result per prompt", () => {
+  const s = samContext([
+    { filename: "img1.jpg", prompt: "river water", status: "completed", review_status: "accepted" },
+    { filename: "img1.jpg", prompt: "river water", status: "completed", review_status: "rejected" }, // older run
+    { filename: "img1.jpg", prompt: "riverbank", status: "completed" },
+    { filename: "img1.jpg", prompt: "riverbank", status: "failed", review_status: "accepted" },
+    { filename: "img2.jpg", prompt: "river water", status: "no_match" }
+  ]);
+  assert.deepEqual(JSON.parse(JSON.stringify(s.samSummaryFor("img1.jpg"))), [
+    { prompt: "river water", review: "accepted" },
+    { prompt: "riverbank", review: "unreviewed" }
+  ]);
+  assert.equal(s.samSummaryFor("img2.jpg").length, 0);
+  assert.match(s.samPillsHtml("img1.jpg"), /SAM river water: accepted/);
+  assert.match(s.samPillsHtml("img1.jpg"), /pill ok/);
+  assert.equal(s.samAcceptedCount(), 1);
+});
+
+test("the SAM result buttons mark the saved decision and the page refreshes after a review", () => {
+  assert.match(script, /aria-pressed="\$\{review === d\}"/);
+  assert.match(script, /Review saved\. This is separate from human labels\."\);\s*render\(\);/);
+});

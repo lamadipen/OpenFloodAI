@@ -618,6 +618,34 @@ function selectIndex(index) {
   render();
 }
 
+// The saved SAM result for an image, per prompt: the newest completed one, with how a person reviewed it.
+const SAM_REVIEW_PILL = { accepted: "ok", rejected: "bad", needs_correction: "warn", unreviewed: "gray" };
+
+function samSummaryFor(filename) {
+  const seen = new Set();
+  const out = [];
+  (samState.results || []).forEach((r) => {
+    if (!filename || r.filename !== filename || r.status !== "completed" || seen.has(r.prompt)) return;
+    seen.add(r.prompt);
+    out.push({ prompt: r.prompt, review: r.review_status || "unreviewed" });
+  });
+  return out;
+}
+
+function samPillsHtml(filename) {
+  return samSummaryFor(filename)
+    .map((x) => `<span class="pill ${SAM_REVIEW_PILL[x.review] || "gray"}" style="font-size:10px;" title="Hosted SAM result for &quot;${escapeHtml(x.prompt)}&quot;">SAM ${escapeHtml(x.prompt)}: ${escapeHtml((SAM_REVIEW_TEXT[x.review] || x.review).toLowerCase())}</span>`)
+    .join(" ");
+}
+
+function samSummaryCount() {
+  return (samState.results || []).length;
+}
+
+function samAcceptedCount() {
+  return days.filter((d) => d.code !== "M" && samSummaryFor(d.filename).some((x) => x.review === "accepted")).length;
+}
+
 function labelProgress() {
   const list = days.map((d, i) => i).filter((i) => days[i].code !== "M");
   return { done: list.filter(isLabelled).length, total: list.length };
@@ -640,6 +668,7 @@ function imageListHtml() {
         <span style="font-size:12px;font-family:var(--mono);">${escapeHtml(d.date)} ${escapeHtml(d.time)}</span>
         <span style="display:flex;align-items:center;gap:6px;">
           <span class="pill ${d.code === "P" ? "warn" : d.code === "C" ? "bad" : "gray"}" style="font-size:10px;">${escapeHtml(CODE_LABEL[d.code])}</span>
+          ${samPillsHtml(d.filename)}
           ${label ? `<span class="pill" style="font-size:10px;background:#e3f4ea;color:#1a7f4b;" title="Human label: ${escapeHtml(label)}">&#10003; ${escapeHtml(label)}</span>` : `<span style="font-size:10px;color:var(--ink-muted);">not labelled</span>`}
         </span>
       </button>`;
@@ -648,7 +677,7 @@ function imageListHtml() {
   return `<div class="card" style="overflow:hidden;">
     <div style="padding:12px 16px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;gap:8px;">
       <span style="font-size:13px;font-weight:600;">Images</span>
-      <span style="font-size:12px;color:var(--ink-soft);">Human labels: ${progress.done} of ${progress.total}</span>
+      <span style="font-size:12px;color:var(--ink-soft);">Human labels: ${progress.done} of ${progress.total}${samState.status && samSummaryCount() ? ` &middot; SAM accepted: ${samAcceptedCount()}` : ""}</span>
     </div>
     <div id="imageList" style="max-height:300px;overflow:auto;">${rows || `<div style="padding:16px;font-size:12px;color:var(--ink-muted);">No images in this view.</div>`}</div>
   </div>`;
@@ -726,7 +755,7 @@ function render() {
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
             <div>
               <div style="font-size:13px;font-weight:600;">Selected image &mdash; ${escapeHtml(sel.date)}, ${escapeHtml(sel.time)} local</div>
-              <div style="font-size:12px;margin-top:3px;">${selectedLabel ? `<span class="pill" style="background:#e3f4ea;color:#1a7f4b;">&#10003; Human label: ${escapeHtml(selectedLabel)}${labelRevisionFor(sel) ? ` (revision ${labelRevisionFor(sel)})` : ""}</span>` : `<span style="color:var(--ink-muted);">No human label for this image yet</span>`}</div>
+              <div style="font-size:12px;margin-top:3px;">${selectedLabel ? `<span class="pill" style="background:#e3f4ea;color:#1a7f4b;">&#10003; Human label: ${escapeHtml(selectedLabel)}${labelRevisionFor(sel) ? ` (revision ${labelRevisionFor(sel)})` : ""}</span>` : `<span style="color:var(--ink-muted);">No human label for this image yet</span>`} ${samPillsHtml(sel.filename)}</div>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
               <button class="btn" data-act="prev-image" title="Left arrow key">&larr; Previous image</button>
@@ -1073,7 +1102,7 @@ function samResultHtml(result) {
     : "";
   const buttons = result.status === "completed"
     ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
-        ${["accepted", "rejected", "needs_correction"].map((d) => `<button class="btn" data-sam-review="${d}" data-run="${escapeHtml(result.run_id)}" data-result="${escapeHtml(result.result_id)}">${escapeHtml(SAM_REVIEW_TEXT[d])}</button>`).join("")}
+        ${["accepted", "rejected", "needs_correction"].map((d) => `<button class="btn${review === d ? " primary" : ""}" aria-pressed="${review === d}" data-sam-review="${d}" data-run="${escapeHtml(result.run_id)}" data-result="${escapeHtml(result.result_id)}">${escapeHtml(SAM_REVIEW_TEXT[d])}</button>`).join("")}
       </div>`
     : "";
   return `<div style="border-top:1px solid var(--line-soft);padding:10px 0;">
@@ -1174,7 +1203,7 @@ function renderSamPanel() {
         const row = samState.results.find((r) => r.run_id === btn.dataset.run && r.result_id === btn.dataset.result);
         if (row) row.review_status = btn.dataset.samReview;
         toast("Review saved. This is separate from human labels.");
-        renderSamPanel();
+        render();
       } catch (error) {
         toast(error.message);
       }
