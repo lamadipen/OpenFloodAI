@@ -399,3 +399,40 @@ tr.row {
   max-height: 88vh;
   overflow: auto;
 }
+
+/* Left rail that can fold down to its icons, to leave more width for the page. */
+.rail { transition: width .15s ease; }
+
+.rail-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 0;
+  border: none;
+  background: transparent;
+  color: var(--rail-text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.rail-toggle:hover { color: #fff; }
+.rail-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+
+.app-shell.rail-collapsed .rail { width: 64px; }
+.app-shell.rail-collapsed .rail-label,
+.app-shell.rail-collapsed .rail-sites { display: none; }
+.app-shell.rail-collapsed .rail-brand { padding: 0 0 20px; justify-content: center; }
+.app-shell.rail-collapsed .rail-nav { padding: 0 10px; }
+.app-shell.rail-collapsed .rail-item { justify-content: center; padding: 10px 0; }
+.app-shell.rail-collapsed .rail-foot { padding: 0; }
+.app-shell.rail-collapsed .rail-foot-link,
+.app-shell.rail-collapsed .rail-foot-status,
+.app-shell.rail-collapsed .rail-toggle { justify-content: center; }
+.app-shell.rail-collapsed .rail-toggle-icon { transform: rotate(180deg); }
+.app-shell.rail-collapsed .rail > div[style*="height:1px"] { margin-left: 12px; margin-right: 12px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rail { transition: none; }
+}
