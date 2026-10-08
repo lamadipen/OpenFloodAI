@@ -100,8 +100,10 @@ def verify_release(root: Path, *, require_checklist: bool = False) -> dict[str, 
             problems.append(f"{name} is listed in the checksums but missing.")
         elif sha256_file(path) != sha:
             problems.append(f"{name} has changed since the release was built.")
+    # The checksum list and the human-edited checklist are not themselves checksummed.
     on_disk = {p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file()} - {
-        "checksums.sha256"
+        "checksums.sha256",
+        "RELEASE-CHECKLIST.md",
     }
     for extra in sorted(on_disk - set(listed)):
         problems.append(f"{extra} is not in the checksum list.")

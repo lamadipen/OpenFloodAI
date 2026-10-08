@@ -13,6 +13,28 @@ Curate and freeze a dataset  ->  record approvals  ->  build  ->  verify
 OpenFloodAI is not a flood-warning system. A release is research data. It claims no model
 accuracy.
 
+## Use it from the Datasets page
+
+Open a dataset that has a frozen version. Under **Release for sharing** you can do every step
+below without the command line:
+
+1. **Approvals** shows which sources and sites in the frozen version are still missing an
+   approval, and has a form for each. The privacy form makes you tick faces, license plates
+   and private property.
+2. **Build a release** is disabled, with the reasons, until the approvals are in place. It
+   shows the result: how many examples were released and how many were left out.
+3. Each release has **Verify**, a **Checklist** you tick as you complete it, **Upload
+   privately** and **Kaggle metadata**.
+4. **Upload privately** sends a verified release to a **private** Hugging Face repository only.
+   It needs the `HF_TOKEN` environment variable set where you started the app (the page says
+   whether it is found and never asks for it or shows it), the optional Hugging Face library,
+   and a confirmation that makes you type the repository name again.
+
+Making a repository public is not in the app. Do that on Hugging Face yourself, after the
+checklist.
+
+The command line does the same things and is described below.
+
 ## Before you build: record the approvals
 
 The release refuses anything a person has not approved. It never guesses or fills these in.
@@ -106,7 +128,8 @@ python3 scripts/export_dataset_release.py verify exports/openfloodai-dataset-v0.
 Checks every checksum, the required files, the metadata fields, that each example is in exactly
 one split and no camera is in two, the dataset card sections, and scans every text file for
 local paths and secret-like strings. `--require-checklist` also needs every box in
-`RELEASE-CHECKLIST.md` ticked.
+`RELEASE-CHECKLIST.md` ticked. The checklist is the one file left out of the checksums, because
+ticking a box edits it; everything else is frozen.
 
 ## Optional: private Hugging Face upload
 

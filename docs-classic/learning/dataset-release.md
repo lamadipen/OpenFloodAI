@@ -5,6 +5,15 @@ researchers. Building it never uploads anything. The full, current guide is
 `docs/learning/dataset-release.md`; this page keeps the same workflow and rules for the
 classic documentation.
 
+## From the Datasets page
+
+Open a dataset with a frozen version and use **Release for sharing**: record approvals (the
+privacy form needs faces, license plates and private property ticked), build, verify, tick the
+checklist, and optionally upload privately. The build button stays disabled, with reasons, until
+the approvals are in place. Upload goes to a private Hugging Face repository only, needs
+`HF_TOKEN` in the environment (the page never asks for or shows it), and needs the repository
+name typed again. Making a repository public is not in the app.
+
 ## Steps
 
 1. Curate and freeze a dataset (see Curate Training Datasets).

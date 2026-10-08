@@ -40,6 +40,7 @@ async function refresh() {
   try {
     dsPage.datasets = (await api("/api/datasets")).datasets || [];
     dsPage.view = dsPage.id ? await api(`/api/dataset?${new URLSearchParams({ dataset_id: dsPage.id })}`) : null;
+    if (dsPage.view && typeof loadRelease === "function") await loadRelease();
   } catch (error) {
     dsPage.view = null;
     dsPage.message = error.message;
@@ -119,7 +120,8 @@ function detailHtml(view) {
     ${ds.task === "level_classification" ? definitionsHtml(view) : ""}
     ${membersHtml(view)}
     ${view.duplicates.length ? duplicatesHtml(view) : ""}
-    ${versionsHtml(view)}`;
+    ${versionsHtml(view)}
+    ${typeof releaseSectionHtml === "function" ? releaseSectionHtml(view) : ""}`;
 }
 
 function countsHtml(ds, c) {
@@ -266,6 +268,7 @@ function wire() {
   );
   if (!dsPage.view) return;
   wireSplit();
+  if (typeof wireRelease === "function") wireRelease();
   const freeze = $("freezeBtn");
   if (freeze) freeze.addEventListener("click", async () => {
     try {

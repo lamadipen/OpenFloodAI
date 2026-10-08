@@ -85,7 +85,13 @@ from openfloodai.review.event_reviews import (
     set_event_review,
 )
 from openfloodai.review.river_tracker import build_river_tracker
-from openfloodai.ui import dataset_routes, hosted_sam_routes, review_workspace, water_level_routes
+from openfloodai.ui import (
+    dataset_routes,
+    hosted_sam_routes,
+    release_routes,
+    review_workspace,
+    water_level_routes,
+)
 from openfloodai.validation import (
     build_export_all,
     build_run_export,
@@ -146,6 +152,8 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         if hosted_sam_routes.handle_get(self, path):
             return
         if dataset_routes.handle_get(self, path):
+            return
+        if release_routes.handle_get(self, path):
             return
         if path == "/river-images.html":
             self._send_river_images_page()
@@ -757,6 +765,8 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         if water_level_routes.handle_post(self, self.path):
             return
         if dataset_routes.handle_post(self, self.path):
+            return
+        if release_routes.handle_post(self, self.path):
             return
         if review_workspace.handle_post(self, self.path):
             return

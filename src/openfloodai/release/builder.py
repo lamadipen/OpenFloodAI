@@ -604,7 +604,8 @@ def _write(
         card.dataset_card(manifest=manifest, policy=pol, splits_present=present), encoding="utf-8"
     )
 
-    listed = sorted(p for p in out.rglob("*") if p.is_file())
+    # The checklist is the one file a person edits afterwards, so it is not checksummed.
+    listed = sorted(p for p in out.rglob("*") if p.is_file() and p.name != "RELEASE-CHECKLIST.md")
     lines = [f"{sha256_file(p)}  {p.relative_to(out).as_posix()}" for p in listed]
     manifest["content_digest"] = sha256_bytes("\n".join(lines).encode())
     (out / "release-manifest.json").write_text(_dump(manifest), encoding="utf-8")

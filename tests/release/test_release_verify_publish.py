@@ -484,3 +484,39 @@ def test_the_command_line_upload_needs_yes(
 
     assert run(tmp_path, "upload-hf", str(root), "--repo-id", "me/x") == 1
     assert "--yes" in capsys.readouterr().err
+
+
+# ---- the checklist is the one editable file -------------------------------------------------
+
+
+def test_ticking_the_checklist_changes_only_that_line_and_the_release_still_verifies(
+    tmp_path: Path,
+) -> None:
+    from openfloodai.release.checklist import read_checklist, set_checklist_item
+
+    root = built(tmp_path)
+    before = (root / "RELEASE-CHECKLIST.md").read_text().splitlines()
+
+    items = set_checklist_item(root, 2, True)
+
+    after = (root / "RELEASE-CHECKLIST.md").read_text().splitlines()
+    assert [i["checked"] for i in items] == [False, False, True] + [False] * 5
+    assert [a for a, b in zip(after, before, strict=True) if a != b] == [
+        before[after.index(next(a for a, b in zip(after, before, strict=True) if a != b))].replace(
+            "[ ]", "[x]"
+        )
+    ]
+    assert verify_release(root) == {"ok": True, "problems": []}
+    assert read_checklist(root)[2]["checked"] is True
+    set_checklist_item(root, 2, False)
+    assert read_checklist(root)[2]["checked"] is False
+
+
+def test_a_checklist_item_that_does_not_exist_is_refused(tmp_path: Path) -> None:
+    from openfloodai.release.checklist import set_checklist_item
+
+    root = built(tmp_path)
+
+    for index in (-1, 8, 99):
+        with pytest.raises(CurationError):
+            set_checklist_item(root, index, True)
