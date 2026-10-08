@@ -195,3 +195,20 @@ test("the shell links to the Datasets page", () => {
   assert.match(shared, /href="\/console\/datasets\.html"/);
   assert.match(shared, /datasets:\s*\n?\s*'<svg/);
 });
+
+test("only accepted water masks are offered, and a choice names its segmentation run as well", () => {
+  const c = reviewContext();
+  c.dsState.datasets = [DS("water_segmentation")];
+  c.dsState.selectedId = "d1";
+  const accepted = (run, id, prompt) => ({ filename: "img.jpg", status: "completed", review_status: "accepted", run_id: run, result_id: id, prompt, processed_at_utc: "t" });
+  c.samState.results = [accepted("runA", "001-x", "riverbank"), accepted("runA", "002-x", "river water"), accepted("runB", "002-x", "water")];
+
+  const choices = c.acceptedMaskChoices(SEL);
+  assert.deepEqual(choices.map((m) => m.prompt), ["river water", "water"]);
+  const html = c.datasetPanelHtml(SEL);
+  assert.match(html, /value="runA\|002-x"/);
+  assert.match(html, /value="runB\|002-x"/);
+  const picker = html.slice(html.indexOf('id="dsMask"'), html.indexOf("</select>", html.indexOf('id="dsMask"')));
+  assert.doesNotMatch(picker, /riverbank/);
+  assert.match(html, /not a riverbank mask/);
+});

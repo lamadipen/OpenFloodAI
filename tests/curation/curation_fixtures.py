@@ -17,6 +17,7 @@ import cv2
 import numpy as np
 
 from openfloodai.curation.common import sha256_bytes
+from openfloodai.review.dataset_groups import assign_dataset_group
 
 REGION = {"x": 10.0, "y": 20.0, "width": 60.0, "height": 40.0}
 
@@ -29,7 +30,8 @@ class Img:
     match: str = "matched"
     quality: str = "approved"
     group: str = "middle"
-    dataset_group: str = "development_candidate"
+    dataset_group: str = "development_candidate"  # the site's assignment for this date NOW
+    review_group: str = "development_candidate"  # the group stamped on the review at the time
     camera_stable: str | None = None
     seed: int | None = None
     hour: int = 18
@@ -176,12 +178,16 @@ def make_run(
                     "reviewed_at_utc": "2026-10-07T20:00:00+00:00",
                     "change_presence": "no_change",
                     "event_validity": "not_reviewed",
-                    "dataset_group": img.dataset_group,
+                    "dataset_group": img.review_group,
                     "config_sha256": "c" * 64,
                     "baseline_filename": filenames[baseline] if baseline < len(filenames) else None,
                 }
             )
 
+    for img in images:
+        if img.dataset_group != "development_candidate":
+            date = f"2026-01-{img.day:02d}"
+            assign_dataset_group(site_dir, group=img.dataset_group, start_date=date, end_date=date)
     _write_jsonl(seq_dir / "sequence-manifest.jsonl", manifest)
     (seq_dir / "sampling-batches").mkdir()
     (seq_dir / "sampling-batches" / "batch-0001.json").write_text(
@@ -241,13 +247,14 @@ def add_mask_result(
     mask_seed: int = 7,
     detections: bool = True,
     status: str = "completed",
+    result_id: str | None = None,
 ) -> str:
     """A saved hosted-segmentation result with a mask file; returns its result id."""
 
     run_dir = fixture.site_dir / "outputs" / "hosted-sam-runs" / run_id
     (run_dir / "results").mkdir(parents=True)
     (run_dir / "masks").mkdir()
-    result_id = f"001-{prompt.replace(' ', '-')}-{run_id[-4:]}"
+    result_id = result_id or f"001-{prompt.replace(' ', '-')}-{run_id[-4:]}"
     mask = np.random.default_rng(mask_seed).integers(0, 2, size=(8, 8), dtype=np.uint8) * 255
     ok, encoded = cv2.imencode(".png", mask)
     assert ok

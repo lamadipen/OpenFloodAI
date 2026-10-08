@@ -61,7 +61,8 @@ def handle_get(handler: Any, path: str) -> bool:
             handler._send_json({"datasets": curation.list_datasets(datasets_dir)}, status_code=200)
         elif path == "/api/dataset":
             handler._send_json(
-                curation.dataset_view(datasets_dir, first("dataset_id")), status_code=200
+                curation.dataset_view(datasets_dir, first("dataset_id"), handler.sites_dir),
+                status_code=200,
             )
         elif path == "/api/dataset-verify":
             result = curation.verify_version(
@@ -128,6 +129,7 @@ def _dispatch(path: str, data: dict[str, Any], datasets_dir: Any, sites_dir: Any
             dataset_id,
             **_ref(data),
             mask_result_id=_text(data, "mask_result_id") or None,
+            mask_run_id=_text(data, "mask_run_id") or None,
             decision=decision,
         )
     if path == "/api/dataset-add-pair":
@@ -156,7 +158,11 @@ def _dispatch(path: str, data: dict[str, Any], datasets_dir: Any, sites_dir: Any
     if path == "/api/dataset-create-definition":
         return {"definition": label_defs.create_definition(datasets_dir, data)}
     manifest = curation.freeze_version(
-        datasets_dir, dataset_id, note=_text(data, "note"), approved_by=_text(data, "approved_by")
+        datasets_dir,
+        dataset_id,
+        note=_text(data, "note"),
+        approved_by=_text(data, "approved_by"),
+        sites_dir=sites_dir,
     )
     return {"manifest": manifest}
 

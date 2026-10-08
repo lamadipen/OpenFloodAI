@@ -4,7 +4,7 @@
 // published, and the run, its gauge match and its human review are never changed.
 
 const DATASET_TASK_HELP = {
-  water_segmentation: "Needs a water mask for this exact image that a person accepted in the hosted segmentation panel below.",
+  water_segmentation: "Needs a water mask (not a riverbank mask) for this exact image that a person accepted in the hosted segmentation panel below.",
   level_classification: "Needs a human review of this image, its own matched gauge reading, and an approved category definition for this site.",
   gauge_height: "Needs this image's own matched gauge reading with unit, station and quality. It does not need a low image.",
   level_change: "Needs an earlier and a later image from the same camera view, each with a gauge reading. Choose both yourself; pairs are never made automatically."
@@ -47,8 +47,13 @@ function annotationSummary(a) {
   return "";
 }
 
+// Only a completed, accepted WATER mask can be a water-segmentation example, so only those are offered.
+const WATER_MASK_PROMPTS = ["river water", "water"];
+
 function acceptedMaskChoices(day) {
-  return (samState.results || []).filter((r) => r.filename === day.filename && r.status === "completed" && r.review_status === "accepted");
+  return (samState.results || []).filter(
+    (r) => r.filename === day.filename && r.status === "completed" && r.review_status === "accepted" && WATER_MASK_PROMPTS.includes(r.prompt)
+  );
 }
 
 function datasetResultHtml() {
@@ -92,7 +97,7 @@ function datasetPanelHtml(sel) {
   } else {
     const masks = ds && ds.task === "water_segmentation" ? acceptedMaskChoices(sel) : [];
     const maskPicker = masks.length > 1
-      ? `<label class="mt-10" for="dsMask">Which accepted mask</label><select id="dsMask" class="full-width">${masks.map((m) => `<option value="${escapeHtml(m.result_id)}">${escapeHtml(m.prompt)} · ${escapeHtml(formatUtc(m.processed_at_utc))}</option>`).join("")}</select>`
+      ? `<label class="mt-10" for="dsMask">Which accepted mask</label><select id="dsMask" class="full-width">${masks.map((m) => `<option value="${escapeHtml(m.run_id)}|${escapeHtml(m.result_id)}">${escapeHtml(m.prompt)} · ${escapeHtml(formatUtc(m.processed_at_utc))}</option>`).join("")}</select>`
       : "";
     const pair = ds && ds.task === "level_change"
       ? `<div class="mt-10" style="font-size:12px;">${dsState.pairEarlier ? `Earlier image: <strong>${escapeHtml(dsState.pairEarlier.filename)}</strong> <button class="btn" data-ds-act="clear-earlier" style="height:26px;">Clear</button>` : "No earlier image chosen yet."}</div>
@@ -128,7 +133,12 @@ async function datasetAction(action, decision) {
   if (!sel || !ds) return;
   const maskSelect = $("dsMask");
   const base = { dataset_id: ds.dataset_id, ...datasetImageRef(sel) };
-  if (maskSelect) base.mask_result_id = maskSelect.value;
+  if (maskSelect) {
+    // A result id repeats across segmentation runs, so the choice names the run as well.
+    const [maskRun, maskResult] = maskSelect.value.split("|");
+    base.mask_run_id = maskRun;
+    base.mask_result_id = maskResult;
+  }
   if (decision) base.decision = decision;
   if (action === "add") dsState.result = await postDataset("/api/dataset-add", base);
   else if (action === "confirm-reject") {

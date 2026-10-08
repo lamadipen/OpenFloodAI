@@ -53,6 +53,7 @@ from openfloodai.curation.common import (
 )
 from openfloodai.curation.snapshot import (
     LoadedObservation,
+    current_dataset_group,
     find_mask_candidates,
     load_observation,
 )
@@ -267,13 +268,18 @@ def _copy_blob(source: Path, folder: Path, kind: str, expected_sha: str, suffix:
 
 
 def _ref(
-    folder_name: str, run_id: str, filename: str, mask_result_id: str | None = None
+    folder_name: str,
+    run_id: str,
+    filename: str,
+    mask_result_id: str | None = None,
+    mask_run_id: str | None = None,
 ) -> dict[str, Any]:
     return {
         "folder_name": folder_name,
         "run_id": run_id,
         "filename": filename,
         "mask_result_id": mask_result_id,
+        "mask_run_id": mask_run_id,
     }
 
 
@@ -288,13 +294,14 @@ def _evaluate_single(
     site_dir: Path,
     loaded: LoadedObservation,
     mask_result_id: str | None,
+    mask_run_id: str | None,
 ) -> tuple[dict[str, Any], list[Any]]:
     task = dataset["task"]
     masks = (
         find_mask_candidates(site_dir, loaded.snapshot) if task == TASK_WATER_SEGMENTATION else []
     )
     if task == TASK_WATER_SEGMENTATION:
-        return task_rules.evaluate_segmentation(loaded, masks, mask_result_id), masks
+        return task_rules.evaluate_segmentation(loaded, masks, mask_result_id, mask_run_id), masks
     if task == TASK_GAUGE_HEIGHT:
         return task_rules.evaluate_gauge_height(loaded), masks
     if task == TASK_LEVEL_CLASSIFICATION:
@@ -312,6 +319,7 @@ def add_observation(
     run_id: str,
     filename: str,
     mask_result_id: str | None = None,
+    mask_run_id: str | None = None,
     decision: str | None = None,
 ) -> dict[str, Any]:
     """Validate one image of a saved run for the dataset's task and add it to the draft.
@@ -331,7 +339,7 @@ def add_observation(
         site_dir = _site_dir(sites_dir, folder_name)
         loaded = load_observation(site_dir, run_id, filename)
         evaluation, masks = _evaluate_single(
-            datasets_dir, dataset, site_dir, loaded, mask_result_id
+            datasets_dir, dataset, site_dir, loaded, mask_result_id, mask_run_id
         )
         key = loaded.snapshot["observation_key"]
         if not evaluation["eligible"]:
@@ -340,7 +348,12 @@ def add_observation(
         version = evaluation["annotation_version"]
         mask_files: dict[str, Path] = {}
         if dataset["task"] == TASK_WATER_SEGMENTATION:
-            chosen = next(m for m in masks if m.result_id == annotation["result_id"])
+            chosen = next(
+                m
+                for m in masks
+                if m.result_id == annotation["result_id"]
+                and m.run_id == annotation["segmentation_run_id"]
+            )
             mask_files = {sha256_file(p): p for p in chosen.mask_paths}
         event = {
             "event": "add",
@@ -353,12 +366,25 @@ def add_observation(
             "annotation": annotation,
             "annotation_version": version,
             "warnings": [r for r in evaluation["reasons"] if r["severity"] != SEVERITY_ERROR],
-            "selected": _ref(folder_name, run_id, filename, annotation.get("result_id")),
+            "selected": _ref(
+                folder_name,
+                run_id,
+                filename,
+                annotation.get("result_id"),
+                annotation.get("segmentation_run_id"),
+            ),
             "runs": [run_id],
         }
         existing = read_draft(datasets_dir, dataset_id).get(key)
         if existing and existing["status"] == "included":
             if existing["annotation_version"] == version:
+                if existing["snapshot"]["dataset_group"] != loaded.snapshot["dataset_group"]:
+                    # Same annotation, but the site's group for this date changed since it was
+                    # added: refresh the stored evidence so the new group is enforced.
+                    event["event"] = "replace"
+                    event["runs"] = sorted(set(existing["runs"]) | {run_id})
+                    _append_event(folder, event)
+                    return {"status": "updated", "member_id": key, **_outline(evaluation)}
                 if run_id not in existing["runs"]:
                     _append_event(folder, {"event": "also_in_run", "member_id": key, "run": run_id})
                 return {"status": "unchanged", "member_id": key, **_outline(evaluation)}
@@ -443,6 +469,14 @@ def add_pair(
         existing = read_draft(datasets_dir, dataset_id).get(member_id)
         if existing and existing["status"] == "included":
             if existing["annotation_version"] == version:
+                old = existing["snapshots"]
+                if (old["earlier"]["dataset_group"], old["later"]["dataset_group"]) != (
+                    first.snapshot["dataset_group"],
+                    second.snapshot["dataset_group"],
+                ):
+                    event["event"] = "replace"
+                    _append_event(folder, event)
+                    return {"status": "updated", "member_id": member_id, **_outline(evaluation)}
                 return {"status": "unchanged", "member_id": member_id, **_outline(evaluation)}
             if decision is None:
                 raise CurationConflict(
@@ -549,13 +583,48 @@ def _split_members(draft: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+def _group_problems(sites_dir: Path | None, member: dict[str, Any]) -> list[dict[str, str]]:
+    """Re-read each image's dataset group as the site has it now.
+
+    A range locked or excluded after the example was added must not slip into training. The
+    group stored with the example is history; the group in force today decides.
+    """
+
+    if sites_dir is None:
+        return []
+    problems: list[dict[str, str]] = []
+    for snap in _units(member):
+        site = sites_dir / snap["site"]["folder_name"]
+        if not site.is_dir():
+            problems.append(reason("site_missing", "The site this example came from is missing."))
+            continue
+        now = current_dataset_group(site, snap["source"]["captured_at_utc"])
+        if now == "excluded":
+            problems.append(
+                reason("excluded_group", "This image's date range is now marked excluded.")
+            )
+        elif now != snap["dataset_group"]:
+            problems.append(
+                reason(
+                    "dataset_group_changed",
+                    f"This image's date range changed from {snap['dataset_group']} to {now} "
+                    "after it was added. Add it again to refresh it.",
+                )
+            )
+    return problems
+
+
 def recheck_member(
-    datasets_dir: Path, dataset: dict[str, Any], folder: Path, member: dict[str, Any]
+    datasets_dir: Path,
+    dataset: dict[str, Any],
+    folder: Path,
+    member: dict[str, Any],
+    sites_dir: Path | None = None,
 ) -> list[dict[str, str]]:
     """Re-run the task rules on the evidence the member froze, and verify its kept bytes."""
 
     task = dataset["task"]
-    problems: list[dict[str, str]] = []
+    problems: list[dict[str, str]] = _group_problems(sites_dir, member)
     for snap in _units(member):
         blob = folder / BLOBS_DIR / "images" / f"{snap['image']['sha256']}.jpg"
         if not blob.is_file():
@@ -640,7 +709,9 @@ def _conflicts_and_duplicates(
     return duplicates, problems
 
 
-def dataset_view(datasets_dir: Path, dataset_id: str) -> dict[str, Any]:
+def dataset_view(
+    datasets_dir: Path, dataset_id: str, sites_dir: Path | None = None
+) -> dict[str, Any]:
     """Everything the dataset page shows: membership, readiness, label counts, gaps, duplicates."""
 
     folder = _dataset_dir(datasets_dir, dataset_id)
@@ -650,7 +721,7 @@ def dataset_view(datasets_dir: Path, dataset_id: str) -> dict[str, Any]:
     blocking: list[dict[str, str]] = []
     for member_id, member in sorted(draft.items()):
         problems = (
-            recheck_member(datasets_dir, dataset, folder, member)
+            recheck_member(datasets_dir, dataset, folder, member, sites_dir)
             if member["status"] == "included"
             else []
         )
@@ -765,14 +836,19 @@ def list_versions(datasets_dir: Path, dataset_id: str) -> list[dict[str, Any]]:
 
 
 def freeze_version(
-    datasets_dir: Path, dataset_id: str, *, note: str, approved_by: str
+    datasets_dir: Path,
+    dataset_id: str,
+    *,
+    note: str,
+    approved_by: str,
+    sites_dir: Path | None = None,
 ) -> dict[str, Any]:
     """Freeze the draft as a new immutable version, or explain why it cannot be frozen yet."""
 
     clean_note = clean_text(note, "A version note", max_length=300)
     approver = clean_text(approved_by, "The person freezing this version", max_length=80)
     with _locked(datasets_dir, dataset_id):
-        view = dataset_view(datasets_dir, dataset_id)
+        view = dataset_view(datasets_dir, dataset_id, sites_dir)
         if view["blocking"]:
             raise CurationConflict(
                 "This dataset cannot be frozen yet. Fix the listed problems first.",
@@ -971,6 +1047,7 @@ def _observation_record(snap: dict[str, Any]) -> dict[str, Any]:
         "baseline": snap["baseline"],
         "collection": snap["collection"],
         "dataset_group": snap["dataset_group"],
+        "dataset_group_at_review": snap.get("dataset_group_at_review"),
         "gauge": snap["gauge"],
         "configuration": snap["configuration"],
         "review": snap["review"],

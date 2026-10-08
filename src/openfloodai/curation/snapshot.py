@@ -219,12 +219,9 @@ def load_observation(site_dir: Path, run_id: str, filename: str) -> LoadedObserv
     config = _json(inputs / "site-config.snapshot.json")
     review = _review_summary(_latest_review(run, filename))
     captured = str(source_row.get("captured_at_utc") or "")
-    if review and review.get("dataset_group"):
-        dataset_group = str(review["dataset_group"])
-    else:
-        dataset_group = dataset_group_for_date(
-            list_dataset_group_assignments(site_dir), captured[:10]
-        )
+    # The group in force NOW decides eligibility and the split, so locking or excluding a date
+    # range after a review is respected. The group stamped at review time is kept as history.
+    dataset_group = current_dataset_group(site_dir, captured)
 
     sequence_dir = site_dir / "inputs" / "image-sequences" / sequence_id
     sample = samples_by_filename(read_batches(sequence_dir)).get(filename)
@@ -266,6 +263,7 @@ def load_observation(site_dir: Path, run_id: str, filename: str) -> LoadedObserv
             "note": "How the image was sampled for download. It is not a training label.",
         },
         "dataset_group": dataset_group,
+        "dataset_group_at_review": (review or {}).get("dataset_group"),
         "gauge": gauge,
         "configuration": {
             "config_sha256": (review or {}).get("config_sha256")
@@ -283,6 +281,12 @@ def load_observation(site_dir: Path, run_id: str, filename: str) -> LoadedObserv
         },
     }
     return LoadedObservation(snapshot=snapshot, image_path=image_path, problems=problems)
+
+
+def current_dataset_group(site_dir: Path, captured_at_utc: str) -> str:
+    """The site's dataset group for this capture date as assigned today."""
+
+    return dataset_group_for_date(list_dataset_group_assignments(site_dir), captured_at_utc[:10])
 
 
 def _file_sha(path: Path) -> str | None:

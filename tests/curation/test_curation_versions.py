@@ -20,6 +20,7 @@ from openfloodai.curation import (
     dataset_view,
     freeze_version,
     list_versions,
+    read_draft,
     remove_member,
     set_split_policy,
     verify_version,
@@ -29,6 +30,7 @@ from openfloodai.curation.common import (
     TASK_LEVEL_CHANGE,
     TASK_WATER_SEGMENTATION,
 )
+from openfloodai.review.dataset_groups import assign_dataset_group
 
 SAMPLE_KEYS = {
     "sample_id",
@@ -50,6 +52,7 @@ OBSERVATION_KEYS = {
     "baseline",
     "collection",
     "dataset_group",
+    "dataset_group_at_review",
     "gauge",
     "configuration",
     "review",
@@ -489,3 +492,188 @@ def test_a_single_site_time_block_split_is_labelled_site_specific_only(tmp_path:
 def test_invalid_split_policies_are_refused(tmp_path: Path, policy: dict[str, Any]) -> None:
     with pytest.raises(CurationError):
         create_dataset(datasets(tmp_path), name="Bad", task=TASK_GAUGE_HEIGHT, split_policy=policy)
+
+
+# ---- review feedback: locks, mask eligibility and mask identity -----------------------------
+
+
+def policy_for(camera: str, split: str) -> dict[str, Any]:
+    return {"kind": "site_camera", "assignments": {camera: split}}
+
+
+def test_a_lock_made_after_the_review_still_keeps_the_image_out_of_training(tmp_path: Path) -> None:
+    # The review was stamped development_candidate, but the range is locked today.
+    fx = make_run(
+        tmp_path,
+        [Img(day=2, dataset_group="locked_validation", review_group="development_candidate")],
+    )
+    ds = create_dataset(
+        datasets(tmp_path),
+        name="Heights",
+        task=TASK_GAUGE_HEIGHT,
+        split_policy=policy_for("CAM_A", "train"),
+    )
+
+    result = add(tmp_path, ds, fx)
+
+    member = next(iter(read_draft(datasets(tmp_path), ds["dataset_id"]).values()))
+    snapshot = member["snapshot"]
+    assert result["status"] == "added"
+    assert snapshot["dataset_group"] == "locked_validation"  # what is in force now
+    assert snapshot["dataset_group_at_review"] == "development_candidate"  # history is kept
+    assert "locked_not_test" in blocking_codes(tmp_path, ds)
+    with pytest.raises(CurationConflict):
+        freeze_version(
+            datasets(tmp_path), ds["dataset_id"], note="n", approved_by="me", sites_dir=fx.sites_dir
+        )
+
+
+def test_locking_a_range_after_adding_blocks_the_freeze_until_the_example_is_refreshed(
+    tmp_path: Path,
+) -> None:
+    fx = make_run(tmp_path, [Img(day=2)])
+    ds = create_dataset(
+        datasets(tmp_path),
+        name="Heights",
+        task=TASK_GAUGE_HEIGHT,
+        split_policy=policy_for("CAM_A", "train"),
+    )
+    add(tmp_path, ds, fx)
+    assert dataset_view(datasets(tmp_path), ds["dataset_id"], fx.sites_dir)["ready_to_freeze"]
+
+    assign_dataset_group(
+        fx.site_dir, group="locked_validation", start_date="2026-01-02", end_date="2026-01-02"
+    )
+    view = dataset_view(datasets(tmp_path), ds["dataset_id"], fx.sites_dir)
+    assert "dataset_group_changed" in {p["code"] for p in view["blocking"]}
+    with pytest.raises(CurationConflict):
+        freeze_version(
+            datasets(tmp_path), ds["dataset_id"], note="n", approved_by="me", sites_dir=fx.sites_dir
+        )
+
+    # Adding it again refreshes the stored evidence; the lock then forces it into test only.
+    assert add(tmp_path, ds, fx)["status"] == "updated"
+    codes_now = {
+        p["code"]
+        for p in dataset_view(datasets(tmp_path), ds["dataset_id"], fx.sites_dir)["blocking"]
+    }
+    assert codes_now == {"locked_not_test", "locked_camera_leak"}
+    set_split_policy(datasets(tmp_path), ds["dataset_id"], policy_for("CAM_A", "test"))
+    manifest = freeze_version(
+        datasets(tmp_path), ds["dataset_id"], note="n", approved_by="me", sites_dir=fx.sites_dir
+    )
+    assert manifest["counts"]["examples"] == 1
+
+
+def test_excluding_a_range_after_adding_blocks_the_freeze(tmp_path: Path) -> None:
+    fx = make_run(tmp_path, [Img(day=2)])
+    ds = create_dataset(
+        datasets(tmp_path),
+        name="Heights",
+        task=TASK_GAUGE_HEIGHT,
+        split_policy=policy_for("CAM_A", "train"),
+    )
+    add(tmp_path, ds, fx)
+
+    assign_dataset_group(
+        fx.site_dir, group="excluded", start_date="2026-01-02", end_date="2026-01-02"
+    )
+
+    view = dataset_view(datasets(tmp_path), ds["dataset_id"], fx.sites_dir)
+    assert "excluded_group" in {p["code"] for p in view["blocking"]}
+
+
+def segmentation_dataset(tmp_path: Path) -> dict[str, Any]:
+    return create_dataset(
+        datasets(tmp_path),
+        name="Masks",
+        task=TASK_WATER_SEGMENTATION,
+        split_policy=policy_for("CAM_A", "train"),
+    )
+
+
+def test_a_riverbank_mask_is_never_a_water_label_even_when_chosen_explicitly(
+    tmp_path: Path,
+) -> None:
+    fx = make_run(tmp_path, [Img(day=2)])
+    bank = add_mask_result(fx, fx.filenames[0], prompt="riverbank")
+    ds = segmentation_dataset(tmp_path)
+
+    automatic = add(tmp_path, ds, fx)
+    explicit = add(tmp_path, ds, fx, mask_result_id=bank)
+
+    assert "mask_missing" in {r["code"] for r in automatic["reasons"]}
+    assert explicit["status"] == "ineligible"
+    assert "mask_not_water" in {r["code"] for r in explicit["reasons"]}
+    assert read_draft(datasets(tmp_path), ds["dataset_id"]) == {}
+
+
+def test_a_result_id_that_repeats_across_runs_uses_the_run_that_was_chosen(tmp_path: Path) -> None:
+    fx = make_run(tmp_path, [Img(day=2)])
+    older = add_mask_result(
+        fx, fx.filenames[0], run_id="20261002T100000Z-bbbbbbbb", result_id="001-water", mask_seed=1
+    )
+    newer = add_mask_result(
+        fx,
+        fx.filenames[0],
+        run_id="20261003T100000Z-cccccccc",
+        result_id="001-water",
+        mask_seed=2,
+        review="rejected",
+    )
+    assert older == newer  # the same result id in two segmentation runs
+    ds = segmentation_dataset(tmp_path)
+
+    ambiguous = add(tmp_path, ds, fx, mask_result_id="001-water")
+    chosen = add(
+        tmp_path, ds, fx, mask_result_id="001-water", mask_run_id="20261002T100000Z-bbbbbbbb"
+    )
+
+    assert "mask_ambiguous" in {r["code"] for r in ambiguous["reasons"]}
+    annotation = chosen["annotation"]
+    assert annotation["segmentation_run_id"] == "20261002T100000Z-bbbbbbbb"
+    older_mask = (
+        fx.site_dir
+        / "outputs"
+        / "hosted-sam-runs"
+        / "20261002T100000Z-bbbbbbbb"
+        / "masks"
+        / "001-water-0.png"
+    ).read_bytes()
+    kept = (
+        datasets(tmp_path)
+        / ds["dataset_id"]
+        / "blobs"
+        / "masks"
+        / f"{annotation['masks'][0]['sha256']}.png"
+    )
+    assert kept.read_bytes() == older_mask
+    # The dataset freezes with the older, accepted mask, not the newer rejected one.
+    manifest = freeze_version(
+        datasets(tmp_path), ds["dataset_id"], note="n", approved_by="me", sites_dir=fx.sites_dir
+    )
+    assert manifest["counts"]["masks"] == 1
+
+
+def test_the_default_choice_among_repeated_ids_copies_the_accepted_runs_files(
+    tmp_path: Path,
+) -> None:
+    fx = make_run(tmp_path, [Img(day=2)])
+    add_mask_result(
+        fx, fx.filenames[0], run_id="20261002T100000Z-bbbbbbbb", result_id="001-water", mask_seed=1
+    )
+    add_mask_result(
+        fx,
+        fx.filenames[0],
+        run_id="20261003T100000Z-cccccccc",
+        result_id="001-water",
+        mask_seed=2,
+        review="rejected",
+    )
+    ds = segmentation_dataset(tmp_path)
+
+    result = add(tmp_path, ds, fx)
+
+    assert result["status"] == "added"
+    assert result["annotation"]["segmentation_run_id"] == "20261002T100000Z-bbbbbbbb"
+    assert dataset_view(datasets(tmp_path), ds["dataset_id"], fx.sites_dir)["ready_to_freeze"]

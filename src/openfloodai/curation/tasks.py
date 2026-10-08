@@ -200,20 +200,56 @@ def _review_reasons(task: str, snapshot: dict[str, Any]) -> list[dict[str, str]]
 
 
 def evaluate_segmentation(
-    loaded: LoadedObservation, masks: list[MaskCandidate], mask_result_id: str | None = None
+    loaded: LoadedObservation,
+    masks: list[MaskCandidate],
+    mask_result_id: str | None = None,
+    mask_run_id: str | None = None,
 ) -> dict[str, Any]:
+    """A water-segmentation example needs a WATER mask for these image bytes that a person accepted.
+
+    A result is identified by its segmentation run AND its result id, because result ids repeat
+    across runs. An explicit choice goes through the same water-mask rules as an automatic one:
+    a riverbank (or any other concept) mask is never a water label.
+    """
+
     reasons = _common_reasons(TASK_WATER_SEGMENTATION, loaded)
-    pool = [m for m in masks if m.prompt in WATER_MASK_PROMPTS and m.status == "completed"]
+    water = [m for m in masks if m.prompt in WATER_MASK_PROMPTS and m.status == "completed"]
+    pool = water
+    explained = False
     if mask_result_id:
-        pool = [m for m in masks if m.result_id == mask_result_id]
-        if not pool:
+        picked = [
+            m
+            for m in masks
+            if m.result_id == mask_result_id and (mask_run_id is None or m.run_id == mask_run_id)
+        ]
+        pool = []
+        explained = True
+        if not picked:
             reasons.append(
                 reason("mask_missing", "That segmentation result is not for this image.")
             )
+        elif len(picked) > 1:
+            reasons.append(
+                reason(
+                    "mask_ambiguous",
+                    "That result id exists in more than one segmentation run. Choose the run too.",
+                )
+            )
+        elif picked[0] not in water:
+            other = picked[0]
+            reasons.append(
+                reason(
+                    "mask_not_water",
+                    f"That result is a '{other.prompt}' mask (status {other.status}). Only a "
+                    "completed water mask can be a water-segmentation example.",
+                )
+            )
+        else:
+            pool = picked
     chosen: MaskCandidate | None = None
     accepted = [m for m in pool if m.review_status == "accepted"]
     if not pool:
-        if not mask_result_id:
+        if not explained:
             reasons.append(
                 reason(
                     "mask_missing",
@@ -240,8 +276,7 @@ def evaluate_segmentation(
                 reason(
                     "mask_unreviewed",
                     "The saved mask has not been reviewed. A person must accept it before it "
-                    "counts "
-                    "as a verified annotation.",
+                    "counts as a verified annotation.",
                 )
             )
     else:
@@ -249,7 +284,7 @@ def evaluate_segmentation(
         if mask_result_id or len(distinct) == 1:
             chosen = accepted[0]
         else:
-            ids = ", ".join(m.result_id for m in accepted)
+            ids = ", ".join(f"{m.run_id}/{m.result_id}" for m in accepted)
             reasons.append(
                 reason(
                     "mask_ambiguous",
