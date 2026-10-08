@@ -4,10 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
-const html = fs.readFileSync(
-  path.join(__dirname, "../../tools/console/review.html"),
-  "utf8"
-);
+const html = require("./review_source.cjs").reviewHtml();
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 const start = script.indexOf("function pilotMetricPercent");
 const end = script.indexOf("function gaugeKey");

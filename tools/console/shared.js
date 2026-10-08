@@ -173,6 +173,34 @@ async function loadRailSites(activeSiteFolder) {
   }
 }
 
+// Pages redraw by replacing a container's HTML, which destroys the control a keyboard user just
+// pressed. keepFocus() redraws, then puts focus back on the matching new control and restores the
+// scroll position, so pressing Next image (or a toggle) from the keyboard keeps working.
+function focusSignature(root, el) {
+  if (!el || el === document.body || !root || !root.contains(el)) return null;
+  const attrs = Array.from(el.attributes)
+    .filter((a) => a.name === "id" || a.name.startsWith("data-") || a.name === "aria-label")
+    .map((a) => [a.name, a.value]);
+  return { tag: el.tagName, attrs };
+}
+
+function findBySignature(root, signature) {
+  if (!signature) return null;
+  const candidates = Array.from(root.querySelectorAll(signature.tag));
+  return candidates.find((el) => signature.attrs.every(([name, value]) => el.getAttribute(name) === value)) || null;
+}
+
+function keepFocus(root, redraw) {
+  const signature = focusSignature(root, document.activeElement);
+  const scrollY = window.scrollY;
+  redraw();
+  if (signature) {
+    const target = findBySignature(root, signature);
+    if (target) target.focus({ preventScroll: true });
+  }
+  window.scrollTo(window.scrollX, scrollY);
+}
+
 function qs(name, fallback = "") {
   return new URLSearchParams(location.search).get(name) ?? fallback;
 }

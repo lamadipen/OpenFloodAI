@@ -4,29 +4,28 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Human label · OpenFloodAI console</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap">
 <link rel="stylesheet" href="/console/shared.css">
 </head>
-<body style="background:var(--paper);">
+<body class="paper-box">
 <div class="modal-overlay">
   <div class="modal-card" style="width:min(640px,92vw);">
-    <div style="padding:16px 22px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;">
+    <div class="modal-head">
       <div>
-        <div style="font-size:15px;font-weight:600;">Human label</div>
-        <div style="font-size:12px;color:var(--ink-muted);margin-top:2px;" id="sampleLabel">&hellip;</div>
+        <div class="title-m">Human label</div>
+        <div class="caption" id="sampleLabel">&hellip;</div>
       </div>
-      <a id="closeLink" href="#" style="width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--ink-muted);">
+      <a id="closeLink" href="#" class="close-link">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </a>
     </div>
     <div id="body" style="padding:20px 22px;display:flex;flex-direction:column;gap:20px;max-height:70vh;overflow:auto;">
       <div id="machineNote" class="hint" style="background:var(--paper);border-radius:9px;padding:10px 12px;font-size:12px;"></div>
-      <div id="revisionNote" hidden style="background:var(--warn-soft);border:1px solid #ebd3a0;border-radius:9px;padding:10px 12px;font-size:12px;color:#5c3b08;"></div>
+      <div id="revisionNote" hidden style="background:var(--warn-soft);border:1px solid var(--warn-line);border-radius:9px;padding:10px 12px;font-size:12px;color:var(--warn);"></div>
 
       <div>
         <div class="hint" style="text-transform:uppercase;letter-spacing:.03em;margin-bottom:8px;">What do you see?</div>
         <div id="labelOptions" style="display:flex;flex-direction:column;gap:7px;"></div>
-        <div id="labelError" class="err" hidden style="margin-top:6px;">Choose a label before saving.</div>
+        <div id="labelError" class="err mt-6" hidden>Choose a label before saving.</div>
       </div>
 
       <div>
@@ -40,15 +39,15 @@
       </div>
 
       <div id="pilotSection" hidden style="border-top:1px solid var(--line-soft);padding-top:18px;">
-        <div style="font-size:13px;font-weight:600;">Riverbank overlay review</div>
+        <div class="title-s">Riverbank overlay review</div>
         <div class="hint" style="margin-top:3px;margin-bottom:14px;">These two answers help evaluate the highlighted guide sections. They do not change the machine result.</div>
         <div class="hint" style="text-transform:uppercase;letter-spacing:.03em;margin-bottom:8px;">Did visual change cross the normal guide?</div>
         <div id="crossingOptions" style="display:flex;gap:7px;flex-wrap:wrap;"></div>
-        <div id="crossingError" class="err" hidden style="margin-top:6px;">Choose crossing, no crossing, or unclear.</div>
+        <div id="crossingError" class="err mt-6" hidden>Choose crossing, no crossing, or unclear.</div>
 
         <div class="hint" style="text-transform:uppercase;letter-spacing:.03em;margin:16px 0 8px;">Does the highlighted overlay match what you see?</div>
         <div id="overlayOptions" style="display:flex;gap:7px;flex-wrap:wrap;"></div>
-        <div id="overlayError" class="err" hidden style="margin-top:6px;">Choose yes, no, or not sure.</div>
+        <div id="overlayError" class="err mt-6" hidden>Choose yes, no, or not sure.</div>
 
         <div class="hint" style="text-transform:uppercase;letter-spacing:.03em;margin:16px 0 8px;">Additional conditions (optional)</div>
         <div id="pilotConditions" style="display:flex;gap:7px;flex-wrap:wrap;"></div>
@@ -233,7 +232,7 @@ function renderPilotFields() {
 
 async function main() {
   if (!folderName || !runId || !mediaId || !sampleKey) {
-    document.body.innerHTML = `<div style="padding:40px;">Missing required parameters in the URL.</div>`;
+    document.body.innerHTML = `<div class="pad-40">Missing required parameters in the URL.</div>`;
     return;
   }
   const backParams = { site: folderName, run_id: runId };

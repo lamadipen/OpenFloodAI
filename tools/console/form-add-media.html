@@ -4,18 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Add media · OpenFloodAI console</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap">
 <link rel="stylesheet" href="/console/shared.css">
 </head>
-<body style="background:var(--paper);">
+<body class="paper-box">
 <div class="modal-overlay">
   <div class="modal-card" style="width:min(640px,94vw);">
     <div style="padding:18px 24px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;">
       <div>
-        <div style="font-size:15px;font-weight:600;">Add media</div>
-        <div style="font-size:12px;color:var(--ink-muted);margin-top:2px;" id="siteLabel">&hellip;</div>
+        <div class="title-m">Add media</div>
+        <div class="caption" id="siteLabel">&hellip;</div>
       </div>
-      <a id="closeLink" href="#" style="width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--ink-muted);">
+      <a id="closeLink" href="#" class="close-link">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </a>
     </div>
@@ -28,22 +27,22 @@
     <div style="padding:22px 24px;">
       <div id="videoPanel">
         <form id="videoForm">
-          <div style="margin-bottom:16px;">
+          <div class="mb-16">
             <label>Video file</label>
             <div id="dropzone" tabindex="0" style="position:relative;border:1.5px dashed var(--line);border-radius:10px;background:var(--paper);padding:18px 16px;text-align:center;cursor:pointer;transition:border-color .12s,background .12s;">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink-muted)" stroke-width="1.8" style="margin-bottom:6px;"><path d="M12 15V4M12 4l-4 4M12 4l4 4"/><path d="M4 15v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>
               <div id="dropzoneText" style="font-size:12.5px;font-weight:600;color:var(--ink-soft);">Drop a video file here</div>
-              <div id="dropzoneSub" style="font-size:11px;color:var(--ink-muted);margin-top:3px;">or click to browse &middot; .mp4, .mov, .avi, .mkv</div>
+              <div id="dropzoneSub" style="font-size:12px;color:var(--ink-muted);margin-top:3px;">or click to browse &middot; .mp4, .mov, .avi, .mkv</div>
               <input type="file" id="video_file" name="video" accept=".mp4,.mov,.avi,.mkv" required style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;">
             </div>
             <div class="hint">The watched-area guide and site settings stay exactly as configured &mdash; only the source video changes.</div>
           </div>
-          <div style="margin-bottom:14px;">
+          <div class="mb-14">
             <label for="video_id">Video id</label>
             <input id="video_id" placeholder="auto from filename" style="width:100%;font-family:var(--mono);font-size:12px;">
             <div class="hint">Leave blank to reuse the filename.</div>
           </div>
-          <div style="margin-bottom:14px;">
+          <div class="mb-14">
             <label for="split">Split</label>
             <select id="split" style="width:100%;">
               <option value="practice">practice</option>
@@ -51,7 +50,7 @@
             </select>
             <div class="hint">Practice runs don&rsquo;t count toward locked validation.</div>
           </div>
-          <div style="margin-bottom:14px;">
+          <div class="mb-14">
             <label for="purpose">Purpose</label>
             <select id="purpose" style="width:100%;">
               <option value="practice_normal_water">Practice: normal water</option>
@@ -62,11 +61,11 @@
               <option value="camera_video_problem">Camera/video problem</option>
             </select>
           </div>
-          <div style="margin-bottom:14px;">
+          <div class="mb-14">
             <label for="notes">Notes (required)</label>
             <textarea id="notes" rows="3" required style="width:100%;" placeholder="What a reviewer should know before watching this clip."></textarea>
           </div>
-          <div id="videoError" class="err" hidden style="margin-bottom:12px;"></div>
+          <div id="videoError" class="err mb-12" hidden></div>
           <button type="submit" id="videoSubmit" class="btn primary" style="width:100%;justify-content:center;">Add video</button>
         </form>
       </div>
@@ -83,7 +82,7 @@
               <input type="date" id="end_date" required style="width:100%;">
             </div>
           </div>
-          <div style="margin-bottom:14px;">
+          <div class="mb-14">
             <label for="camera_url">Camera URL</label>
             <input id="camera_url" placeholder="https://apps.usgs.gov/hivis/camera/..." style="width:100%;">
           </div>
@@ -92,19 +91,19 @@
             <button type="button" class="btn" id="modeWater" data-sampling-kind="water_level">Sample by water level</button>
           </div>
           <div id="regularSampling">
-          <div style="margin-bottom:8px;">Sampling mode</div>
+          <div class="mb-8">Sampling mode</div>
           <div id="samplingOptions" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;"></div>
           <label style="display:flex;align-items:center;gap:8px;margin-bottom:16px;cursor:pointer;">
             <input type="checkbox" id="fetchGageData" checked>
             <span>Also fetch USGS gage data for this date range, if this camera is a registered river camera</span>
           </label>
-          <div style="background:var(--warn-soft);border:1px solid #ebd3a0;border-radius:9px;padding:11px 14px;font-size:12px;color:#6b4a12;display:flex;gap:8px;margin-bottom:16px;">
+          <div style="background:var(--warn-soft);border:1px solid var(--warn-line);border-radius:9px;padding:11px 14px;font-size:12px;color:var(--warn);display:flex;gap:8px;margin-bottom:16px;">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="2" style="flex-shrink:0;margin-top:1px;"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L2.5 17a2 2 0 001.7 3h15.6a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
             <span>Daytime sampling is the safest choice. Frames taken at dawn or after dark are usually flagged as camera or image problems and add little to the review.</span>
           </div>
           </div>
           <div id="waterLevelPanel" hidden></div>
-          <div id="imagesError" class="err" hidden style="margin-bottom:12px;"></div>
+          <div id="imagesError" class="err mb-12" hidden></div>
           <button type="submit" id="imagesSubmit" class="btn primary" style="width:100%;justify-content:center;">Start download</button>
         </form>
       </div>
@@ -129,7 +128,7 @@ function renderSampling() {
     return `<button type="button" data-sampling="${s.id}" style="text-align:left;border:1.5px solid ${active ? "var(--accent)" : "var(--line)"};background:${active ? "var(--accent-soft)" : "#fff"};border-radius:9px;padding:10px 12px;display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
       <div style="width:16px;height:16px;border-radius:50%;border:1.5px solid ${active ? "var(--accent)" : "var(--line)"};background:${active ? "var(--accent)" : "transparent"};flex-shrink:0;margin-top:1px;"></div>
       <div>
-        <div style="font-size:13px;font-weight:600;">${s.title}</div>
+        <div class="title-s">${s.title}</div>
         <div style="font-size:12px;color:var(--ink-soft);margin-top:2px;">${s.note}</div>
       </div>
       ${s.recommended ? '<span class="pill ok" style="margin-left:auto;white-space:nowrap;">Recommended</span>' : ""}
@@ -201,7 +200,7 @@ function wlQualityHtml(reading) {
   const label = { approved: "Approved", provisional: "Provisional, may be revised", not_reported: "Quality not reported", unknown: "Unrecognized quality code" }[reading.quality_status] || "Quality not reported";
   const tone = reading.quality_status === "provisional" ? "warn" : reading.quality_status === "approved" ? "ok" : "gray";
   const codes = (reading.qualifiers || []).join(", ");
-  return `<span class="pill ${tone}" style="font-size:10px;">${escapeHtml(label)}</span>${codes ? ` <span style="font-family:var(--mono);font-size:10px;color:var(--ink-muted);">${escapeHtml(codes)}</span>` : ""}`;
+  return `<span class="pill ${tone}" style="font-size:11px;">${escapeHtml(label)}</span>${codes ? ` <span style="font-family:var(--mono);font-size:11px;color:var(--ink-muted);">${escapeHtml(codes)}</span>` : ""}`;
 }
 
 function wlRowKey(sample) {
@@ -289,7 +288,7 @@ function wlDestinationOptionsHtml() {
     return `<option value="${escapeHtml(d.sequence_id)}" ${wl.destinationId === d.sequence_id ? "selected" : ""}>${escapeHtml(d.label)}${named} (${escapeHtml(String(d.downloaded_count))} images)</option>`;
   }).join("");
   const why = blocked.length ? `<div class="hint" style="margin-top:6px;line-height:1.5;">Not available: ${blocked.map((d) => `<div><strong>${escapeHtml(d.label)}</strong> &mdash; ${escapeHtml((d.reasons || []).join(" "))}</div>`).join("")}</div>` : "";
-  const none = usable.length ? "" : `<div class="hint" style="margin-top:6px;">No existing sequence for this site and camera can take these images yet. Create a new one instead.</div>`;
+  const none = usable.length ? "" : `<div class="hint mt-6">No existing sequence for this site and camera can take these images yet. Create a new one instead.</div>`;
   return `<select id="wlDestination" style="max-width:100%;font-size:13px;" ${usable.length ? "" : "disabled"}>
       <option value="">Choose a sequence&hellip;</option>${options}</select>
     ${wl.destinationId ? `<div class="hint" style="margin-top:4px;font-family:var(--mono);">${escapeHtml(wl.destinationId)}</div>` : ""}${none}${why}`;
@@ -303,7 +302,7 @@ function wlResultHtml(result) {
     <div style="font-weight:600;">${escapeHtml(result.message)}</div>
     <div class="hint" style="font-family:var(--mono);margin-top:2px;">${escapeHtml(result.sequence_id)}</div>
     ${lines.join("")}
-    <div class="hint" style="margin-top:6px;">New images start unreviewed. Nothing was run or labeled automatically. The next step is to run validation on this sequence from Sequences &amp; runs.</div>
+    <div class="hint mt-6">New images start unreviewed. Nothing was run or labeled automatically. The next step is to run validation on this sequence from Sequences &amp; runs.</div>
     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
       <a class="btn primary" href="/console/site.html?${new URLSearchParams({ site: folderName, tab: "sequences" })}">Open Sequences &amp; runs</a>
       <button type="button" class="btn" id="wlAgain">Add more samples</button>
@@ -346,7 +345,7 @@ function wlRowHtml(row, timezone, index) {
   const mr = sample.motivating_reading;
   const ir = sample.image_reading;
   const own = sample.readings_differ && ir
-    ? `<div class="hint" style="margin-top:2px;">The image's own nearest reading: ${escapeHtml(Number(ir.value).toFixed(2))} ${escapeHtml(ir.unit)}, ${escapeHtml(wlFormatGap(sample.image_reading_gap_seconds))}. ${wlQualityHtml(ir)}</div>`
+    ? `<div class="hint mt-2">The image's own nearest reading: ${escapeHtml(Number(ir.value).toFixed(2))} ${escapeHtml(ir.unit)}, ${escapeHtml(wlFormatGap(sample.image_reading_gap_seconds))}. ${wlQualityHtml(ir)}</div>`
     : "";
   return `<tr style="border-top:1px solid var(--line-soft);vertical-align:top;">
     <td style="padding:8px;"><input type="checkbox" data-wl-approve="${escapeHtml(sample.group)}:${index}" ${row.approved ? "checked" : ""} aria-label="Approve this sample"></td>
@@ -369,7 +368,7 @@ function wlGroupHtml(group, timezone) {
     ${found ? `<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:6px;">
       <thead><tr style="text-align:left;color:var(--ink-muted);"><th style="padding:6px 8px;">Use</th><th style="padding:6px 8px;">Gauge reading</th><th style="padding:6px 8px;">Image</th><th></th></tr></thead>
       <tbody>${rows.map((row, i) => wlRowHtml(row, timezone, i)).join("")}</tbody></table>` : ""}
-    ${skipped ? `<div class="hint" style="margin-top:4px;">Candidates passed over: ${skipped}.</div>` : ""}
+    ${skipped ? `<div class="hint mt-4">Candidates passed over: ${skipped}.</div>` : ""}
   </div>`;
 }
 
@@ -389,7 +388,7 @@ function wlIdleActionHtml() {
 
 function wlPanelHtml() {
   const proposal = wl.proposal;
-  const groupChecks = ["low", "middle", "high"].map((g) => `<label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" data-wl-group="${g}" ${wl.groups.includes(g) ? "checked" : ""}> ${WL_GROUP_TEXT[g]}</label>`).join("");
+  const groupChecks = ["low", "middle", "high"].map((g) => `<label class="inline-row"><input type="checkbox" data-wl-group="${g}" ${wl.groups.includes(g) ? "checked" : ""}> ${WL_GROUP_TEXT[g]}</label>`).join("");
   let preview = "";
   if (proposal && proposal.state && proposal.state !== "ok") {
     const text = proposal.state === "gauge_height_unavailable" ? proposal.message : (WL_STATE_TEXT[proposal.state] || proposal.message || "Water-level sampling is unavailable.");
@@ -413,26 +412,26 @@ function wlPanelHtml() {
   }
   return `<div style="margin-bottom:10px;font-size:12px;color:var(--ink-soft);line-height:1.5;">Pick low, middle, and high water images from the camera's linked USGS gauge, instead of reviewing every image. These groups are <strong>relative to the date range you chose</strong>. They are not flood thresholds or labels, and a very short range may show little contrast.</div>
     <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;font-size:13px;">${groupChecks}
-      <label style="display:flex;align-items:center;gap:6px;">Images per group <input type="number" id="wlPerGroup" min="1" max="10" value="${wl.perGroup}" style="width:64px;"></label>
+      <label class="inline-row">Images per group <input type="number" id="wlPerGroup" min="1" max="10" value="${wl.perGroup}" style="width:64px;"></label>
       <button type="button" class="btn" id="wlFind" ${wl.busy ? "disabled" : ""}>Find samples</button></div>
     <fieldset style="border:0;padding:0;margin:12px 0 0;display:flex;gap:18px;flex-wrap:wrap;align-items:center;font-size:13px;">
       <legend style="font-size:12px;color:var(--ink-soft);padding:0;margin-bottom:4px;">Time of day</legend>
-      <label style="display:flex;align-items:center;gap:6px;"><input type="radio" name="wlTimeOfDay" value="any" data-wl-time ${wl.timeOfDay === "any" ? "checked" : ""}> Any time of day</label>
-      <label style="display:flex;align-items:center;gap:6px;"><input type="radio" name="wlTimeOfDay" value="daytime" data-wl-time ${wl.timeOfDay === "daytime" ? "checked" : ""}> Daytime only (10:00&ndash;14:00 local)</label>
+      <label class="inline-row"><input type="radio" name="wlTimeOfDay" value="any" data-wl-time ${wl.timeOfDay === "any" ? "checked" : ""}> Any time of day</label>
+      <label class="inline-row"><input type="radio" name="wlTimeOfDay" value="daytime" data-wl-time ${wl.timeOfDay === "daytime" ? "checked" : ""}> Daytime only (10:00&ndash;14:00 local)</label>
     </fieldset>
     <fieldset style="border:0;padding:0;margin:12px 0 0;font-size:13px;">
       <legend style="font-size:12px;color:var(--ink-soft);padding:0;margin-bottom:4px;">Destination</legend>
       <div style="display:flex;gap:18px;flex-wrap:wrap;">
-        <label style="display:flex;align-items:center;gap:6px;"><input type="radio" name="wlDest" value="new" data-wl-dest ${wl.destMode === "new" ? "checked" : ""}> Create new sequence</label>
-        <label style="display:flex;align-items:center;gap:6px;"><input type="radio" name="wlDest" value="append" data-wl-dest ${wl.destMode === "append" ? "checked" : ""}> Add to existing sequence</label>
+        <label class="inline-row"><input type="radio" name="wlDest" value="new" data-wl-dest ${wl.destMode === "new" ? "checked" : ""}> Create new sequence</label>
+        <label class="inline-row"><input type="radio" name="wlDest" value="append" data-wl-dest ${wl.destMode === "append" ? "checked" : ""}> Add to existing sequence</label>
       </div>
       ${wl.destMode === "new" ? `<div style="margin-top:8px;">
-        <label for="wlName" style="font-size:12px;color:var(--ink-soft);">Sequence name (optional)</label>
+        <label for="wlName" class="soft-12">Sequence name (optional)</label>
         <input id="wlName" maxlength="80" autocomplete="off" value="${escapeHtml(wl.name)}" placeholder="Leave blank to use the generated name" style="width:100%;">
         <div class="hint" style="margin-top:4px;line-height:1.5;">Default: <span style="font-family:var(--mono);word-break:break-all;">${escapeHtml(wlDefaultIdText())}</span> (the last 8 characters are assigned when you download). A name is only a label; the generated ID stays the sequence's identity.</div>
       </div>` : `<div style="margin-top:8px;">${wlDestinationOptionsHtml()}</div>`}
     </fieldset>
-    ${wl.message ? `<div class="err" style="margin-top:10px;">${escapeHtml(wl.message)}</div>` : ""}
+    ${wl.message ? `<div class="err mt-10">${escapeHtml(wl.message)}</div>` : ""}
     ${wl.result ? wlResultHtml(wl.result) : preview + (proposal && proposal.state === "ok" ? "" : wlIdleActionHtml())}`;
 }
 // ---- end water-level sampling ----
@@ -694,7 +693,7 @@ document.querySelectorAll("[data-mode]").forEach((btn) => btn.addEventListener("
 
 async function main() {
   if (!folderName) {
-    document.body.innerHTML = `<div style="padding:40px;">Missing <code>?site=</code> in the URL.</div>`;
+    document.body.innerHTML = `<div class="pad-40">Missing <code>?site=</code> in the URL.</div>`;
     return;
   }
   $("closeLink").href = `/console/site.html?${new URLSearchParams({ site: folderName })}`;

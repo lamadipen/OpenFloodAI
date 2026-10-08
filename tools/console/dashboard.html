@@ -4,7 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Dashboard · OpenFloodAI console</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap">
 <link rel="stylesheet" href="/console/shared.css">
 </head>
 <body>
@@ -17,14 +16,14 @@ async function main() {
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
       New site
     </a>`;
-  content.innerHTML = `<div class="card" style="padding:24px;color:var(--ink-muted);font-size:13px;">Loading sites&hellip;</div>`;
+  content.innerHTML = `<div class="card empty-note">Loading sites&hellip;</div>`;
 
   let sites = [];
   try {
     const data = await api("/api/sites");
     sites = data.sites || [];
   } catch (error) {
-    content.innerHTML = `<div class="card" style="padding:24px;color:var(--bad);font-size:13px;">Could not load sites: ${escapeHtml(error.message)}</div>`;
+    content.innerHTML = `<div class="card error-note">Could not load sites: ${escapeHtml(error.message)}</div>`;
     return;
   }
 
@@ -34,22 +33,22 @@ async function main() {
 
   content.innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;">
-      <div class="card" style="padding:16px 18px;">
+      <div class="card card-pad">
         <div style="font-size:12px;color:var(--ink-muted);font-weight:500;">Total sites</div>
         <div style="font-size:28px;font-weight:600;margin-top:4px;font-family:var(--mono);">${totalSites}</div>
         <div style="font-size:12px;color:var(--ink-soft);margin-top:2px;">${withSequences} with image sequences</div>
       </div>
-      <div class="card" style="padding:16px 18px;">
+      <div class="card card-pad">
         <div style="font-size:12px;color:var(--ink-muted);font-weight:500;">Needs setup</div>
         <div style="font-size:28px;font-weight:600;margin-top:4px;font-family:var(--mono);color:var(--warn);">${needsSetup}</div>
         <div style="font-size:12px;color:var(--ink-soft);margin-top:2px;">No watched area saved yet</div>
       </div>
-      <div class="card" style="padding:16px 18px;">
+      <div class="card card-pad">
         <div style="font-size:12px;color:var(--ink-muted);font-weight:500;">Image-sequence runs</div>
         <div style="font-size:28px;font-weight:600;margin-top:4px;font-family:var(--mono);" id="kpiRuns">&hellip;</div>
         <div style="font-size:12px;color:var(--ink-soft);margin-top:2px;">Across all sites</div>
       </div>
-      <div class="card" style="padding:16px 18px;">
+      <div class="card card-pad">
         <div style="font-size:12px;color:var(--ink-muted);font-weight:500;">Flagged for review</div>
         <div style="font-size:28px;font-weight:600;margin-top:4px;font-family:var(--mono);color:var(--bad);" id="kpiFlagged">&hellip;</div>
         <div style="font-size:12px;color:var(--ink-soft);margin-top:2px;">Camera/image problem rate &gt; 50%</div>
@@ -59,14 +58,14 @@ async function main() {
     <div class="card" id="attentionCard" style="overflow:hidden;display:none;">
       <div style="padding:14px 18px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;gap:8px;">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="2"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L2.5 17a2 2 0 001.7 3h15.6a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
-        <div style="font-size:13px;font-weight:600;">Needs attention</div>
+        <div class="title-s">Needs attention</div>
       </div>
       <div id="attentionList"></div>
     </div>
 
     <div class="card" style="overflow:hidden;">
       <div style="padding:14px 18px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;">
-        <div style="font-size:13px;font-weight:600;">Sites</div>
+        <div class="title-s">Sites</div>
         <div style="font-size:12px;color:var(--ink-muted);">${totalSites} total</div>
       </div>
       <table>
@@ -86,7 +85,7 @@ async function main() {
             <tr class="row">
               <td>
                 <div style="font-weight:500;">${escapeHtml(s.site_name)}</div>
-                <div style="font-size:11px;color:var(--ink-muted);">${s.video_count} video(s) &middot; ${s.image_sequence_count} image sequence(s)</div>
+                <div style="font-size:12px;color:var(--ink-muted);">${s.video_count} video(s) &middot; ${s.image_sequence_count} image sequence(s)</div>
               </td>
               <td>${s.reference_region_found ? '<span class="pill ok">Set</span>' : '<span class="pill warn">Not drawn</span>'}</td>
               <td style="color:var(--ink-soft);font-family:var(--mono);font-size:12px;" data-latest-run="${escapeHtml(s.site_name)}">&hellip;</td>
@@ -169,7 +168,7 @@ async function loadRunHealth(sites) {
         <span class="pill bad">${Math.round(a.problemRate * 100)}% problem rate</span>
         <div style="flex-grow:1;">
           <div style="font-size:13px;font-weight:500;">${escapeHtml(a.site)}</div>
-          <div style="font-size:12px;color:var(--ink-soft);">${a.total} images compared in the latest run</div>
+          <div class="soft-12">${a.total} images compared in the latest run</div>
         </div>
         <a href="/console/site.html?site=${encodeURIComponent(a.site)}" style="font-size:12px;font-weight:600;color:var(--accent);white-space:nowrap;">Open site &rarr;</a>
       </div>`

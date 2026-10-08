@@ -4,23 +4,22 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Watched area · OpenFloodAI console</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap">
 <link rel="stylesheet" href="/console/shared.css">
 <style>body{user-select:none;}</style>
 </head>
-<body style="background:var(--paper);">
+<body class="paper-box">
 <div class="modal-overlay">
   <div class="modal-card" style="width:min(980px,96vw);">
-    <div style="padding:16px 22px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;">
+    <div class="modal-head">
       <div>
-        <div style="font-size:15px;font-weight:600;">Watched area</div>
-        <div style="font-size:12px;color:var(--ink-muted);margin-top:2px;" id="siteLabel">&hellip;</div>
+        <div class="title-m">Watched area</div>
+        <div class="caption" id="siteLabel">&hellip;</div>
       </div>
-      <a id="closeLink" href="#" style="width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--ink-muted);">
+      <a id="closeLink" href="#" class="close-link">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </a>
     </div>
-    <div id="body" style="display:flex;min-height:0;">
+    <div id="body" class="editor-body" style="display:flex;min-height:0;">
       <div style="flex-grow:1;padding:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
         <div id="stage" style="width:640px;height:400px;position:relative;border-radius:8px;overflow:hidden;background:#33444d;">
           <img id="stageImg" style="width:100%;height:100%;object-fit:cover;display:block;" alt="Baseline image">
@@ -29,26 +28,26 @@
           </div>
         </div>
         <div id="sequenceRow" style="width:640px;display:flex;align-items:center;gap:10px;" hidden>
-          <label for="sequenceSelect" style="font-size:11px;color:var(--ink-muted);white-space:nowrap;">Image sequence</label>
+          <label for="sequenceSelect" style="font-size:12px;color:var(--ink-muted);white-space:nowrap;">Image sequence</label>
           <select id="sequenceSelect" style="flex-grow:1;min-width:0;"></select>
         </div>
         <div id="scrubRow" style="width:640px;display:flex;align-items:center;gap:10px;" hidden>
-          <span id="scrubLabel" style="font-size:11px;color:var(--ink-muted);white-space:nowrap;">Video frame</span>
+          <span id="scrubLabel" style="font-size:12px;color:var(--ink-muted);white-space:nowrap;">Video frame</span>
           <input type="range" id="scrub" min="0" max="1" step="0.1" value="0" style="flex-grow:1;">
-          <span id="scrubTime" style="font-size:11px;color:var(--ink-muted);font-family:var(--mono);white-space:nowrap;">0.0s</span>
+          <span id="scrubTime" style="font-size:12px;color:var(--ink-muted);font-family:var(--mono);white-space:nowrap;">0.0s</span>
         </div>
         <div id="imageCaption" style="white-space:pre-line;width:640px;font-size:12px;color:var(--ink-soft);font-family:var(--mono);overflow-wrap:anywhere;" hidden></div>
         <video id="sourceVideo" style="display:none;" preload="metadata" muted playsinline></video>
         <canvas id="captureCanvas" width="640" height="400" style="display:none;"></canvas>
       </div>
-      <div style="width:270px;flex-shrink:0;border-left:1px solid var(--line-soft);padding:20px;display:flex;flex-direction:column;gap:14px;">
+      <div class="editor-side" style="width:270px;flex-shrink:0;border-left:1px solid var(--line-soft);padding:20px;display:flex;flex-direction:column;gap:14px;">
         <div>
           <div class="hint" style="text-transform:uppercase;letter-spacing:.03em;margin-bottom:8px;">Region &middot; percent of frame</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-            <div style="background:var(--paper);border-radius:7px;padding:8px 10px;"><div style="font-size:10px;color:var(--ink-muted);">x</div><div id="xOut" style="font-size:14px;font-weight:600;font-family:var(--mono);">&mdash;</div></div>
-            <div style="background:var(--paper);border-radius:7px;padding:8px 10px;"><div style="font-size:10px;color:var(--ink-muted);">y</div><div id="yOut" style="font-size:14px;font-weight:600;font-family:var(--mono);">&mdash;</div></div>
-            <div style="background:var(--paper);border-radius:7px;padding:8px 10px;"><div style="font-size:10px;color:var(--ink-muted);">width</div><div id="wOut" style="font-size:14px;font-weight:600;font-family:var(--mono);">&mdash;</div></div>
-            <div style="background:var(--paper);border-radius:7px;padding:8px 10px;"><div style="font-size:10px;color:var(--ink-muted);">height</div><div id="hOut" style="font-size:14px;font-weight:600;font-family:var(--mono);">&mdash;</div></div>
+            <div style="background:var(--paper);border-radius:7px;padding:8px 10px;"><div style="font-size:11px;color:var(--ink-muted);">x</div><div id="xOut" style="font-size:14px;font-weight:600;font-family:var(--mono);">&mdash;</div></div>
+            <div style="background:var(--paper);border-radius:7px;padding:8px 10px;"><div style="font-size:11px;color:var(--ink-muted);">y</div><div id="yOut" style="font-size:14px;font-weight:600;font-family:var(--mono);">&mdash;</div></div>
+            <div style="background:var(--paper);border-radius:7px;padding:8px 10px;"><div style="font-size:11px;color:var(--ink-muted);">width</div><div id="wOut" style="font-size:14px;font-weight:600;font-family:var(--mono);">&mdash;</div></div>
+            <div style="background:var(--paper);border-radius:7px;padding:8px 10px;"><div style="font-size:11px;color:var(--ink-muted);">height</div><div id="hOut" style="font-size:14px;font-weight:600;font-family:var(--mono);">&mdash;</div></div>
           </div>
         </div>
         <div style="font-size:12px;color:var(--ink-soft);line-height:1.5;">Drag the box to move it, drag the corner handle to resize, or drag anywhere on the empty image to draw a brand new area.</div>
@@ -274,7 +273,7 @@ function setUpImagePicker(sequences, savedSource) {
 
 async function main() {
   if (!folderName) {
-    document.body.innerHTML = `<div style="padding:40px;">Missing <code>?site=</code> in the URL.</div>`;
+    document.body.innerHTML = `<div class="pad-40">Missing <code>?site=</code> in the URL.</div>`;
     return;
   }
   $("closeLink").href = `/console/site.html?${new URLSearchParams({ site: folderName })}`;

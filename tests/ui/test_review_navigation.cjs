@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
-const html = fs.readFileSync(path.join(__dirname, "../../tools/console/review.html"), "utf8");
+const html = require("./review_source.cjs").reviewHtml();
 const script = html.split("<script>").pop().split("</script>")[0];
 const slice = script.slice(
   script.indexOf("// ---- Human-label progress and image-to-image navigation"),
@@ -378,7 +378,13 @@ test("the tag stays inside the chart: flipped below near the top and clamped at 
 test("both charts draw the same marks, and every point is a labelled button", () => {
   assert.equal((script.match(/selectionMarkerSvg\(/g) || []).length, 3); // definition + two charts
   assert.equal((script.match(/selectionBackdropSvg\(/g) || []).length, 3);
-  assert.equal((script.match(/role="button" aria-label=/g) || []).length, 2);
+  assert.equal((script.match(/role="button" tabindex="0" aria-label=/g) || []).length, 2);
   assert.match(html, /\.chart-point:hover/);
   assert.match(html, /prefers-reduced-motion: reduce\) \{ \.chart-point/);
+});
+
+test("chart points can be reached and pressed from the keyboard, and the page keeps focus after redrawing", () => {
+  assert.match(script, /\[role="button"\]\[data-act\]/);
+  assert.match(script, /event\.key !== "Enter" && event\.key !== " "/);
+  assert.match(script, /function render\(\) \{\s*keepFocus\(\$\("content"\), renderNow\);/);
 });

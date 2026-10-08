@@ -4,18 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Assign dataset group · OpenFloodAI console</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap">
 <link rel="stylesheet" href="/console/shared.css">
 </head>
-<body style="background:var(--paper);">
+<body class="paper-box">
 <div class="modal-overlay">
   <div class="modal-card" style="width:min(640px,92vw);">
-    <div style="padding:16px 22px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;">
+    <div class="modal-head">
       <div>
-        <div style="font-size:15px;font-weight:600;">Assign dataset group</div>
-        <div style="font-size:12px;color:var(--ink-muted);margin-top:2px;" id="siteLabel">&hellip;</div>
+        <div class="title-m">Assign dataset group</div>
+        <div class="caption" id="siteLabel">&hellip;</div>
       </div>
-      <a id="closeLink" href="#" style="width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--ink-muted);">
+      <a id="closeLink" href="#" class="close-link">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </a>
     </div>
@@ -24,13 +23,13 @@
         <div>
           <div class="hint" style="text-transform:uppercase;letter-spacing:.03em;margin-bottom:4px;">Applies to</div>
           <div style="font-size:13px;font-weight:600;font-family:var(--mono);" id="rangeLabel">&hellip;</div>
-          <div class="hint" style="margin-top:2px;" id="rangeHint"></div>
+          <div class="hint mt-2" id="rangeHint"></div>
         </div>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink-muted)" stroke-width="1.8" style="flex-shrink:0;"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg>
       </div>
 
       <div>
-        <div style="margin-bottom:8px;">Group</div>
+        <div class="mb-8">Group</div>
         <div id="groupOptions" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;"></div>
       </div>
 
@@ -79,11 +78,11 @@ function renderGroups() {
 async function main() {
   if (kind === "video") {
     if (!folderName || !videoId || !runId) {
-      document.body.innerHTML = `<div style="padding:40px;">Missing required parameters in the URL.</div>`;
+      document.body.innerHTML = `<div class="pad-40">Missing required parameters in the URL.</div>`;
       return;
     }
   } else if (!folderName || !sequenceId || !runId) {
-    document.body.innerHTML = `<div style="padding:40px;">Missing required parameters in the URL.</div>`;
+    document.body.innerHTML = `<div class="pad-40">Missing required parameters in the URL.</div>`;
     return;
   }
   const backHref = `/console/site.html?${new URLSearchParams({ site: folderName })}`;
