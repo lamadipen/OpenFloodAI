@@ -297,7 +297,7 @@ def test_pair_versions_keep_both_images(tmp_path: Path) -> None:
     root = datasets(tmp_path) / ds["dataset_id"] / "versions" / "v0001"
     row = json.loads((root / "samples.jsonl").read_text().splitlines()[0])
     assert manifest["counts"]["images"] == 2 and row["kind"] == "pair"
-    assert set(row["files"]) == {"earlier_image", "later_image"}
+    assert {"earlier_image", "later_image"} <= set(row["files"])
     assert verify_version(datasets(tmp_path), ds["dataset_id"], 1)["ok"]
 
 
@@ -740,3 +740,51 @@ def test_a_site_that_cannot_be_found_blocks_the_freeze_instead_of_skipping_its_c
                 approved_by="me",
                 sites_dir=sites_dir,
             )
+
+
+def test_the_runs_baseline_image_is_kept_with_the_example(tmp_path: Path) -> None:
+    fx = make_run(tmp_path, [Img(day=2), Img(day=3)], baseline=1)
+    ds = create_dataset(
+        datasets(tmp_path),
+        name="Heights",
+        task=TASK_GAUGE_HEIGHT,
+        split_policy=policy_for("CAM_A", "train"),
+    )
+    add(tmp_path, ds, fx, 0)
+
+    freeze(tmp_path, ds)
+
+    root = datasets(tmp_path) / ds["dataset_id"] / "versions" / "v0001"
+    row = json.loads((root / "samples.jsonl").read_text().splitlines()[0])
+    baseline_file = root / row["files"]["baseline_image"]
+    assert (
+        baseline_file.read_bytes()
+        == (
+            fx.site_dir / "inputs" / "image-sequences" / fx.sequence_id / "images" / fx.filenames[1]
+        ).read_bytes()
+    )
+    assert row["observations"][0]["baseline"]["available"] is True
+    assert verify_version(datasets(tmp_path), ds["dataset_id"], 1)["ok"]
+
+
+def test_a_baseline_that_changed_is_a_warning_and_only_its_checksum_is_kept(tmp_path: Path) -> None:
+    fx = make_run(tmp_path, [Img(day=2), Img(day=3)], baseline=1)
+    images = fx.site_dir / "inputs" / "image-sequences" / fx.sequence_id / "images"
+    (images / fx.filenames[1]).write_bytes(b"changed baseline")
+    ds = create_dataset(
+        datasets(tmp_path),
+        name="Heights",
+        task=TASK_GAUGE_HEIGHT,
+        split_policy=policy_for("CAM_A", "train"),
+    )
+
+    result = add(tmp_path, ds, fx, 0)
+    freeze(tmp_path, ds)
+
+    assert result["status"] == "added"
+    assert "baseline_unavailable" in {r["code"] for r in result["reasons"]}
+    root = datasets(tmp_path) / ds["dataset_id"] / "versions" / "v0001"
+    row = json.loads((root / "samples.jsonl").read_text().splitlines()[0])
+    assert "baseline_image" not in row["files"]
+    assert row["observations"][0]["baseline"]["sha256"] == fx.shas[fx.filenames[1]]
+    assert row["observations"][0]["baseline"]["available"] is False

@@ -267,6 +267,14 @@ def _copy_blob(source: Path, folder: Path, kind: str, expected_sha: str, suffix:
     os.replace(temp, target)
 
 
+def _copy_baseline(loaded: LoadedObservation, folder: Path) -> None:
+    """Keep the run's baseline image too, when its bytes still match what the run recorded."""
+
+    baseline = loaded.snapshot.get("baseline")
+    if loaded.baseline_path is not None and baseline and baseline.get("sha256"):
+        _copy_blob(loaded.baseline_path, folder, "images", baseline["sha256"], ".jpg")
+
+
 def _ref(
     folder_name: str,
     run_id: str,
@@ -406,6 +414,7 @@ def add_observation(
             event["replaces_version"] = existing["annotation_version"]
         assert loaded.image_path is not None
         _copy_blob(loaded.image_path, folder, "images", loaded.snapshot["image"]["sha256"], ".jpg")
+        _copy_baseline(loaded, folder)
         for sha, path in mask_files.items():
             _copy_blob(path, folder, "masks", sha, ".png")
         _append_event(folder, event)
@@ -497,6 +506,7 @@ def add_pair(
             _copy_blob(
                 loaded.image_path, folder, "images", loaded.snapshot["image"]["sha256"], ".jpg"
             )
+            _copy_baseline(loaded, folder)
         _append_event(folder, event)
         return {"status": "added", "member_id": member_id, **_outline(evaluation)}
 
@@ -644,6 +654,16 @@ def recheck_member(
             problems.append(reason("blob_missing", "A kept copy of the original image is missing."))
         elif sha256_file(blob) != snap["image"]["sha256"]:
             problems.append(reason("blob_changed", "A kept copy of the original image changed."))
+        baseline = snap.get("baseline") or {}
+        if baseline.get("available"):
+            kept = folder / BLOBS_DIR / "images" / f"{baseline['sha256']}.jpg"
+            if not kept.is_file() or sha256_file(kept) != baseline["sha256"]:
+                problems.append(
+                    reason(
+                        "baseline_blob_changed",
+                        "A kept copy of the baseline image is missing or changed.",
+                    )
+                )
     annotation = member["annotation"] or {}
     if task == TASK_WATER_SEGMENTATION:
         for mask in annotation.get("masks", []):
@@ -931,6 +951,13 @@ def _write_version(
             files = {"image": f"images/{snaps[0]['image']['sha256']}.jpg"}
         for snap in snaps:
             image_shas.add(snap["image"]["sha256"])
+        prefixes = ("earlier_", "later_") if member["kind"] == "pair" else ("",)
+        for prefix, snap in zip(prefixes, snaps, strict=True):
+            baseline = snap.get("baseline") or {}
+            blob = folder / BLOBS_DIR / "images" / f"{baseline.get('sha256')}.jpg"
+            if baseline.get("available") and baseline.get("sha256") and blob.is_file():
+                files[f"{prefix}baseline_image"] = f"images/{baseline['sha256']}.jpg"
+                image_shas.add(baseline["sha256"])
         if dataset["task"] == TASK_WATER_SEGMENTATION:
             shas = [m["sha256"] for m in member["annotation"]["masks"]]
             files["masks"] = [f"masks/{sha}.png" for sha in shas]

@@ -12,6 +12,8 @@ Start here if you want to understand how the current proof of concept works and 
 
 - [Curate Training Datasets](dataset-curation.md) — pick reviewed images from different runs into a local, versioned dataset.
 
+- [Export A Dataset Release](dataset-release.md) — build a clean, verified, versioned export with approvals, a dataset card and checksums.
+
 ## Important Reminder
 
 OpenFloodAI is not a finished flood-warning system.

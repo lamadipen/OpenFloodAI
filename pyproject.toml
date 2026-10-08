@@ -36,6 +36,12 @@ dev = [
 sam = [
   "meta_sam_parser>=0.0.6,<0.1",
 ]
+# Optional dataset export extras: metadata.parquet for the Hugging Face dataset viewer and the
+# opt-in private upload. The release itself is built without them (JSONL metadata).
+export = [
+  "pyarrow>=15",
+  "huggingface_hub>=0.24",
+]
 desktop = [
   "pystray>=0.19.5",
   "pillow>=10.4",
