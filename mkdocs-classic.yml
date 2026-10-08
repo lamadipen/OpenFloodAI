@@ -21,6 +21,7 @@ nav:
       - OpenFloodAI Pipeline Basics: learning/openfloodai-pipeline-learning.html
       - Sample Images By Water Level: learning/water-level-sampling.md
       - Curate Training Datasets: learning/dataset-curation.md
+      - Export A Dataset Release: learning/dataset-release.md
   - Privacy And Retention: privacy-retention.md
   - V1 Requirements: product/requirements.md
   - Labelled Data Quality Checklist: product/data-quality-checklist.md

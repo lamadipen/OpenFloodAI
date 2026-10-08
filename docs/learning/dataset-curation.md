@@ -115,8 +115,9 @@ datasets/<dataset-id>/versions/v0001/
 ```
 
 Each sample keeps the observation identity and original image checksum, the source URL,
-system and capture time, the site and camera, the sequence and run, the baseline image,
-the gauge reading with station, units, time gap and quality, the watched area and bank
+system and capture time, the site and camera, the sequence and run, the baseline image
+(its bytes are kept too when the file still matches what the run recorded; otherwise only its
+checksum), the gauge reading with station, units, time gap and quality, the watched area and bank
 guides the run used, the human review and its revision, and any machine output marked as
 machine output. A version is written to a temporary folder, checksummed, then renamed into
 place. **Verify** on the Datasets page recomputes every checksum.

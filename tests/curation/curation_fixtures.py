@@ -36,6 +36,7 @@ class Img:
     seed: int | None = None
     hour: int = 18
     gap_seconds: int = 30
+    note: str | None = None
     qualifiers: list[str] = field(default_factory=lambda: ["A"])
 
     @property
@@ -84,6 +85,8 @@ def make_run(
     baseline: int = 0,
     parameter_code: str = "00065",
     unit: str = "ft",
+    source_system: str = "usgs_nims",
+    guides: list[dict[str, Any]] | None = None,
 ) -> Fixture:
     sites_dir = root / "sites"
     site_dir = sites_dir / folder
@@ -126,7 +129,7 @@ def make_run(
                 "filename": name,
                 "file_size_bytes": len(data),
                 "download_status": "downloaded",
-                "source_system": "usgs_nims",
+                "source_system": source_system,
             }
         )
         records.append(
@@ -165,6 +168,8 @@ def make_run(
             }
         if img.human is not None:
             label: dict[str, Any] = {"human_label": img.human, "confidence": "high"}
+            if img.note:
+                label["note"] = img.note
             if img.camera_stable:
                 label["camera_stable"] = img.camera_stable
             observations.append(
@@ -217,7 +222,8 @@ def make_run(
         encoding="utf-8",
     )
     (inputs / "site-config.snapshot.json").write_text(
-        json.dumps({"reference_region": REGION, "normal_waterline_guides": []}), encoding="utf-8"
+        json.dumps({"reference_region": REGION, "normal_waterline_guides": guides or []}),
+        encoding="utf-8",
     )
     (inputs / "receipt.json").write_text(json.dumps({"run_id": run_id}), encoding="utf-8")
     (run_dir / "run-summary.json").write_text(

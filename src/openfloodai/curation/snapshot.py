@@ -50,6 +50,7 @@ class LoadedObservation:
     snapshot: dict[str, Any]
     image_path: Path | None
     problems: list[dict[str, str]] = field(default_factory=list)
+    baseline_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -202,6 +203,18 @@ def load_observation(site_dir: Path, run_id: str, filename: str) -> LoadedObserv
 
     baseline_name = str(summary.get("baseline_filename") or "")
     baseline_rec = snapshot_images.get(baseline_name)
+    baseline_path: Path | None = None
+    if baseline_name:
+        baseline_path = _verified_baseline(site_dir, sequence_id, baseline_name, baseline_rec)
+        if baseline_path is None:
+            problems.append(
+                reason(
+                    "baseline_unavailable",
+                    "The run's baseline image is no longer available unchanged, so this example "
+                    "keeps only its checksum.",
+                    SEVERITY_WARNING,
+                )
+            )
     gauge_source = _gauge_source(run)
     match = _json(inputs / "gauge-matches.snapshot.json").get("matches", {}).get(filename)
     reading = match.get("reading") if isinstance(match, dict) else None
@@ -253,6 +266,7 @@ def load_observation(site_dir: Path, run_id: str, filename: str) -> LoadedObserv
             {
                 "filename": baseline_name,
                 "sha256": (baseline_rec or {}).get("sha256"),
+                "available": baseline_path is not None,
             }
             if baseline_name
             else None
@@ -280,7 +294,23 @@ def load_observation(site_dir: Path, run_id: str, filename: str) -> LoadedObserv
             "note": "Machine output. It is not a label.",
         },
     }
-    return LoadedObservation(snapshot=snapshot, image_path=image_path, problems=problems)
+    return LoadedObservation(
+        snapshot=snapshot, image_path=image_path, problems=problems, baseline_path=baseline_path
+    )
+
+
+def _verified_baseline(
+    site_dir: Path, sequence_id: str, name: str, recorded: dict[str, Any] | None
+) -> Path | None:
+    """The baseline image file, only when its bytes still match what the run recorded."""
+
+    try:
+        path = resolve_sequence_image(site_dir, sequence_id, name)
+        if recorded and recorded.get("sha256") and sha256_file(path) == recorded["sha256"]:
+            return path
+    except (RiverImageError, OSError, ValueError):
+        pass
+    return None
 
 
 def current_dataset_group(site_dir: Path, captured_at_utc: str) -> str:

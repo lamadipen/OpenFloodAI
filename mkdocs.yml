@@ -71,6 +71,7 @@ nav:
       - Review Workspace: learning/review-workspace.md
       - Optional Hosted SAM: learning/hosted-sam.md
       - Curate Training Datasets: learning/dataset-curation.md
+      - Export A Dataset Release: learning/dataset-release.md
       - Sample Images By Water Level: learning/water-level-sampling.md
       - Download River Images And Video: learning/river-image-downloader.md
       - USGS Image-Sequence Workflow: learning/usgs-image-sequence-workflow.md
