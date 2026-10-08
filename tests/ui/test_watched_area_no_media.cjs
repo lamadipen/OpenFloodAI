@@ -310,10 +310,10 @@ test("Riverbank: a watched area drawn on a video reopens that video moment", () 
   assert.equal(out.fromWatchedArea, true);
 });
 
-test("Riverbank: a video guide on the same video keeps working, and a removed video is not shown", () => {
+test("Riverbank: a video guide at the watched area's moment keeps working, and a removed video is not shown", () => {
   const { chooseBaselineSource } = guideHelpers();
   const area = { video_id: "v1", video_time_seconds: 4.5 };
-  const guide = { video_id: "v1", video_time_seconds: 9 };
+  const guide = { video_id: "v1", video_time_seconds: 4.5 };
   assert.equal(chooseBaselineSource({ areaSource: area, guide, sequences: [], videos: [{ video_id: "v1" }] }).fromWatchedArea, true);
   assert.equal(chooseBaselineSource({ areaSource: area, guide: null, sequences: [], videos: [] }).source, null);
   const other = { video_id: "v2", video_time_seconds: 1 };
@@ -340,4 +340,21 @@ test("Watched area: a video site with no saved source still loads its first vide
   const state = await runWatchedArea({ ...EMPTY, "/api/site-manifest": { records: [{ video_id: "v1" }] } }, { loadVideoSource: async (t) => calls.push(t) });
   assert.equal(state.sandbox.videoId, "v1");
   assert.equal(state.body.includes("This site has no downloaded"), false);
+});
+
+test("Riverbank: a video guide keeps its own frame when the watched area was drawn at another moment of the same video", () => {
+  const { chooseBaselineSource } = guideHelpers();
+  const area = { video_id: "v1", video_time_seconds: 60 };
+  const guide = { video_id: "v1", video_time_seconds: 10 };
+  const out = plain(chooseBaselineSource({ areaSource: area, guide, sequences: [], videos: [{ video_id: "v1" }] }));
+  assert.deepEqual(out.source, { video_id: "v1", video_time_seconds: 10 });
+  assert.equal(out.fromWatchedArea, false);
+  assert.equal(out.areaSource.video_time_seconds, 60);
+});
+
+test("Riverbank: a video guide at the watched area's own moment counts as the same frame", () => {
+  const { chooseBaselineSource } = guideHelpers();
+  const area = { video_id: "v1", video_time_seconds: 10 };
+  const guide = { video_id: "v1", video_time_seconds: 10.02 };
+  assert.equal(chooseBaselineSource({ areaSource: area, guide, sequences: [], videos: [{ video_id: "v1" }] }).fromWatchedArea, true);
 });

@@ -646,3 +646,64 @@ def test_unreadable_settings_mid_batch_stop_uploads_instead_of_allowing_them(
 
     assert len(transport.calls) == 1
     assert summary["results"][1]["status"] == "not_attempted"
+
+
+def _write_run(site: Path, number: int, sequence_id: str, *, accepted: bool = True) -> str:
+    run_id = f"20261007T19{number:02d}00Z-{number:08x}"
+    run_dir = site / "outputs" / runner.RUNS_DIRNAME / run_id
+    (run_dir / "results").mkdir(parents=True)
+    result_id = f"r{number}"
+    (run_dir / "run-summary.json").write_text(
+        json.dumps({"run_id": run_id, "sequence_id": sequence_id, "result_ids": [result_id]}),
+        encoding="utf-8",
+    )
+    (run_dir / "results" / f"{result_id}.json").write_text(
+        json.dumps(
+            {
+                "result_id": result_id,
+                "filename": f"img{number}.jpg",
+                "prompt": "river water",
+                "status": "completed",
+            }
+        ),
+        encoding="utf-8",
+    )
+    if accepted:
+        (run_dir / "reviews.jsonl").write_text(
+            json.dumps(
+                {
+                    "result_id": result_id,
+                    "decision": "accepted",
+                    "reviewed_at_utc": "2026-10-07T20:00:00+00:00",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+    return run_id
+
+
+def test_every_result_of_every_run_is_listed_not_just_the_latest_few(tmp_path: Path) -> None:
+    site = tmp_path / "site"
+    for number in range(1, 13):  # twelve single-image runs, more than any page-side cap
+        _write_run(site, number, SEQUENCE_ID)
+    _write_run(site, 13, "another-sequence")
+
+    results = runner.list_sam_results(site, SEQUENCE_ID)
+
+    assert len(results) == 12
+    assert {r["filename"] for r in results} == {f"img{n}.jpg" for n in range(1, 13)}
+    assert all(r["review_status"] == "accepted" for r in results)
+    assert all(r["run_id"] for r in results)
+    assert results[0]["filename"] == "img12.jpg"  # newest run first
+
+
+def test_an_unreadable_run_is_skipped_when_listing_results(tmp_path: Path) -> None:
+    site = tmp_path / "site"
+    _write_run(site, 1, SEQUENCE_ID)
+    broken = _write_run(site, 2, SEQUENCE_ID)
+    (site / "outputs" / runner.RUNS_DIRNAME / broken / "results" / "r2.json").write_text(
+        "{", encoding="utf-8"
+    )
+
+    assert [r["filename"] for r in runner.list_sam_results(site, SEQUENCE_ID)] == ["img1.jpg"]

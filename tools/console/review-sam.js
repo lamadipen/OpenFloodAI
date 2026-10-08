@@ -58,12 +58,10 @@ async function loadSam() {
   try {
     samState.status = await api(`/api/hosted-sam/status?${new URLSearchParams({ folder_name: folderName })}`);
     samState.ack = !!samState.status.credential.upload_acknowledged;
-    const listing = await api(`/api/hosted-sam/runs?${new URLSearchParams({ folder_name: folderName, sequence_id: sequenceId() })}`);
-    const results = [];
-    for (const row of (listing.runs || []).slice(0, 8)) {
-      const full = await api(`/api/hosted-sam/run?${new URLSearchParams({ folder_name: folderName, run_id: row.run_id })}`);
-      (full.results || []).forEach((r) => results.push({ ...r, run_id: row.run_id }));
-    }
+    // Every saved result of every run for this sequence, in one request, so the per-image
+    // badges and the accepted count are complete however many runs there are.
+    const listing = await api(`/api/hosted-sam/results?${new URLSearchParams({ folder_name: folderName, sequence_id: sequenceId() })}`);
+    const results = listing.results || [];
     samState.results = results;
   } catch (error) {
     samState.status = null;

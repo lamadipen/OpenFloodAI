@@ -340,3 +340,38 @@ def test_overlay_route_explains_when_the_source_image_changed(
 
     assert raised.value.code == 409
     assert "changed" in body["message"]
+
+
+def test_results_endpoint_lists_every_result_for_a_sequence(tmp_path: Path) -> None:
+    import json as _json
+
+    site = tmp_path / "sites" / "demo"
+    runs = site / "outputs" / "hosted-sam-runs"
+    for number in range(1, 11):
+        run_id = f"20261007T19{number:02d}00Z-{number:08x}"
+        (runs / run_id / "results").mkdir(parents=True)
+        (runs / run_id / "run-summary.json").write_text(
+            _json.dumps(
+                {"run_id": run_id, "sequence_id": SEQUENCE_ID, "result_ids": [f"r{number}"]}
+            ),
+            encoding="utf-8",
+        )
+        (runs / run_id / "results" / f"r{number}.json").write_text(
+            _json.dumps(
+                {"result_id": f"r{number}", "filename": f"img{number}.jpg", "status": "completed"}
+            ),
+            encoding="utf-8",
+        )
+    (site / "configs").mkdir(parents=True)
+    (site / "configs" / "site-config.json").write_text(
+        _json.dumps(
+            {"site_id": "s", "camera_id": "c", "site_name": "Demo", "input_type": "local_video"}
+        ),
+        encoding="utf-8",
+    )
+
+    with serve_home_ui(tmp_path / "sites") as base:
+        listing = get(f"{base}/api/hosted-sam/results?folder_name=demo&sequence_id={SEQUENCE_ID}")
+
+    assert len(listing["results"]) == 10
+    assert {r["filename"] for r in listing["results"]} == {f"img{n}.jpg" for n in range(1, 11)}

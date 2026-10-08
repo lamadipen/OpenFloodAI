@@ -153,3 +153,10 @@ test("the baseline option is unavailable when the run recorded no baseline", () 
   vm.runInContext('detail = { summary: { baseline_filename: "" } }', ctx);
   assert.match(ctx.samPanelHtml(), /value="baseline"[^>]*disabled/);
 });
+
+test("the page asks for every saved SAM result in one request, not a capped number of runs", () => {
+  const sam = fs.readFileSync(path.join(__dirname, "../../tools/console/review-sam.js"), "utf8");
+  assert.match(sam, /\/api\/hosted-sam\/results\?/);
+  assert.doesNotMatch(sam, /\.slice\(0, 8\)/);
+  assert.doesNotMatch(sam, /\/api\/hosted-sam\/run\?/);
+});

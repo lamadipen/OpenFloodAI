@@ -408,6 +408,14 @@ function pickImageSource(sequences) {
 // baseline is always the frame the area was drawn on. The one exception is a site whose guides
 // were already traced on a different frame: those lines only line up on their own frame, so it
 // keeps showing that one and says where the watched area was drawn.
+// The same frame: the same saved image, or the same video at (nearly) the same moment. Two guides
+// may share a video yet be traced at different moments, so a video match must check the time.
+function sameFrame(a, b) {
+  if (!sourcesMatch(a, b)) return false;
+  if (a.video_id) return Math.abs((a.video_time_seconds || 0) - (b.video_time_seconds || 0)) < 0.05;
+  return true;
+}
+
 function chooseBaselineSource({ areaSource, guide, sequences, videos }) {
   const guideSource = guide
     ? guide.image_sequence_id
@@ -426,7 +434,7 @@ function chooseBaselineSource({ areaSource, guide, sequences, videos }) {
   } else if (area && area.video_id) {
     if (!(videos || []).some((v) => v.video_id === area.video_id)) area = null;
   }
-  if (guideSource && !(area && sourcesMatch(guideSource, area))) {
+  if (guideSource && !(area && sameFrame(guideSource, area))) {
     return { source: guideSource, areaSource: area, fromWatchedArea: false };
   }
   if (area) return { source: area, areaSource: area, fromWatchedArea: true };
