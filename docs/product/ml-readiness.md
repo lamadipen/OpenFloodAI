@@ -52,6 +52,9 @@ observations agree with human review and supporting external signals.
 The main goal is to review normal water, rising water, high water, falling water,
 and unclear views, as described in the [labeling guide](../research/labeling-guide.md).
 These are product concepts, not new saved label values introduced by this plan.
+They describe the review product. The first ML pilot targets gauge height from a single
+image instead; trend (rising and falling) is a separate, future experiment. See
+[Choose One First Prediction Task](#choose-one-first-prediction-task).
 
 Use a visible riverbank as the first reference. A person draws the **Normal
 Waterline Guide** by hand: a polyline on the normal water edge with a water-side
@@ -104,11 +107,16 @@ change score can also occur when water is already high.
 
 Training stays blocked until the team records evidence for all of these:
 
-1. **Define the prediction.** Start with visible change over a reviewed time
-   window: rising, falling, no clear change, or unable to judge. Preserve camera
-   problems. Resolve how normal/high water relates to trend: water can be high
-   and rising at the same time. Agree any future label mapping separately;
-   existing schemas stay unchanged here.
+1. **Define the prediction.** Use the chosen task. The recommended first pilot is
+   **gauge-height estimation from a single image at one site** (see
+   [Choose One First Prediction Task](#choose-one-first-prediction-task)). Name the
+   target, the intended site and the input available at deployment, and state whether
+   the experiment is site-specific or meant to transfer to new cameras. Rising/falling
+   change over a reviewed window is a separate, future change-detection experiment.
+   Its labels (rising, falling, no clear change, unable to judge) and how normal or
+   high water relates to trend (water can be high and rising at once) are agreed only
+   if that task is chosen. Preserve camera problems. Existing schemas stay unchanged
+   here.
 2. **Review the examples.** Follow the
    [data quality checklist](data-quality-checklist.md). Keep video/site/event IDs,
    time windows, source permission, label version, reviewer notes, and visibility
@@ -118,19 +126,24 @@ Training stays blocked until the team records evidence for all of these:
    curation tools: count independent sites, events and conditions, not just
    images or frames; record reviewer disagreements and missing evidence; collect
    more whenever a target condition lacks usable training or evaluation examples.
-4. **Prevent data leakage.** Keep related video/event windows together when
+4. **Prevent data leakage.** Keep related events, windows and near-duplicate images together when
    splitting training, development, and locked test data. Do not randomly split
    adjacent frames. For an unseen-site claim, hold out whole sites and their
    cameras. A one-site chronological pilot is allowed as a limited, site-specific
    experiment and proves nothing about other cameras. Check duplicates and near
    duplicates.
-5. **Measure the baseline.** Replay the existing simple method on the same
-   reviewed windows. Save failures and counts by condition before choosing a
-   trainable alternative.
-6. **Set acceptance targets first.** Record numerical limits for missed target
-   changes, false detections, detection delay, unclear results and device cost.
-   The targets and target hardware remain open decisions; do not choose them
-   after seeing test results.
+5. **Measure the baseline.** Measure a simple task-matched baseline on the same
+   held-out examples before choosing a trainable alternative. For gauge-height
+   estimation that means height error (mean absolute error) and bias in the gauge's
+   stated unit, for example against predicting the training median. Save failures and
+   counts by condition and by gauge range. Only a future change-detection experiment
+   replays the existing simple method over reviewed windows.
+6. **Set acceptance targets first.** Record numerical limits in the chosen task's own
+   measures before the experiment runs. For gauge-height estimation these are height
+   error and bias in stated units, the share of unclear or unavailable cases, and
+   device cost. Missed changes, false detections and detection delay apply only to a
+   future change-detection experiment. The targets and target hardware remain open
+   decisions; do not choose them after seeing test results.
 7. **Confirm reproducibility and permission.** Freeze dataset/split versions,
    preprocessing, labels, experiment configuration and code version. Review the
    exact model code, weights, dependencies and training-data permissions.
@@ -146,12 +159,12 @@ measuring the simple baseline, not training.
 
 | Gate item | What exists now | What is still missing |
 | --- | --- | --- |
-| 1. Define the prediction | The target is still visible water change over a reviewed window. Curated datasets also support gauge-height, low/middle/high categories (from approved site definitions) and rising/falling pairs as separate tasks | Agreeing how normal or high water relates to trend; any new label mapping stays a separate decision |
+| 1. Define the prediction | The recommended pilot is single-image gauge-height estimation at one site. Curated datasets support four tasks: segmentation, gauge height, low/middle/high categories (from approved site definitions) and rising/falling pairs | Naming the pilot site, and stating site-specific or transfer. Label mapping for trend is agreed only if a change task is chosen; any new label mapping stays a separate decision |
 | 2. Review the examples | Human labels with revisions, quality answers, event reviews, accepted masks, the [data quality checklist](data-quality-checklist.md) | A second reviewer checking a sample and resolving disagreements. No tool for this exists yet |
 | 3. Establish useful coverage | Curated datasets show how many examples, sites, cameras and categories they hold | A pilot audit counting independent sites, events and conditions, with reviewer disagreements and missing evidence, has not been recorded. [#158](https://github.com/lamadipen/OpenFloodAI/issues/158) owns the readiness report |
 | 4. Prevent data leakage | Splits are by camera (and site) and never random, locked-validation data is test-only, pairs stay together, identical images cannot cross splits | A frozen split before tuning. A one-site chronological pilot is allowed with limited, site-specific claims; an unseen-site claim needs held-out sites and cameras. Three independent camera splits are a rule for a public release, not for every local pilot |
-| 5. Measure the baseline | Validation scorecard, human-versus-machine comparison and a riverbank pilot evaluation | A recorded run of the existing simple method over the reviewed windows, with failures and counts by condition |
-| 6. Set acceptance targets first | Nothing yet | Numerical limits for missed changes, false detections, delay, unclear results and device cost, and the target hardware. Set these before any result is seen |
+| 5. Measure the baseline | Validation scorecard, human-versus-machine comparison and a riverbank pilot evaluation. They were built for change review and do not measure height error | A recorded task-matched baseline on the same held-out examples. For gauge height: error and bias in stated units, with counts by condition and gauge range |
+| 6. Set acceptance targets first | Nothing yet | Numerical limits on height error and bias in stated units, the share of unclear cases and device cost, plus the target hardware. Limits for missed changes, false detections and delay apply only to a future change-detection experiment. Set these before any result is seen |
 | 7. Reproducibility and permission | Frozen, checksummed dataset versions, recorded source and license approvals, and a privacy review gate for sharing | Permission to train on each source, and a review of any model's code, weights, dependencies and licenses |
 
 This table is a snapshot. Re-check it, and update it, whenever a gate item changes. Closing
