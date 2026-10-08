@@ -65,7 +65,13 @@ def datasets(tmp_path: Path) -> Path:
 
 
 def freeze(tmp_path: Path, ds: dict[str, Any], note: str = "first pilot cut") -> dict[str, Any]:
-    return freeze_version(datasets(tmp_path), ds["dataset_id"], note=note, approved_by="Lead B")
+    return freeze_version(
+        datasets(tmp_path),
+        ds["dataset_id"],
+        note=note,
+        approved_by="Lead B",
+        sites_dir=tmp_path / "sites",
+    )
 
 
 def add(
@@ -83,7 +89,10 @@ def add(
 
 
 def blocking_codes(tmp_path: Path, ds: dict[str, Any]) -> set[str]:
-    return {p["code"] for p in dataset_view(datasets(tmp_path), ds["dataset_id"])["blocking"]}
+    return {
+        p["code"]
+        for p in dataset_view(datasets(tmp_path), ds["dataset_id"], tmp_path / "sites")["blocking"]
+    }
 
 
 def two_camera_dataset(tmp_path: Path) -> tuple[Fixture, Fixture, dict[str, Any]]:
@@ -308,7 +317,7 @@ def test_every_example_needs_a_split_and_nothing_is_split_at_random(tmp_path: Pa
         ds["dataset_id"],
         {"kind": "site_camera", "assignments": {"CAM_A": "train"}},
     )
-    view = dataset_view(datasets(tmp_path), ds["dataset_id"])
+    view = dataset_view(datasets(tmp_path), ds["dataset_id"], tmp_path / "sites")
     # Neighbouring frames of one camera always share a split.
     assert {m["split"] for m in view["members"]} == {"train"}
 
@@ -323,7 +332,7 @@ def test_too_few_independent_cameras_is_reported_as_a_gap_not_hidden(tmp_path: P
     )
     add(tmp_path, ds, fx)
 
-    view = dataset_view(datasets(tmp_path), ds["dataset_id"])
+    view = dataset_view(datasets(tmp_path), ds["dataset_id"], tmp_path / "sites")
 
     gap = next(g for g in view["readiness_gaps"] if g["code"] == "insufficient_independent_cameras")
     assert "validation" in gap["message"] and "test" in gap["message"]
@@ -393,7 +402,7 @@ def test_identical_image_bytes_in_two_splits_block_the_freeze(tmp_path: Path) ->
     add(tmp_path, ds, a)
     add(tmp_path, ds, b)
 
-    view = dataset_view(datasets(tmp_path), ds["dataset_id"])
+    view = dataset_view(datasets(tmp_path), ds["dataset_id"], tmp_path / "sites")
 
     assert view["duplicates"] and len(view["duplicates"][0]["members"]) == 2
     assert "duplicate_content_across_splits" in {p["code"] for p in view["blocking"]}
@@ -677,3 +686,57 @@ def test_the_default_choice_among_repeated_ids_copies_the_accepted_runs_files(
     assert result["status"] == "added"
     assert result["annotation"]["segmentation_run_id"] == "20261002T100000Z-bbbbbbbb"
     assert dataset_view(datasets(tmp_path), ds["dataset_id"], fx.sites_dir)["ready_to_freeze"]
+
+
+def test_freezing_cannot_skip_the_check_of_the_sites_current_restrictions(tmp_path: Path) -> None:
+    fx = make_run(tmp_path, [Img(day=2)])
+    ds = create_dataset(
+        datasets(tmp_path),
+        name="Heights",
+        task=TASK_GAUGE_HEIGHT,
+        split_policy=policy_for("CAM_A", "train"),
+    )
+    add(tmp_path, ds, fx)
+    assign_dataset_group(
+        fx.site_dir, group="locked_validation", start_date="2026-01-02", end_date="2026-01-02"
+    )
+
+    # The site location is required: there is no default call that skips the lock check.
+    with pytest.raises(TypeError):
+        freeze_version(datasets(tmp_path), ds["dataset_id"], note="n", approved_by="me")  # type: ignore[call-arg]
+    with pytest.raises(TypeError):
+        dataset_view(datasets(tmp_path), ds["dataset_id"])  # type: ignore[call-arg]
+    with pytest.raises(CurationConflict):
+        freeze(tmp_path, ds)
+    assert list_versions(datasets(tmp_path), ds["dataset_id"]) == []
+
+
+def test_a_site_that_cannot_be_found_blocks_the_freeze_instead_of_skipping_its_checks(
+    tmp_path: Path,
+) -> None:
+    fx = make_run(tmp_path, [Img(day=2)])
+    ds = create_dataset(
+        datasets(tmp_path),
+        name="Heights",
+        task=TASK_GAUGE_HEIGHT,
+        split_policy=policy_for("CAM_A", "train"),
+    )
+    add(tmp_path, ds, fx)
+
+    # Wrong sites directory, and a renamed site folder: neither can be checked.
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    for sites_dir in (elsewhere, fx.sites_dir):
+        if sites_dir is fx.sites_dir:
+            fx.site_dir.rename(fx.sites_dir / "renamed-site")
+        view = dataset_view(datasets(tmp_path), ds["dataset_id"], sites_dir)
+        assert "site_missing" in {p["code"] for p in view["blocking"]}
+        assert view["ready_to_freeze"] is False
+        with pytest.raises(CurationConflict):
+            freeze_version(
+                datasets(tmp_path),
+                ds["dataset_id"],
+                note="n",
+                approved_by="me",
+                sites_dir=sites_dir,
+            )

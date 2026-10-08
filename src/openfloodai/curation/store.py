@@ -583,20 +583,33 @@ def _split_members(draft: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
-def _group_problems(sites_dir: Path | None, member: dict[str, Any]) -> list[dict[str, str]]:
+def _site_dir_or_none(sites_dir: Path, folder_name: str) -> Path | None:
+    """The saved site folder directly inside the sites directory, or None if it is not there."""
+
+    site = (sites_dir / str(folder_name)).resolve()
+    if not folder_name or site.parent != sites_dir.resolve() or not site.is_dir():
+        return None
+    return site
+
+
+def _group_problems(sites_dir: Path, member: dict[str, Any]) -> list[dict[str, str]]:
     """Re-read each image's dataset group as the site has it now.
 
     A range locked or excluded after the example was added must not slip into training. The
     group stored with the example is history; the group in force today decides.
     """
 
-    if sites_dir is None:
-        return []
     problems: list[dict[str, str]] = []
     for snap in _units(member):
-        site = sites_dir / snap["site"]["folder_name"]
-        if not site.is_dir():
-            problems.append(reason("site_missing", "The site this example came from is missing."))
+        site = _site_dir_or_none(sites_dir, snap["site"]["folder_name"])
+        if site is None:
+            problems.append(
+                reason(
+                    "site_missing",
+                    "The site this example came from can't be found, so its current dataset "
+                    "group can't be checked. Freezing needs that check.",
+                )
+            )
             continue
         now = current_dataset_group(site, snap["source"]["captured_at_utc"])
         if now == "excluded":
@@ -619,7 +632,7 @@ def recheck_member(
     dataset: dict[str, Any],
     folder: Path,
     member: dict[str, Any],
-    sites_dir: Path | None = None,
+    sites_dir: Path,
 ) -> list[dict[str, str]]:
     """Re-run the task rules on the evidence the member froze, and verify its kept bytes."""
 
@@ -709,9 +722,7 @@ def _conflicts_and_duplicates(
     return duplicates, problems
 
 
-def dataset_view(
-    datasets_dir: Path, dataset_id: str, sites_dir: Path | None = None
-) -> dict[str, Any]:
+def dataset_view(datasets_dir: Path, dataset_id: str, sites_dir: Path) -> dict[str, Any]:
     """Everything the dataset page shows: membership, readiness, label counts, gaps, duplicates."""
 
     folder = _dataset_dir(datasets_dir, dataset_id)
@@ -841,7 +852,7 @@ def freeze_version(
     *,
     note: str,
     approved_by: str,
-    sites_dir: Path | None = None,
+    sites_dir: Path,
 ) -> dict[str, Any]:
     """Freeze the draft as a new immutable version, or explain why it cannot be frozen yet."""
 

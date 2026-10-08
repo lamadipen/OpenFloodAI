@@ -273,7 +273,7 @@ def test_changing_the_pinned_definition_makes_old_categories_stale(tmp_path: Pat
     add(tmp_path, ds, fx, 0)
 
     pin_label_definition(datasets(tmp_path), ds["dataset_id"], fx.site_id, 2)
-    view = dataset_view(datasets(tmp_path), ds["dataset_id"])
+    view = dataset_view(datasets(tmp_path), ds["dataset_id"], tmp_path / "sites")
 
     assert any(p["code"] == "annotation_stale" for p in view["blocking"])
     # Re-adding under the new definition is a different annotation: an explicit decision.
@@ -574,7 +574,7 @@ def test_a_reviewer_can_reject_an_annotation_and_it_stays_visible(tmp_path: Path
         filename=fx.filenames[0],
         note="Glare hides the waterline.",
     )
-    view = dataset_view(datasets(tmp_path), ds["dataset_id"])
+    view = dataset_view(datasets(tmp_path), ds["dataset_id"], tmp_path / "sites")
 
     row = view["members"][0]
     assert row["status"] == "rejected" and row["rejection_note"] == "Glare hides the waterline."
