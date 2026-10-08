@@ -1,8 +1,9 @@
 # ML Readiness And First Model Strategy
 
 Status: direction agreed on 2026-09-11 for
-[issue #108](https://github.com/lamadipen/OpenFloodAI/issues/108); progress
-refreshed on 2026-10-08. This is a planning decision. **It is not yet time to
+[issue #108](https://github.com/lamadipen/OpenFloodAI/issues/108); refreshed on
+2026-10-08 for the system we have now (images as well as videos, gauge evidence,
+curation and release tools). This is a planning decision. **It is not yet time to
 train a model.** Training readiness has not been demonstrated and no model
 architecture has been selected. This plan trains nothing, claims no accuracy, sends
 no alerts and does not replace human review.
@@ -52,16 +53,21 @@ The main goal is to review normal water, rising water, high water, falling water
 and unclear views, as described in the [labeling guide](../research/labeling-guide.md).
 These are product concepts, not new saved label values introduced by this plan.
 
-Use a visible riverbank as the first reference. A person confirms a clear view
-recorded during normal conditions. Pillars, rocks, or other stable markers can
-provide extra evidence. The system may suggest a bank area, with user correction
-and manual selection available. Lack of a usable bank must be explained; it must
-not be treated as normal water or make bank annotation mandatory for all review.
+Use a visible riverbank as the first reference. A person draws the **Normal
+Waterline Guide** by hand: a polyline on the normal water edge with a water-side
+point, confirmed by a reviewer ([issue #174](https://github.com/lamadipen/OpenFloodAI/issues/174);
+see "Normal Waterline Guide" in the full documentation's data contracts).
+The system does not suggest or auto-draw the baseline line, and a new drawing tool
+is not a prerequisite. Pillars, rocks, or other stable markers can provide extra
+evidence. Lack of a usable bank must be explained; it must not be treated as normal
+water or make a guide mandatory for all review. Keep the human guide separate from
+machine observations.
 
-The normal baseline stays anchored to the same physical bank. Future video
-overlays can show the estimated current boundary, bank coverage, observation
-times, and uncertainty. Drawing these overlays needs no segmentation library;
-finding reliable boundaries is a separate analysis problem. See the
+The normal baseline stays anchored to the same physical bank. The Review page
+already overlays the watched area and the confirmed guides on the baseline and a
+chosen image. Overlays that show a machine-estimated current boundary, bank
+coverage and uncertainty are still future work. Drawing overlays needs no
+segmentation library; finding reliable boundaries is a separate analysis problem. See the
 [overlay design](../architecture/windowed-video-evidence.md#proposed-video-overlays).
 
 Always show machine observations separately from human comparison. Human labels
@@ -84,7 +90,7 @@ Neither bank coverage nor rising water alone establishes flood danger.
 | Image supply | Water-level sampling picks low, middle and high water images from a linked gauge, and can append to a sequence ([guide](../learning/water-level-sampling.md)) | Coverage across independent cameras and conditions |
 | Gauge evidence | Each image's own matched USGS reading, with units, time gap and quality, frozen with the run | Treating readings as instrument-derived supervision, never as observed truth |
 | Machine evidence | Sampled frame comparison, a pixel-change adapter, and an optional riverbank-crossing adapter that is off by default and reports that camera alignment is unavailable | Reliable water-specific observations, camera alignment and temporal direction |
-| Normal reference | Confirmed riverbank reference records and per-sample quality checks | Confirmed references on more sites, with provenance |
+| Normal reference | A manually drawn Normal Waterline Guide with draft, confirmed and invalid states ([#174](https://github.com/lamadipen/OpenFloodAI/issues/174)) and per-sample quality checks | Confirmed guides on more sites, with provenance |
 | Assisted labelling | Optional, off-by-default hosted SAM 3.1 outlines for water or riverbank; a person accepts, rejects or asks for correction (see the full documentation's hosted SAM guide) | Evidence that it saves review effort; it is never a label by itself |
 | Dataset building | Curated, versioned local datasets from reviewed observations across runs, with site/camera-isolated splits, locked-validation protection, duplicate checks and frozen, checksummed versions ([guide](../learning/dataset-curation.md)) | Enough independent cameras and events to fill train, validation and test |
 | Sharing | A verified, versioned release with a licensing and privacy gate, a dataset card and a private-first upload path ([guide](../learning/dataset-release.md)) | Recorded approvals; no release is published by default |
@@ -107,15 +113,17 @@ Training stays blocked until the team records evidence for all of these:
    [data quality checklist](data-quality-checklist.md). Keep video/site/event IDs,
    time windows, source permission, label version, reviewer notes, and visibility
    conditions. Have another reviewer check a sample and resolve disagreements.
-3. **Establish useful coverage.** A first collection target is 50–100 reviewed
-   windows across multiple independent videos/events. This is a planning target,
-   not permission to train or proof of enough data. Count independent events and
-   conditions, not just frames; collect more whenever a target condition lacks
-   usable training or evaluation examples.
+3. **Establish useful coverage.** There is no automatic readiness threshold at
+   50, 100 or 500 images. Audit a small representative pilot using the existing
+   curation tools: count independent sites, events and conditions, not just
+   images or frames; record reviewer disagreements and missing evidence; collect
+   more whenever a target condition lacks usable training or evaluation examples.
 4. **Prevent data leakage.** Keep related video/event windows together when
    splitting training, development, and locked test data. Do not randomly split
-   adjacent frames. Reserve unseen sites where available; otherwise describe the
-   result as limited to the tested sites. Check duplicates and near duplicates.
+   adjacent frames. For an unseen-site claim, hold out whole sites and their
+   cameras. A one-site chronological pilot is allowed as a limited, site-specific
+   experiment and proves nothing about other cameras. Check duplicates and near
+   duplicates.
 5. **Measure the baseline.** Replay the existing simple method on the same
    reviewed windows. Save failures and counts by condition before choosing a
    trainable alternative.
@@ -140,8 +148,8 @@ measuring the simple baseline, not training.
 | --- | --- | --- |
 | 1. Define the prediction | The target is still visible water change over a reviewed window. Curated datasets also support gauge-height, low/middle/high categories (from approved site definitions) and rising/falling pairs as separate tasks | Agreeing how normal or high water relates to trend; any new label mapping stays a separate decision |
 | 2. Review the examples | Human labels with revisions, quality answers, event reviews, accepted masks, the [data quality checklist](data-quality-checklist.md) | A second reviewer checking a sample and resolving disagreements. No tool for this exists yet |
-| 3. Establish useful coverage | Curated datasets show how many examples, cameras and categories they hold | The count against the 50–100 reviewed windows target has not been recorded, and independent cameras and events are likely too few |
-| 4. Prevent data leakage | Splits are by camera (and site) and never random, locked-validation data is test-only, pairs stay together, identical images cannot cross splits | Enough independent cameras to populate all three splits; otherwise results are limited to the tested sites |
+| 3. Establish useful coverage | Curated datasets show how many examples, sites, cameras and categories they hold | A pilot audit counting independent sites, events and conditions, with reviewer disagreements and missing evidence, has not been recorded. [#158](https://github.com/lamadipen/OpenFloodAI/issues/158) owns the readiness report |
+| 4. Prevent data leakage | Splits are by camera (and site) and never random, locked-validation data is test-only, pairs stay together, identical images cannot cross splits | A frozen split before tuning. A one-site chronological pilot is allowed with limited, site-specific claims; an unseen-site claim needs held-out sites and cameras. Three independent camera splits are a rule for a public release, not for every local pilot |
 | 5. Measure the baseline | Validation scorecard, human-versus-machine comparison and a riverbank pilot evaluation | A recorded run of the existing simple method over the reviewed windows, with failures and counts by condition |
 | 6. Set acceptance targets first | Nothing yet | Numerical limits for missed changes, false detections, delay, unclear results and device cost, and the target hardware. Set these before any result is seen |
 | 7. Reproducibility and permission | Frozen, checksummed dataset versions, recorded source and license approvals, and a privacy review gate for sharing | Permission to train on each source, and a review of any model's code, weights, dependencies and licenses |
@@ -149,38 +157,81 @@ measuring the simple baseline, not training.
 This table is a snapshot. Re-check it, and update it, whenever a gate item changes. Closing
 an issue does not pass the gate.
 
-## First Possible Experiment And Finished Model
+## Choose One First Prediction Task
 
-After the gate passes, compare the classical baseline with a small pretrained
-image network plus a method that considers ordered frames. The first experiment
-asks whether the candidate improves visible water-change review. It does not
-predict public flood warnings. Input should be short ordered sequences from
-reviewed windows, with watched regions and optional confirmed reference evidence.
-An isolated image cannot establish rising or falling by itself.
+Dataset curation supports four tasks. We recommend one for a first pilot, not all four,
+and no existing label schema changes. Training eligibility is task-specific and stricter
+than merely being able to run validation.
 
-Reuse an established neural network if it helps; we do not need to invent a new
-architecture. Train or fine-tune its weights on our permitted, reviewed examples.
-The exact network, sequence length, and use of reference features remain choices
-to evaluate. Segmentation is not a prerequisite for the main experiment.
+| Task | Supervision | Effort to obtain it | What it does not prove | Task-specific metrics |
+| --- | --- | --- | --- | --- |
+| Water segmentation | A mask for the exact image that a person accepted, with the model and provenance kept | Highest: every mask needs review, and the hosted tool is a paid optional call | Flood danger or physical height | Overlap (IoU or Dice) and boundary error in pixels, by condition |
+| Gauge-height estimation | An image and its own matched gauge value, units, station and quality | Low: water-level sampling already saves each image's matched evidence | Camera-local depth, or transfer to another site without evaluation | Mean absolute error and bias in the gauge's stated unit, by gauge range and condition |
+| Low/middle/high classification | A reviewed image, matched gauge evidence and approved, versioned site bands | Medium: a person must approve the bands and review each image | Universal flood thresholds. Collection groups are not training labels | Per-class precision and recall, a confusion matrix, and errors between neighbouring classes |
+| Rising/falling change | Ordered same-view image pairs or windows with matched evidence for both times | Medium to high: explicit pairs and time context | Direction from one isolated image | Rising/falling confusion, missed changes, false detections and detection delay |
 
-The dataset tools above are how that experiment's inputs would be assembled: reviewed
-windows frozen into a versioned dataset with leakage-safe splits. A gauge reading can
-support an experiment as instrument-derived supervision, but it does not turn a
-uncertain image into a trusted example, and a nearby station does not prove the same
-water level at the camera.
+### Recommended first pilot: gauge-height estimation at one site
 
-Evaluate full held-out windows/events, not only individual frames. Report rising
-and falling confusion, missed changes, false detections per camera-day where
-continuous footage exists, detection delay, unclear/unavailable time, and errors
-by visibility condition. Report sample counts and uncertainty; do not use overall
-accuracy as the only measure. For later normal/high outputs, evaluate those
-separately. Measure latency and memory on the intended device.
+Predict the gauge height from a single image of one stable camera view, and measure the
+error in the gauge's own unit.
 
-Keep the locked test set out of tuning. Inspect failures and retain the simpler
-method if the new model does not improve the agreed criteria. A finished model
-package includes weights, output definitions, preprocessing and sampling rules,
-versions, license notices, evaluation evidence, and runtime/export checks. Training
-a weights file alone does not complete the system.
+Why this one:
+
+- Its supervision comes from tools that already exist. Water-level sampling picks images
+  across the gauge range and freezes each image's own matched reading with units, station,
+  time gap and quality.
+- It needs the least extra human labelling, so a pilot can start from reviewed, diverse
+  examples rather than waiting for masks, approved bands or explicit pairs.
+- Its error is measured in stated units against a simple baseline, which is a clear
+  success or failure test.
+- It avoids thresholds nobody has approved (classification), paid and reviewed masks
+  (segmentation) and ordered pairs (change). A mask may still help a reviewer, but it is
+  not required for this task.
+
+Limits of the recommendation: it depends on the pilot audit showing enough independent
+events and a wide enough range of gauge values at the chosen site. If the audit finds the
+range narrow, the matches sparse or the camera view unstable, revisit the choice. The
+nearby gauge does not give the physical water level at the camera, so a good result means
+"predicts what the gauge reports" and nothing more.
+
+### Do not feed the answer to the model
+
+When gauge height is the target, **the target gauge reading must never be a model input.**
+That includes the reading matched to the image, readings of the same station at nearby
+times, and anything derived from them: the low/middle/high sampling group, a category from
+an approved band, or a feature built from any of these. Giving the model those and calling
+the result image-based prediction is invalid. Timestamps and season can stand in for the
+water level, so state them explicitly as inputs or hold them out.
+
+### Pilot protocol (site-specific)
+
+- Freeze a chronological split before any tuning: earlier period for training, a later
+  period for development, the latest as a locked test. Leave a gap between periods and keep
+  related events and near-duplicates together.
+- Measure a simple task-matched baseline on the same held-out examples first, for example
+  predicting the training median and a simple classical image-feature baseline.
+- Report sample counts, unclear cases and errors by condition (glare, darkness, frozen
+  water, moved camera) and by gauge range. Do not rely on one overall number.
+- Keep unclear, frozen-water, glare, darkness and moved-camera examples identifiable. They
+  must not silently become valid water-level examples.
+- A one-site chronological pilot supports a limited, site-specific claim only. An
+  unseen-site claim needs held-out sites and their cameras. Publishing a dataset is optional
+  and is not a prerequisite for a local experiment.
+
+The detailed specification (candidate model, protocol, numerical success criteria and
+compute limits) belongs to [#160](https://github.com/lamadipen/OpenFloodAI/issues/160).
+Numerical limits are agreed before the experiment runs and are never chosen after seeing
+test results. Reuse an established pretrained network or library if one helps; we do not
+need to invent an architecture. Segmentation is not a prerequisite for this pilot.
+
+### The Finished Model Package
+
+Keep the locked test set out of tuning. Inspect failures and retain the simpler method if
+the new model does not improve the agreed criteria. A finished model package includes
+weights, output definitions, preprocessing and sampling rules, versions, license notices,
+evaluation evidence, and runtime/export checks. Training a weights file alone does not
+complete the system. Accepting or correcting a mask does not retrain the hosted provider's
+model.
 
 ## Tools And Research Boundaries
 
@@ -241,17 +292,54 @@ testing, monitoring and rollback, and an authorised warning procedure. Completin
 model training is not production approval. No alerts, deployment or accuracy
 claims are authorised here.
 
+## Training-Readiness Checklist
+
+Record a clear **ready** or **not ready** decision with the remaining gaps. Passing this
+list is the evidence for a separately approved experiment. It is not the experiment.
+
+| Check | Evidence to record | Owner |
+| --- | --- | --- |
+| Target, sites and deployment input named; site-specific or unseen-site stated | One written statement for the chosen task | [#160](https://github.com/lamadipen/OpenFloodAI/issues/160) |
+| Pilot audited | Counts of independent sites, events and conditions; reviewer disagreements; missing evidence | [#158](https://github.com/lamadipen/OpenFloodAI/issues/158) |
+| Provenance preserved | Original image identity, review revisions, mask origin, label-definition version, gauge evidence, with machine suggestions, human decisions, collection groups, quality flags and instrument-derived targets kept separate | Existing curation ([guide](../learning/dataset-curation.md)) |
+| Splits frozen before tuning | Chronological or site/camera split recorded; near-duplicates and related events kept together | [#157](https://github.com/lamadipen/OpenFloodAI/issues/157) |
+| Task-matched baseline measured | Baseline results on the same held-out examples, using development data only for tuning | [#159](https://github.com/lamadipen/OpenFloodAI/issues/159) |
+| Success and failure criteria agreed | Numerical limits and compute or cost limits, recorded before the run | [#160](https://github.com/lamadipen/OpenFloodAI/issues/160) |
+| Dataset frozen and permissions recorded | Dataset version, code and configuration, source and license permissions, known limitations | Existing curation and [release](../learning/dataset-release.md) |
+| Candidate code and weights checked | Exact licenses and dependencies reviewed before adoption | [#160](https://github.com/lamadipen/OpenFloodAI/issues/160) |
+
 ## Open Decisions
 
 These need a named person to decide. They are not chosen here, and they must be settled
 before results are seen:
 
-- numerical acceptance targets and the target hardware;
+- which site the first pilot uses, and whether it is site-specific or intended to transfer;
+- numerical success and failure criteria and the target hardware;
 - how a second reviewer samples and resolves disagreements;
-- the baseline frame selection and the baseline run to record;
-- any future label mapping between trend and normal/high water;
-- which network, sequence length and reference features to compare;
+- which network, input size and baseline to compare;
+- any future label mapping between trend and normal or high water;
 - permission to train on each source, and the license review of any model.
+
+## Who Owns The Next Steps
+
+| Step | Owner |
+| --- | --- |
+| Collect and review representative samples, and rehearse the workflow | [#152](https://github.com/lamadipen/OpenFloodAI/issues/152), [#153](https://github.com/lamadipen/OpenFloodAI/issues/153) |
+| Failure tracking, reviewer evidence and progress visibility (check what current code already covers first) | [#154](https://github.com/lamadipen/OpenFloodAI/issues/154), [#155](https://github.com/lamadipen/OpenFloodAI/issues/155), [#156](https://github.com/lamadipen/OpenFloodAI/issues/156) |
+| Locked evaluation rules, reconciled with current curation and release checks | [#157](https://github.com/lamadipen/OpenFloodAI/issues/157) |
+| Evidence-backed model-readiness report | [#158](https://github.com/lamadipen/OpenFloodAI/issues/158) |
+| Baseline evaluation and tuning, on development data only | [#159](https://github.com/lamadipen/OpenFloodAI/issues/159) |
+| Detailed first-experiment specification: candidate model, protocol, success criteria (reconcile older example label names with current schemas) | [#160](https://github.com/lamadipen/OpenFloodAI/issues/160) |
+| Optional CVAT-assisted annotation round trip, not mandatory when accepted masks suffice | [#216](https://github.com/lamadipen/OpenFloodAI/issues/216) |
+| Dataset curation and release, already delivered. Reuse rather than rebuild | [#219](https://github.com/lamadipen/OpenFloodAI/pull/219), [#220](https://github.com/lamadipen/OpenFloodAI/pull/220) |
+
+## Not Authorized Here
+
+This plan does not authorize training or fine-tuning a model, publishing or uploading a
+dataset, sending alerts, replacing human review, or any production-accuracy claim. A
+real hosted upload has not been validated, and having the tools does not show that any
+dataset is ready. Pretrained segmentation may keep helping reviewers now; it does not
+wait for training readiness.
 
 ## Revisit Trigger And Next Work
 
@@ -259,21 +347,14 @@ Revisit the design if bank references do not help, simpler methods work better,
 camera movement cannot be handled, or quality/device requirements cannot be met.
 Keep existing local review available while new components are evaluated separately.
 
-The normal-reference record and its confirm/draft/invalidate visual selection
-workflow are defined (issue #163) — see
-"Confirmed Riverbank Reference" in the full documentation's data contracts.
+The manual Normal Waterline Guide and its confirm/draft/invalidate workflow are defined
+(issue #174, which replaced the earlier baseline rectangle and suggestion contract) — see
+"Normal Waterline Guide" in the full documentation's data contracts.
 Per-sample riverbank/reference quality checks that separate baseline-ready
 evidence from practice-only footage are defined too (issue #164) — see
 "Riverbank/Reference Quality Checks" in the full documentation's data contracts.
 
-Suggested bounded follow-ups, one at a time:
-
-1. Record the count of reviewed windows, independent cameras and events against the
-   coverage target.
-2. Run and record the simple baseline over those windows, with failures by condition.
-3. Agree the acceptance targets and target hardware.
-4. Define the second-reviewer process.
-5. Only then plan the first controlled experiment.
+Next steps are owned by the issues in the table above, one bounded task at a time.
 
 Exact model architecture, numerical acceptance targets, baseline frame selection and
 future label contracts remain open; the camera-first product direction is settled.

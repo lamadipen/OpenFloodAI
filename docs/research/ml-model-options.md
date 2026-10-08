@@ -12,6 +12,23 @@ Simple meaning: before choosing a model, we should understand what already exist
 
 This is research only. It does not add model code, download data, connect to cloud services, or claim flood detection accuracy.
 
+## Status Of The Options (2026-10-08)
+
+Which options are implemented, which have tooling to evaluate them, and which are research
+only. Nothing here is a claim of accuracy, and no training has been done.
+
+| Status | Options |
+| --- | --- |
+| Implemented in OpenFloodAI | Classical frame-difference and watched-area baselines (the pixel-change adapter); an optional riverbank-crossing adapter, off by default and without camera alignment; USGS gauge matching to images; optional, off-by-default hosted SAM 3.1 segmentation with human review of every mask |
+| Tooling exists to evaluate them | Human-versus-machine label comparison, the validation scorecard and a riverbank pilot evaluation. No evaluation results are recorded in this page, and none are claimed |
+| Research only | OpenRiverCam / pyorc integration, Google Flood Forecasting / OpenHydroNet, FloodNet and satellite datasets, YOLO and other object detection, FastSAM, Vertex AI / AutoML / Cloud Vision, rainfall, earthquake and forecast signals |
+
+Pretrained segmentation may already help reviewers. It does not wait for training
+readiness. Training or fine-tuning on our data is a separate decision, and accepting or
+correcting a mask does not retrain the provider's model. Reuse the capabilities of existing
+models and libraries rather than assume a new network is required.
+
+
 ## Decision Record — 0001 ML Readiness Direction (Issue #108)
 
 Status: Agreed 2026-09-11.
@@ -35,7 +52,8 @@ the agreed direction and its consequences, not to re-host that discussion.
 
 Camera-first water-condition review is the main goal, following the existing
 [labeling guide](labeling-guide.md). A visible riverbank is the first
-reference, with optional markers and assisted selection. Visual overlays are
+reference: a manually drawn Normal Waterline Guide (issue #174), with optional
+markers. The system does not suggest the baseline line. Visual overlays are
 supporting evidence. Machine observations stay clearly separate from human
 comparison. Model evaluation is baseline-first, after the readiness gate
 defined in [ML Readiness And First Model Strategy](../product/ml-readiness.md).
@@ -56,9 +74,10 @@ original discussion.
 
 - Training stays blocked until the readiness gate in `product/ml-readiness.md`
   is satisfied. Closing prerequisite issues does not by itself satisfy it.
-- No dependency, model, or license choice is approved by this record. SAM 2,
-  MobileSAM, and OpenCV remain candidates subject to version/weights/license
-  review; pyorc/ffpiv, YOLO segmentation, and FastSAM are excluded from the
+- No dependency, model, or license choice is approved by this record, other than
+  the optional hosted SAM 3.1 service that is already implemented for assisted
+  review (off by default). SAM 2, MobileSAM, and OpenCV remain candidates subject
+  to version/weights/license review; pyorc/ffpiv, YOLO segmentation, and FastSAM are excluded from the
   initial integration shortlist under the current licensing preference (a
   scope decision, not a claim that all have identical license terms).
 - Revisit this direction if bank references do not help, simpler methods work
@@ -161,6 +180,12 @@ Main limitation:
 - they may confuse shadows, roads, sky reflection, mud, rain, or glare with water
 - large models may be too heavy for low-cost edge devices
 
+Optional hosted SAM 3.1 segmentation is already available in the Review Workspace
+for assisted review (see the hosted SAM guide in the learning docs). It is off by default,
+sends only the chosen crop after confirmation, and a person accepts, rejects or asks for
+correction of every mask. An accepted mask is a reviewed machine output, not a flood
+decision. Other segmentation models in this section remain research candidates.
+
 Simple example: a segmentation model can help a reviewer select the river area
 in a video. That selected area can become training or testing data later. It
 should not automatically tell people there is a flood.
@@ -229,7 +254,9 @@ licensing scope above; no dependency or model choice is approved here.
 
 See [proposed video overlays](../architecture/windowed-video-evidence.md#proposed-video-overlays)
 for the normal baseline, changing observations, unclear-view handling, and an
-easy example. These overlays are proposed functionality, not current capability.
+easy example. The Review page already overlays the watched area and the confirmed guides on the baseline
+and a chosen image. Overlays that show a machine-estimated boundary or newly covered bank
+are proposed functionality, not current capability.
 
 ## Public Dataset Options
 
