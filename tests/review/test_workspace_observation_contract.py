@@ -497,3 +497,33 @@ def test_workspace_gauge_keeps_captured_but_unmatched_states_distinct(
     assert gauge["status"] == status
     assert gauge["rows"] == []
     assert text in gauge["message"]
+
+
+def test_a_re_review_adds_a_revision_and_the_point_shows_the_latest_one(tmp_path: Path) -> None:
+    site = tmp_path / "site"
+    run_id, sample_key = _run_a_real_image_sequence(site)
+    base = {
+        "kind": "image",
+        "run_id": run_id,
+        "media_id": SEQUENCE_ID,
+        "sample_key": sample_key,
+    }
+
+    save_observation(site, {**base, "human_label": "no_water_level_change", "note": "first"})
+    save_observation(
+        site, {**base, "human_label": "water_level_rising", "confidence": "high", "note": "second"}
+    )
+
+    rows = _saved_rows(site, run_id)
+    assert [row["label_revision"] for row in rows] == [1, 2]
+    assert rows[0]["label"]["human_label"] == "no_water_level_change"  # history is kept
+
+    from openfloodai.review.workspace import evidence
+
+    point = next(
+        p for p in evidence(site, "image", run_id, SEQUENCE_ID)["points"] if p["key"] == sample_key
+    )
+    assert point["label"]["human_label"] == "water_level_rising"
+    assert point["label"]["note"] == "second"
+    assert point["review"]["label_revision"] == 2
+    assert point["review"]["reviewed_at_utc"]

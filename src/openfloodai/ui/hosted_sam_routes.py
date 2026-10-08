@@ -22,6 +22,7 @@ _GET_PATHS = {
     "/api/hosted-sam/status",
     "/api/hosted-sam/runs",
     "/api/hosted-sam/run",
+    "/api/hosted-sam/results",
     "/api/hosted-sam/overlay",
 }
 _POST_PATHS = {
@@ -98,6 +99,11 @@ def handle_get(handler: Any, path: str) -> bool:
             handler._send_json({"runs": rows}, status_code=200)
         elif path == "/api/hosted-sam/run":
             handler._send_json(runner.read_sam_run(site_dir, first("run_id")), status_code=200)
+        elif path == "/api/hosted-sam/results":
+            handler._send_json(
+                {"results": runner.list_sam_results(site_dir, first("sequence_id"))},
+                status_code=200,
+            )
         else:
             body = runner.render_overlay(site_dir, first("run_id"), first("result_id"))
             handler.send_response(200)

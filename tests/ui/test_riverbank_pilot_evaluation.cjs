@@ -4,10 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
-const html = fs.readFileSync(
-  path.join(__dirname, "../../tools/console/review.html"),
-  "utf8"
-);
+const html = require("./review_source.cjs").reviewHtml();
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 const start = script.indexOf("function pilotMetricPercent");
 const end = script.indexOf("function gaugeKey");
@@ -51,9 +48,10 @@ test("pilot evaluation card shows metrics, conditions, cost, and safety wording"
   assert.match(output, /does not confirm flooding, prove safety, or create a public warning/);
 });
 
-test("pilot evaluation card explains when a run has no saved result", () => {
+test("pilot evaluation says quietly when a run has no saved result, and still names the file", () => {
   const output = context().pilotEvaluationHtml(null);
 
-  assert.match(output, /No pilot evaluation is saved for this run yet/);
-  assert.match(output, /riverbank-pilot-evaluation\.json/);
+  assert.match(output, /Pilot evaluation: not generated for this run yet/);
+  assert.match(output, /riverbank-pilot-evaluation\.json/); // kept in the tooltip for anyone who needs it
+  assert.doesNotMatch(output, /class="card"/); // no longer takes a whole card of prime space
 });

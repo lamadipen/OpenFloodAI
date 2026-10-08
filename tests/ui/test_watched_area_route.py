@@ -102,6 +102,10 @@ def test_saving_the_watched_area_keeps_the_other_config_fields(tmp_path: Path) -
 
     after = read_config(site_dir)
     assert after.pop("reference_region") == {"x": 5.0, "y": 5.0, "width": 10.0, "height": 10.0}
+    assert after.pop("reference_region_source") == {
+        "video_id": "river-001",
+        "video_time_seconds": 0.0,
+    }
     assert after == before
 
 
@@ -379,3 +383,24 @@ def test_watched_area_rejects_an_unknown_saved_image(tmp_path: Path) -> None:
     assert status == 400
     assert payload["success"] is False
     assert "reference_region" not in read_config(site_dir)
+
+
+def test_watched_area_records_the_video_moment_it_was_drawn_on(tmp_path: Path) -> None:
+    site_dir = make_site(tmp_path / "example-site")
+
+    with serve_home_ui(tmp_path) as base_url:
+        status, _ = post_watched_area(
+            base_url,
+            {
+                "folder_name": "example-site",
+                "video_id": "river-001",
+                "video_time_seconds": 4.5,
+                "reference_region": {"x": 10, "y": 20, "width": 30, "height": 40},
+            },
+        )
+
+    assert status == 200
+    assert read_config(site_dir)["reference_region_source"] == {
+        "video_id": "river-001",
+        "video_time_seconds": 4.5,
+    }

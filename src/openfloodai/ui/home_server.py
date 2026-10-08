@@ -40,6 +40,7 @@ from openfloodai.ingestion.live_camera_schedule import read_schedule, write_sche
 from openfloodai.ingestion.river_bootstrap import preview_bootstrap_run, run_bootstrap
 from openfloodai.ingestion.river_images import (
     RiverImageError,
+    camera_slug,
     download_latest_timelapse,
     download_river_image_sequence,
     download_river_images,
@@ -1009,7 +1010,9 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             payload["gage_available"] = (
                 self._write_gage_data_if_camera_registered(
                     result.directory,
-                    site_config.camera_id,
+                    # The USGS camera the images came from, not the site's internal label
+                    # (which may carry a suffix such as `_camid` that no registry lists).
+                    camera_slug(str(data.get("camera_url", ""))),
                     str(data.get("start_date", "")),
                     str(data.get("end_date", "")),
                 )
@@ -1541,7 +1544,9 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         video_id = str(data.get("video_id", "")).strip()
         sequence_id = str(data.get("sequence_id", "")).strip()
         image_filename = str(data.get("image_filename", "")).strip()
+        region_source: dict[str, object]
         if sequence_id or image_filename:
+            region_source = {"image_sequence_id": sequence_id, "image_filename": image_filename}
             try:
                 resolve_sequence_image(site_dir, sequence_id, image_filename)
             except (OSError, RiverImageError):
@@ -1557,6 +1562,11 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
                 )
                 return
         else:
+            seconds = data.get("video_time_seconds", 0)
+            region_source = {
+                "video_id": video_id,
+                "video_time_seconds": seconds if isinstance(seconds, int | float) else 0,
+            }
             try:
                 self._resolve_site_video(folder_name, video_id)
             except ValueError:
@@ -1576,7 +1586,7 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
             if reference_region is None:
                 raise SiteConfigError("Draw the watched area on the video first.")
             config_path = _find_site_config(site_dir)
-            write_reference_region(config_path, reference_region)
+            write_reference_region(config_path, reference_region, region_source)
         except SiteConfigError as error:
             self._send_json({"success": False, "message": str(error)}, status_code=400)
             return

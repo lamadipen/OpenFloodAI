@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
-const html = fs.readFileSync(path.join(__dirname, "../../tools/console/review.html"), "utf8");
+const html = require("./review_source.cjs").reviewHtml();
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 const helpers =
   script.slice(script.indexOf("function formatUtc"), script.indexOf("function formatGap")) +
@@ -152,4 +152,11 @@ test("the baseline option is unavailable when the run recorded no baseline", () 
   const ctx = context({}, { plan: { request_count: 1 } });
   vm.runInContext('detail = { summary: { baseline_filename: "" } }', ctx);
   assert.match(ctx.samPanelHtml(), /value="baseline"[^>]*disabled/);
+});
+
+test("the page asks for every saved SAM result in one request, not a capped number of runs", () => {
+  const sam = fs.readFileSync(path.join(__dirname, "../../tools/console/review-sam.js"), "utf8");
+  assert.match(sam, /\/api\/hosted-sam\/results\?/);
+  assert.doesNotMatch(sam, /\.slice\(0, 8\)/);
+  assert.doesNotMatch(sam, /\/api\/hosted-sam\/run\?/);
 });

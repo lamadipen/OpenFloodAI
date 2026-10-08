@@ -4,7 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Site workspace · OpenFloodAI console</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap">
 <link rel="stylesheet" href="/console/shared.css">
 </head>
 <body>
@@ -28,7 +27,7 @@ async function main() {
     <a class="btn primary" href="/console/form-add-media.html?site=${encodeURIComponent(folderName)}">+ Add media</a>
   `;
   $("refreshBtn").addEventListener("click", load);
-  content.innerHTML = `<div class="card" style="padding:24px;color:var(--ink-muted);font-size:13px;">Loading site&hellip;</div>`;
+  content.innerHTML = `<div class="card empty-note">Loading site&hellip;</div>`;
   await load();
 
   const gageResult = qs("gage");
@@ -65,7 +64,7 @@ async function load() {
     );
     render();
   } catch (error) {
-    $("content").innerHTML = `<div class="card" style="padding:24px;color:var(--bad);font-size:13px;">Could not load this site: ${escapeHtml(error.message)}</div>`;
+    $("content").innerHTML = `<div class="card error-note">Could not load this site: ${escapeHtml(error.message)}</div>`;
   }
 }
 
@@ -164,7 +163,7 @@ function renderOverview() {
     (latestRun.camera_or_image_problem_count || 0);
   return `
     <div style="display:grid;grid-template-columns:2fr 1fr;gap:18px;">
-      <div class="card" style="padding:18px 20px;">
+      <div class="card card-pad-lg">
         <div style="font-size:13px;font-weight:600;margin-bottom:12px;">Latest run &mdash; <span style="font-family:var(--mono);font-weight:400;">${escapeHtml(latestRun.run_id)}</span></div>
         <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px;">
           ${metricTile("Possible change", latestRun.possible_water_level_change_count, "warn")}
@@ -178,12 +177,12 @@ function renderOverview() {
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
         </a>
       </div>
-      <div class="card" style="padding:18px 20px;">
+      <div class="card card-pad-lg">
         <div style="font-size:13px;font-weight:600;margin-bottom:12px;">Setup checklist</div>
         <div style="display:flex;flex-direction:column;gap:10px;font-size:13px;">
           ${checklistRow(!!(state.config && state.config.reference_region), "Watched area drawn")}
           ${checklistRow(summarizeBaselineGuides((state.config && state.config.normal_waterline_guides) || []).ready, "Riverbank baseline ready (a guide marked normal condition)")}
-          ${checklistRow(false, "USGS gage attached")}
+          ${checklistRow(state.sequences.some((seq) => seq.gauge_status === "available"), "USGS gage readings attached to an image sequence")}
         </div>
       </div>
     </div>`;
@@ -210,19 +209,19 @@ function renderVideoOrEmptyOverview() {
   const reportCount = status?.report_count || 0;
 
   if (!videoCount && !state.sequences.length) {
-    return `<div class="card" style="padding:18px 20px;">
+    return `<div class="card card-pad-lg">
       <div style="font-size:13px;font-weight:600;margin-bottom:6px;">No media added yet</div>
-      <div style="font-size:12px;color:var(--ink-soft);">Add a video or an image sequence from the Setup tab to run validation.</div>
+      <div class="soft-12">Add a video or an image sequence from the Setup tab to run validation.</div>
     </div>`;
   }
 
   if (!reportCount) {
     return `
-      <div class="card" style="padding:18px 20px;">
+      <div class="card card-pad-lg">
         <div style="font-size:13px;font-weight:600;margin-bottom:6px;">No video validation run yet</div>
         <div style="font-size:12px;color:var(--ink-soft);margin-bottom:14px;">This site has ${videoCount} video(s) added but hasn't been validated yet.</div>
         <button id="runValidationBtn" class="btn primary">Run video validation</button>
-        <div id="runValidationError" class="err" hidden style="margin-top:10px;"></div>
+        <div id="runValidationError" class="err mt-10" hidden></div>
         <div style="height:1px;background:var(--line-soft);margin:14px 0;"></div>
         ${imageSequenceStatusLine()}
       </div>`;
@@ -232,7 +231,7 @@ function renderVideoOrEmptyOverview() {
   const scorecard = status.latest_scorecard || {};
   return `
     <div style="display:grid;grid-template-columns:2fr 1fr;gap:18px;">
-      <div class="card" style="padding:18px 20px;">
+      <div class="card card-pad-lg">
         <div style="font-size:13px;font-weight:600;margin-bottom:12px;">Latest video validation run</div>
         <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:14px;">
           ${metricTile("Agree", counts.agree, "gray")}
@@ -247,11 +246,11 @@ function renderVideoOrEmptyOverview() {
           </a>
           <button id="runValidationBtn" class="btn">Run again</button>
         </div>
-        <div id="runValidationError" class="err" hidden style="margin-bottom:10px;"></div>
+        <div id="runValidationError" class="err mb-10" hidden></div>
         <div style="height:1px;background:var(--line-soft);margin-bottom:14px;"></div>
         ${imageSequenceStatusLine()}
       </div>
-      <div class="card" style="padding:18px 20px;">
+      <div class="card card-pad-lg">
         <div style="font-size:13px;font-weight:600;margin-bottom:12px;">Setup checklist</div>
         <div style="display:flex;flex-direction:column;gap:10px;font-size:13px;">
           ${checklistRow(!!(state.config && state.config.reference_region), "Watched area drawn")}
@@ -282,7 +281,7 @@ function metricTile(label, value, tone) {
   const bg = { warn: "var(--warn-soft)", bad: "var(--bad-soft)", gray: "var(--line-soft)" }[tone];
   const fg = { warn: "var(--warn)", bad: "var(--bad)", gray: "inherit" }[tone];
   return `<div style="background:${bg};border-radius:9px;padding:10px 12px;">
-    <div style="font-size:11px;font-weight:600;color:${fg};text-transform:uppercase;">${label}</div>
+    <div style="font-size:12px;font-weight:600;color:${fg};text-transform:uppercase;">${label}</div>
     <div style="font-size:20px;font-weight:600;font-family:var(--mono);color:${fg};">${value || 0}</div>
   </div>`;
 }
@@ -302,19 +301,19 @@ function renderSetup() {
   const baseline = summarizeBaselineGuides(guides);
   return `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
-      <div class="card" style="padding:18px 20px;">
-        <div style="font-size:13px;font-weight:600;">Watched area</div>
+      <div class="card card-pad-lg">
+        <div class="title-s">Watched area</div>
         <div style="font-size:12px;color:var(--ink-soft);margin:6px 0 14px;">${cfg.reference_region ? "An area is saved. Review its position against the current baseline before running validation again." : "Choose a source frame and draw the watched area."}</div>
         <a class="btn outline-accent" href="/console/form-watched-area.html?${new URLSearchParams({ site: folderName })}">Open editor</a>
       </div>
-      <div class="card" style="padding:18px 20px;">
-        <div style="font-size:13px;font-weight:600;">Riverbank baseline</div>
+      <div class="card card-pad-lg">
+        <div class="title-s">Riverbank baseline</div>
         <div style="font-size:12px;color:var(--ink-soft);margin:6px 0 14px;">${renderBaselineExplanation(baseline)}</div>
         <a class="btn outline-accent" href="/console/form-waterline-guide.html?${new URLSearchParams({ site: folderName })}">Open editor</a>
       </div>
       <div class="card" style="padding:18px 20px;grid-column:span 2;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-          <div style="font-size:13px;font-weight:600;">Videos${state.manifest.length ? ` (${state.manifest.length})` : ""}</div>
+          <div class="title-s">Videos${state.manifest.length ? ` (${state.manifest.length})` : ""}</div>
           <a class="btn" href="/console/form-add-media.html?${new URLSearchParams({ site: folderName })}">+ Add media</a>
         </div>
         ${renderVideoList()}
@@ -324,7 +323,7 @@ function renderSetup() {
 
 function renderVideoList() {
   if (!state.manifest.length) {
-    return `<div style="font-size:12px;color:var(--ink-soft);">No video added yet.</div>`;
+    return `<div class="soft-12">No video added yet.</div>`;
   }
   return `
     <table>
@@ -333,7 +332,7 @@ function renderVideoList() {
         ${state.manifest
           .map(
             (v) => `<tr class="row">
-          <td style="font-family:var(--mono);font-size:12px;">${escapeHtml(v.video_id || v.filename || "")}</td>
+          <td class="mono-12">${escapeHtml(v.video_id || v.filename || "")}</td>
           <td>${escapeHtml(v.purpose || "")}</td>
           <td>${escapeHtml(v.split || "")}</td>
           <td>${v.has_human_label ? '<span class="pill ok">Labeled</span>' : '<span class="pill warn">No label</span>'}</td>
@@ -393,9 +392,9 @@ function sequenceRowHtml(seq) {
   const id = escapeHtml(seq.sequence_id);
   const needsBaseline = isWaterLevelSequence(seq);
   return `<tr class="row">
-    <td style="font-family:var(--mono);font-size:12px;">${seq.display_name ? `<div style="font-family:inherit;font-size:13px;font-weight:600;">${escapeHtml(seq.display_name)}</div><div style="color:var(--ink-muted);word-break:break-all;">${id}</div>` : id}
+    <td class="mono-12">${seq.display_name ? `<div style="font-family:inherit;font-size:13px;font-weight:600;">${escapeHtml(seq.display_name)}</div><div style="color:var(--ink-muted);word-break:break-all;">${id}</div>` : id}
       ${needsBaseline ? `<div style="font-family:inherit;margin-top:6px;">
-        <label style="font-size:11px;color:var(--ink-soft);display:block;margin-bottom:3px;">Baseline image &mdash; pick a typical-day image (listed lowest gauge level first). A water-level set has no assumed normal first image.</label>
+        <label style="font-size:12px;color:var(--ink-soft);display:block;margin-bottom:3px;">Baseline image &mdash; pick a typical-day image (listed lowest gauge level first). A water-level set has no assumed normal first image.</label>
         <select data-baseline-for="${id}" style="max-width:340px;font-size:12px;">${baselineOptionsHtml(seq)}</select></div>` : ""}
       <div class="err" data-run-error="${id}" hidden style="margin-top:8px;font-family:inherit;"></div>
     </td>
@@ -432,7 +431,7 @@ function renderImageSequenceOption() {
               .flatMap((seq) => (state.runsBySequence[seq.sequence_id] || []).map((run) => ({ run, seq })))
               .map(
                 ({ run, seq }) => `<tr class="row">
-              <td style="font-family:var(--mono);font-size:12px;">${escapeHtml(run.run_id)}<div style="font-family:inherit;color:var(--ink-muted);margin-top:2px;">${escapeHtml(run.sequence_label || seq.label || seq.sequence_id)}</div></td>
+              <td class="mono-12">${escapeHtml(run.run_id)}<div style="font-family:inherit;color:var(--ink-muted);margin-top:2px;">${escapeHtml(run.sequence_label || seq.label || seq.sequence_id)}</div></td>
               <td style="color:var(--ink-soft);">${run.created_at ? new Date(run.created_at).toLocaleString() : ""}</td>
               <td>${run.no_water_level_change_count || 0} no-change &middot; ${run.camera_or_image_problem_count || 0} problem</td>
               <td style="text-align:right;"><a href="/console/review.html?${new URLSearchParams({ site: folderName, run_id: run.run_id })}" style="font-size:12px;font-weight:600;color:var(--accent);">Review &rarr;</a></td>
@@ -455,7 +454,7 @@ function renderVideoValidationOption() {
   return `
     <div class="card" style="overflow:hidden;">
       <div style="padding:14px 18px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;">
-        <div style="font-size:13px;font-weight:600;">Video validation runs</div>
+        <div class="title-s">Video validation runs</div>
         <button id="runValidationBtn" class="btn" style="font-size:12px;padding:5px 10px;">${history.length ? "Run again" : "Run validation"}</button>
       </div>
       <table>
@@ -464,7 +463,7 @@ function renderVideoValidationOption() {
           ${history
             .map(
               (r) => `<tr class="row">
-            <td style="font-family:var(--mono);font-size:12px;">${escapeHtml(r.run_id)}</td>
+            <td class="mono-12">${escapeHtml(r.run_id)}</td>
             <td style="color:var(--ink-soft);">${r.modified_time ? new Date(r.modified_time).toLocaleString() : ""}</td>
             <td>${(r.counts && r.counts.agree) || 0} agree &middot; ${(r.counts && r.counts.disagree) || 0} disagree &middot; ${(r.counts && r.counts.cannot_compare) || 0} cannot compare</td>
             <td style="text-align:right;"><a href="/console/review-video.html?${new URLSearchParams({ site: folderName, run_id: r.run_id })}" style="font-size:12px;font-weight:600;color:var(--accent);">Review &rarr;</a></td>
@@ -499,12 +498,12 @@ function renderImageDatasetOption() {
   const runs = state.runsBySequence[seq.sequence_id] || [];
   const latestRunId = runs[0]?.run_id || "";
   return `
-    <div class="card" style="padding:18px 20px;">
+    <div class="card card-pad-lg">
       <div style="font-size:13px;font-weight:600;margin-bottom:6px;">Dataset group assignments</div>
       <div style="font-size:12px;color:var(--ink-soft);margin-bottom:16px;">Applies to the whole sequence's date range at once &mdash; not a single day or sample.</div>
       <div style="display:flex;align-items:center;justify-content:space-between;background:var(--paper);border-radius:9px;padding:12px 14px;">
         <div>
-          <div style="font-size:11px;font-weight:600;color:var(--ink-muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:4px;">Sequence date range</div>
+          <div style="font-size:12px;font-weight:600;color:var(--ink-muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:4px;">Sequence date range</div>
           <div style="font-size:13px;font-weight:600;font-family:var(--mono);">${escapeHtml(seq.requested_start_date || "?")} &rarr; ${escapeHtml(seq.requested_end_date || "?")}</div>
         </div>
         ${latestRunId
@@ -531,7 +530,7 @@ function renderVideoDatasetOption() {
           ${state.manifest
             .map(
               (v) => `<tr class="row">
-            <td style="font-family:var(--mono);font-size:12px;">${escapeHtml(v.video_id || "")}</td>
+            <td class="mono-12">${escapeHtml(v.video_id || "")}</td>
             <td><span class="pill ${v.split === "locked_validation" ? "ok" : "gray"}">${escapeHtml(v.split || "unset")}</span></td>
             <td style="text-align:right;">
               ${latestVideoRunId
@@ -568,10 +567,10 @@ function evidenceAdapterRowHtml(adapter) {
     <div style="padding:14px 18px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;gap:16px;">
       <div style="min-width:0;">
         <div style="display:flex;align-items:center;gap:8px;">
-          <span style="font-size:13px;font-weight:600;">${escapeHtml(adapter.display_name)}</span>
+          <span class="title-s">${escapeHtml(adapter.display_name)}</span>
           ${adapter.is_default ? '<span class="pill ok">Default</span>' : ""}
         </div>
-        <div style="font-size:11px;color:var(--ink-muted);margin-top:3px;">
+        <div style="font-size:12px;color:var(--ink-muted);margin-top:3px;">
           Global default: ${adapter.global_enabled ? "Enabled" : "Disabled"} &middot;
           Effective here: <strong>${adapter.effective_enabled ? "Enabled" : "Disabled"}</strong>
         </div>

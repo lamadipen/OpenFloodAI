@@ -1,0 +1,21 @@
+{
+  "river_id": "lake-moultrie-tailrace-canal",
+  "display_name": "Lake Moultrie Tailrace Canal",
+  "source": "https://api.waterdata.usgs.gov/nims/v0/cameras?enabled=true",
+  "source_checked": "2026-10-07",
+  "notes": "Added from the public NIMS camera API; the camera's paired USGS gage is the nwisId USGS lists for it. Gage height (00065) and discharge (00060) were both reporting at source_checked.",
+  "cameras": [
+    {
+      "river_id": "lake-moultrie-tailrace-canal",
+      "camera_id": "SC_Lake_Moultrie_Tailrace_Canal_at_Moncks_Corner",
+      "nwis_id": "02172002",
+      "state": "SC",
+      "latitude": 33.214917,
+      "longitude": -79.974917,
+      "display_name": "Lake Moultrie Tailrace Canal at Moncks Corner",
+      "folder_name": "lake-moultrie-tailrace-sc-moncks-corner",
+      "gage_relationship": "same_site",
+      "timezone": "America/New_York"
+    }
+  ]
+}

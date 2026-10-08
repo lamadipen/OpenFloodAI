@@ -523,6 +523,26 @@ def list_sam_runs(site_dir: Path, sequence_id: str | None = None) -> list[dict[s
     return rows
 
 
+def list_sam_results(site_dir: Path, sequence_id: str) -> list[dict[str, Any]]:
+    """Every saved result of every run for one sequence, newest run first.
+
+    Each result carries its run id and latest review status. The page uses this to show
+    which images have a SAM result and how it was reviewed, so it must cover all runs rather
+    than only the most recent few. A run that cannot be read is skipped. Overlay images are
+    not produced here; they are fetched one at a time when shown.
+    """
+
+    results: list[dict[str, Any]] = []
+    for summary in list_sam_runs(site_dir, sequence_id):
+        run_id = str(summary.get("run_id", ""))
+        try:
+            run = read_sam_run(site_dir, run_id)
+        except (OSError, ValueError, KeyError):
+            continue
+        results.extend({**result, "run_id": run_id} for result in run["results"])
+    return results
+
+
 def read_sam_run(site_dir: Path, run_id: str) -> dict[str, Any]:
     """A run with each result's latest human review status merged in at read time."""
 

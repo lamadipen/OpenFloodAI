@@ -59,24 +59,52 @@ function svgIcon(name) {
  * `active` is one of "dashboard" | "sites" | "rivers" | "downloads".
  * `activeSiteFolder`, when given, highlights that site in the rail list.
  */
+const RAIL_COLLAPSED_KEY = "openfloodai.railCollapsed";
+
+function loadRailCollapsed() {
+  try {
+    return localStorage.getItem(RAIL_COLLAPSED_KEY) === "1";
+  } catch (error) {
+    return false; // Storage can be blocked; the rail simply starts open.
+  }
+}
+
+// Fold the left rail down to its icons, to leave more width for the page. Remembered in this
+// browser only.
+function setRailCollapsed(collapsed) {
+  const shell = document.querySelector(".app-shell");
+  if (shell) shell.classList.toggle("rail-collapsed", collapsed);
+  const toggle = document.getElementById("railToggle");
+  if (toggle) {
+    toggle.setAttribute("aria-expanded", String(!collapsed));
+    toggle.setAttribute("aria-label", collapsed ? "Expand navigation" : "Collapse navigation");
+    toggle.title = collapsed ? "Expand navigation" : "Collapse navigation";
+  }
+  try {
+    localStorage.setItem(RAIL_COLLAPSED_KEY, collapsed ? "1" : "0");
+  } catch (error) {
+    // Remembering the choice is a convenience only.
+  }
+}
+
 function mountShell({ active, activeSiteFolder, crumbs }) {
   document.body.innerHTML = `
-    <div class="app-shell">
+    <div class="app-shell${loadRailCollapsed() ? " rail-collapsed" : ""}">
       <aside class="rail">
         <div class="rail-brand">
           <div class="rail-mark">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12c2-4 5-6 8-6s6 4 8 8 6 2 6 2"/></svg>
           </div>
-          <div>
+          <div class="rail-label">
             <div class="rail-title">OpenFloodAI</div>
             <div class="rail-subtitle">Validation console</div>
           </div>
         </div>
         <div style="height:1px;background:var(--rail-line);margin:4px 22px 16px;"></div>
         <nav class="rail-nav">
-          <a class="rail-item ${active === "dashboard" ? "active" : ""}" href="/console/dashboard.html">${svgIcon("dashboard")}Dashboard</a>
-          <a class="rail-item ${active === "sites" ? "active" : ""}" href="/console/dashboard.html#sites">${svgIcon("sites")}Sites</a>
-          <a class="rail-item ${active === "settings" ? "active" : ""}" href="/console/settings.html">${svgIcon("settings")}Settings</a>
+          <a class="rail-item ${active === "dashboard" ? "active" : ""}" href="/console/dashboard.html" title="Dashboard">${svgIcon("dashboard")}<span class="rail-label">Dashboard</span></a>
+          <a class="rail-item ${active === "sites" ? "active" : ""}" href="/console/dashboard.html#sites" title="Sites">${svgIcon("sites")}<span class="rail-label">Sites</span></a>
+          <a class="rail-item ${active === "settings" ? "active" : ""}" href="/console/settings.html" title="Settings">${svgIcon("settings")}<span class="rail-label">Settings</span></a>
         </nav>
         <div class="rail-sites">
           <div class="rail-sites-label">Your sites</div>
@@ -84,14 +112,18 @@ function mountShell({ active, activeSiteFolder, crumbs }) {
         </div>
         <div class="rail-foot">
           <div style="height:1px;background:var(--rail-line);margin:0 0 14px;"></div>
-          <a href="/" style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--rail-text);text-decoration:none;margin-bottom:12px;">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
-            Home UI
+          <a href="/" title="Home UI" class="rail-foot-link" style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--rail-text);text-decoration:none;margin-bottom:12px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+            <span class="rail-label">Home UI</span>
           </a>
-          <div style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--rail-text-dim);">
+          <div class="rail-foot-status" title="Local media, no public upload" style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--rail-text-dim);margin-bottom:12px;">
             <span style="width:6px;height:6px;border-radius:50%;background:#3fae68;flex-shrink:0;"></span>
-            Local media &middot; no public upload
+            <span class="rail-label">Local media &middot; no public upload</span>
           </div>
+          <button type="button" id="railToggle" class="rail-toggle" aria-expanded="true" aria-label="Collapse navigation" title="Collapse navigation">
+            <svg class="rail-toggle-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+            <span class="rail-label">Collapse</span>
+          </button>
         </div>
       </aside>
       <main class="app-main">
@@ -106,6 +138,8 @@ function mountShell({ active, activeSiteFolder, crumbs }) {
   `;
   renderCrumbs(crumbs || []);
   loadRailSites(activeSiteFolder);
+  $("railToggle").addEventListener("click", () => setRailCollapsed(!document.querySelector(".app-shell").classList.contains("rail-collapsed")));
+  setRailCollapsed(loadRailCollapsed());
   return $("content");
 }
 
@@ -137,6 +171,34 @@ async function loadRailSites(activeSiteFolder) {
   } catch (error) {
     el.innerHTML = `<div style="font-size:11px;color:var(--rail-text-dim);padding:0 10px;">Could not load sites.</div>`;
   }
+}
+
+// Pages redraw by replacing a container's HTML, which destroys the control a keyboard user just
+// pressed. keepFocus() redraws, then puts focus back on the matching new control and restores the
+// scroll position, so pressing Next image (or a toggle) from the keyboard keeps working.
+function focusSignature(root, el) {
+  if (!el || el === document.body || !root || !root.contains(el)) return null;
+  const attrs = Array.from(el.attributes)
+    .filter((a) => a.name === "id" || a.name.startsWith("data-") || a.name === "aria-label")
+    .map((a) => [a.name, a.value]);
+  return { tag: el.tagName, attrs };
+}
+
+function findBySignature(root, signature) {
+  if (!signature) return null;
+  const candidates = Array.from(root.querySelectorAll(signature.tag));
+  return candidates.find((el) => signature.attrs.every(([name, value]) => el.getAttribute(name) === value)) || null;
+}
+
+function keepFocus(root, redraw) {
+  const signature = focusSignature(root, document.activeElement);
+  const scrollY = window.scrollY;
+  redraw();
+  if (signature) {
+    const target = findBySignature(root, signature);
+    if (target) target.focus({ preventScroll: true });
+  }
+  window.scrollTo(window.scrollX, scrollY);
 }
 
 function qs(name, fallback = "") {

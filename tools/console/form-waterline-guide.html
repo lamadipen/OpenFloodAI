@@ -4,23 +4,22 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Riverbank guide · OpenFloodAI console</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap">
 <link rel="stylesheet" href="/console/shared.css">
 <style>body{user-select:none;}</style>
 </head>
-<body style="background:var(--paper);">
+<body class="paper-box">
 <div class="modal-overlay">
   <div class="modal-card" style="width:min(1040px,97vw);">
-    <div style="padding:16px 22px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;">
+    <div class="modal-head">
       <div>
-        <div style="font-size:15px;font-weight:600;">Riverbank baseline guides</div>
-        <div style="font-size:12px;color:var(--ink-muted);margin-top:2px;" id="siteLabel">&hellip;</div>
+        <div class="title-m">Riverbank baseline guides</div>
+        <div class="caption" id="siteLabel">&hellip;</div>
       </div>
-      <a id="closeLink" href="#" style="width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--ink-muted);">
+      <a id="closeLink" href="#" class="close-link">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </a>
     </div>
-    <div id="body" style="display:flex;min-height:0;">
+    <div id="body" class="editor-body" style="display:flex;min-height:0;">
       <div style="flex-grow:1;padding:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
         <svg id="stage" viewBox="0 0 640 400" style="width:640px;height:400px;border-radius:8px;cursor:crosshair;background:#33444d;">
           <image id="stageImg" x="0" y="0" width="640" height="400" preserveAspectRatio="xMidYMid slice"></image>
@@ -29,18 +28,19 @@
           <g id="lines"></g>
         </svg>
         <div id="statusLine" class="hint" style="width:640px;"></div>
+        <div id="sourceNote" class="hint" style="width:640px;overflow-wrap:anywhere;" hidden></div>
         <div id="scrubRow" style="width:640px;display:flex;align-items:center;gap:10px;" hidden>
-          <span style="font-size:11px;color:var(--ink-muted);white-space:nowrap;">Video frame</span>
+          <span style="font-size:12px;color:var(--ink-muted);white-space:nowrap;">Video frame</span>
           <input type="range" id="scrub" min="0" max="1" step="0.1" value="0" style="flex-grow:1;">
-          <span id="scrubTime" style="font-size:11px;color:var(--ink-muted);font-family:var(--mono);white-space:nowrap;">0.0s</span>
+          <span id="scrubTime" style="font-size:12px;color:var(--ink-muted);font-family:var(--mono);white-space:nowrap;">0.0s</span>
         </div>
         <video id="sourceVideo" style="display:none;" preload="metadata" muted playsinline></video>
         <canvas id="captureCanvas" width="640" height="400" style="display:none;"></canvas>
       </div>
-      <div style="width:330px;flex-shrink:0;border-left:1px solid var(--line-soft);padding:16px;display:flex;flex-direction:column;gap:10px;max-height:640px;">
+      <div class="editor-side" style="width:330px;flex-shrink:0;border-left:1px solid var(--line-soft);padding:16px;display:flex;flex-direction:column;gap:10px;max-height:640px;">
         <div style="display:flex;align-items:center;justify-content:space-between;">
           <div class="hint" style="text-transform:uppercase;letter-spacing:.03em;">Lines &middot; <span id="lineCount">0</span></div>
-          <button id="addLineBtn" class="btn" style="font-size:11px;padding:5px 10px;">+ Add line</button>
+          <button id="addLineBtn" class="btn" style="font-size:12px;padding:5px 10px;">+ Add line</button>
         </div>
         <div id="rowsContainer" style="flex-grow:1;overflow:auto;display:flex;flex-direction:column;gap:10px;padding-right:2px;"></div>
         <div id="emptyRows" class="hint" style="padding:8px 0;">No lines yet. Click "+ Add line" to trace the first bank.</div>
@@ -394,9 +394,65 @@ $("stage").addEventListener("click", (event) => {
   if (active.fields) active.fields.pointCount.textContent = `${active.points.length} point(s) traced.`;
 });
 
+// The newest sequence that actually has a downloaded image. A newer sequence with none (for
+// example a download that found nothing for a short date range) must not hide older images.
+function pickImageSource(sequences) {
+  for (let i = sequences.length - 1; i >= 0; i -= 1) {
+    const downloaded = (sequences[i].records || []).find((r) => r.download_status === "downloaded");
+    if (downloaded) return { sequenceId: sequences[i].sequence_id, filename: downloaded.filename };
+  }
+  return null;
+}
+
+// Which image or video moment to show. The watched area's own image comes first, so the
+// baseline is always the frame the area was drawn on. The one exception is a site whose guides
+// were already traced on a different frame: those lines only line up on their own frame, so it
+// keeps showing that one and says where the watched area was drawn.
+// The same frame: the same saved image, or the same video at (nearly) the same moment. Two guides
+// may share a video yet be traced at different moments, so a video match must check the time.
+function sameFrame(a, b) {
+  if (!sourcesMatch(a, b)) return false;
+  if (a.video_id) return Math.abs((a.video_time_seconds || 0) - (b.video_time_seconds || 0)) < 0.05;
+  return true;
+}
+
+function chooseBaselineSource({ areaSource, guide, sequences, videos }) {
+  const guideSource = guide
+    ? guide.image_sequence_id
+      ? { image_sequence_id: guide.image_sequence_id, image_filename: guide.image_filename }
+      : guide.video_id
+        ? { video_id: guide.video_id, video_time_seconds: guide.video_time_seconds || 0 }
+        : null
+    : null;
+  let area = areaSource || null;
+  if (area && area.image_sequence_id) {
+    const sequence = (sequences || []).find((s) => s.sequence_id === area.image_sequence_id);
+    const record = ((sequence && sequence.records) || []).find(
+      (r) => r.filename === area.image_filename && r.download_status === "downloaded"
+    );
+    if (!record) area = null; // the image was removed: fall back rather than show a broken frame
+  } else if (area && area.video_id) {
+    if (!(videos || []).some((v) => v.video_id === area.video_id)) area = null;
+  }
+  if (guideSource && !(area && sameFrame(guideSource, area))) {
+    return { source: guideSource, areaSource: area, fromWatchedArea: false };
+  }
+  if (area) return { source: area, areaSource: area, fromWatchedArea: true };
+  return { source: null, areaSource: null, fromWatchedArea: false };
+}
+
+function describeAreaSource(area, sequences) {
+  if (!area) return "";
+  if (area.video_id) return `Watched area was drawn on video ${area.video_id} at ${Number(area.video_time_seconds || 0).toFixed(1)}s.`;
+  const sequence = (sequences || []).find((s) => s.sequence_id === area.image_sequence_id);
+  const record = ((sequence && sequence.records) || []).find((r) => r.filename === area.image_filename) || {};
+  const when = record.local_time ? ` (${String(record.local_time).replace("T", " ")})` : "";
+  return `Watched area was drawn on ${area.image_filename}${when}.`;
+}
+
 async function main() {
   if (!folderName) {
-    document.body.innerHTML = `<div style="padding:40px;">Missing <code>?site=</code> in the URL.</div>`;
+    document.body.innerHTML = `<div class="pad-40">Missing <code>?site=</code> in the URL.</div>`;
     return;
   }
   $("closeLink").href = `/console/site.html?${new URLSearchParams({ site: folderName })}`;
@@ -416,36 +472,35 @@ async function main() {
     paintWatchedArea();
 
     const existingGuides = cfg.normal_waterline_guides || [];
-    // When guides already exist, load the FIRST one's own saved source --
-    // never just "whatever is newest" -- so opening this editor to fix an
-    // older guide actually shows the image/video it was traced on, instead
-    // of a dead end where saving is refused with no way to see the right
-    // media at all. Only a site with no guides yet falls back to newest.
+    // Show the frame the watched area was drawn on. A site whose guides were traced on a
+    // different frame keeps that frame (see chooseBaselineSource); a site with neither falls
+    // back to the newest sequence that has an image.
     const referenceGuide = existingGuides[0] || null;
-
-    if (referenceGuide && referenceGuide.image_sequence_id) {
-      sequenceId = referenceGuide.image_sequence_id;
-      baselineFilename = referenceGuide.image_filename;
+    const chosen = chooseBaselineSource({
+      areaSource: cfg.reference_region_source,
+      guide: referenceGuide,
+      sequences: sequenceData.sequences || [],
+      videos: manifestData.records || []
+    });
+    if (chosen.source && chosen.source.image_sequence_id) {
+      sequenceId = chosen.source.image_sequence_id;
+      baselineFilename = chosen.source.image_filename;
       $("stageImg").setAttribute(
         "href",
         `/api/image-sequence-image?${new URLSearchParams({ folder_name: folderName, sequence_id: sequenceId, filename: baselineFilename })}`
       );
-    } else if (referenceGuide && referenceGuide.video_id) {
-      videoId = referenceGuide.video_id;
-      await loadVideoSource(referenceGuide.video_time_seconds || 0);
+    } else if (chosen.source && chosen.source.video_id) {
+      videoId = chosen.source.video_id;
+      await loadVideoSource(chosen.source.video_time_seconds || 0);
     } else {
-      const sequences = sequenceData.sequences || [];
-      if (sequences.length) {
-        const seq = sequences[sequences.length - 1];
-        sequenceId = seq.sequence_id;
-        const downloaded = (seq.records || []).find((r) => r.download_status === "downloaded");
-        if (downloaded) {
-          baselineFilename = downloaded.filename;
-          $("stageImg").setAttribute(
-            "href",
-            `/api/image-sequence-image?${new URLSearchParams({ folder_name: folderName, sequence_id: sequenceId, filename: baselineFilename })}`
-          );
-        }
+      const source = pickImageSource(sequenceData.sequences || []);
+      if (source) {
+        sequenceId = source.sequenceId;
+        baselineFilename = source.filename;
+        $("stageImg").setAttribute(
+          "href",
+          `/api/image-sequence-image?${new URLSearchParams({ folder_name: folderName, sequence_id: sequenceId, filename: baselineFilename })}`
+        );
       }
       if (!baselineFilename) {
         const firstVideo = (manifestData.records || [])[0];
@@ -454,6 +509,13 @@ async function main() {
           await loadVideoSource(0);
         }
       }
+    }
+    const note = describeAreaSource(chosen.areaSource, sequenceData.sequences || []);
+    if (note) {
+      $("sourceNote").textContent = chosen.fromWatchedArea
+        ? note
+        : `${note} This view shows the frame the existing lines were traced on.`;
+      $("sourceNote").hidden = false;
     }
     if (!baselineFilename && !videoId) {
       $("body").innerHTML = `<div style="padding:24px;font-size:13px;color:var(--ink-soft);">This site has no downloaded image sequence and no video yet. Add media first from Site &rarr; Setup &rarr; Add media.</div>`;

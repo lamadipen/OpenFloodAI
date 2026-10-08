@@ -4,7 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Review video · OpenFloodAI console</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap">
 <link rel="stylesheet" href="/console/shared.css">
 <style>
 @media (max-width: 900px) {
@@ -78,7 +77,7 @@ function visiblePoints() {
 
 async function main() {
   if (!folderName) {
-    document.body.innerHTML = `<div style="padding:40px;">Missing <code>?site=</code> in the URL.</div>`;
+    document.body.innerHTML = `<div class="pad-40">Missing <code>?site=</code> in the URL.</div>`;
     return;
   }
   const content = mountShell({
@@ -90,7 +89,7 @@ async function main() {
       { label: "Review video" }
     ]
   });
-  content.innerHTML = `<div class="card" style="padding:24px;color:var(--ink-muted);font-size:13px;">Loading&hellip;</div>`;
+  content.innerHTML = `<div class="card empty-note">Loading&hellip;</div>`;
 
   try {
     const runsData = await api(`/api/workspace-runs?${new URLSearchParams({ folder_name: folderName })}`);
@@ -114,7 +113,7 @@ async function main() {
     }
     await loadEvidence();
   } catch (error) {
-    content.innerHTML = `<div class="card" style="padding:24px;color:var(--bad);font-size:13px;">Could not load this run: ${escapeHtml(error.message)}</div>`;
+    content.innerHTML = `<div class="card error-note">Could not load this run: ${escapeHtml(error.message)}</div>`;
   }
 }
 
@@ -168,10 +167,10 @@ function render() {
 
     <div id="videoReviewGrid" style="display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;flex-grow:1;min-height:0;">
       <div style="display:flex;flex-direction:column;gap:16px;min-width:0;">
-        <div class="card" style="padding:16px 18px;">
+        <div class="card card-pad">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
             <div style="font-size:12px;font-weight:600;color:var(--ink-soft);">${point ? escapeHtml(point.title) : "No window selected"}</div>
-            <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-muted);cursor:pointer;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-muted);cursor:pointer;">
               <input type="checkbox" id="overlayToggle" ${watchedArea || guides.length ? "checked" : "disabled"}>
               Show watched area &amp; riverbank
             </label>
@@ -182,30 +181,30 @@ function render() {
           </div>
         </div>
 
-        <div class="card" style="padding:16px 18px;">
+        <div class="card card-pad">
           <div style="font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:8px;">Visual-change score &middot; playback time</div>
           ${scoreChartSvg()}
         </div>
 
-        <div class="card" style="padding:14px 18px;">
+        <div class="card card-pad-sm">
           <div style="font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:6px;">Gage height</div>
           <div class="hint">Not available for video reviews &mdash; comparison windows use playback time, not a real date, so gage readings can't be matched. Gage data is available on the image-sequence review page.</div>
         </div>
 
-        <div class="card" style="padding:16px 18px;">
-          <div style="font-size:11px;font-weight:600;color:var(--ink-muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:8px;">What the machine saw</div>
+        <div class="card card-pad">
+          <div style="font-size:12px;font-weight:600;color:var(--ink-muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:8px;">What the machine saw</div>
           ${point ? `
           <span class="pill ${MACHINE_TONE[point.machine] || "gray"}">${escapeHtml(MACHINE_LABEL[point.machine] || point.machine)}</span>
           <div style="font-size:12px;color:var(--ink-soft);margin-top:10px;">${escapeHtml(point.reason || "")}</div>
-          <div style="font-size:11px;color:var(--ink-muted);margin-top:8px;font-family:var(--mono);">Visual-change score: ${typeof point.score === "number" ? point.score.toFixed(4) : "n/a"}</div>
-          ${comparisonForPoint(point) ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line-soft);"><span class="pill ${comparisonForPoint(point).result === "agree" ? "ok" : comparisonForPoint(point).result === "disagree" ? "bad" : "gray"}">${escapeHtml(comparisonForPoint(point).result.replace(/_/g, " "))}</span><div style="font-size:11px;color:var(--ink-muted);margin-top:6px;">${escapeHtml(comparisonForPoint(point).note || "")}</div></div>` : ""}
+          <div style="font-size:12px;color:var(--ink-muted);margin-top:8px;font-family:var(--mono);">Visual-change score: ${typeof point.score === "number" ? point.score.toFixed(4) : "n/a"}</div>
+          ${comparisonForPoint(point) ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line-soft);"><span class="pill ${comparisonForPoint(point).result === "agree" ? "ok" : comparisonForPoint(point).result === "disagree" ? "bad" : "gray"}">${escapeHtml(comparisonForPoint(point).result.replace(/_/g, " "))}</span><div style="font-size:12px;color:var(--ink-muted);margin-top:6px;">${escapeHtml(comparisonForPoint(point).note || "")}</div></div>` : ""}
           ` : `<div class="hint">Choose a window from the queue.</div>`}
         </div>
 
-        <div class="card" style="padding:16px 18px;">
+        <div class="card card-pad">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-            <div style="font-size:11px;font-weight:600;color:var(--ink-muted);text-transform:uppercase;letter-spacing:.03em;">Video dataset split</div>
-            ${runs.length ? `<a class="btn" style="font-size:11px;padding:4px 9px;" href="/console/form-dataset-group.html?${new URLSearchParams({ site: folderName, kind: "video", video_id: mediaId, run_id: runId })}">Change</a>` : ""}
+            <div style="font-size:12px;font-weight:600;color:var(--ink-muted);text-transform:uppercase;letter-spacing:.03em;">Video dataset split</div>
+            ${runs.length ? `<a class="btn" style="font-size:12px;padding:4px 9px;" href="/console/form-dataset-group.html?${new URLSearchParams({ site: folderName, kind: "video", video_id: mediaId, run_id: runId })}">Change</a>` : ""}
           </div>
           <span class="pill ${split && split.split === "locked_validation" ? "ok" : "gray"}">${escapeHtml((split && split.split) || "unset")}</span>
         </div>
@@ -224,15 +223,15 @@ function render() {
               .map((p) => `<button data-act="select-point" data-key="${escapeHtml(p.key)}" style="width:100%;text-align:left;border:none;background:${state.selectedKey === p.key ? "var(--accent-soft)" : "transparent"};border-bottom:1px solid var(--line-soft);padding:11px 16px;display:flex;flex-direction:column;gap:3px;cursor:pointer;">
                 <div style="display:flex;align-items:center;justify-content:space-between;">
                   <span style="font-size:12px;font-weight:600;font-family:var(--mono);">${escapeHtml(p.title)}</span>
-                  <span class="pill ${MACHINE_TONE[p.machine] || "gray"}" style="font-size:10px;">${escapeHtml(MACHINE_LABEL[p.machine] || p.machine)}</span>
+                  <span class="pill ${MACHINE_TONE[p.machine] || "gray"}" style="font-size:11px;">${escapeHtml(MACHINE_LABEL[p.machine] || p.machine)}</span>
                 </div>
-                <span style="font-size:11px;color:var(--ink-muted);">${p.label ? "&#10003; Labelled &mdash; " + escapeHtml((p.label.human_label || "").replace(/_/g, " ")) : "Needs a human label"}</span>
+                <span style="font-size:12px;color:var(--ink-muted);">${p.label ? "&#10003; Labelled &mdash; " + escapeHtml((p.label.human_label || "").replace(/_/g, " ")) : "Needs a human label"}</span>
               </button>`)
               .join("") || `<div style="padding:16px;font-size:12px;color:var(--ink-muted);">No windows match this filter.</div>`}
           </div>
         </div>
 
-        <div class="card" style="padding:16px 18px;">
+        <div class="card card-pad">
           <div class="hint" style="text-transform:uppercase;letter-spacing:.03em;margin-bottom:8px;">What do you see?</div>
           <div id="labelOptions" style="display:flex;flex-direction:column;gap:7px;margin-bottom:14px;"></div>
           <div class="hint" style="text-transform:uppercase;letter-spacing:.03em;margin-bottom:8px;">Confidence</div>
@@ -241,7 +240,7 @@ function render() {
           <div id="tristateOptions" style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px;"></div>
           <label for="noteInput">Notes</label>
           <textarea id="noteInput" rows="2" placeholder="Anything the machine result doesn't capture" style="width:100%;margin-bottom:12px;">${escapeHtml(state.draftNote)}</textarea>
-          <div id="saveError" class="err" hidden style="margin-bottom:10px;"></div>
+          <div id="saveError" class="err mb-10" hidden></div>
           <button id="saveLabelBtn" class="btn primary" style="width:100%;justify-content:center;" ${point ? "" : "disabled"}>Save label</button>
         </div>
       </div>
@@ -318,7 +317,7 @@ function scoreChartSvg() {
 }
 
 function legendItem(color, label) {
-  return `<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-soft);">
+  return `<div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);">
     <span style="width:8px;height:8px;border-radius:50%;background:${color};display:inline-block;"></span>${label}
   </div>`;
 }
@@ -374,7 +373,7 @@ function renderTristateOptions() {
       <div style="display:flex;gap:4px;">
         ${["yes", "no", "unsure"].map((v) => {
           const on = state.draftTristate[f.key] === v;
-          return `<button type="button" data-field="${f.key}" data-value="${v}" style="width:52px;height:26px;border-radius:6px;border:1px solid ${on ? "var(--accent)" : "var(--line)"};background:${on ? "var(--accent-soft)" : "#fff"};font-size:10px;font-weight:600;color:${on ? "var(--accent)" : "var(--ink-muted)"};text-transform:capitalize;cursor:pointer;">${v}</button>`;
+          return `<button type="button" data-field="${f.key}" data-value="${v}" style="width:52px;height:26px;border-radius:6px;border:1px solid ${on ? "var(--accent)" : "var(--line)"};background:${on ? "var(--accent-soft)" : "#fff"};font-size:11px;font-weight:600;color:${on ? "var(--accent)" : "var(--ink-muted)"};text-transform:capitalize;cursor:pointer;">${v}</button>`;
         }).join("")}
       </div>
     </div>`).join("");

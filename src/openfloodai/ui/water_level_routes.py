@@ -11,13 +11,14 @@ those counts; it then creates a new sequence or appends to an existing one.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from openfloodai.config import SiteConfigError, load_site_config
 from openfloodai.ingestion import water_level_discovery as discovery
 from openfloodai.ingestion import water_level_intake as intake
 from openfloodai.ingestion import water_level_sampling as sampling
-from openfloodai.ingestion.river_images import RiverImageError
+from openfloodai.ingestion.river_images import RiverImageError, list_site_image_sequences
 from openfloodai.ingestion.sequence_store import validate_display_name
 from openfloodai.ingestion.usgs_gage_data import GageDataError
 
@@ -84,20 +85,47 @@ def _site_config(handler: Any, data: dict[str, Any]) -> Any | None:
     return load_site_config(config_paths[0])
 
 
-def _require_same_camera(context: Any, site_config: Any | None) -> None:
-    """One camera throughout: the URL's camera must be this site's configured camera.
+def _cameras_in_site(site_dir: Path) -> set[str]:
+    """The USGS camera ids of every image already saved in this site's sequences."""
 
-    Sampling uses the URL's camera and the registry's station for it; the saved gauge
-    data uses the site's camera. If they differed, one camera's images would be saved
-    with another station's readings, so a mismatch is refused before anything is fetched.
+    cameras: set[str] = set()
+    for sequence in list_site_image_sequences(site_dir):
+        for record in sequence.get("records", []):
+            if isinstance(record, dict) and record.get("camera_id"):
+                cameras.add(str(record["camera_id"]))
+    return cameras
+
+
+def _check_camera(
+    handler: Any, data: dict[str, Any], context: Any, site_config: Any | None
+) -> str | None:
+    """Keep one site to one camera without requiring its internal label to equal the USGS id.
+
+    A site's own `camera_id` is an internal label (it may carry a suffix such as `_camid`),
+    so it is not compared with the camera in the URL. Images and the gauge station both
+    come from the URL's camera and the registry entry for it, so they cannot disagree.
+
+    What is protected is the site's saved evidence: if the site already holds images from
+    a different USGS camera, adding another camera's images is refused. If the site has no
+    images yet, the URL's camera defines it, and a differing label is only noted.
     """
 
-    if site_config is not None and site_config.camera_id != context.slug:
+    if site_config is None:
+        return None
+    site_dir = handler._resolve_site_dir(str(data.get("folder_name", "")).strip())
+    held = _cameras_in_site(site_dir)
+    if held and context.slug not in held:
         raise ValueError(
-            f"This site is set up for camera {site_config.camera_id}, but the camera URL is for "
-            f"{context.slug}. Use the site's own camera, or add the images to a site made for "
-            "that camera."
+            f"This site already holds images from camera {', '.join(sorted(held))}, but the "
+            f"camera URL is for {context.slug}. Use that camera's URL, or add these images to a "
+            "site made for this camera."
         )
+    if site_config.camera_id != context.slug and not held:
+        return (
+            f"This site's own camera id is {site_config.camera_id}. Its images will be saved "
+            f"as USGS camera {context.slug}, taken from the URL you entered."
+        )
+    return None
 
 
 def _destination(data: dict[str, Any]) -> tuple[str | None, str | None]:
@@ -128,7 +156,7 @@ def handle_post(handler: Any, path: str) -> bool:
     try:
         context, groups, per_group, declined, time_of_day = _parse(data, handler._reference_dir())
         site_config = _site_config(handler, data)
-        _require_same_camera(context, site_config)
+        camera_notice = _check_camera(handler, data, context, site_config)
         if path == PREVIEW_PATH:
             kept = _sample_refs(data.get("kept"), "kept")
             result = discovery.discover(
@@ -139,6 +167,8 @@ def handle_post(handler: Any, path: str) -> bool:
                 declined=declined,
                 time_of_day=time_of_day,
             )
+            if camera_notice:
+                result["camera_notice"] = camera_notice
             handler._send_json({"success": True, **result}, status_code=200)
         elif path == DESTINATIONS_PATH:
             _destinations(handler, data, context, site_config)

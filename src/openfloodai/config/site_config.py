@@ -20,6 +20,7 @@ REQUIRED_FIELDS = {
 OPTIONAL_FIELDS = {
     "public_location",
     "reference_region",
+    "reference_region_source",
     "privacy_notes",
     "normal_waterline_guides",
     "evidence_adapter_overrides",
@@ -102,6 +103,9 @@ class SiteCameraConfig:
     public_location: str | None
     input_type: InputType
     reference_region: ReferenceRegion | None = None
+    # The saved image (or video moment) the watched area was drawn on, so later editors can
+    # show the same frame. Absent for sites whose area was set before this was recorded.
+    reference_region_source: dict[str, str | float] | None = None
     privacy_notes: str | None = None
     normal_waterline_guides: tuple[NormalWaterlineGuide, ...] = ()
     evidence_adapter_overrides: dict[str, bool] = field(default_factory=dict)
@@ -133,6 +137,9 @@ def load_site_config(config_path: Path) -> SiteCameraConfig:
         public_location=_load_optional_text(config.get("public_location"), "public_location"),
         input_type=input_type,
         reference_region=reference_region,
+        reference_region_source=_load_reference_region_source(
+            config.get("reference_region_source")
+        ),
         privacy_notes=_load_optional_text(config.get("privacy_notes"), "privacy_notes"),
         normal_waterline_guides=_load_normal_waterline_guides(
             config.get("normal_waterline_guides"),
@@ -144,8 +151,16 @@ def load_site_config(config_path: Path) -> SiteCameraConfig:
     )
 
 
-def write_reference_region(config_path: Path, value: Mapping[str, object]) -> None:
-    """Update a site's watched region while preserving its other config fields."""
+def write_reference_region(
+    config_path: Path,
+    value: Mapping[str, object],
+    source: Mapping[str, object] | None = None,
+) -> None:
+    """Update a site's watched region while preserving its other config fields.
+
+    `source` is the image or video moment the area was drawn on. A new region without a
+    known source clears any older one, which no longer describes it.
+    """
 
     reference_region = _load_reference_region(dict(value))
     if reference_region is None:
@@ -153,6 +168,11 @@ def write_reference_region(config_path: Path, value: Mapping[str, object]) -> No
 
     raw_config = _read_config_json(config_path)
     raw_config["reference_region"] = _region_to_dict(reference_region)
+    loaded_source = _load_reference_region_source(dict(source) if source else None)
+    if loaded_source:
+        raw_config["reference_region_source"] = loaded_source
+    else:
+        raw_config.pop("reference_region_source", None)
     config_path.write_text(json.dumps(raw_config, indent=2) + "\n", encoding="utf-8")
 
 
@@ -475,6 +495,48 @@ def _load_input_type(value: object) -> InputType:
             "Site config field 'input_type' must be 'local_video' or 'camera_stream'"
         )
     return value
+
+
+def _load_reference_region_source(value: object) -> dict[str, str | float] | None:
+    """A saved image (`image_sequence_id` + `image_filename`) or a video (`video_id` [+ time])."""
+
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise SiteConfigError("Site config field 'reference_region_source' must be a JSON object")
+    fields = dict[str, Any](value)
+    extra = sorted(
+        fields.keys() - {"image_sequence_id", "image_filename", "video_id", "video_time_seconds"}
+    )
+    if extra:
+        raise SiteConfigError(
+            f"Reference region source has unsupported field(s): {', '.join(extra)}"
+        )
+
+    def text(name: str) -> str:
+        item = fields.get(name, "")
+        if not isinstance(item, str):
+            raise SiteConfigError(f"Reference region source field '{name}' must be a string")
+        return item.strip()
+
+    sequence_id, filename, video_id = (
+        text("image_sequence_id"),
+        text("image_filename"),
+        text("video_id"),
+    )
+    if sequence_id or filename:
+        if not (sequence_id and filename) or video_id:
+            raise SiteConfigError(
+                "Reference region source needs both image_sequence_id and image_filename, "
+                "and cannot also name a video"
+            )
+        return {"image_sequence_id": sequence_id, "image_filename": filename}
+    if not video_id:
+        raise SiteConfigError("Reference region source needs an image or a video")
+    seconds = fields.get("video_time_seconds", 0)
+    if isinstance(seconds, bool) or not isinstance(seconds, int | float) or seconds < 0:
+        raise SiteConfigError("Reference region source 'video_time_seconds' must be 0 or more")
+    return {"video_id": video_id, "video_time_seconds": float(seconds)}
 
 
 def _load_reference_region(value: object) -> ReferenceRegion | None:

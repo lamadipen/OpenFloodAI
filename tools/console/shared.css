@@ -5,7 +5,7 @@
 :root {
   --ink: #12202e;
   --ink-soft: #4c5c6b;
-  --ink-muted: #8b98a5;
+  --ink-muted: #5f6e7c; /* 5.2:1 on white, 4.9:1 on --paper */
   --paper: #f6f8fa;
   --card: #ffffff;
   --line: #e1e6eb;
@@ -13,18 +13,21 @@
   --rail: #0e1a28;
   --rail-line: #22323f;
   --rail-text: #b9c6d2;
-  --rail-text-dim: #6e7e8c;
+  --rail-text-dim: #93a1ae;
   --accent: #2456c9;
   --accent-dark: #173e9e;
   --accent-soft: #e9effc;
   --ok: #1f7a4d;
   --ok-soft: #e6f3eb;
-  --warn: #b5750b;
+  --warn: #85560a; /* 5.6:1 on --warn-soft */
   --warn-soft: #fcf1de;
   --bad: #c22f2f;
   --bad-soft: #fbeaea;
-  --sans: "Fira Sans", system-ui, sans-serif;
-  --mono: "Fira Code", ui-monospace, monospace;
+  --warn-line: #ebd3a0;
+  --sam: #6d28d9;
+  --sam-soft: #ede9fe;
+  --sans: "Fira Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "Fira Code", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
 * {
@@ -83,7 +86,7 @@ label {
 }
 
 .hint {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--ink-muted);
   margin-top: 5px;
 }
@@ -398,4 +401,97 @@ tr.row {
   box-shadow: 0 20px 60px rgba(18, 32, 46, 0.25);
   max-height: 88vh;
   overflow: auto;
+}
+
+/* Left rail that can fold down to its icons, to leave more width for the page. */
+.rail { transition: width .15s ease; }
+
+.rail-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 0;
+  border: none;
+  background: transparent;
+  color: var(--rail-text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.rail-toggle:hover { color: #fff; }
+.rail-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+
+.app-shell.rail-collapsed .rail { width: 64px; }
+.app-shell.rail-collapsed .rail-label,
+.app-shell.rail-collapsed .rail-sites { display: none; }
+.app-shell.rail-collapsed .rail-brand { padding: 0 0 20px; justify-content: center; }
+.app-shell.rail-collapsed .rail-nav { padding: 0 10px; }
+.app-shell.rail-collapsed .rail-item { justify-content: center; padding: 10px 0; }
+.app-shell.rail-collapsed .rail-foot { padding: 0; }
+.app-shell.rail-collapsed .rail-foot-link,
+.app-shell.rail-collapsed .rail-foot-status,
+.app-shell.rail-collapsed .rail-toggle { justify-content: center; }
+.app-shell.rail-collapsed .rail-toggle-icon { transform: rotate(180deg); }
+.app-shell.rail-collapsed .rail > div[style*="height:1px"] { margin-left: 12px; margin-right: 12px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rail { transition: none; }
+}
+
+/* ---- Visible keyboard focus for everything that can be pressed or followed ---- */
+a:focus-visible,
+button:focus-visible,
+[role="button"]:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.btn.primary:focus-visible,
+.rail-item:focus-visible,
+.rail-site-link:focus-visible {
+  outline-color: #fff;
+  outline-offset: -2px;
+}
+
+/* ---- Shared building blocks, so pages do not restyle the same things inline ---- */
+.card-pad    { padding: 16px 18px; }
+.card-pad-lg { padding: 18px 20px; }
+.card-pad-sm { padding: 14px 18px; }
+.title-s     { font-size: 13px; font-weight: 600; }
+.title-m     { font-size: 15px; font-weight: 600; }
+.inline-row  { display: flex; align-items: center; gap: 6px; }
+.soft-12     { font-size: 12px; color: var(--ink-soft); }
+.muted-12    { font-size: 12px; color: var(--ink-muted); }
+.caption     { font-size: 12px; color: var(--ink-muted); margin-top: 2px; }
+.mono-12     { font-family: var(--mono); font-size: 12px; }
+.empty-note  { padding: 24px; color: var(--ink-muted); font-size: 13px; }
+.error-note  { padding: 24px; color: var(--bad); font-size: 13px; }
+.pad-40      { padding: 40px; }
+.paper-box   { background: var(--paper); }
+.full-width  { width: 100%; }
+.img-fill    { width: 100%; border-radius: 8px; display: block; }
+.modal-head  { padding: 16px 22px; border-bottom: 1px solid var(--line-soft); display: flex; align-items: center; justify-content: space-between; }
+.close-link  { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--ink-muted); }
+.close-link:hover { background: var(--line-soft); }
+.mt-2 { margin-top: 2px; }  .mt-4 { margin-top: 4px; }  .mt-6 { margin-top: 6px; }  .mt-10 { margin-top: 10px; }
+.mb-8 { margin-bottom: 8px; }  .mb-10 { margin-bottom: 10px; }  .mb-12 { margin-bottom: 12px; }  .mb-14 { margin-bottom: 14px; }  .mb-16 { margin-bottom: 16px; }
+
+/* ---- Narrow screens: stack what is side by side and let fixed-width stages shrink ---- */
+@media (max-width: 1100px) {
+  .review-grid { grid-template-columns: minmax(0, 1fr) !important; }
+  .review-side { position: static !important; max-height: none !important; overflow: visible !important; }
+}
+
+@media (max-width: 900px) {
+  .app-shell:not(.rail-collapsed) .rail { width: 64px; }
+  .app-shell:not(.rail-collapsed) .rail-label,
+  .app-shell:not(.rail-collapsed) .rail-sites { display: none; }
+  .content { padding: 18px 16px; }
+  .topbar { padding: 0 16px; }
+  .modal-card { overflow: auto; max-height: 96vh; }
+  .editor-body { flex-direction: column; }
+  .editor-side { width: auto !important; border-left: none !important; border-top: 1px solid var(--line-soft); }
 }

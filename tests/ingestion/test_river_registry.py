@@ -193,10 +193,10 @@ def test_all_real_river_registries_load(tmp_path: Path) -> None:
     reference_dir = Path(__file__).resolve().parents[2] / "data" / "reference"
     rivers = list_river_registries(reference_dir)
 
-    assert len(rivers) >= 17
+    assert len(rivers) >= 21
     for row in rivers:
         registry = load_river_registry(row["river_id"], reference_dir)
-        assert len(registry.cameras) == row["camera_count"] >= 2
+        assert len(registry.cameras) == row["camera_count"] >= 1
         assert len({camera.folder_name for camera in registry.cameras}) == len(registry.cameras)
 
 

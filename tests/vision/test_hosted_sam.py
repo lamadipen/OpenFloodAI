@@ -305,3 +305,9 @@ def test_streamed_failures_and_warnings_never_carry_the_key() -> None:
         sam.extract_events(reply(one_object().replace("c=0.8", f"c=0.8;{KEY}=1"))), KEY
     )
     assert detections and warnings and all(KEY not in w for w in warnings)
+
+
+def test_river_water_is_one_valid_concept_and_is_sent_as_the_prompt_text() -> None:
+    assert sam.validate_concept("River water") == "river water"
+    body = sam.build_request_body("river water", "data:image/jpeg;base64,AAAA")
+    assert body["input"][0]["content"][0] == {"type": "input_text", "text": "river water"}

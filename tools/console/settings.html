@@ -4,7 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Settings · OpenFloodAI console</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap">
 <link rel="stylesheet" href="/console/shared.css">
 </head>
 <body>
@@ -15,7 +14,7 @@ let samStatus = null;
 
 async function main() {
   const content = mountShell({ active: "settings", crumbs: [{ label: "Settings" }, { label: "Evidence adapters" }] });
-  content.innerHTML = `<div class="card" style="padding:24px;color:var(--ink-muted);font-size:13px;">Loading adapters&hellip;</div>`;
+  content.innerHTML = `<div class="card empty-note">Loading adapters&hellip;</div>`;
   await load();
 }
 
@@ -30,7 +29,7 @@ async function load() {
     }
     render();
   } catch (error) {
-    $("content").innerHTML = `<div class="card" style="padding:24px;color:var(--bad);font-size:13px;">Could not load adapters: ${escapeHtml(error.message)}</div>`;
+    $("content").innerHTML = `<div class="card error-note">Could not load adapters: ${escapeHtml(error.message)}</div>`;
   }
 }
 
@@ -56,7 +55,7 @@ function hostedSamHtml() {
         <span class="pill ${cred.configured ? "ok" : "warn"}">${cred.configured ? "API key configured" : "API key not configured"}</span>
         ${samStatus.decoder_available ? "" : '<span class="pill warn">SAM parser not installed</span>'}
       </div>
-      ${enabled && !cred.configured ? '<div class="hint" style="margin-top:10px;">Add your API key below. Segmentation stays unavailable until you do.</div>' : ""}
+      ${enabled && !cred.configured ? '<div class="hint mt-10">Add your API key below. Segmentation stays unavailable until you do.</div>' : ""}
       ${samStatus.decoder_available ? "" : '<div class="hint" style="margin-top:10px;max-width:640px;">Meta\'s SAM parser package is not installed in this copy (pip install meta_sam_parser), so runs are blocked before anything is uploaded.</div>'}
       <div style="margin-top:14px;font-size:12px;font-weight:600;">API key</div>
       ${cred.configured ? `<div style="font-family:var(--mono);font-size:13px;margin-top:4px;">${escapeHtml(cred.masked || "")} <span style="color:var(--ink-muted);font-family:inherit;font-size:12px;">(${escapeHtml(source)})</span></div>` : ""}
@@ -69,7 +68,7 @@ function hostedSamHtml() {
         <div><strong>Billing:</strong> you pay Meta through your own account; OpenFloodAI does not bill you. ${escapeHtml(provider.pricing_note)}</div>
         <div><strong>Privacy:</strong> images you select leave this device. ${escapeHtml(provider.retention_note)}</div>
         <div>Disabling the plugin stops new uploads. Removing the key clears it from this app. Neither reverses charges for requests already sent.</div>
-        <div style="margin-top:6px;">
+        <div class="mt-6">
           <a href="${escapeHtml(provider.signup_url)}" target="_blank" rel="noopener noreferrer">Sign up and see pricing</a> &middot;
           <a href="${escapeHtml(provider.terms_url)}" target="_blank" rel="noopener noreferrer">Provider terms</a> &middot;
           <a href="${escapeHtml(provider.privacy_url)}" target="_blank" rel="noopener noreferrer">Provider privacy policy</a>
@@ -141,7 +140,7 @@ function rowHtml(adapter) {
           ${adapter.is_default ? '<span class="pill ok">Default</span>' : ""}
         </div>
         <div style="font-size:12px;color:var(--ink-soft);margin-top:4px;max-width:520px;">${escapeHtml(adapter.description)}</div>
-        <div style="font-size:11px;color:var(--ink-muted);margin-top:6px;font-family:var(--mono);">${escapeHtml(adapter.plugin_id)}</div>
+        <div style="font-size:12px;color:var(--ink-muted);margin-top:6px;font-family:var(--mono);">${escapeHtml(adapter.plugin_id)}</div>
       </div>
       <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
         <span class="pill ${enabled ? "ok" : "gray"}">${enabled ? "Enabled" : "Disabled"}</span>
