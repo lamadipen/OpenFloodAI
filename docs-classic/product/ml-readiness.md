@@ -1,9 +1,11 @@
 # ML Readiness And First Model Strategy
 
 Status: direction agreed on 2026-09-11 for
-[issue #108](https://github.com/lamadipen/OpenFloodAI/issues/108).
-This is a planning decision. Training readiness has not been demonstrated and no
-model architecture has been selected.
+[issue #108](https://github.com/lamadipen/OpenFloodAI/issues/108); progress
+refreshed on 2026-10-08. This is a planning decision. **It is not yet time to
+train a model.** Training readiness has not been demonstrated and no model
+architecture has been selected. This plan trains nothing, claims no accuracy, sends
+no alerts and does not replace human review.
 
 ## Context And Decision Drivers
 
@@ -78,11 +80,15 @@ Neither bank coverage nor rising water alone establishes flood danger.
 
 | Area | Current foundation | Work still needed |
 | --- | --- | --- |
-| Local review | Sites, video intake, watched regions, time-window labels, run records, reports and review images | A reviewed dataset suitable for the chosen experiment |
-| Machine evidence | Sampled frame comparisons and basic quality checks | Reliable water-specific observations and temporal direction |
-| Normal reference | A first usable frame within a review window | A separately confirmed normal baseline with provenance and camera alignment |
-| Visual support | Watched-area selection and saved review images | Assisted bank selection, boundary estimates and synchronised video overlays |
-| ML | Validation workflow and research | Readiness evidence, controlled experiments and a versioned model package |
+| Local review | Sites, video and timestamped-image intake, watched areas, human labels with revisions, event reviews, run records, reports and review images in the Review Workspace | A reviewed dataset large and varied enough for the chosen experiment |
+| Image supply | Water-level sampling picks low, middle and high water images from a linked gauge, and can append to a sequence ([guide](../learning/water-level-sampling.md)) | Coverage across independent cameras and conditions |
+| Gauge evidence | Each image's own matched USGS reading, with units, time gap and quality, frozen with the run | Treating readings as instrument-derived supervision, never as observed truth |
+| Machine evidence | Sampled frame comparison, a pixel-change adapter, and an optional riverbank-crossing adapter that is off by default and reports that camera alignment is unavailable | Reliable water-specific observations, camera alignment and temporal direction |
+| Normal reference | Confirmed riverbank reference records and per-sample quality checks | Confirmed references on more sites, with provenance |
+| Assisted labelling | Optional, off-by-default hosted SAM 3.1 outlines for water or riverbank; a person accepts, rejects or asks for correction (see the full documentation's hosted SAM guide) | Evidence that it saves review effort; it is never a label by itself |
+| Dataset building | Curated, versioned local datasets from reviewed observations across runs, with site/camera-isolated splits, locked-validation protection, duplicate checks and frozen, checksummed versions ([guide](../learning/dataset-curation.md)) | Enough independent cameras and events to fill train, validation and test |
+| Sharing | A verified, versioned release with a licensing and privacy gate, a dataset card and a private-first upload path ([guide](../learning/dataset-release.md)) | Recorded approvals; no release is published by default |
+| ML | A validation scorecard, label comparison and a riverbank pilot evaluation | Readiness evidence, an agreed baseline run, acceptance targets, controlled experiments and a versioned model package |
 
 Current pixel-change scores can respond to light, shadows, or camera movement.
 They do not reliably identify water or prove rising versus falling water. A low
@@ -124,6 +130,25 @@ Training stays blocked until the team records evidence for all of these:
 Closing prerequisite issues does not demonstrate that this gate has passed.
 Missing gate evidence means continue data preparation or baseline work.
 
+## Is It Time To Start ML? Status Against The Gate
+
+**No.** The tools to build a trustworthy dataset now exist, but the evidence the gate
+asks for has not been recorded. The next work is collecting and reviewing data, and
+measuring the simple baseline, not training.
+
+| Gate item | What exists now | What is still missing |
+| --- | --- | --- |
+| 1. Define the prediction | The target is still visible water change over a reviewed window. Curated datasets also support gauge-height, low/middle/high categories (from approved site definitions) and rising/falling pairs as separate tasks | Agreeing how normal or high water relates to trend; any new label mapping stays a separate decision |
+| 2. Review the examples | Human labels with revisions, quality answers, event reviews, accepted masks, the [data quality checklist](data-quality-checklist.md) | A second reviewer checking a sample and resolving disagreements. No tool for this exists yet |
+| 3. Establish useful coverage | Curated datasets show how many examples, cameras and categories they hold | The count against the 50–100 reviewed windows target has not been recorded, and independent cameras and events are likely too few |
+| 4. Prevent data leakage | Splits are by camera (and site) and never random, locked-validation data is test-only, pairs stay together, identical images cannot cross splits | Enough independent cameras to populate all three splits; otherwise results are limited to the tested sites |
+| 5. Measure the baseline | Validation scorecard, human-versus-machine comparison and a riverbank pilot evaluation | A recorded run of the existing simple method over the reviewed windows, with failures and counts by condition |
+| 6. Set acceptance targets first | Nothing yet | Numerical limits for missed changes, false detections, delay, unclear results and device cost, and the target hardware. Set these before any result is seen |
+| 7. Reproducibility and permission | Frozen, checksummed dataset versions, recorded source and license approvals, and a privacy review gate for sharing | Permission to train on each source, and a review of any model's code, weights, dependencies and licenses |
+
+This table is a snapshot. Re-check it, and update it, whenever a gate item changes. Closing
+an issue does not pass the gate.
+
 ## First Possible Experiment And Finished Model
 
 After the gate passes, compare the classical baseline with a small pretrained
@@ -137,6 +162,12 @@ Reuse an established neural network if it helps; we do not need to invent a new
 architecture. Train or fine-tune its weights on our permitted, reviewed examples.
 The exact network, sequence length, and use of reference features remain choices
 to evaluate. Segmentation is not a prerequisite for the main experiment.
+
+The dataset tools above are how that experiment's inputs would be assembled: reviewed
+windows frozen into a versioned dataset with leakage-safe splits. A gauge reading can
+support an experiment as instrument-derived supervision, but it does not turn a
+uncertain image into a trusted example, and a nearby station does not prove the same
+water level at the camera.
 
 Evaluate full held-out windows/events, not only individual frames. Report rising
 and falling confusion, missed changes, false detections per camera-day where
@@ -158,12 +189,13 @@ These are planning roles, not approved installations or integrations.
 | Option | Useful role | Decision or limitation |
 | --- | --- | --- |
 | Classical CV / OpenCV | Cheap reference-region and temporal baselines; drawing overlays | Use the existing foundation and evaluate water-specific methods. Pixel change alone is not water change. |
-| SAM 2 / MobileSAM | Possible assisted region selection or segmentation experiments | Optional support; compare quality and device cost. Do not assume MobileSAM provides SAM 2 video tracking. |
+| SAM 2 / MobileSAM / hosted SAM | Assisted region selection and segmentation experiments. An optional hosted SAM 3.1 service is already wired in, off by default, sending only the chosen crop after confirmation | Assisted labelling only. An accepted mask is a reviewed machine output, not a hand-drawn label and not a flood decision. Compare quality, cost and device suitability. Do not assume MobileSAM provides SAM 2 video tracking. |
 | OpenRiverCam / pyorc | Strong upstream inspiration for calibrated camera measurements | No initial integration. A future adapter could accept independently produced measurements with units, time, quality and calibration provenance, after license and contract review. |
 | Google Flood Forecasting / OpenHydroNet research | Future basin-level forecasting ideas | Outside the immediate camera MVP. |
 | FloodNet / satellite datasets | Labeling and research ideas | Do not substitute aerial or satellite examples for fixed-camera evaluation. |
+| Hugging Face / Kaggle | Sharing a reviewed dataset with other researchers, privately first | Only after the release gate (source and license approvals, privacy review) and a human decision to publish. Not a training platform here. |
 | Vertex AI / AutoML / Cloud Vision | Possible later training, management or cloud experiments | Not required for local operation; first decide permission, privacy, cost and suitability for temporal review. |
-| Gauges, rainfall, earthquake or forecast information | Possible later cross-checks | Relevance must be established; an external signal alone does not prove local flood danger. |
+| Gauges, rainfall, earthquake or forecast information | Gauge readings are already matched to images as supporting evidence. Rainfall, earthquake and forecast data are possible later cross-checks | Relevance must be established; an external signal alone does not prove local flood danger. |
 
 The initial shortlist excludes pyorc/ffpiv, Ultralytics YOLO segmentation,
 FastSAM and OpenPIV integrations under our current licensing preference. This is
@@ -209,14 +241,39 @@ testing, monitoring and rollback, and an authorised warning procedure. Completin
 model training is not production approval. No alerts, deployment or accuracy
 claims are authorised here.
 
+## Open Decisions
+
+These need a named person to decide. They are not chosen here, and they must be settled
+before results are seen:
+
+- numerical acceptance targets and the target hardware;
+- how a second reviewer samples and resolves disagreements;
+- the baseline frame selection and the baseline run to record;
+- any future label mapping between trend and normal/high water;
+- which network, sequence length and reference features to compare;
+- permission to train on each source, and the license review of any model.
+
 ## Revisit Trigger And Next Work
 
 Revisit the design if bank references do not help, simpler methods work better,
 camera movement cannot be handled, or quality/device requirements cannot be met.
 Keep existing local review available while new components are evaluated separately.
 
-Next implementation planning should define the normal-reference record and visual
-selection workflow, while dataset preparation establishes the training gate.
-Choose one bounded follow-up task at a time. Exact model architecture, numerical
-acceptance targets, baseline frame selection and future label contracts remain
-open; the camera-first product direction is settled.
+The normal-reference record and its confirm/draft/invalidate visual selection
+workflow are defined (issue #163) — see
+"Confirmed Riverbank Reference" in the full documentation's data contracts.
+Per-sample riverbank/reference quality checks that separate baseline-ready
+evidence from practice-only footage are defined too (issue #164) — see
+"Riverbank/Reference Quality Checks" in the full documentation's data contracts.
+
+Suggested bounded follow-ups, one at a time:
+
+1. Record the count of reviewed windows, independent cameras and events against the
+   coverage target.
+2. Run and record the simple baseline over those windows, with failures by condition.
+3. Agree the acceptance targets and target hardware.
+4. Define the second-reviewer process.
+5. Only then plan the first controlled experiment.
+
+Exact model architecture, numerical acceptance targets, baseline frame selection and
+future label contracts remain open; the camera-first product direction is settled.
