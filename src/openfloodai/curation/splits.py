@@ -84,6 +84,7 @@ def assign_splits(
     """(member_id -> split, blocking problems, readiness gaps)."""
 
     assigned: dict[str, str] = {}
+    unassigned: dict[str, int] = {}
     problems: list[dict[str, str]] = []
     gaps: list[dict[str, str]] = []
     for member in members:
@@ -98,12 +99,7 @@ def assign_splits(
                     if policy["kind"] == POLICY_SITE_CAMERA
                     else snap["source"]["captured_at_utc"][:10]
                 )
-                problems.append(
-                    reason(
-                        "split_unassigned",
-                        f"{member_id}: {where} is not assigned to train, validation or test.",
-                    )
-                )
+                unassigned[where] = unassigned.get(where, 0) + 1
             else:
                 splits.add(split)
         if len(splits) > 1:
@@ -127,6 +123,15 @@ def assign_splits(
                         f"{member_id}: locked-validation data can only be in the test split.",
                     )
                 )
+    for where, count in sorted(unassigned.items()):
+        subject = "camera" if policy["kind"] == POLICY_SITE_CAMERA else "date"
+        problems.append(
+            reason(
+                "split_unassigned",
+                f"The {subject} {where} is not assigned to train, validation or test "
+                f"({count} example{'s' if count != 1 else ''}).",
+            )
+        )
     problems += _duplicate_content_problems(members, assigned)
     problems += _locked_camera_problems(policy, members, assigned)
     gaps += _readiness_gaps(policy, members, assigned)

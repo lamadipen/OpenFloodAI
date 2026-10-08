@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const consoleDir = path.join(__dirname, "../../tools/console");
-const FILES = ["review.js", "review-charts.js", "review-sam.js", "review-onion.js"];
+const FILES = ["review.js", "review-charts.js", "review-sam.js", "review-onion.js", "review-datasets.js"];
 
 function reviewHtml() {
   const page = fs.readFileSync(path.join(consoleDir, "review.html"), "utf8");
