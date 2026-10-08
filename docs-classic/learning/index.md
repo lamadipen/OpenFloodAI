@@ -12,6 +12,8 @@ Start here if you want to understand how the current proof of concept works and 
 
 - [Sample Images By Water Level](water-level-sampling.md) — pick low, middle, and high water images, then create or add to a sequence.
 
+- [Curate Training Datasets](dataset-curation.md) — pick reviewed images from different runs into a local, versioned dataset.
+
 ## Important Reminder
 
 OpenFloodAI is not a finished flood-warning system.

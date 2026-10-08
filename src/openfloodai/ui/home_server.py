@@ -85,7 +85,7 @@ from openfloodai.review.event_reviews import (
     set_event_review,
 )
 from openfloodai.review.river_tracker import build_river_tracker
-from openfloodai.ui import hosted_sam_routes, review_workspace, water_level_routes
+from openfloodai.ui import dataset_routes, hosted_sam_routes, review_workspace, water_level_routes
 from openfloodai.validation import (
     build_export_all,
     build_run_export,
@@ -144,6 +144,8 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         if review_workspace.handle_get(self, path):
             return
         if hosted_sam_routes.handle_get(self, path):
+            return
+        if dataset_routes.handle_get(self, path):
             return
         if path == "/river-images.html":
             self._send_river_images_page()
@@ -634,6 +636,11 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
     def _reference_dir(self) -> Path:
         return self.sites_dir.resolve().parent / "reference"
 
+    def _datasets_dir(self) -> Path:
+        """Where local curated training datasets live, beside the sites (Issue #215)."""
+
+        return self.sites_dir.resolve().parent / "datasets"
+
     def _send_river_tracker_json(self) -> None:
         query = parse_qs(urlsplit(self.path).query)
         river_id = (query.get("river") or [""])[0].strip()
@@ -748,6 +755,8 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         if hosted_sam_routes.handle_post(self, self.path):
             return
         if water_level_routes.handle_post(self, self.path):
+            return
+        if dataset_routes.handle_post(self, self.path):
             return
         if review_workspace.handle_post(self, self.path):
             return

@@ -525,6 +525,7 @@ async function main() {
   }
 
   await loadSam();
+  await loadDatasets();
   // Coming back from saving a label: move on to the next image that still needs one.
   if (qs("advance") === "1" && wantedIndex >= 0) {
     const next = nextUnlabelledFrom(wantedIndex);
@@ -873,6 +874,8 @@ function renderNow() {
 
         <div class="card card-pad-sm" id="samPanel"></div>
 
+        <div class="card card-pad-sm" id="datasetPanel"></div>
+
         <div class="card card-pad-sm">
           <div style="font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:8px;">Evidence</div>
           ${evidencePanelHtml(detail.evidence_records, sel)}
@@ -921,6 +924,7 @@ function renderNow() {
   wireActions();
   wireOnion();
   renderSamPanel();
+  renderDatasetPanel();
   refreshSamPlan();
   const current = document.querySelector("#imageList [data-current]");
   if (current) current.scrollIntoView({ block: "nearest" });

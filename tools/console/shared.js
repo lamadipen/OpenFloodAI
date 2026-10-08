@@ -47,6 +47,8 @@ function svgIcon(name) {
       '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12c2-4 5-6 8-6s6 4 8 8 6 2 6 2"/></svg>',
     download:
       '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>',
+    datasets:
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>',
     settings:
       '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33h0a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82v0a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>'
   };
@@ -104,6 +106,7 @@ function mountShell({ active, activeSiteFolder, crumbs }) {
         <nav class="rail-nav">
           <a class="rail-item ${active === "dashboard" ? "active" : ""}" href="/console/dashboard.html" title="Dashboard">${svgIcon("dashboard")}<span class="rail-label">Dashboard</span></a>
           <a class="rail-item ${active === "sites" ? "active" : ""}" href="/console/dashboard.html#sites" title="Sites">${svgIcon("sites")}<span class="rail-label">Sites</span></a>
+          <a class="rail-item ${active === "datasets" ? "active" : ""}" href="/console/datasets.html" title="Datasets">${svgIcon("datasets")}<span class="rail-label">Datasets</span></a>
           <a class="rail-item ${active === "settings" ? "active" : ""}" href="/console/settings.html" title="Settings">${svgIcon("settings")}<span class="rail-label">Settings</span></a>
         </nav>
         <div class="rail-sites">
