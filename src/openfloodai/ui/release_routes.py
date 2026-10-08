@@ -144,6 +144,18 @@ def readiness(
     ]
     if splits["policy"]["kind"] != "site_camera":
         missing.append("This dataset uses time-block splits, which cannot be released.")
+    site_splits: dict[str, set[str]] = {}
+    for sample in samples:
+        split = splits["assignments"].get(sample["sample_id"])
+        for obs in sample["observations"]:
+            if split:
+                site_splits.setdefault(str(obs["site"].get("site_id")), set()).add(split)
+    missing += [
+        f"Site '{site}' has cameras in different splits ({', '.join(sorted(found))}). One site "
+        "must stay in one split."
+        for site, found in sorted(site_splits.items())
+        if len(found) > 1
+    ]
     return {
         "examples": len(samples),
         "sources": [{"name": s, "approved": source_approved(policy, s)} for s in sorted(sources)],

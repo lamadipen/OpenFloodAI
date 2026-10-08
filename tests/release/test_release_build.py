@@ -503,3 +503,202 @@ def test_parquet_is_optional_and_explains_how_to_get_it(tmp_path: Path) -> None:
         build(tmp_path, dataset_id, write_parquet=True)
         assert (release_dir(tmp_path) / "metadata.parquet").is_file()
         assert verify_release(release_dir(tmp_path))["ok"]
+
+
+# ---- review feedback: private guide notes, same-site isolation, pair gauge evidence ---------
+
+
+GUIDE = {
+    "id": "line-abc",
+    "label": "left bank behind the Smith property",
+    "notes": "PRIVATE guide note: owner asked us not to publish this.",
+    "points": [{"x": 10.0, "y": 20.0}, {"x": 30.0, "y": 25.0}],
+    "water_side_point": {"x": 20.0, "y": 40.0},
+    "status": "confirmed",
+    "normal_condition": True,
+    "video_id": "private-video-id",
+    "image_sequence_id": "usgs-CAM_A-private-sequence",
+    "image_filename": "CAM_A___private-file.jpg",
+    "site_id": "site-a_sid",
+}
+
+
+def test_only_approved_guide_geometry_is_exported_never_notes_or_working_names(
+    tmp_path: Path,
+) -> None:
+    from release_helpers import make_data, make_run
+
+    from openfloodai.curation import add_observation, create_dataset, freeze_version
+
+    root = make_data(tmp_path)
+    fx = make_run(
+        root, [Img(day=2)], folder="site-a", camera="CAM_A", run_id=RUN_IDS["CAM_A"], guides=[GUIDE]
+    )
+    ds = create_dataset(
+        root / "datasets",
+        name="Guides",
+        task="gauge_height",
+        split_policy={"kind": "site_camera", "assignments": {"CAM_A": "train"}},
+    )
+    add_observation(
+        root / "datasets",
+        fx.sites_dir,
+        ds["dataset_id"],
+        folder_name=fx.folder_name,
+        run_id=fx.run_id,
+        filename=fx.filenames[0],
+    )
+    freeze_version(
+        root / "datasets", ds["dataset_id"], note="g", approved_by="me", sites_dir=fx.sites_dir
+    )
+    approvals(root)
+
+    build(tmp_path, ds["dataset_id"])
+
+    release = release_dir(tmp_path)
+    everything = "".join(
+        p.read_text()
+        for p in release.rglob("*")
+        if p.is_file() and p.suffix in {".json", ".jsonl", ".md"}
+    )
+    for private in (
+        "PRIVATE guide note",
+        "Smith property",
+        "private-video-id",
+        "private-sequence",
+        "private-file",
+    ):
+        assert private not in everything, private
+    guides = json.loads(rows(tmp_path)[0]["riverbank_guides"])
+    assert guides == [
+        {
+            "id": "line-abc",
+            "points": GUIDE["points"],
+            "water_side_point": GUIDE["water_side_point"],
+            "status": "confirmed",
+            "normal_condition": True,
+        }
+    ]
+    assert verify_release(release)["ok"]
+
+
+def test_verification_finds_private_fields_hidden_inside_json_columns(tmp_path: Path) -> None:
+    _, dataset_id, _ = frozen_dataset(tmp_path)
+    approvals(data_dir(tmp_path))
+    build(tmp_path, dataset_id)
+    release = release_dir(tmp_path)
+    lines = [json.loads(line) for line in (release / "metadata.jsonl").read_text().splitlines()]
+    lines[0]["riverbank_guides"] = json.dumps([{"id": "x", "notes": "secret", "points": []}])
+    lines[1]["annotation"] = json.dumps(
+        {"kind": "gauge_height", "nested": {"label": "x", "path": "/a"}}
+    )
+    (release / "metadata.jsonl").write_text("".join(json.dumps(r) + "\n" for r in lines))
+
+    problems = verify_release(release)["problems"]
+
+    assert any("riverbank_guides contains private field(s) notes" in p for p in problems)
+    assert any("annotation contains private field(s) label, path" in p for p in problems)
+
+
+def test_two_cameras_of_one_site_cannot_be_in_different_splits(tmp_path: Path) -> None:
+    from release_helpers import make_data, make_run
+
+    from openfloodai.curation import add_observation, create_dataset, freeze_version
+
+    root = make_data(tmp_path)
+    first = make_run(root, [Img(day=2)], folder="site-a", camera="CAM_A", run_id=RUN_IDS["CAM_A"])
+    second = make_run(root, [Img(day=3)], folder="site-a", camera="CAM_A2", run_id=RUN_IDS["CAM_B"])
+    ds = create_dataset(
+        root / "datasets",
+        name="Same site",
+        task="gauge_height",
+        split_policy={
+            "kind": "site_camera",
+            "assignments": {"CAM_A": "train", "CAM_A2": "test"},
+        },
+    )
+    for fx in (first, second):
+        add_observation(
+            root / "datasets",
+            fx.sites_dir,
+            ds["dataset_id"],
+            folder_name=fx.folder_name,
+            run_id=fx.run_id,
+            filename=fx.filenames[0],
+        )
+    freeze_version(
+        root / "datasets", ds["dataset_id"], note="s", approved_by="me", sites_dir=first.sites_dir
+    )
+    approvals(root)
+
+    with pytest.raises(
+        ReleaseError, match="site or camera appears in more than one split"
+    ) as raised:
+        build(tmp_path, ds["dataset_id"])
+
+    assert [d["code"] for d in raised.value.details] == ["site_in_several_splits"]
+    assert "site-a_sid" in raised.value.details[0]["message"]
+    assert not release_dir(tmp_path).exists()
+
+
+def test_verification_catches_a_site_in_two_splits_even_with_different_cameras(
+    tmp_path: Path,
+) -> None:
+    _, dataset_id, _ = frozen_dataset(tmp_path)
+    approvals(data_dir(tmp_path))
+    build(tmp_path, dataset_id)
+    release = release_dir(tmp_path)
+    lines = [json.loads(line) for line in (release / "metadata.jsonl").read_text().splitlines()]
+    other_split = next(r["split"] for r in lines if r["site_id"] != lines[0]["site_id"])
+    lines[0]["site_id"], lines[0]["camera_id"], lines[0]["split"] = (
+        lines[-1]["site_id"],
+        "CAM_UNIQUE",
+        other_split,
+    )
+    (release / "metadata.jsonl").write_text("".join(json.dumps(r) + "\n" for r in lines))
+
+    problems = verify_release(release)["problems"]
+
+    assert any("Site " in p and "more than one split" in p for p in problems)
+
+
+def test_a_pair_keeps_separate_gauge_evidence_for_each_image(tmp_path: Path) -> None:
+    images = {
+        "CAM_A": [
+            Img(day=2, level=6.5, quality="approved", qualifiers=["A"], gap_seconds=30),
+            Img(day=9, level=4.0, quality="provisional", qualifiers=["P"], gap_seconds=-420),
+        ]
+    }
+    _, dataset_id, _ = frozen_dataset(
+        tmp_path, task="level_change", images=images, cameras=(("site-a", "CAM_A", "train"),)
+    )
+    approvals(data_dir(tmp_path))
+
+    build(tmp_path, dataset_id)
+
+    row = rows(tmp_path)[0]
+    assert (row["gauge_value"], row["gauge_quality"], row["gauge_time_gap_seconds"]) == (
+        6.5,
+        "approved",
+        30,
+    )
+    assert json.loads(row["gauge_qualifiers"]) == ["A"]
+    assert row["gauge_datetime_utc"].startswith("2026-01-02")
+    assert (row["later_gauge_value"], row["later_gauge_quality"]) == (4.0, "provisional")
+    assert row["later_gauge_time_gap_seconds"] == -420
+    assert json.loads(row["later_gauge_qualifiers"]) == ["P"]
+    assert row["later_gauge_datetime_utc"].startswith("2026-01-09")
+    assert row["later_gauge_station"] == row["gauge_station"] == "09034250"
+
+
+def test_a_single_image_has_empty_later_gauge_fields_and_its_own_qualifiers(tmp_path: Path) -> None:
+    _, dataset_id, _ = frozen_dataset(
+        tmp_path, images={"CAM_A": [Img(day=2, quality="provisional", qualifiers=["P"])]}
+    )
+    approvals(data_dir(tmp_path))
+    build(tmp_path, dataset_id)
+
+    row = next(r for r in rows(tmp_path) if r["camera_id"] == "CAM_A")
+
+    assert json.loads(row["gauge_qualifiers"]) == ["P"] and row["gauge_quality"] == "provisional"
+    assert row["later_gauge_value"] is None and row["later_gauge_qualifiers"] is None

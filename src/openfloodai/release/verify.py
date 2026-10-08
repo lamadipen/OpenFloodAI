@@ -49,6 +49,44 @@ _FORBIDDEN = [
 ]
 _TEXT_SUFFIXES = {".md", ".json", ".jsonl", ".sha256", ".txt"}
 FORBIDDEN_ROW_FIELDS = ("note", "notes", "reviewer_id", "dataset_group", "folder_name", "run_id")
+# Keys that must not appear anywhere inside the JSON text columns (guides, annotation, region).
+FORBIDDEN_NESTED_KEYS = frozenset(
+    {
+        "note",
+        "notes",
+        "label",
+        "reviewer_id",
+        "reviewed_by",
+        "author",
+        "approved_by",
+        "run_id",
+        "folder_name",
+        "path",
+        "video_id",
+        "image_filename",
+        "image_sequence_id",
+    }
+)
+JSON_COLUMNS = (
+    "watched_region",
+    "riverbank_guides",
+    "annotation",
+    "mask_files",
+    "gauge_qualifiers",
+    "later_gauge_qualifiers",
+)
+
+
+def _nested_keys(value: Any) -> set[str]:
+    found: set[str] = set()
+    if isinstance(value, dict):
+        for key, inner in value.items():
+            found.add(str(key))
+            found |= _nested_keys(inner)
+    elif isinstance(value, list):
+        for inner in value:
+            found |= _nested_keys(inner)
+    return found
 
 
 def _lines(path: Path) -> list[dict[str, Any]]:
@@ -111,6 +149,7 @@ def verify_release(root: Path, *, require_checklist: bool = False) -> dict[str, 
     rows = _lines(root / "metadata.jsonl")
     seen: set[str] = set()
     camera_splits: dict[str, set[str]] = {}
+    site_splits: dict[str, set[str]] = {}
     for row in rows:
         missing = [f for f in REQUIRED_ROW_FIELDS if row.get(f) in (None, "")]
         if missing:
@@ -126,6 +165,20 @@ def verify_release(root: Path, *, require_checklist: bool = False) -> dict[str, 
         if row.get("split") not in SPLITS:
             problems.append(f"{row.get('sample_id')}: has no valid split.")
         camera_splits.setdefault(str(row.get("camera_id")), set()).add(str(row.get("split")))
+        site_splits.setdefault(str(row.get("site_id")), set()).add(str(row.get("split")))
+        for column in JSON_COLUMNS:
+            if not row.get(column):
+                continue
+            try:
+                private = sorted(_nested_keys(json.loads(row[column])) & FORBIDDEN_NESTED_KEYS)
+            except ValueError:
+                problems.append(f"{row.get('sample_id')}: {column} is not valid JSON.")
+                continue
+            if private:
+                problems.append(
+                    f"{row.get('sample_id')}: {column} contains private field(s) "
+                    f"{', '.join(private)}."
+                )
         for field in ("file_name", "later_file_name", "baseline_file_name"):
             if row.get(field) and not (root / row[field]).is_file():
                 problems.append(f"{row.get('sample_id')}: {row[field]} is missing.")
@@ -135,6 +188,12 @@ def verify_release(root: Path, *, require_checklist: bool = False) -> dict[str, 
     for camera, splits in sorted(camera_splits.items()):
         if len(splits) > 1:
             problems.append(f"{camera} is in more than one split ({', '.join(sorted(splits))}).")
+    for site, splits in sorted(site_splits.items()):
+        if len(splits) > 1:
+            problems.append(
+                f"Site {site} is in more than one split ({', '.join(sorted(splits))}), "
+                "so its cameras would leak between training and evaluation."
+            )
     per_split: dict[str, set[str]] = {}
     for name in SPLITS:
         path = root / "splits" / f"{name}.jsonl"

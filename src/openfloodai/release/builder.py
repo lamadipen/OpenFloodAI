@@ -188,6 +188,41 @@ def _public_annotation(sample: dict[str, Any], ids: dict[str, str]) -> dict[str,
     }
 
 
+# Only geometry and reference state of a bank guide are public. Its notes, free-text label and
+# the working source it was drawn on (video or image names) stay private.
+PUBLIC_GUIDE_FIELDS = ("id", "points", "water_side_point", "status", "normal_condition")
+
+
+def _public_guides(guides: object) -> list[dict[str, Any]]:
+    if not isinstance(guides, list):
+        return []
+    return [
+        {key: guide[key] for key in PUBLIC_GUIDE_FIELDS if key in guide}
+        for guide in guides
+        if isinstance(guide, dict)
+    ]
+
+
+def _gauge_fields(obs: dict[str, Any] | None, prefix: str) -> dict[str, Any]:
+    """One image's own gauge evidence, kept separately for each image of a pair."""
+
+    gauge = (obs or {}).get("gauge") or {}
+    reading = gauge.get("reading") or {}
+    present = obs is not None and bool(reading)
+    qualifiers = json.dumps(reading.get("qualifiers") or [], sort_keys=True) if present else None
+    fields = {
+        "gauge_value": reading.get("value"),
+        "gauge_unit": reading.get("unit"),
+        "gauge_parameter": reading.get("parameter_code"),
+        "gauge_station": (gauge.get("station") or {}).get("nwis_site_id"),
+        "gauge_datetime_utc": reading.get("datetime_utc"),
+        "gauge_time_gap_seconds": gauge.get("time_difference_seconds"),
+        "gauge_quality": reading.get("quality_status"),
+        "gauge_qualifiers": qualifiers,
+    }
+    return {f"{prefix}{name}": value for name, value in fields.items()}
+
+
 def _image_id(obs: dict[str, Any]) -> str:
     stamp = re.sub(r"[^0-9TZ]", "", obs["source"]["captured_at_utc"].replace("+00:00", "Z"))
     return f"{_safe(obs['site']['camera_id'])}-{stamp}-{obs['image']['sha256'][:8]}"
@@ -204,8 +239,6 @@ def _row(
     first = sample["observations"][0]
     review = first.get("review") or {}
     visibility = review.get("visibility") or {}
-    gauge = first["gauge"]
-    reading = gauge.get("reading") or {}
     config = first["configuration"]
     machine = first.get("machine") or {}
     later = sample["observations"][1] if sample["kind"] == "pair" else None
@@ -238,16 +271,11 @@ def _row(
         "stable_marker_visible": visibility.get("stable_marker_visible"),
         "visibility_condition": visibility.get("visibility_condition"),
         "watched_region": json.dumps(config.get("reference_region"), sort_keys=True),
-        "riverbank_guides": json.dumps(config.get("normal_waterline_guides") or [], sort_keys=True),
-        "gauge_value": reading.get("value"),
-        "later_gauge_value": (
-            (later["gauge"].get("reading") or {}).get("value") if later else None
+        "riverbank_guides": json.dumps(
+            _public_guides(config.get("normal_waterline_guides")), sort_keys=True
         ),
-        "gauge_unit": reading.get("unit"),
-        "gauge_parameter": reading.get("parameter_code"),
-        "gauge_station": (gauge.get("station") or {}).get("nwis_site_id"),
-        "gauge_time_gap_seconds": gauge.get("time_difference_seconds"),
-        "gauge_quality": reading.get("quality_status"),
+        **_gauge_fields(first, ""),
+        **_gauge_fields(later, "later_"),
         "annotation_kind": sample["annotation"]["kind"],
         "annotation": json.dumps(_public_annotation(sample, ids), sort_keys=True),
         "collection_group": (first.get("collection") or {}).get("group"),
@@ -313,21 +341,30 @@ def build_release(
     accepted, rejected = _select(samples, splits["assignments"], pol)
     cameras_by_split: dict[str, set[str]] = {name: set() for name in SPLIT_NAMES}
     camera_splits: dict[str, set[str]] = defaultdict(set)
+    site_splits: dict[str, set[str]] = defaultdict(set)
     for sample, split in accepted:
         for obs in sample["observations"]:
             cameras_by_split[split].add(obs["site"]["camera_id"])
             camera_splits[obs["site"]["camera_id"]].add(split)
-    leaking = sorted(c for c, s in camera_splits.items() if len(s) > 1)
-    if leaking:
+            site_splits[obs["site"]["site_id"]].add(split)
+    leaks = [
+        reason("camera_in_several_splits", f"Camera {c} is in {', '.join(sorted(s))}.")
+        for c, s in sorted(camera_splits.items())
+        if len(s) > 1
+    ] + [
+        reason(
+            "site_in_several_splits",
+            f"Site {site} is in {', '.join(sorted(s))}. Two cameras of one site look at the "
+            "same place, so they must stay in one split.",
+        )
+        for site, s in sorted(site_splits.items())
+        if len(s) > 1
+    ]
+    if leaks:
         raise ReleaseError(
-            "A camera appears in more than one split, which would leak between training and "
-            "evaluation.",
-            [
-                reason(
-                    "camera_in_several_splits", f"{c} is in {', '.join(sorted(camera_splits[c]))}."
-                )
-                for c in leaking
-            ],
+            "A site or camera appears in more than one split, which would leak between "
+            "training and evaluation.",
+            leaks,
         )
     gaps = [
         reason("split_has_no_camera", f"No released camera is in the {name} split.", "warning")

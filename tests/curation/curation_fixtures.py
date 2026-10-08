@@ -86,6 +86,7 @@ def make_run(
     parameter_code: str = "00065",
     unit: str = "ft",
     source_system: str = "usgs_nims",
+    guides: list[dict[str, Any]] | None = None,
 ) -> Fixture:
     sites_dir = root / "sites"
     site_dir = sites_dir / folder
@@ -221,7 +222,8 @@ def make_run(
         encoding="utf-8",
     )
     (inputs / "site-config.snapshot.json").write_text(
-        json.dumps({"reference_region": REGION, "normal_waterline_guides": []}), encoding="utf-8"
+        json.dumps({"reference_region": REGION, "normal_waterline_guides": guides or []}),
+        encoding="utf-8",
     )
     (inputs / "receipt.json").write_text(json.dumps({"run_id": run_id}), encoding="utf-8")
     (run_dir / "run-summary.json").write_text(

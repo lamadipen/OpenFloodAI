@@ -30,12 +30,13 @@ name typed again. Making a repository public is not in the app.
 
 ## Rules to remember
 
-- Local paths, secrets, private notes and internal ids are never included. Locations are
+- Local paths, secrets, private notes and internal ids are never included. Bank guides are
+  exported as geometry and status only, without notes or labels. Locations are
   generalized unless an exact location was approved.
 - Labels, gauge readings, quality answers and machine output are separate columns. Machine
   output is never ground truth.
-- Every example is in exactly one split, and a camera is in exactly one split. The build
-  fails if a camera would be in two. Time-block datasets cannot be released.
+- Every example is in exactly one split, and so is every camera and every site (two cameras of
+  one site look at the same place). The build fails if a site or camera would be in two. Time-block datasets cannot be released.
 - v0.x are private drafts and may list gaps. v1.0 and later need cameras in train, validation
   and test.
 - A release is never replaced. A correction is a new version with release notes.

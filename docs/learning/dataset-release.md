@@ -91,7 +91,9 @@ It reads only the frozen dataset version, never a working site folder.
 
 ### What is kept out
 
-- Local paths, secrets, private notes, reviewer ids and internal run or folder names.
+- Local paths, secrets, private notes, reviewer ids and internal run or folder names. A bank
+  guide is exported as geometry and status only; its notes, free-text label and the name of the
+  video or image it was drawn on are not.
 - Anything from a source or site without a recorded approval, with the reason in
   `REJECTIONS.md`.
 - Exact GPS unless a named person approved it.
@@ -105,8 +107,9 @@ classes. The sampling group is kept as `collection_group` and is not a label.
 
 ### Splits never leak
 
-Every released example is in exactly one split, and a camera is in exactly one split. The
-build fails if a camera would appear in two. Identical image content is released once and the
+Every released example is in exactly one split, and a camera is in exactly one split. A site
+is in exactly one split too, because two cameras of one site look at the same place. The build
+fails if a site or camera would appear in two. Identical image content is released once and the
 repeat is reported. Datasets split by time blocks cannot be released, because that split is
 site-specific evaluation only.
 

@@ -48,8 +48,15 @@ FIELD_DOCS = [
         "The watched area and confirmed bank guides the run used (JSON).",
     ),
     (
-        "gauge_value, gauge_unit, gauge_station, gauge_time_gap_seconds, gauge_quality",
-        "The image's own matched gauge reading: instrument-derived, not observed truth.",
+        "gauge_value, gauge_unit, gauge_station, gauge_datetime_utc, gauge_time_gap_seconds, "
+        "gauge_quality, gauge_qualifiers",
+        "The image's own matched gauge reading with its time, gap, USGS quality and qualifiers: "
+        "instrument-derived, not observed truth.",
+    ),
+    (
+        "later_gauge_value, later_gauge_datetime_utc, later_gauge_time_gap_seconds, "
+        "later_gauge_quality, later_gauge_qualifiers, ...",
+        "The same evidence for the later image of a rising/falling pair, kept separate.",
     ),
     ("annotation_kind, annotation", "The task annotation (JSON). Masks are listed in mask_files."),
     ("collection_group", "Why the image was sampled. It is NOT a label."),

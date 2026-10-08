@@ -14,7 +14,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "release"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "curation"))
 
-from release_helpers import approvals, data_dir, frozen_dataset  # noqa: E402
+from release_helpers import Img, approvals, data_dir, frozen_dataset  # noqa: E402
 from test_home_server import get_json, serve_home_ui  # noqa: E402
 
 from openfloodai.ui import release_routes  # noqa: E402
@@ -358,3 +358,46 @@ def test_kaggle_metadata_is_returned_for_a_verified_release(tmp_path: Path) -> N
         )
 
     assert status == 200 and result["metadata"]["id"] == "someone/openfloodai-dataset-v0-1"
+
+
+def test_readiness_warns_when_one_sites_cameras_are_in_different_splits(tmp_path: Path) -> None:
+    from release_helpers import make_data, make_run
+
+    from openfloodai.curation import add_observation, create_dataset, freeze_version
+
+    root = make_data(tmp_path)
+    first = make_run(
+        root, [Img(day=2)], folder="site-a", camera="CAM_A", run_id="20261001T100000Z-aaaaaaaa"
+    )
+    second = make_run(
+        root, [Img(day=3)], folder="site-a", camera="CAM_A2", run_id="20261002T100000Z-bbbbbbbb"
+    )
+    ds = create_dataset(
+        root / "datasets",
+        name="Same site",
+        task="gauge_height",
+        split_policy={"kind": "site_camera", "assignments": {"CAM_A": "train", "CAM_A2": "test"}},
+    )
+    for fx in (first, second):
+        add_observation(
+            root / "datasets",
+            fx.sites_dir,
+            ds["dataset_id"],
+            folder_name=fx.folder_name,
+            run_id=fx.run_id,
+            filename=fx.filenames[0],
+        )
+    freeze_version(
+        root / "datasets", ds["dataset_id"], note="s", approved_by="me", sites_dir=first.sites_dir
+    )
+    approvals(root)
+
+    with serve_home_ui(root / "sites") as base:
+        readiness = get_json(
+            f"{base}/api/release-readiness?dataset_id={ds['dataset_id']}&version=1"
+        )
+
+    assert readiness["can_build"] is False
+    assert any(
+        "cameras in different splits" in m and "site-a_sid" in m for m in readiness["missing"]
+    )
