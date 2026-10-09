@@ -163,3 +163,21 @@ def test_unavailable_pairs_say_why_and_a_bad_request_is_refused(env: dict[str, A
     assert string_true[1]["framing_confirmed"] is False  # only a real true counts
     assert missing[0] == 400 and wrong_site[0] == 400
     assert cross_origin[0] in (400, 403)
+
+
+def test_the_chart_series_is_served_read_only(env: dict[str, Any]) -> None:
+    fx = env["fx"]
+    before = tree_fingerprint(fx.site_dir)
+    with serve(env["sites"]) as base:
+        code, _, raw = fetch(
+            f"{base}/api/compare/series?folder_name={fx.folder_name}&run_id={fx.run_id}"
+        )
+        missing = fetch(f"{base}/api/compare/series?folder_name={fx.folder_name}&run_id=nope")
+    out = json.loads(raw)
+    assert code == 200 and len(out["images"]) == 2
+    first, second = out["images"]
+    assert first["coverage"] == pytest.approx(0.35) and second["coverage"] == pytest.approx(0.75)
+    assert first["basis"] == "accepted" and "delta_vs_previous_pp" not in first
+    assert out["counts"]["with_value"] == 2 and "not water depth" in out["note"]
+    assert missing[0] == 404
+    assert tree_fingerprint(fx.site_dir) == before

@@ -198,6 +198,7 @@ function renderSamPanel() {
         const row = samState.results.find((r) => r.run_id === btn.dataset.run && r.result_id === btn.dataset.result);
         if (row) row.review_status = btn.dataset.samReview;
         toast("Review saved. This is separate from human labels.");
+        await loadSegSeries(); // an accepted or rejected mask changes the mask-based chart values
         render();
       } catch (error) {
         toast(error.message);
