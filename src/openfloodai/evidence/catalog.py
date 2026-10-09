@@ -63,6 +63,18 @@ KNOWN_ADAPTERS: tuple[AdapterDescriptor, ...] = (
         is_default=False,
     ),
     AdapterDescriptor(
+        plugin_id="water_change_mask_v1",
+        plugin_family="observation",
+        display_name="Water change (masks)",
+        description=(
+            "Measures how the visible water area changed between two chosen images of one "
+            "fixed camera, from two human-accepted water masks inside the watched area. "
+            "Image-space evidence for human review, not flood detection, physical water "
+            "height or flow speed. Unevaluated, so it ships disabled by default."
+        ),
+        is_default=False,
+    ),
+    AdapterDescriptor(
         plugin_id="hosted_sam_v1",
         plugin_family="observation",
         display_name="Hosted SAM segmentation",
