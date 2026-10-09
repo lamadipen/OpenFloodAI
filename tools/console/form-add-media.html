@@ -148,9 +148,10 @@ function renderSampling() {
 // page only ever names an approved sample by group, gauge-reading time and
 // image file name; the server recomputes and re-verifies everything.
 let sampleKind = "regular";
-let wl = { proposal: null, rows: {}, declined: [], busy: false, message: "", groups: ["low", "middle", "high"], perGroup: 3, confirmed: false, timeOfDay: "any", settingsKey: "", destMode: "new", destinations: [], destinationId: "", name: "", plan: null, planKey: "", result: null };
+let wl = { proposal: null, rows: {}, declined: [], busy: false, message: "", groups: ["low", "middle", "high"], perGroup: 3, months: [], confirmed: false, timeOfDay: "any", settingsKey: "", destMode: "new", destinations: [], destinationId: "", name: "", plan: null, planKey: "", result: null };
 
 const WL_GROUP_TEXT = { low: "Low", middle: "Middle", high: "High" };
+const WL_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const WL_SHORTFALL_TEXT = {
   no_valid_gauge_height_readings: "There were no valid gauge-height readings in this range.",
   limited_level_variation: "The gauge height barely changed in this range, so there is no meaningful low, middle, or high. Nothing is made up.",
@@ -204,13 +205,19 @@ function wlQualityHtml(reading) {
 }
 
 function wlRowKey(sample) {
-  return `${sample.group}|${sample.image.filename}`;
+  return `${sample.month || ""}|${sample.group}|${sample.image.filename}`;
+}
+
+// One list of samples per low / middle / high group, or per month and group when months
+// are chosen. The slot is that list's name (a plain group name when no months are chosen).
+function wlSlot(group, month) {
+  return month ? `${month}~${group}` : group;
 }
 
 function wlSetRowsFromProposal(proposal) {
   wl.rows = {};
   ((proposal.selection || {}).groups || []).forEach((group) => {
-    wl.rows[group.group] = group.samples.map((sample) => ({ sample, approved: true }));
+    wl.rows[wlSlot(group.group, group.month)] = group.samples.map((sample) => ({ sample, approved: true }));
   });
 }
 
@@ -221,6 +228,7 @@ function wlApproved() {
 function wlApprovedRefs() {
   return wlApproved().map((row) => ({
     group: row.sample.group,
+    ...(row.sample.month ? { month: row.sample.month } : {}),
     reading_datetime_utc: row.sample.motivating_reading.datetime_utc,
     filename: row.sample.image.filename
   }));
@@ -231,7 +239,7 @@ function wlApprovedRefs() {
 function wlSettingsKey() {
   return JSON.stringify([
     $("camera_url").value.trim(), $("start_date").value, $("end_date").value,
-    [...wl.groups].sort(), wl.perGroup, wl.timeOfDay, wl.destMode, wl.destinationId
+    [...wl.groups].sort(), [...wl.months].sort((a, b) => a - b), wl.perGroup, wl.timeOfDay, wl.destMode, wl.destinationId
   ]);
 }
 
@@ -320,20 +328,27 @@ function wlRequestBody() {
     groups: wl.groups,
     images_per_group: wl.perGroup,
     time_of_day: wl.timeOfDay,
-    declined: wl.declined
+    declined: wl.declined,
+    ...(wl.months.length ? { months: [...wl.months].sort((a, b) => a - b) } : {})
   };
 }
 
-// A replacement fills ONE group only: every other row of that group is kept as
-// it is (approved or not), the replaced image is declined, and other groups are untouched.
-function wlReplacementBody(group, replacedFilename) {
-  const keptRows = (wl.rows[group] || []).filter((row) => row.sample.image.filename !== replacedFilename);
+// A replacement fills ONE group (in one month, when sampling by month) only: every other row
+// of that slot is kept as it is (approved or not), the replaced image is declined, and other
+// groups and months are untouched.
+function wlReplacementBody(slot, replacedFilename) {
+  const keptRows = (wl.rows[slot] || []).filter((row) => row.sample.image.filename !== replacedFilename);
+  const first = (wl.rows[slot] || [])[0];
+  const group = first ? first.sample.group : slot.split("~").pop();
+  const month = first ? first.sample.month || "" : slot.includes("~") ? slot.split("~")[0] : "";
   return {
     ...wlRequestBody(),
     groups: [group],
+    ...(month ? { only_month: month } : {}),
     declined: [...wl.declined, replacedFilename],
     kept: keptRows.map((row) => ({
       group,
+      ...(month ? { month } : {}),
       reading_datetime_utc: row.sample.motivating_reading.datetime_utc,
       filename: row.sample.image.filename
     }))
@@ -348,28 +363,72 @@ function wlRowHtml(row, timezone, index) {
     ? `<div class="hint mt-2">The image's own nearest reading: ${escapeHtml(Number(ir.value).toFixed(2))} ${escapeHtml(ir.unit)}, ${escapeHtml(wlFormatGap(sample.image_reading_gap_seconds))}. ${wlQualityHtml(ir)}</div>`
     : "";
   return `<tr style="border-top:1px solid var(--line-soft);vertical-align:top;">
-    <td style="padding:8px;"><input type="checkbox" data-wl-approve="${escapeHtml(sample.group)}:${index}" ${row.approved ? "checked" : ""} aria-label="Approve this sample"></td>
+    <td style="padding:8px;"><input type="checkbox" data-wl-approve="${escapeHtml(wlSlot(sample.group, sample.month))}:${index}" ${row.approved ? "checked" : ""} aria-label="Approve this sample"></td>
     <td style="padding:8px;font-size:12px;">${escapeHtml(wlWhen(mr.datetime_utc, timezone))}<br><strong>${escapeHtml(Number(mr.value).toFixed(2))} ${escapeHtml(mr.unit)}</strong> ${wlQualityHtml(mr)}</td>
     <td style="padding:8px;font-size:12px;">${escapeHtml(wlWhen(sample.image.captured_at_utc, timezone))}<br><span class="hint">Reading is ${escapeHtml(wlFormatGap(sample.gap_seconds))}</span>${own}</td>
-    <td style="padding:8px;"><button type="button" class="btn" data-wl-replace="${escapeHtml(sample.group)}:${index}">Replace</button></td>
+    <td style="padding:8px;"><button type="button" class="btn" data-wl-replace="${escapeHtml(wlSlot(sample.group, sample.month))}:${index}">Replace</button></td>
   </tr>`;
 }
 
+function wlMonthBandsHtml(proposal, group) {
+  const month = ((proposal.selection || {}).months || []).find((m) => m.month === group.month);
+  const t = month && month.thresholds;
+  if (!month) return "";
+  return t
+    ? `<span class="hint">${escapeHtml(String(month.reading_count))} readings in ${escapeHtml(month.label)}, ranging ${escapeHtml(Number(t.minimum).toFixed(2))} to ${escapeHtml(Number(t.maximum).toFixed(2))} ${escapeHtml(proposal.gauge.unit)}</span>`
+    : `<span class="hint">no valid gauge readings in ${escapeHtml(month.label)}</span>`;
+}
+
 function wlGroupHtml(group, timezone) {
-  const rows = wl.rows[group.group] || [];
+  const rows = wl.rows[wlSlot(group.group, group.month)] || [];
   const found = rows.length;
   const shortfall = found < group.requested
     ? `<div style="background:var(--warn-soft);border-radius:8px;padding:8px 10px;font-size:12px;margin:6px 0;">Found ${found} of ${group.requested} requested. ${escapeHtml(WL_SHORTFALL_TEXT[(group.shortfall || {}).reason] || "")}</div>`
     : "";
   const skipped = Object.entries(group.skipped || {}).filter(([k]) => k !== "too_close_to_a_selected_date").map(([k, n]) => `${escapeHtml(WL_SKIP_TEXT[k] || k)}: ${n}`).join(" &middot; ");
   return `<div style="margin-top:14px;">
-    <div style="display:flex;align-items:center;gap:8px;"><span class="pill info">${escapeHtml(WL_GROUP_TEXT[group.group])} water</span><span class="hint">relative to this range</span></div>
+    <div style="display:flex;align-items:center;gap:8px;"><span class="pill info">${escapeHtml(WL_GROUP_TEXT[group.group])} water</span><span class="hint">relative to ${group.month ? "this month" : "this range"}</span></div>
     ${shortfall}
     ${found ? `<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:6px;">
       <thead><tr style="text-align:left;color:var(--ink-muted);"><th style="padding:6px 8px;">Use</th><th style="padding:6px 8px;">Gauge reading</th><th style="padding:6px 8px;">Image</th><th></th></tr></thead>
       <tbody>${rows.map((row, i) => wlRowHtml(row, timezone, i)).join("")}</tbody></table>` : ""}
     ${skipped ? `<div class="hint mt-4">Candidates passed over: ${skipped}.</div>` : ""}
   </div>`;
+}
+
+// How many calendar months of the chosen dates match the ticked months (a range over
+// several years counts each year), so the form can say what to expect before Find samples.
+function wlMonthPeriodCount() {
+  const start = $("start_date").value, end = $("end_date").value;
+  if (!wl.months.length || !start || !end || start > end) return 0;
+  let year = Number(start.slice(0, 4)), month = Number(start.slice(5, 7));
+  const lastYear = Number(end.slice(0, 4)), lastMonth = Number(end.slice(5, 7));
+  let count = 0;
+  while (year < lastYear || (year === lastYear && month <= lastMonth)) {
+    if (wl.months.includes(month)) count += 1;
+    month += 1;
+    if (month > 12) { month = 1; year += 1; }
+  }
+  return count;
+}
+
+function wlMonthsHintHtml() {
+  if (!wl.months.length) return "None ticked: the whole date range is sampled as one, exactly as before.";
+  const periods = wlMonthPeriodCount();
+  if (!periods) return "None of the ticked months fall inside your dates.";
+  if (periods > 24) return `The ticked months cover ${periods} separate months of this range; the limit is 24. Tick fewer months or shorten the dates.`;
+  const groups = Math.max(1, wl.groups.length);
+  const total = periods * groups * wl.perGroup;
+  return `Each ticked month inside your dates is sampled on its own (${periods} month${periods === 1 ? "" : "s"}): up to ${wl.perGroup} images for each ticked group, so at most ${total}. Low, middle, and high are decided within each month.`;
+}
+
+function wlMonthsFieldsetHtml() {
+  const boxes = WL_MONTHS.map((name, i) => `<label class="inline-row"><input type="checkbox" data-wl-month="${i + 1}" ${wl.months.includes(i + 1) ? "checked" : ""}> ${name}</label>`).join("");
+  return `<fieldset style="border:0;padding:0;margin:12px 0 0;font-size:13px;">
+      <legend style="font-size:12px;color:var(--ink-soft);padding:0;margin-bottom:4px;">Months (optional)</legend>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;">${boxes}</div>
+      <div class="hint" style="margin-top:4px;line-height:1.5;">${escapeHtml(wlMonthsHintHtml())}</div>
+    </fieldset>`;
 }
 
 function wlTimeOfDayText(proposal) {
@@ -405,15 +464,18 @@ function wlPanelHtml() {
         ${proposal.camera_notice ? `<br>${escapeHtml(proposal.camera_notice)}` : ""}
         <br>Time of day: ${wlTimeOfDayText(proposal)}.
         <br>${escapeHtml(proposal.note)} Policy ${escapeHtml(proposal.policy_version)}.</div>
-      ${proposal.selection.groups.map((g) => wlGroupHtml(g, proposal.timezone)).join("")}
+      ${proposal.selection.groups.map((g, i, all) => (g.month && (i === 0 || all[i - 1].month !== g.month)
+        ? `<div style="margin-top:20px;padding-top:12px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;"><strong style="font-size:14px;">${escapeHtml(g.month_label || g.month)}</strong>${wlMonthBandsHtml(proposal, g)}</div>`
+        : "") + wlGroupHtml(g, proposal.timezone)).join("")}
       <div style="background:var(--paper);border-radius:8px;padding:10px 12px;margin-top:16px;font-size:13px;line-height:1.5;">${approved > 0 ? wlIntakeSummary(plan) : "Approve at least one sample to continue."}</div>
       <label style="display:flex;gap:8px;align-items:flex-start;margin-top:10px;font-size:12px;"><input type="checkbox" id="wlConfirm" ${wl.confirmed ? "checked" : ""}> <span>I confirm this. Each image is a collection sample chosen from gauge readings, not a flood finding or a label.</span></label>
       <button type="button" class="btn primary" id="wlDownload" style="width:100%;justify-content:center;margin-top:10px;" ${approved > 0 && plan && wl.confirmed && !wl.busy && (wl.destMode === "new" || wl.destinationId) ? "" : "disabled"}>${wl.busy ? "Working&hellip;" : wl.destMode === "append" ? (plan && plan.new === 0 ? "Nothing new to add" : `Add ${plan ? plan.new : approved} image${plan && plan.new === 1 ? "" : "s"}`) : `Download ${approved} selected image${approved === 1 ? "" : "s"}`}</button>`;
   }
-  return `<div style="margin-bottom:10px;font-size:12px;color:var(--ink-soft);line-height:1.5;">Pick low, middle, and high water images from the camera's linked USGS gauge, instead of reviewing every image. These groups are <strong>relative to the date range you chose</strong>. They are not flood thresholds or labels, and a very short range may show little contrast.</div>
+  return `<div style="margin-bottom:10px;font-size:12px;color:var(--ink-soft);line-height:1.5;">Pick low, middle, and high water images from the camera's linked USGS gauge, instead of reviewing every image. These groups are <strong>relative to the date range you chose, or to each month when you tick months</strong>. They are not flood thresholds or labels, and a very short range may show little contrast.</div>
     <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;font-size:13px;">${groupChecks}
       <label class="inline-row">Images per group <input type="number" id="wlPerGroup" min="1" max="10" value="${wl.perGroup}" style="width:64px;"></label>
       <button type="button" class="btn" id="wlFind" ${wl.busy ? "disabled" : ""}>Find samples</button></div>
+    ${wlMonthsFieldsetHtml()}
     <fieldset style="border:0;padding:0;margin:12px 0 0;display:flex;gap:18px;flex-wrap:wrap;align-items:center;font-size:13px;">
       <legend style="font-size:12px;color:var(--ink-soft);padding:0;margin-bottom:4px;">Time of day</legend>
       <label class="inline-row"><input type="radio" name="wlTimeOfDay" value="any" data-wl-time ${wl.timeOfDay === "any" ? "checked" : ""}> Any time of day</label>
@@ -442,7 +504,13 @@ function renderWaterLevel() {
   panel.querySelectorAll("[data-wl-group]").forEach((box) => box.addEventListener("change", () => {
     const picked = Array.from(panel.querySelectorAll("[data-wl-group]")).filter((b) => b.checked).map((b) => b.dataset.wlGroup);
     wl.groups = picked;
-    if (wl.proposal) { wlInvalidate("Groups changed. Select Find samples again."); renderWaterLevel(); }
+    if (wl.proposal) wlInvalidate("Groups changed. Select Find samples again.");
+    renderWaterLevel();
+  }));
+  panel.querySelectorAll("[data-wl-month]").forEach((box) => box.addEventListener("change", () => {
+    wl.months = Array.from(panel.querySelectorAll("[data-wl-month]")).filter((b) => b.checked).map((b) => Number(b.dataset.wlMonth));
+    if (wl.proposal) wlInvalidate("Months changed. Select Find samples again.");
+    renderWaterLevel();
   }));
   panel.querySelectorAll("[data-wl-time]").forEach((radio) => radio.addEventListener("change", () => {
     if (!radio.checked || wl.timeOfDay === radio.value) return;
@@ -455,17 +523,18 @@ function renderWaterLevel() {
   if (per) per.addEventListener("change", () => {
     wl.perGroup = Math.max(1, Math.min(10, Number(per.value) || 3));
     per.value = wl.perGroup;
-    if (wl.proposal) { wlInvalidate("Images per group changed. Select Find samples again."); renderWaterLevel(); }
+    if (wl.proposal) wlInvalidate("Images per group changed. Select Find samples again.");
+    renderWaterLevel();
   });
   $("wlFind").addEventListener("click", wlFind);
   panel.querySelectorAll("[data-wl-approve]").forEach((box) => box.addEventListener("change", () => {
-    const [group, index] = box.dataset.wlApprove.split(":");
-    wl.rows[group][Number(index)].approved = box.checked;
+    const [slot, index] = box.dataset.wlApprove.split(":");
+    wl.rows[slot][Number(index)].approved = box.checked;
     renderWaterLevel();
   }));
   panel.querySelectorAll("[data-wl-replace]").forEach((btn) => btn.addEventListener("click", () => {
-    const [group, index] = btn.dataset.wlReplace.split(":");
-    wlReplace(group, Number(index));
+    const [slot, index] = btn.dataset.wlReplace.split(":");
+    wlReplace(slot, Number(index));
   }));
   panel.querySelectorAll("[data-wl-dest]").forEach((radio) => radio.addEventListener("change", () => {
     if (!radio.checked || wl.destMode === radio.value) return;
@@ -527,6 +596,8 @@ async function wlSyncPlan() {
 async function wlFind() {
   if (wl.groups.length === 0) { wl.message = "Choose at least one of low, middle, and high."; renderWaterLevel(); return; }
   if (!$("start_date").value || !$("end_date").value) { wl.message = "Choose a start and end date first."; renderWaterLevel(); return; }
+  if (wl.months.length && wlMonthPeriodCount() === 0) { wl.message = "None of the ticked months fall inside your dates."; renderWaterLevel(); return; }
+  if (wlMonthPeriodCount() > 24) { wl.message = "Too many separate months for one search. Tick fewer months or shorten the dates."; renderWaterLevel(); return; }
   wl.busy = true; wl.message = ""; wl.declined = []; wl.confirmed = false;
   renderWaterLevel();
   const keyAtStart = wlSettingsKey();
@@ -542,20 +613,20 @@ async function wlFind() {
   renderWaterLevel();
 }
 
-async function wlReplace(group, index) {
-  const row = (wl.rows[group] || [])[index];
+async function wlReplace(slot, index) {
+  const row = (wl.rows[slot] || [])[index];
   if (!row) return;
   wl.busy = true; wl.message = ""; wl.confirmed = false;
   renderWaterLevel();
   try {
-    const body = wlReplacementBody(group, row.sample.image.filename);
+    const body = wlReplacementBody(slot, row.sample.image.filename);
     const result = await api("/api/preview-water-level-sampling", body);
     const fresh = ((result.selection || {}).groups || [])[0];
     if (fresh) {
       wl.declined = [...wl.declined, row.sample.image.filename];
-      const keep = new Map((wl.rows[group] || []).map((r) => [wlRowKey(r.sample), r]));
-      wl.rows[group] = fresh.samples.map((sample) => keep.get(wlRowKey(sample)) || { sample, approved: true });
-      const target = wl.proposal.selection.groups.find((g) => g.group === group);
+      const keep = new Map((wl.rows[slot] || []).map((r) => [wlRowKey(r.sample), r]));
+      wl.rows[slot] = fresh.samples.map((sample) => keep.get(wlRowKey(sample)) || { sample, approved: true });
+      const target = wl.proposal.selection.groups.find((g) => wlSlot(g.group, g.month) === slot);
       if (target) { target.shortfall = fresh.shortfall; target.skipped = fresh.skipped; target.requested = fresh.requested; }
     }
   } catch (error) {
@@ -616,6 +687,8 @@ function setSampleKind(kind) {
     wl.destinations = [];
     renderWaterLevel();
     if (wl.destMode === "append") wlLoadDestinations();
+  } else if (sampleKind === "water_level") {
+    renderWaterLevel(); // keeps the months hint in step with the dates
   }
 }));
 $("modeRegular").addEventListener("click", () => setSampleKind("regular"));

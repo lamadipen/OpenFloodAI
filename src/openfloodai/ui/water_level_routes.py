@@ -27,8 +27,10 @@ DOWNLOAD_PATH = "/api/download-water-level-sampling"
 DESTINATIONS_PATH = "/api/water-level-destinations"
 PLAN_PATH = "/api/plan-water-level-intake"
 _ALL_PATHS = {PREVIEW_PATH, DOWNLOAD_PATH, DESTINATIONS_PATH, PLAN_PATH}
-_MAX_BODY_BYTES = 48 * 1024
-_MAX_APPROVED = len(sampling.GROUPS) * sampling.MAX_IMAGES_PER_GROUP
+_MAX_BODY_BYTES = 256 * 1024
+# Whole range: at most 3 groups x 10 images. Month by month: that many per month, up to
+# MAX_MONTH_PERIODS months.
+_MAX_APPROVED = len(sampling.GROUPS) * sampling.MAX_IMAGES_PER_GROUP * sampling.MAX_MONTH_PERIODS
 _MAX_DECLINED = 200
 
 
@@ -50,6 +52,7 @@ def _sample_refs(value: Any, what: str) -> list[dict[str, str]]:
                 "group": str(item.get("group", "")),
                 "reading_datetime_utc": str(item.get("reading_datetime_utc", "")),
                 "filename": str(item.get("filename", "")),
+                "month": str(item.get("month", "")),
             }
         )
     return refs
@@ -70,6 +73,16 @@ def _parse(data: dict[str, Any], reference_dir: Any) -> tuple[Any, list[str], in
     )
     time_of_day = sampling.validate_time_of_day(str(data.get("time_of_day", "any")))
     return context, groups, per_group, declined, time_of_day
+
+
+def _months(data: dict[str, Any]) -> tuple[list[int], str | None]:
+    """The optional months to sample one by one, and the one month a replacement is for."""
+
+    months = _items(data.get("months"), 12, "months")
+    only = data.get("only_month")
+    if only is not None and not isinstance(only, str):
+        raise ValueError("only_month must be text such as 2026-01.")
+    return sampling.validate_months(months), (only or None)
 
 
 def _site_config(handler: Any, data: dict[str, Any]) -> Any | None:
@@ -155,6 +168,7 @@ def handle_post(handler: Any, path: str) -> bool:
         return True
     try:
         context, groups, per_group, declined, time_of_day = _parse(data, handler._reference_dir())
+        months, only_month = _months(data)
         site_config = _site_config(handler, data)
         camera_notice = _check_camera(handler, data, context, site_config)
         if path == PREVIEW_PATH:
@@ -166,6 +180,8 @@ def handle_post(handler: Any, path: str) -> bool:
                 kept=kept,
                 declined=declined,
                 time_of_day=time_of_day,
+                months=months,
+                only_period=only_month,
             )
             if camera_notice:
                 result["camera_notice"] = camera_notice
@@ -173,9 +189,19 @@ def handle_post(handler: Any, path: str) -> bool:
         elif path == DESTINATIONS_PATH:
             _destinations(handler, data, context, site_config)
         elif path == PLAN_PATH:
-            _plan(handler, data, context, groups, per_group, time_of_day)
+            _plan(handler, data, context, groups, per_group, time_of_day, months)
         else:
-            _download(handler, data, context, groups, per_group, declined, time_of_day, site_config)
+            _download(
+                handler,
+                data,
+                context,
+                groups,
+                per_group,
+                declined,
+                time_of_day,
+                months,
+                site_config,
+            )
     except (
         ValueError,
         sampling.SamplingError,
@@ -217,6 +243,7 @@ def _plan(
     groups: list[str],
     per_group: int,
     time_of_day: str,
+    months: list[int],
 ) -> None:
     site_dir = handler._resolve_site_dir(str(data.get("folder_name", "")).strip())
     destination_id, _ = _destination(data)
@@ -228,6 +255,7 @@ def _plan(
         site_dir=site_dir,
         destination_id=destination_id,
         time_of_day=time_of_day,
+        months=months,
     )
     handler._send_json(
         {"success": True, "plan": plan.to_dict(), "destination_id": destination_id},
@@ -278,6 +306,7 @@ def _download(
     per_group: int,
     declined: list[str],
     time_of_day: str,
+    months: list[int],
     site_config: Any | None,
 ) -> None:
     if site_config is None:
@@ -293,6 +322,7 @@ def _download(
         site_dir=site_dir,
         destination_id=destination_id,
         time_of_day=time_of_day,
+        months=months,
     )
     if not _confirmed(data, plan, len(approved)):
         raise ValueError(
@@ -311,6 +341,7 @@ def _download(
         destination_id=destination_id,
         display_name=display_name,
         time_of_day=time_of_day,
+        months=months,
     )
     payload = result.to_dict()
     payload.update(

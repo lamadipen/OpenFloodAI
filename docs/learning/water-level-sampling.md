@@ -28,28 +28,61 @@ machine's result and from any human label, and it never creates a label.
 2. Choose **Sample by water level** (instead of Regular sampling).
 3. Tick Low, Middle, and/or High, and set **Images per group** (default 3,
    at most 10).
-4. Choose the **time of day**: **Any time of day** (the default) or **Daytime
+4. Optionally tick **Months** (see [Sample by month](#sample-by-month-optional)). Leave
+   them all unticked to sample the whole date range as one.
+5. Choose the **time of day**: **Any time of day** (the default) or **Daytime
    only**, which keeps both the gauge reading and the image inside the local
    10:00 to 14:00 window, the same daylight window regular daylight sampling uses.
    Changing it (or the groups, images per group, dates, or camera) clears the
    preview and the confirmation, so run Find samples again.
-5. Select **Find samples**. This reads the gauge data, ranks the readings, and
+6. Select **Find samples**. This reads the gauge data, ranks the readings, and
    then checks the camera archive only around the readings it is considering, one
    day at a time, until each group has its picks. It never lists or downloads the
    whole period, and **it downloads no images.**
-6. Review the preview. Each row shows the group, the gauge reading time, gauge
+7. Review the preview. Each row shows the group, the gauge reading time, gauge
    height and unit, USGS quality (provisional readings are marked), the image time,
    and the exact gap between them.
-7. Untick a row to leave it out, or select **Replace** to get another candidate
+8. Untick a row to leave it out, or select **Replace** to get another candidate
    for that group. A replacement keeps the group's other rows, respects the same
    rules, and never uses an image hours away.
-8. Choose the **destination** (see below), read the summary of what will happen,
+9. Choose the **destination** (see below), read the summary of what will happen,
    tick the confirmation, and select the button. Only the approved rows are
    downloaded. The server checks them against what you asked for (groups, and no
    more than the requested images per group) before it fetches anything.
 
 If you ask for more than can be found, the preview shows how many it found and
 why. Requested counts are maximums, not guarantees.
+
+## Sample by month (optional)
+
+Months help when the seasons matter. A winter image compared with a summer baseline is a weak
+comparison, so you can ask for the same number of images from each month you care about.
+
+Tick one or more months (for example January, February, and August) and set **Images per
+group**. For each ticked month that falls inside your start and end dates, the search picks up
+to that many images for each ticked group (Low, Middle, High). With three months and 3 images
+per group that is at most 27 images. Leave every month unticked and nothing changes: the whole
+date range is sampled as one, exactly as described above.
+
+- **Low, middle, and high are decided inside each month.** January's "high" is high for
+  January, not for the year. A month's bands come only from that month's gauge readings, and
+  the 3-day spacing rule applies inside the month. A month whose gauge height barely changes
+  (under 0.20 ft) gets no groups, the same as a flat date range.
+- **Months are calendar months on the camera's own clock.** A month your dates only partly
+  cover is cut to your dates (a range starting on 15 January gives the second half of January).
+  A range over several years gives one period for each matching month of each year, so ticking
+  January over 2024 to 2026 gives three Januaries. At most 24 such months can be searched at
+  once.
+- **A ticked month outside your dates is ignored**, and the form says how many matching months
+  it found. If none match, Find samples tells you instead of guessing.
+- **Counts are still maximums.** A month with no gauge readings, no archive images, or too few
+  separate days is reported as a shortfall for that month and group. Nothing is padded or taken
+  from another month.
+- **Review and replace work per month and group.** The preview is grouped by month. Replace
+  swaps one image in one month and group and leaves everything else alone.
+- **What is saved.** Each image keeps its month next to its group, and the batch record keeps
+  each month's own readings count and bands, so you can see why an image counts as, say,
+  February's high. Month is a collection detail, not a label.
 
 ## What it needs
 
@@ -81,6 +114,7 @@ every selection.
 | Image match | The image nearest the reading within 15 minutes, an equal distance going to the earlier image. |
 | Date edges | Group bands and ranking use only the readings inside your date range. Finding an image's own nearest reading also uses the readings just outside the range, so an image at 00:01 is matched to the 23:59 reading the night before, not to a farther reading inside the range. An image outside the date range is never chosen. |
 | Re-check | The image's **own** nearest reading must also fall in the group. Both readings are saved when they differ, and the group reflects the image's own reading. |
+| Months | With no months chosen, nothing changes. With months, every rule in this table is applied separately inside each chosen calendar month of the range (cut at the camera's local month boundaries and clipped to the dates): bands, count, spacing and shortfalls are per month. The policy version stays `water-level-sampling-v1`; the request records the months. |
 | Time of day | **Any time** (default) changes nothing. **Daytime only** keeps a candidate only if its gauge reading and its image are both within 10:00 to 14:00 on the camera's local clock (ends included, daylight saving handled). The group bands are still set by all readings in the range, so a night-time peak still shapes what "high" means; it just is not sampled. If no reading in a group is in the window, the group is a shortfall, not a night-time pick. The choice is saved with the request. |
 | Uniqueness | An image is chosen once and never fills two groups. Groups fill in the order low, middle, high. |
 | Shortfall | A group that cannot reach its count is reported, never padded with unsuitable duplicates. |
