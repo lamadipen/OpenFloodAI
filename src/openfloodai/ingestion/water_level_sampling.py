@@ -45,6 +45,15 @@ Uniqueness          An image is never chosen twice, nor for two groups. Groups
                     are filled in the order low, middle, high.
 Shortfall           A group that cannot reach the requested count is reported
                     with why. Counts are maxima, never guarantees.
+
+Months (optional)   With no months chosen, everything above applies to the whole
+                    date range, exactly as before. With months chosen (1-12), each
+                    calendar month of the range that matches a chosen month is its
+                    own period, clipped to the range and cut at the camera's local
+                    month boundaries. Every rule above is then applied inside each
+                    period separately: group bands come from that month's readings
+                    only, the count is per month per group, and spacing is within the
+                    month. A month's "high" is high for that month, not for the year.
 """
 
 from __future__ import annotations
@@ -52,8 +61,8 @@ from __future__ import annotations
 import math
 from bisect import bisect_left
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -81,6 +90,21 @@ MIDDLE_LOW_QUANTILE = 0.40
 MIDDLE_HIGH_QUANTILE = 0.60
 HIGH_QUANTILE = 0.80
 MAX_SKIP_EXAMPLES = 25
+MAX_MONTH_PERIODS = 24
+MONTH_NAMES = (
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+)
 TIME_OF_DAY_ANY = "any"
 TIME_OF_DAY_DAYTIME = "daytime"
 TIME_OF_DAY_CHOICES = (TIME_OF_DAY_ANY, TIME_OF_DAY_DAYTIME)
@@ -263,6 +287,7 @@ class SelectedSample:
     gap_seconds: int  # motivating reading time minus image time
     image_match: GageMatch  # the image's OWN nearest valid reading
     unit: str
+    month: str = ""  # "YYYY-MM" when sampled per month, else ""
 
     @property
     def filename(self) -> str:
@@ -272,6 +297,7 @@ class SelectedSample:
         matched = self.image_match.reading
         return {
             "group": self.group,
+            **({"month": self.month} if self.month else {}),
             "status": "selected",
             "motivating_reading": _reading_record(self.reading, self.unit),
             "image": {
@@ -352,6 +378,135 @@ class SelectionResult:
 
     def all_samples(self) -> list[SelectedSample]:
         return [sample for group in self.groups for sample in group.selected]
+
+
+@dataclass(frozen=True)
+class Period:
+    """One span of the request that is sampled on its own: the whole range, or one month."""
+
+    key: str  # "" for the whole range, else "YYYY-MM"
+    label: str
+    start_utc: datetime
+    end_utc: datetime
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "month": self.key,
+            "label": self.label,
+            "start_utc": self.start_utc.isoformat(),
+            "end_utc": self.end_utc.isoformat(),
+        }
+
+
+def validate_months(months: Sequence[object]) -> list[int]:
+    """Month numbers 1-12, each once, in calendar order."""
+
+    cleaned: set[int] = set()
+    for month in months:
+        if isinstance(month, bool) or not isinstance(month, int) or not 1 <= month <= 12:
+            raise SamplingError("Months must be numbers from 1 (January) to 12 (December).")
+        cleaned.add(month)
+    return sorted(cleaned)
+
+
+def whole_range_period(start_utc: datetime, end_utc: datetime) -> Period:
+    return Period("", "", start_utc, end_utc)
+
+
+def month_periods(
+    months: Sequence[int], start_utc: datetime, end_utc: datetime, timezone_name: str
+) -> list[Period]:
+    """Each chosen calendar month inside [start_utc, end_utc), cut at local month boundaries.
+
+    A month the range only partly covers is clipped to the range. A range that spans
+    several years yields one period per matching month per year, oldest first.
+    """
+
+    wanted = set(validate_months(months))
+    if not wanted:
+        return [whole_range_period(start_utc, end_utc)]
+    zone = ZoneInfo(timezone_name)
+    first = start_utc.astimezone(zone)
+    last = (end_utc - timedelta(microseconds=1)).astimezone(zone)
+    periods: list[Period] = []
+    year, month = first.year, first.month
+    while (year, month) <= (last.year, last.month):
+        if month in wanted:
+            month_start = datetime(year, month, 1, tzinfo=zone).astimezone(UTC)
+            next_year, next_month = (year + 1, 1) if month == 12 else (year, month + 1)
+            month_end = datetime(next_year, next_month, 1, tzinfo=zone).astimezone(UTC)
+            clipped = (max(start_utc, month_start), min(end_utc, month_end))
+            if clipped[0] < clipped[1]:
+                periods.append(
+                    Period(
+                        f"{year:04d}-{month:02d}",
+                        f"{MONTH_NAMES[month - 1]} {year}",
+                        clipped[0],
+                        clipped[1],
+                    )
+                )
+        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
+    if not periods:
+        raise SamplingError("None of the chosen months fall inside the date range.")
+    if len(periods) > MAX_MONTH_PERIODS:
+        raise SamplingError(
+            f"The chosen months cover {len(periods)} separate months of this date range; "
+            f"the limit is {MAX_MONTH_PERIODS}. Choose fewer months or a shorter date range."
+        )
+    return periods
+
+
+def tag_month(result: SelectionResult, period: Period) -> SelectionResult:
+    """Mark every selected sample with its month (a no-op for the whole-range period)."""
+
+    if not period.key:
+        return result
+    for group in result.groups:
+        group.selected = [replace(sample, month=period.key) for sample in group.selected]
+    return result
+
+
+def combine_period_results(
+    periods: Sequence[Period], results: Sequence[SelectionResult]
+) -> dict[str, Any]:
+    """One selection dict for a month-by-month request, in the usual shape.
+
+    `groups` is flat, one entry per month and group, each tagged with its month. `months`
+    holds each month's own bands and counts. `thresholds` is None: there is no single
+    set of bands for the whole range.
+    """
+
+    first = results[0]
+    groups: list[dict[str, Any]] = []
+    months: list[dict[str, Any]] = []
+    for period, result in zip(periods, results, strict=True):
+        months.append(
+            {
+                **period.to_dict(),
+                "reading_count": result.reading_count,
+                "thresholds": result.thresholds.to_dict() if result.thresholds else None,
+            }
+        )
+        for group in result.groups:
+            groups.append({**group.to_dict(), "month": period.key, "month_label": period.label})
+    base = first.to_dict()
+    base.update(
+        {
+            "reading_count": sum(r.reading_count for r in results),
+            "thresholds": None,
+            "groups": groups,
+            "months": months,
+        }
+    )
+    base["policy"] = {
+        **base["policy"],
+        "scope": "per_month",
+        "scope_note": (
+            "Low, middle, and high were decided inside each month on its own, so a month's "
+            "high is high for that month only."
+        ),
+    }
+    return base
 
 
 def validate_time_of_day(time_of_day: str) -> str:
@@ -526,33 +681,47 @@ def select_samples(
 
 
 def validate_approved_against_request(
-    approved: Sequence[Mapping[str, str]], groups: Sequence[str], images_per_group: int
+    approved: Sequence[Mapping[str, str]],
+    groups: Sequence[str],
+    images_per_group: int,
+    months: Sequence[str] | None = None,
 ) -> None:
     """Approved samples must fit the request they claim to answer.
 
     Every item's group must be one that was asked for, no group may exceed the
     requested count, and the request itself must be valid. Checked before any
     network call, so a changed form can never download a stale selection.
+
+    `months` are the "YYYY-MM" periods of a month-by-month request, or None for a
+    whole-range request. In a month-by-month request every item must name one of them
+    and the count limit applies per month and group; in a whole-range request no item
+    may name a month.
     """
 
     if not groups or any(group not in GROUPS for group in groups):
         raise SamplingError("Choose one or more of low, middle, and high.")
     if not 1 <= images_per_group <= MAX_IMAGES_PER_GROUP:
         raise SamplingError(f"Images per group must be from 1 to {MAX_IMAGES_PER_GROUP}.")
-    counts: dict[str, int] = {}
+    counts: dict[tuple[str, str], int] = {}
     for item in approved:
         group = str(item.get("group", ""))
+        month = str(item.get("month", ""))
         if group not in groups:
             raise SamplingError(
                 f"An approved sample is in the {group or 'unknown'} group, which was not "
                 "requested. Run Find samples again."
             )
-        counts[group] = counts.get(group, 0) + 1
-    for group, count in counts.items():
-        if count > images_per_group:
+        if (months is None and month) or (months is not None and month not in months):
             raise SamplingError(
-                f"{count} {group} samples were approved but {images_per_group} were requested. "
-                "Run Find samples again."
+                "An approved sample is from a month that was not requested. Run Find samples again."
+            )
+        counts[(month, group)] = counts.get((month, group), 0) + 1
+    for (month, group), count in counts.items():
+        if count > images_per_group:
+            where = f" in {month}" if month else ""
+            raise SamplingError(
+                f"{count} {group} samples{where} were approved but {images_per_group} were "
+                "requested. Run Find samples again."
             )
 
 
