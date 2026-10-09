@@ -22,6 +22,7 @@ function make({ days, labelled = [], filter = null, selectedIndex = 0 }) {
     render: () => rendered.push(sandbox.state.selectedIndex),
     history: { replaceState() {} },
     location: { href: "http://x/console/review.html?site=s&run_id=r" },
+    compareReset() {}, // selecting an image ends any open comparison (review-compare.js)
     URL
   };
   vm.createContext(sandbox);
@@ -184,6 +185,8 @@ function compareContext(stored) {
   const start = script.indexOf("// Which comparison views are shown");
   const sandbox = {
     state: { compareView: "side" },
+    compareButtonHtml: () => "",
+    comparePickerHtml: () => "",
     localStorage: {
       store: stored === undefined ? {} : { "openfloodai.reviewCompareView": stored },
       getItem(k) { return this.store[k] ?? null; },

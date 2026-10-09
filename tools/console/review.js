@@ -595,6 +595,7 @@ function nextUnlabelledFrom(index) {
 }
 
 function selectIndex(index) {
+  compareReset(); // a comparison always describes the image it was opened for
   state.selectedIndex = index;
   state.eventCursor = -1;
   try {
@@ -702,10 +703,12 @@ function saveCompareView(view) {
 }
 
 function compareSwitchHtml() {
-  return `<div role="group" aria-label="Comparison view" style="display:flex;gap:6px;align-items:center;margin-bottom:12px;">
+  return `<div role="group" aria-label="Comparison view" style="display:flex;gap:6px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
     <span class="hint">Comparison view</span>
     ${COMPARE_VIEWS.map(([id, text]) => `<button class="btn${state.compareView === id ? " primary" : ""}" aria-pressed="${state.compareView === id}" data-act="compare-view" data-value="${id}" style="font-size:12px;padding:5px 12px;">${text}</button>`).join("")}
-  </div>`;
+    <span style="margin-left:auto;">${compareButtonHtml()}</span>
+  </div>
+  ${comparePickerHtml()}`;
 }
 
 // The two charts can be folded away to leave room for the images. The choice is kept in this
@@ -745,12 +748,18 @@ function collapseHeaderHtml(section, titleHtml) {
 // comparison image already contains both pictures with the watched area outlined, so the two
 // pictures are not drawn a second time above it. Without a comparison (no baseline, or no saved
 // image for the day) the plain pictures are shown instead.
-function sideBySideHtml({ summary, sel, baselineQuery, selectedQuery, comparisonQuery }) {
+function sideBySideHtml({ summary, sel, baselineQuery, selectedQuery, comparisonQuery, captions: captionTexts }) {
   const baselineSam = samState.target === "baseline" && samState.status && samState.status.enabled
     ? ' <span class="pill" style="font-size:11px;background:var(--sam-soft);color:var(--sam);">Will be segmented</span>' : "";
   const selectedSam = samHighlightIndex() != null
     ? ' <span class="pill" style="font-size:11px;background:var(--sam-soft);color:var(--sam);">Will be segmented</span>' : "";
-  const captions = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:4px;">
+  // Compare with another image passes its own two captions; the baseline view builds them here.
+  const captions = captionTexts
+    ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:4px;">
+      <div class="hint">${captionTexts[0]}</div>
+      <div class="hint">${captionTexts[1]}</div>
+    </div>`
+    : `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:4px;">
       <div class="hint">Baseline &mdash; ${escapeHtml(summary.baseline_filename || "not recorded")}${baselineSam}</div>
       <div class="hint">${escapeHtml(sel.date)}, ${escapeHtml(sel.time)} local (${escapeHtml(sel.resultLabel)})${selectedSam}</div>
     </div>`;
@@ -863,11 +872,11 @@ function renderNow() {
           ${waterLevelInfoHtml(sel)}
           ${selectedGaugeHtml(sel)}
           ${compareSwitchHtml()}
-          ${showSide ? sideBySideHtml({ summary, sel, baselineQuery, selectedQuery, comparisonQuery }) : ""}
+          ${compareActive() ? compareViewsHtml({ showSide, showOverlay }) : `${showSide ? sideBySideHtml({ summary, sel, baselineQuery, selectedQuery, comparisonQuery }) : ""}
           ${showOverlay ? `
           <div class="hint" style="margin:14px 0 6px;">Overlay comparison &mdash; slide to blend the selected image over the baseline</div>
           ${onionHtml(summary.baseline_filename ? baselineQuery : null, selectedQuery)}
-` : ""}
+` : ""}`}
         </div>
 
         ${riverbankReviewHtml(detail.evidence_records, sel)}
@@ -923,6 +932,7 @@ function renderNow() {
   `;
   wireActions();
   wireOnion();
+  wireCompare();
   renderSamPanel();
   renderDatasetPanel();
   refreshSamPlan();
@@ -1013,7 +1023,10 @@ function wireActions() {
   content.querySelectorAll("[data-act]").forEach((el) => {
     el.addEventListener("click", async () => {
       const act = el.dataset.act;
-      if (act === "filter") {
+      if (["select-event", "biggest", "prev-event", "next-event"].includes(act)) compareReset();
+      if (act.startsWith("compare-") && act !== "compare-view") {
+        await handleCompareAction(act, el);
+      } else if (act === "filter") {
         const code = el.dataset.code;
         state.filter = state.filter === code ? null : code;
         render();

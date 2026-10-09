@@ -86,6 +86,7 @@ from openfloodai.review.event_reviews import (
 )
 from openfloodai.review.river_tracker import build_river_tracker
 from openfloodai.ui import (
+    compare_routes,
     dataset_routes,
     hosted_sam_routes,
     release_routes,
@@ -150,6 +151,8 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         if review_workspace.handle_get(self, path):
             return
         if hosted_sam_routes.handle_get(self, path):
+            return
+        if compare_routes.handle_get(self, path):
             return
         if dataset_routes.handle_get(self, path):
             return
@@ -763,6 +766,8 @@ class OpenFloodAIHomeHandler(SimpleHTTPRequestHandler):
         if hosted_sam_routes.handle_post(self, self.path):
             return
         if water_level_routes.handle_post(self, self.path):
+            return
+        if compare_routes.handle_post(self, self.path):
             return
         if dataset_routes.handle_post(self, self.path):
             return
