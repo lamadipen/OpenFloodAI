@@ -96,6 +96,36 @@ The report lists errors **and** the unavailable count and rate. A system that an
 for everything cannot pass. Held-out pairs are measured and scored only when asked for, and every
 such request is logged; do not tune on them.
 
+## The Review chart: pixel change or water coverage
+
+The second chart in **Review** plots one number per image over time. A **Measurement** switch above it
+has two choices, and a short explanation under the switch says what the current one means. The choice is
+remembered in your browser, and nothing changes until you use it.
+
+- **Pixel appearance change** (default; the original "Region change score"). How different the watched
+  area looks from the baseline image, from pixel brightness. Anything that changes the picture raises it:
+  water, but also light, shadow, snow or a moved camera.
+- **Segmentation: water coverage.** For each image, the share of your watched area that the segmentation
+  marks as water, in percent. A higher point means more of the watched area is water in that picture, so
+  the line shows how visible water changes from image to image. It measures the picture, not water depth
+  or flow.
+
+Water coverage rules:
+
+- **Filled and hollow points.** A filled point uses a water mask a reviewer accepted. A hollow point uses
+  an unreviewed draft mask, so you can see the line as soon as segmentation has run and still tell
+  accepted from draft. Accepting a mask fills its point at once. Rejected, needs-correction, riverbank and
+  "no match" results are never plotted.
+- **No point means no mask, not zero.** An image without a usable mask is simply missing from the line,
+  and the button shows how many images have one (for example `6/8`). If nothing can be plotted the chart
+  says what to do.
+- **Same watched area.** Masks must share one image size and watched area; any that do not are left out.
+  The chart cannot detect a camera that moved, so treat it as a screening view and use **Compare with
+  another image** for a pair you confirm yourself.
+- **Separate numbers.** The two measurements are never combined or substituted for each other. The
+  selected-image line shows both, and marks a draft.
+- **Getting masks.** Use the checkbox beside Run validation or the Segmentation panel under the image.
+
 ## Compare any two images in Review
 
 In **Review**, the selected image has a **Compare with another image…** button beside the
@@ -127,8 +157,7 @@ comparison view switch. It is optional, and nothing about ordinary review change
 7. **Close** returns you to the same image, filters and scroll position. Selecting another image
    also ends the comparison.
 
-Not included: comparing different cameras, automatic pairing, charts of coverage over time,
-training, alerts and risk decisions.
+Not included: comparing different cameras, automatic pairing, training, alerts and risk decisions.
 
 ## Limitations
 
@@ -140,4 +169,4 @@ training, alerts and risk decisions.
   production or warning claim.
 
 Out of scope: training, alerts, risk-engine wiring, public upload, extra baseline lines and
-gauge-height regression. Charting these numbers over time is a separate follow-up.
+gauge-height regression. Cross-camera comparisons are out of scope.

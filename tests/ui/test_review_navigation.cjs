@@ -176,7 +176,7 @@ test("each image's SAM state is the newest completed result per prompt", () => {
 
 test("the SAM result buttons mark the saved decision and the page refreshes after a review", () => {
   assert.match(script, /aria-pressed="\$\{review === d\}"/);
-  assert.match(script, /Review saved\. This is separate from human labels\."\);\s*render\(\);/);
+  assert.match(script, /Review saved\. This is separate from human labels\."\);\s*await loadSegSeries\(\);[^\n]*\n\s*render\(\);/);
 });
 
 // ---- comparison view switch ----------------------------------------------------------------

@@ -326,16 +326,18 @@ def _file_sha(path: Path) -> str | None:
         return None
 
 
-def find_mask_candidates(site_dir: Path, snapshot: dict[str, Any]) -> list[MaskCandidate]:
-    """Saved segmentation results made from exactly this image's bytes, newest first."""
+def mask_candidates_from_results(
+    site_dir: Path, results: list[dict[str, Any]], filename: str, image_sha256: str
+) -> list[MaskCandidate]:
+    """The saved segmentation results made from exactly these image bytes, newest first.
 
-    source = snapshot["source"]
-    image = snapshot["image"]
+    `results` is one listing of a sequence's results (see `hosted_sam_runner.list_sam_results`),
+    so a caller that needs many images lists the sequence once instead of once per image.
+    """
+
     candidates: list[MaskCandidate] = []
-    for record in hosted_sam_runner.list_sam_results(site_dir, str(source["sequence_id"])):
-        if record.get("filename") != image["filename"]:
-            continue
-        if record.get("image_sha256") != image["sha256"]:
+    for record in results:
+        if record.get("filename") != filename or record.get("image_sha256") != image_sha256:
             continue
         run_dir = hosted_sam_runner._run_dir(site_dir, str(record["run_id"]))
         paths = tuple(
@@ -355,6 +357,19 @@ def find_mask_candidates(site_dir: Path, snapshot: dict[str, Any]) -> list[MaskC
             )
         )
     return candidates
+
+
+def find_mask_candidates(site_dir: Path, snapshot: dict[str, Any]) -> list[MaskCandidate]:
+    """Saved segmentation results made from exactly this image's bytes, newest first."""
+
+    source = snapshot["source"]
+    image = snapshot["image"]
+    return mask_candidates_from_results(
+        site_dir,
+        hosted_sam_runner.list_sam_results(site_dir, str(source["sequence_id"])),
+        str(image["filename"]),
+        str(image["sha256"]),
+    )
 
 
 def has_unassessable_label(snapshot: dict[str, Any]) -> bool:

@@ -81,6 +81,12 @@ A run made before gauge evidence was saved shows that it was **not captured**.
 It is never rebuilt from gauge data downloaded later, so a finished run keeps
 showing what it showed when it was made.
 
+### Chart measurements
+
+The region chart has a **Measurement** switch: the original pixel appearance change, or the water coverage
+of the watched area from segmentation masks (filled when accepted, hollow when still a draft). See
+[Measure Water Change From Masks](water-change-measurement.md#the-review-chart-pixel-change-or-water-coverage).
+
 ### Compare with another image
 
 Beside the comparison view switch, **Compare with another image…** lets you pick any other saved

@@ -1,4 +1,4 @@
-"""Routes for comparing any two saved images of one camera in Review (Issue #223).
+"""Routes for comparing saved images of one camera in Review (Issue #223) and its chart series.
 
 Everything here only READS saved runs, images and masks. `measure` never writes; `save` writes
 one new, content-addressed record and only when the person asks for it. No route starts a
@@ -12,10 +12,15 @@ from urllib.parse import parse_qs, urlsplit
 
 from openfloodai.curation.common import CurationError
 from openfloodai.ingestion.river_images import RiverImageError
-from openfloodai.water_change import compare
+from openfloodai.water_change import compare, series
 from openfloodai.water_change.pair import EndpointRef
 
-_GET_PATHS = {"/api/compare/candidates", "/api/compare/thumbnail", "/api/compare/overlay"}
+_GET_PATHS = {
+    "/api/compare/candidates",
+    "/api/compare/thumbnail",
+    "/api/compare/overlay",
+    "/api/compare/series",
+}
 _POST_PATHS = {"/api/compare/measure", "/api/compare/save"}
 _MAX_BODY_BYTES = 8 * 1024
 
@@ -47,6 +52,11 @@ def handle_get(handler: Any, path: str) -> bool:
         if path == "/api/compare/candidates":
             handler._send_json(
                 compare.candidates(handler.sites_dir, first("folder_name"), first("run_id")),
+                status_code=200,
+            )
+        elif path == "/api/compare/series":
+            handler._send_json(
+                series.run_series(handler.sites_dir, first("folder_name"), first("run_id")),
                 status_code=200,
             )
         elif path == "/api/compare/thumbnail":
