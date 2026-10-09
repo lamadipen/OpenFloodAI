@@ -41,6 +41,22 @@ proceed, revise or stop. Errors and the unavailable rate are both reported, held
 scored only on request and logged, and unknown-for-everything cannot pass. Commands are in
 `scripts/water_change_pilot.py`.
 
+## Compare any two images in Review
+
+Optional, in Review: **Compare with another image…** next to the comparison view switch. Pick any
+other saved image of the same camera (across sequences and runs, with thumbnails, exact times and
+the mask state; the same file name in two sequences counts as two images). The existing Side by
+side and Overlay views then show the two images **earlier then later**, whichever you picked first.
+
+With accepted water masks on both and your confirmation that the view did not move, it shows
+**Water coverage change**: coverage at each end, the signed change in percentage points, newly wet
+and no longer wet areas, an image-space rate, and a picture of where water arrived and left. If a
+number is not possible (missing, unreviewed or rejected mask, different watched area or size, equal
+times, unconfirmed view) you still see the images with a plain reason. It is separate from the
+run's Pixel appearance change score and never combined with it. Viewing writes nothing and starts
+no segmentation; **Save this comparison** is a separate, explicit button that never overwrites an
+earlier result. Closing returns you to the same image, filters and scroll position.
+
 ## Limits
 
 Image-space area only; hosted masks with no editor; person-confirmed framing; a few pairs from one

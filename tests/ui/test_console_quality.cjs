@@ -65,7 +65,7 @@ test("small text is at least 11px in inline styles, and hints are 12px", () => {
 test("the review page loads its script files in dependency order and starts last", () => {
   const html = fs.readFileSync(path.join(dir, "review.html"), "utf8");
   const order = [...html.matchAll(/<script src="\/console\/([^"]+)"><\/script>/g)].map((m) => m[1]);
-  assert.deepEqual(order, ["shared.js", "review.js", "review-charts.js", "review-sam.js", "review-onion.js", "review-datasets.js"]);
+  assert.deepEqual(order, ["shared.js", "review.js", "review-charts.js", "review-sam.js", "review-onion.js", "review-compare.js", "review-datasets.js"]);
   assert.match(html, /<script>main\(\);<\/script>\s*<\/body>/);
   assert.ok(html.split("\n").length < 60, "review.html should hold markup only");
 });

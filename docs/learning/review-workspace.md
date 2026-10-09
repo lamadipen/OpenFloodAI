@@ -81,6 +81,13 @@ A run made before gauge evidence was saved shows that it was **not captured**.
 It is never rebuilt from gauge data downloaded later, so a finished run keeps
 showing what it showed when it was made.
 
+### Compare with another image
+
+Beside the comparison view switch, **Compare with another image…** lets you pick any other saved
+image of the same camera and see the two earlier-then-later in the same views, with a mask-based
+water coverage change when both have accepted masks. It is optional and changes nothing unless you
+press Save this comparison. See [Measure Water Change From Masks](water-change-measurement.md).
+
 ## 4. Assign a dataset group
 
 Select **Edit dataset group** to open the dataset form in a modal.

@@ -96,6 +96,40 @@ The report lists errors **and** the unavailable count and rate. A system that an
 for everything cannot pass. Held-out pairs are measured and scored only when asked for, and every
 such request is logged; do not tune on them.
 
+## Compare any two images in Review
+
+In **Review**, the selected image has a **Compare with another image…** button beside the
+comparison view switch. It is optional, and nothing about ordinary review changes.
+
+1. **Choose the other image.** A compact picker lists the other saved images of the same
+   camera, across sequences and runs, with a thumbnail, exact capture time, a mask state
+   (accepted, not reviewed, rejected, needs correction, none) and a note when the image's sequence
+   has no saved run. Filter by sequence, dates, or "only images with an accepted mask". The same
+   file name in two sequences is two different images and is listed twice.
+2. **Read it in the views you already use.** The existing **Side by side**, **Overlay** and **Both**
+   switch now shows the two chosen images. They are always shown **earlier then later**, with exact
+   times and the gap between them, whichever image you picked first.
+3. **Water coverage change.** When both images have an accepted water mask, the screen shows the
+   coverage of the watched area at each end, the signed change in percentage points, how much is
+   newly wet and no longer wet, an image-space rate per hour, and a picture of where water arrived
+   (blue) and left (red). It uses the same calculation as this page's measurement above, with the
+   same limits.
+4. **You confirm the framing.** Same camera does not prove the view did not move, and the software
+   does not align cameras. Tick the confirmation to get numbers.
+5. **When a number is not possible, you still see the images.** A missing, unreviewed or rejected
+   mask, a different watched area or image size, equal capture times, or an unconfirmed view each
+   show a plain reason and no number. Nothing is substituted, and the run's **Pixel appearance
+   change** score is a separate number that is never combined with this one.
+6. **Viewing writes nothing.** No label, baseline, dataset membership or saved run changes, and no
+   segmentation, paid call or upload starts. **Save this comparison** is a separate, optional
+   button. It keeps the exact image, mask and calculation references once and never overwrites an
+   earlier result.
+7. **Close** returns you to the same image, filters and scroll position. Selecting another image
+   also ends the comparison.
+
+Not included: comparing different cameras, automatic pairing, charts of coverage over time,
+training, alerts and risk decisions.
+
 ## Limitations
 
 - Image-space area only. Narrow or deep channels can change height with little visible area change.
@@ -106,5 +140,4 @@ such request is logged; do not tune on them.
   production or warning claim.
 
 Out of scope: training, alerts, risk-engine wiring, public upload, extra baseline lines and
-gauge-height regression. Selecting any two images in the review screen and charting these numbers
-are separate follow-ups.
+gauge-height regression. Charting these numbers over time is a separate follow-up.
