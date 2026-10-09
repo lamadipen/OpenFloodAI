@@ -46,6 +46,10 @@ PLUGIN_ID = "hosted_sam_v1"
 RUNS_DIRNAME = "hosted-sam-runs"
 MAX_IMAGES_PER_BATCH = 10
 MAX_CONCEPTS_PER_BATCH = 2
+# "Fetch masks for the whole sequence" (the checkbox beside Run validation): one concept, a
+# ceiling on paid requests per click, and only images that have no usable result yet.
+BULK_CONCEPT = "river water"
+MAX_BULK_REQUESTS = 100
 JPEG_QUALITY = 92
 REVIEW_DECISIONS = frozenset({"accepted", "rejected", "needs_correction"})
 _RUN_ID = re.compile(r"^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$")
@@ -305,6 +309,140 @@ def run_segmentation(
     }
     _write_new_json(run_dir / "run-summary.json", summary)
     return {**summary, "results": results}
+
+
+def downloaded_filenames(site_dir: Path, sequence_id: str) -> list[str]:
+    """Every downloaded image of one saved sequence, in capture order."""
+
+    records = read_jsonl_records(
+        site_dir / "inputs" / "image-sequences" / sequence_id / "sequence-manifest.jsonl"
+    )
+    rows = [r for r in records if r.get("download_status") == "downloaded" and r.get("filename")]
+    rows.sort(key=lambda r: (str(r.get("captured_at_utc", "")), str(r["filename"])))
+    return list(dict.fromkeys(str(r["filename"]) for r in rows))
+
+
+def _chunks(names: Sequence[str]) -> list[list[str]]:
+    return [
+        list(names[i : i + MAX_IMAGES_PER_BATCH])
+        for i in range(0, len(names), MAX_IMAGES_PER_BATCH)
+    ]
+
+
+def plan_sequence_masks(
+    site_dir: Path, sequence_id: str, concept: str = BULK_CONCEPT
+) -> dict[str, Any]:
+    """What fetching masks for a whole sequence would do, without sending anything.
+
+    An image that already has a saved result for this exact request (same image bytes, model,
+    prompt and crop) is NOT sent again, and its existing result and human review stay where
+    they are. Only images with no usable result need a paid request. Earlier failures are not
+    reused, so they are retried.
+    """
+
+    names = downloaded_filenames(site_dir, sequence_id)
+    if not names:
+        raise ValueError("This sequence has no downloaded images.")
+    missing: list[str] = []
+    for chunk in _chunks(names):
+        plan = plan_segmentation(site_dir, sequence_id, chunk, [concept])
+        missing.extend(item.filename for item in plan.items if item.reused_from is None)
+    return {
+        "sequence_id": sequence_id,
+        "concept": sam.validate_concept(concept),
+        "total_images": len(names),
+        "already_have_masks": len(names) - len(missing),
+        "to_send": len(missing),
+        "filenames_to_send": missing,
+        "limit": MAX_BULK_REQUESTS,
+        "over_limit": len(missing) > MAX_BULK_REQUESTS,
+    }
+
+
+def run_sequence_masks(
+    site_dir: Path,
+    sequence_id: str,
+    *,
+    plugin_enabled: bool | Callable[[], bool],
+    credentials: HostedSamCredentials,
+    confirmed_request_count: object,
+    decoder: sam.MaskDecoder | None,
+    transport: sam.Transport = sam.urllib_transport,
+    concept: str = BULK_CONCEPT,
+) -> dict[str, Any]:
+    """Fetch water masks for every image of a sequence that does not have one yet.
+
+    If every image already has a mask, nothing is sent, no run is created and no confirmation
+    is needed. Otherwise the caller must confirm the exact number of paid requests, which may
+    not exceed MAX_BULK_REQUESTS. The images go out in batches of MAX_IMAGES_PER_BATCH, each a
+    normal hosted-SAM run, and the first batch that hits a quota, key, rate or network
+    problem stops the rest (they are reported as not sent). Results are unreviewed drafts.
+    """
+
+    plan = plan_sequence_masks(site_dir, sequence_id, concept)
+    summary: dict[str, Any] = {
+        **{k: v for k, v in plan.items() if k != "filenames_to_send"},
+        "runs": [],
+        "sent": 0,
+        "completed": 0,
+        "no_match": 0,
+        "failed": 0,
+        "not_sent": 0,
+        "stopped_because": None,
+    }
+    if plan["to_send"] == 0:
+        summary["skipped"] = True
+        return summary
+    summary["skipped"] = False
+    if not _enabled_now(plugin_enabled):
+        raise HostedSamRefused(
+            "plugin_disabled", "Hosted SAM segmentation is turned off for this site."
+        )
+    if plan["over_limit"]:
+        raise HostedSamRefused(
+            "bulk_limit",
+            f"{plan['to_send']} images need masks, but one click is limited to "
+            f"{MAX_BULK_REQUESTS} paid requests. Segment a smaller group from the review page.",
+        )
+    if isinstance(confirmed_request_count, bool) or confirmed_request_count != plan["to_send"]:
+        raise HostedSamRefused(
+            "confirm_count_mismatch",
+            f"This needs {plan['to_send']} paid request(s); confirm that number to start.",
+        )
+    pending = list(plan["filenames_to_send"])
+    for index, chunk in enumerate(_chunks(pending)):
+        chunk_plan = plan_segmentation(site_dir, sequence_id, chunk, [concept])
+        run = run_segmentation(
+            site_dir,
+            sequence_id,
+            chunk,
+            [concept],
+            plugin_enabled=plugin_enabled,
+            credentials=credentials,
+            confirmed_request_count=chunk_plan.request_count,
+            decoder=decoder,
+            transport=transport,
+        )
+        counts = run["status_counts"]
+        summary["runs"].append({"run_id": run["run_id"], "status_counts": counts})
+        summary["completed"] += counts.get(STATUS_COMPLETED, 0)
+        summary["no_match"] += counts.get(STATUS_NO_MATCH, 0)
+        summary["failed"] += counts.get(STATUS_FAILED, 0)
+        summary["not_sent"] += counts.get(STATUS_NOT_ATTEMPTED, 0)
+        stop = next(
+            (
+                str(r["error_code"])
+                for r in run["results"]
+                if r.get("error_code") in _STOP_BATCH_ON or r["status"] == STATUS_NOT_ATTEMPTED
+            ),
+            None,
+        )
+        if stop is not None:
+            summary["stopped_because"] = stop
+            summary["not_sent"] += sum(len(rest) for rest in _chunks(pending)[index + 1 :])
+            break
+    summary["sent"] = summary["completed"] + summary["no_match"] + summary["failed"]
+    return summary
 
 
 _HALT_MESSAGES = {

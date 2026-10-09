@@ -56,6 +56,43 @@ have reached Meta could already be billed, so it is never resent for you. After
 an invalid key, no quota, a rate limit, a timeout, or a network failure, the
 rest of the batch is not sent.
 
+## Fetch masks for a whole sequence
+
+On **Sequences & runs**, a checkbox beside **Run validation** says **Also fetch water masks**. It
+saves you from selecting images one by one when you want masks for every image of a sequence
+(the baseline included).
+
+- **It is off and explained until hosted SAM is ready.** The checkbox is disabled, with the reason,
+  unless the plugin is on, a key is set and the mask decoder is installed. Nothing is ticked by
+  default.
+- **Ticking it only plans.** It checks locally which images already have a mask and shows, for
+  example, "4 of 6 images have no mask and would be sent (paid). 2 already have masks and are
+  not sent again." Nothing is uploaded yet.
+- **You confirm the exact count.** When you press Run validation, a confirmation names how many
+  images will be cropped to the watched area, uploaded and possibly billed, and shows the
+  provider's price note. Cancel and nothing runs, not even the validation. The server also checks
+  the count and refuses a different one.
+- **Validation runs first, then the masks.** Validation is free and local, so a failure there
+  costs nothing. The masks then go out in batches of 10 images using the concept `river water`,
+  each batch a normal hosted-SAM run. One click is limited to 100 paid requests. The first
+  quota, key, rate-limit or network error stops the remaining batches, which are reported as
+  not sent.
+- **Results are unreviewed drafts.** Accept or reject them in Review as usual. They never become
+  labels by themselves, and only accepted water masks can be used by dataset curation or the
+  [water-change measurement](water-change-measurement.md).
+
+### If every image already has a mask
+
+Nothing is sent, nothing is charged, no new run is created, and no confirmation is asked for. The
+validation simply runs. Existing results keep their place and their human review decisions, because
+they are not copied or re-run. A mask is reused only when the image's bytes, the model, the prompt
+and the watched-area crop are all identical. If you changed the watched area or an image, those
+images count as missing and are sent. An earlier failed attempt is not reused, so it is retried (and
+counts toward the confirmed number); an earlier "no match" result is reused, because the provider
+did find nothing.
+
+If only some images have masks, only the others are sent, and the new run holds only those.
+
 ## How your key is handled
 
 - Requests are made by the local backend. The browser never receives the key

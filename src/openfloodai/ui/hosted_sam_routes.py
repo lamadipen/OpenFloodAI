@@ -31,6 +31,8 @@ _POST_PATHS = {
     "/api/hosted-sam/preflight",
     "/api/hosted-sam/run",
     "/api/hosted-sam/review",
+    "/api/hosted-sam/sequence-masks/preflight",
+    "/api/hosted-sam/sequence-masks/run",
 }
 
 
@@ -167,6 +169,26 @@ def _handle_site_post(handler: Any, path: str, data: dict[str, Any]) -> None:
         handler._send_json({"success": True, "review": entry}, status_code=200)
         return
     sequence_id = str(data.get("sequence_id", "")).strip()
+    if path == "/api/hosted-sam/sequence-masks/preflight":
+        mask_plan = runner.plan_sequence_masks(site_dir, sequence_id)
+        handler._send_json({"success": True, "plan": mask_plan}, status_code=200)
+        return
+    if path == "/api/hosted-sam/sequence-masks/run":
+        if data.get("acknowledge") is True and handler.hosted_sam_credentials.api_key():
+            # The confirmation the person just accepted states that images are uploaded and
+            # may be billed, which is exactly what the acknowledgement records.
+            handler.hosted_sam_credentials.acknowledge_upload()
+        result = runner.run_sequence_masks(
+            site_dir,
+            sequence_id,
+            plugin_enabled=lambda: _plugin_enabled(handler, folder_name),
+            credentials=handler.hosted_sam_credentials,
+            confirmed_request_count=data.get("confirmed_request_count"),
+            decoder=_class_setting(handler, "hosted_sam_decoder"),
+            transport=_class_setting(handler, "hosted_sam_transport"),
+        )
+        handler._send_json({"success": True, "result": result}, status_code=200)
+        return
     filenames = data.get("filenames")
     concepts = data.get("concepts")
     if not isinstance(filenames, list) or not isinstance(concepts, list):

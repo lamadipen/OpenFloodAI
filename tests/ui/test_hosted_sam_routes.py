@@ -375,3 +375,45 @@ def test_results_endpoint_lists_every_result_for_a_sequence(tmp_path: Path) -> N
 
     assert len(listing["results"]) == 10
     assert {r["filename"] for r in listing["results"]} == {f"img{n}.jpg" for n in range(1, 11)}
+
+
+def test_fetching_masks_for_a_whole_sequence_is_planned_confirmed_and_never_repeated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sites, site = setup(tmp_path)
+    transport = FakeTransport((200, reply(detection_text())))
+    monkeypatch.setattr(OpenFloodAIHomeHandler, "hosted_sam_transport", staticmethod(transport))
+    monkeypatch.setattr(OpenFloodAIHomeHandler, "hosted_sam_decoder", ones_decoder)
+    body: dict[str, object] = {"folder_name": "demo", "sequence_id": SEQUENCE_ID}
+    with serve_home_ui(sites) as base:
+        preflight = post(f"{base}/api/hosted-sam/sequence-masks/preflight", body)
+        disabled = post(
+            f"{base}/api/hosted-sam/sequence-masks/run", {**body, "confirmed_request_count": 2}
+        )
+        enable_globally(tmp_path)
+        post(f"{base}/api/hosted-sam/credential", {"api_key": KEY})
+        no_ack = post(
+            f"{base}/api/hosted-sam/sequence-masks/run", {**body, "confirmed_request_count": 2}
+        )
+        wrong = post(
+            f"{base}/api/hosted-sam/sequence-masks/run",
+            {**body, "confirmed_request_count": 9, "acknowledge": True},
+        )
+        assert transport.calls == []
+        started = post(
+            f"{base}/api/hosted-sam/sequence-masks/run",
+            {**body, "confirmed_request_count": 2, "acknowledge": True},
+        )
+        again = post(f"{base}/api/hosted-sam/sequence-masks/run", body)
+        results = get(f"{base}/api/hosted-sam/results?folder_name=demo&sequence_id={SEQUENCE_ID}")
+
+    assert preflight[1]["plan"]["to_send"] == 2 and preflight[1]["plan"]["already_have_masks"] == 0
+    assert (disabled[0], disabled[1]["code"]) == (409, "plugin_disabled")
+    assert no_ack[1]["code"] == "acknowledgement_required"
+    assert wrong[1]["code"] == "confirm_count_mismatch"
+    assert started[0] == 200 and started[1]["result"]["sent"] == 2 and len(transport.calls) == 2
+    assert KEY not in json.dumps(started[1])
+    # every image now has a mask, so a second click sends nothing and needs no confirmation
+    assert again[0] == 200 and again[1]["result"]["skipped"] is True and len(transport.calls) == 2
+    assert len(results["results"]) == 2
+    assert len(list((site / "outputs" / "hosted-sam-runs").iterdir())) == 1
