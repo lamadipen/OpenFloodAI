@@ -22,8 +22,8 @@ independently. Dipen will introduce the topic and decide what happens next.
 - Dipen authorized committing this directory on 2026-10-09 so the decisions are kept with
   the project. Earlier text in this file says it must never be committed; that rule is
   superseded for the files Dipen approved (this file and `dataset-demo/`). Agents still do
-  not stage, commit, push or publish anything without Dipen asking each time. Because the
-  directory is also listed in the local `.git/info/exclude`, new files need `git add -f`.
+  not stage, commit, push or publish anything without Dipen asking each time. The
+  directory is no longer listed in the local `.git/info/exclude`.
   Since the file is now in the repository history, anything written here is public if the
   repository is public.
 - Do not put API keys, credentials, private imagery, personal information, or
@@ -1456,8 +1456,9 @@ branch and PR. Before committing I scanned the folder for keys, tokens, password
 and absolute paths. Only one absolute home path (the repository line under Access and
 Privacy) was found and replaced with a neutral description; the rest is project text and
 invented demo data (`training_ready=false`). Left out on purpose: `.DS_Store`,
-`.ipynb_checkpoints/`, `dataset-demo.zip` (a duplicate of `dataset-demo/`) and
-`dataset-demo 2/` (a second copy whose notebook differs only in saved state). The access
+`.ipynb_checkpoints/` and `dataset-demo 2/` (a second copy whose notebook differs only in
+saved state). `dataset-demo.zip` (a zipped copy of `dataset-demo/`) was added afterwards at
+Dipen's request. The access
 rules above were updated to match. No app code, issue or other PR was changed.
 
 Decision status: explicitly approved by Dipen (commit, push, PR).
