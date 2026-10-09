@@ -1,0 +1,21 @@
+{
+  "schema": "openfloodai.discussion_demo",
+  "schema_version": 1,
+  "is_demo": true,
+  "training_ready": false,
+  "synthetic_values": true,
+  "observation_count": 20,
+  "comparison_count": 15,
+  "purpose": "Illustrate a proposed visual-first dataset and notebook exploration; not the production export schema.",
+  "assets": "No real or synthetic image/mask binaries included. Null paths/checksums are deliberate.",
+  "split_policy": "Illustrative chronological event grouping at one camera; not proof of sufficient coverage or public-release eligibility.",
+  "time_tolerance_minutes": 15,
+  "flood_labels": "None; high stage/coverage does not establish flooding.",
+  "source": "Entirely invented metadata and measurements. No real USGS observations used.",
+  "files": [
+    "observations.jsonl",
+    "comparisons.jsonl",
+    "explore_dataset.ipynb",
+    "README.md"
+  ]
+}
