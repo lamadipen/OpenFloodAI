@@ -10,6 +10,23 @@ Simple meaning: before choosing a model, we should understand what already exist
 
 This is research only. It does not add model code, download data, connect to cloud services, or claim flood detection accuracy.
 
+## Status Of The Options (2026-10-08)
+
+Which options are implemented, which have tooling to evaluate them, and which are research
+only. Nothing here is a claim of accuracy, and no training has been done.
+
+| Status | Options |
+| --- | --- |
+| Implemented in OpenFloodAI | Classical frame-difference and watched-area baselines (the pixel-change adapter); an optional riverbank-crossing adapter, off by default and without camera alignment; USGS gauge matching to images; optional, off-by-default hosted SAM 3.1 segmentation with human review of every mask |
+| Tooling exists to evaluate them | Human-versus-machine label comparison, the validation scorecard and a riverbank pilot evaluation. No evaluation results are recorded in this page, and none are claimed |
+| Research only | OpenRiverCam / pyorc integration, Google Flood Forecasting / OpenHydroNet, FloodNet and satellite datasets, YOLO and other object detection, FastSAM, Vertex AI / AutoML / Cloud Vision, rainfall, earthquake and forecast signals |
+
+Pretrained segmentation may already help reviewers. It does not wait for training
+readiness. Training or fine-tuning on our data is a separate decision, and accepting or
+correcting a mask does not retrain the provider's model. Reuse the capabilities of existing
+models and libraries rather than assume a new network is required.
+
+
 ## Short Answer
 
 There is no single public model that OpenFloodAI should trust to directly detect floods from every river camera.
@@ -177,7 +194,9 @@ licenses still need review before adoption.
 
 See [proposed video overlays](../architecture/windowed-video-evidence.md#proposed-video-overlays)
 for the normal baseline, changing observations, unclear-view handling, and an
-easy example. These overlays are proposed functionality, not current capability.
+easy example. The Review page already overlays the watched area and the confirmed guides on the baseline
+and a chosen image. Overlays that show a machine-estimated boundary or newly covered bank
+are proposed functionality, not current capability.
 
 ## Public Dataset Options
 
