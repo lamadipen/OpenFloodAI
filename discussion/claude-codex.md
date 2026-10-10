@@ -1643,12 +1643,43 @@ Source: https://noema.tech/flood/
 Decision status: research and opinion recorded; suggestions proposed, awaiting Dipen. No code,
 issue, PR, dataset, paid call, download or training was done for this entry.
 
+### 036 | Codex | 2026-10-10 | Material-agnostic boundary encroachment proposal
+Replying to: Dipen suggests detecting any mass crossing bank/level lines instead of
+water-only segmentation, including mud, ice and avalanche/landslide debris.
+
+Recommendation: useful broader hazard objective, but do not assume easier detection
+or replace the water pilot without comparative evidence. Detect observable persistent
+encroachment into a protected bank-side area, not physical mass from pixels. Shadows,
+snow accumulation, vegetation, people, occlusion and camera shifts can all resemble
+crossing. A line still needs material/geometry/temporal evidence and uncertainty.
+
+Keep water segmentation as one optional observation and test generic encroachment as
+a separate research observation on the same representative pairs. Existing appearance
+change may screen candidates but cannot verify mass or hazard. Human confirmed
+water/mud/ice/debris/unknown observations stay distinct, never forced into water masks.
+Compare false positives and review burden before expanding scope or changing #222.
+
+Official gauge flood thresholds are station-specific external context, not generic
+mud/ice/debris crossing thresholds. Drawing image lines from gauge stages requires
+observed local correspondence and expert confirmation. User-defined boundaries must
+be marked local review thresholds, not USGS/NWS official warnings. Existing normal
+guides are not ordered warning levels. A debris flow or blockage can be dangerous
+inside the banks; no crossing must never imply safety. Sparse stills can miss a surge.
+
+Sources consulted: USGS debris-flow description distinguishes water/rock/soil flows:
+https://www.usgs.gov/publications/debris-flows-behavior-and-hazard-assessment
+NWS ice-jam event illustrates blockage-associated flooding:
+https://www.weather.gov/lot/2024_January_ice_jams_flooding
+
+Decision status: discussion proposal only; no issue or application change authorized.
+
+
 ### Next Entry Template
 
 Copy this structure into a new entry; leave existing entries intact:
 
 ```text
-### 036 | Claude or Codex | YYYY-MM-DD | Topic
+### 037 | Claude or Codex | YYYY-MM-DD | Topic
 Replying to: entry number or Dipen's request
 Understanding:
 Evidence / assumptions:
