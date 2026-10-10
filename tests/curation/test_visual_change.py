@@ -23,7 +23,7 @@ from openfloodai.curation import (
 from openfloodai.curation.common import TASK_GAUGE_HEIGHT, TASK_VISUAL_CHANGE
 from openfloodai.curation.store import PAIR_TASKS, recheck_member
 from openfloodai.curation.visual_change import (
-    MIN_REVIEWERS,
+    MIN_JUDGMENTS,
     Judgment,
     agreement_summary,
     collect_judgments,
@@ -111,17 +111,29 @@ def test_the_task_is_a_pair_task_with_its_own_title_and_a_release_card_category(
     from openfloodai.curation.common import TASK_TITLES, TASKS
     from openfloodai.release.card import HF_TASK_CATEGORIES
 
-    assert TASK_VISUAL_CHANGE in PAIR_TASKS and MIN_REVIEWERS == 2
+    assert TASK_VISUAL_CHANGE in PAIR_TASKS and MIN_JUDGMENTS == 1
     assert TASK_VISUAL_CHANGE in TASKS and "human-judged" in TASK_TITLES[TASK_VISUAL_CHANGE]
     assert HF_TASK_CATEGORIES[TASK_VISUAL_CHANGE] == ["image-classification"]
 
 
-def test_one_reviewer_is_not_enough(tmp_path: Path) -> None:
+def test_nobody_having_judged_the_pair_blocks_it(tmp_path: Path) -> None:
+    fx = build(tmp_path)
+    out = check(tmp_path, fx, dataset(tmp_path))
+    assert out["status"] == "ineligible" and "needs_a_judgment" in codes(out)
+    assert out["agreement"]["reviewers"] == 0 and out["agreement"]["needed"] == 1
+
+
+def test_one_judgment_is_enough_and_the_pair_awaits_dataset_review(tmp_path: Path) -> None:
     fx = build(tmp_path)
     review(fx, 1, 0, "reviewer-a")
     out = check(tmp_path, fx, dataset(tmp_path))
-    assert out["status"] == "ineligible" and "needs_more_reviewers" in codes(out)
-    assert out["agreement"]["reviewers"] == 1 and out["agreement"]["needed"] == 2
+    assert out["status"] == "eligible", out["reasons"]
+    annotation = out["annotation"]
+    assert annotation["reviewer_count"] == 1 and annotation["direction"] == "more_water"
+    assert annotation["dataset_review"] == "pending"
+    assert annotation["source"] == "human_judgments_awaiting_dataset_review"
+    assert "awaiting review inside the dataset" in annotation["note"]
+    assert "independent" not in annotation["source"]
 
 
 def test_two_independent_blind_reviewers_who_agree_make_an_eligible_pair(tmp_path: Path) -> None:
@@ -133,6 +145,7 @@ def test_two_independent_blind_reviewers_who_agree_make_an_eligible_pair(tmp_pat
     annotation = out["annotation"]
     assert annotation["direction"] == "more_water" and annotation["reviewer_count"] == 2
     assert annotation["blind_judgments_only"] is True
+    assert annotation["source"] == "independent_blind_human_judgments_in_agreement"
     assert annotation["reviewers"] == ["reviewer-a", "reviewer-b"]
     assert annotation["elapsed_seconds"] == 24 * 3600
     assert "gauge" in annotation["note"].lower() and out["annotation_version"]
@@ -160,15 +173,58 @@ def test_a_cannot_judge_or_camera_problem_answer_blocks_the_pair(
     assert out["status"] == "ineligible" and "reviewer_cannot_judge" in codes(out)
 
 
-def test_informed_revisions_and_unstaged_saves_are_never_counted(tmp_path: Path) -> None:
+def test_unstaged_and_unattributed_saves_are_never_counted(tmp_path: Path) -> None:
+    fx = build(tmp_path)
+    review(fx, 1, 0, "reviewer-c", stage=None)  # saved by the older form
+    review(fx, 1, 0, "", stage="blind")  # no reviewer code
+    out = check(tmp_path, fx, dataset(tmp_path))
+    assert out["status"] == "ineligible" and "needs_a_judgment" in codes(out)
+    assert "reviews_set_aside" in codes(out)
+    assert out["agreement"]["reviewers"] == 0
+    review(fx, 1, 0, "reviewer-a")
+    again = check(tmp_path, fx, dataset(tmp_path))
+    assert again["status"] == "eligible" and again["agreement"]["reviewers"] == 1
+    assert "reviews_set_aside" in codes(again)
+
+
+def test_an_informed_judgment_counts_but_is_marked_and_the_pair_is_not_blind_only(
+    tmp_path: Path,
+) -> None:
     fx = build(tmp_path)
     review(fx, 1, 0, "reviewer-a")
     review(fx, 1, 0, "reviewer-b", stage="informed")  # seen the machine evidence first
-    review(fx, 1, 0, "reviewer-c", stage=None)  # saved by the older form
     out = check(tmp_path, fx, dataset(tmp_path))
-    assert out["status"] == "ineligible" and "needs_more_reviewers" in codes(out)
-    assert "reviews_set_aside" in codes(out)
-    assert out["agreement"]["reviewers"] == 1
+    assert out["status"] == "eligible", out["reasons"]
+    assert "informed_judgments_counted" in codes(out)
+    warning = next(r for r in out["reasons"] if r["code"] == "informed_judgments_counted")
+    assert warning["severity"] == "warning" and "reviewer-b" in warning["message"]
+    annotation = out["annotation"]
+    assert annotation["reviewer_count"] == 2 and annotation["informed_count"] == 1
+    assert annotation["blind_judgments_only"] is False
+    assert annotation["source"] == "human_judgments_awaiting_dataset_review"
+    assert [(j["reviewer"], j["stage"]) for j in annotation["judgments"]] == [
+        ("reviewer-a", "blind"),
+        ("reviewer-b", "informed"),
+    ]
+    assert out["agreement"]["informed"] == ["reviewer-b"]
+
+
+def test_informed_judgments_alone_can_make_an_eligible_pair(tmp_path: Path) -> None:
+    fx = build(tmp_path)
+    review(fx, 1, 0, "reviewer-a", stage="informed")
+    review(fx, 1, 0, "reviewer-b", stage="informed")
+    out = check(tmp_path, fx, dataset(tmp_path))
+    assert out["status"] == "eligible" and out["annotation"]["informed_count"] == 2
+
+
+def test_a_single_informed_judgment_is_enough_but_several_must_still_agree(tmp_path: Path) -> None:
+    fx = build(tmp_path)
+    review(fx, 1, 0, "reviewer-a", "water_level_rising", stage="informed")
+    alone = check(tmp_path, fx, dataset(tmp_path))
+    assert alone["status"] == "eligible" and alone["annotation"]["informed_count"] == 1
+    review(fx, 1, 0, "reviewer-b", "no_water_level_change", stage="informed")
+    out = check(tmp_path, fx, dataset(tmp_path))
+    assert out["status"] == "ineligible" and "reviewers_disagree" in codes(out)
 
 
 def test_an_informed_revision_does_not_replace_the_blind_label(tmp_path: Path) -> None:
@@ -178,7 +234,8 @@ def test_an_informed_revision_does_not_replace_the_blind_label(tmp_path: Path) -
     review(fx, 1, 0, "reviewer-b", "water_level_rising")
     out = check(tmp_path, fx, dataset(tmp_path))
     assert out["status"] == "eligible" and out["annotation"]["direction"] == "more_water"
-    assert "reviews_set_aside" in codes(out)  # the revision is reported, not hidden
+    assert "reviews_set_aside" in codes(out)  # the replaced informed label is reported, not hidden
+    assert out["annotation"]["blind_judgments_only"] is True
 
 
 def test_a_later_blind_revision_replaces_an_earlier_one_and_codes_ignore_case(
@@ -277,8 +334,7 @@ def test_adding_freezing_and_verifying_a_visual_pair(tmp_path: Path) -> None:
 
 
 def test_an_ineligible_pair_is_not_added(tmp_path: Path) -> None:
-    fx = build(tmp_path)
-    review(fx, 1, 0, "reviewer-a")
+    fx = build(tmp_path)  # nobody has judged the pair
     ds = dataset(tmp_path)
     out = add_pair(
         datasets(tmp_path), fx.sites_dir, ds["dataset_id"], earlier=ref(fx, 0), later=ref(fx, 1)
@@ -359,6 +415,7 @@ def test_a_frozen_visual_dataset_verifies_and_a_release_hides_reviewer_codes(
     )
     assert public["direction"] == "more_water" and public["reviewer_count"] == 2
     assert public["earlier_observation"] == "id-0" and public["later_observation"] == "id-1"
+    assert public["blind_judgments_only"] is True and public["informed_judgment_count"] == 0
     assert "reviewer-a" not in json.dumps(public) and "reviewers" not in public
     assert "judgments" not in public
 
@@ -366,7 +423,7 @@ def test_a_frozen_visual_dataset_verifies_and_a_release_hides_reviewer_codes(
 def test_collect_judgments_reads_both_runs_and_reports_what_was_set_aside(tmp_path: Path) -> None:
     fx = build(tmp_path)
     review(fx, 1, 0, "reviewer-a")
-    review(fx, 1, 0, "reviewer-b", stage="informed")
+    review(fx, 1, 0, "reviewer-b", stage=None)
     run = fx.site_dir / "outputs" / "image-sequence-runs" / fx.run_id
     judgments, set_aside = collect_judgments(run, fx.filenames[0], run, fx.filenames[1])
     assert [j.reviewer for j in judgments] == ["reviewer-a"] and set_aside == 1
@@ -378,7 +435,30 @@ def test_collect_judgments_reads_both_runs_and_reports_what_was_set_aside(tmp_pa
     )
     assert summary == {
         "reviewers": 2,
-        "needed": 2,
+        "needed": 1,
+        "informed": [],
         "by_direction": {"more_water": ["a", "b"]},
         "agree": True,
     }
+
+
+def test_a_pair_with_one_judgment_can_be_added_and_is_stored_as_awaiting_dataset_review(
+    tmp_path: Path,
+) -> None:
+    fx = build(tmp_path)
+    review(fx, 1, 0, "reviewer-a")
+    ds = dataset(tmp_path)
+    added = add_pair(
+        datasets(tmp_path), fx.sites_dir, ds["dataset_id"], earlier=ref(fx, 0), later=ref(fx, 1)
+    )
+    assert added["status"] == "added", added
+    member = read_draft(datasets(tmp_path), ds["dataset_id"])[added["member_id"]]
+    assert member["annotation"]["dataset_review"] == "pending"
+    assert member["annotation"]["reviewer_count"] == 1
+    keys = [
+        s["observation_key"] for s in (member["snapshots"]["earlier"], member["snapshots"]["later"])
+    ]
+    public = _public_annotation(
+        {"annotation": member["annotation"]}, {k: f"id-{i}" for i, k in enumerate(keys)}
+    )
+    assert public["dataset_review"] == "pending" and public["reviewer_count"] == 1

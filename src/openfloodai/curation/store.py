@@ -797,6 +797,7 @@ def recheck_member(
                     direction=visual_change.DIRECTION_BY_LABEL.get(j["label"]),
                     camera_stable="yes",
                     reviewed_at_utc=j["reviewed_at_utc"],
+                    stage=j.get("stage", "blind"),
                 )
                 for j in annotation.get("judgments", [])
             ],

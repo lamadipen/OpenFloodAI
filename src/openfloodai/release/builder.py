@@ -181,6 +181,8 @@ def _public_annotation(sample: dict[str, Any], ids: dict[str, str]) -> dict[str,
             "elapsed_seconds": a.get("elapsed_seconds"),
             "reviewer_count": a.get("reviewer_count"),
             "blind_judgments_only": a.get("blind_judgments_only"),
+            "informed_judgment_count": a.get("informed_count", 0),
+            "dataset_review": a.get("dataset_review", "not_applicable"),
         }
     pair_keys = (
         "earlier_value",

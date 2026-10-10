@@ -1,14 +1,21 @@
-"""The visual-change task: a pair of images and what independent people saw changed.
+"""The visual-change task: a pair of images and what people saw changed.
 
 Unlike the gauge-derived rising / falling task, the target here is the HUMAN judgment of a pair,
-and it is only eligible when enough people made it independently:
+and it is only eligible when enough different people made it:
 
 - Each judgment is a reviewer's label for one image compared with a named reference image.
-- Only labels made in the blind stage count. An informed revision (made after machine evidence was
-  shown) and an older save with no stage are kept as history but never counted.
-- At least `MIN_REVIEWERS` different reviewer codes must agree on a direction. Disagreement, a
-  "cannot judge" or "camera problem" answer, or a reported camera move makes the pair ineligible
-  with the reason, never a majority vote.
+- A label made in the blind stage (before machine evidence was shown) or in the informed stage
+  (after it, as in Assisted review) counts. An informed label is never hidden: it is marked as such
+  on the judgment, reported as a warning, and the annotation says it is not blind-only, so a
+  dataset can still be filtered down to independent judgments. When one reviewer has both, the
+  blind label is the one that counts. An older save with no stage, or one with no reviewer code, is
+  kept as history but never counted.
+- At least `MIN_JUDGMENTS` judgment is needed, so the pair has a direction (usually the person
+  adding it). More reviewers are not required to add a pair: confirming what is in a dataset is a
+  separate review step that runs after the data is added, and each example is stored as awaiting it.
+  When several people did judge it, they must agree: disagreement, a "cannot judge" or "camera
+  problem" answer, or a reported camera move makes the pair ineligible with the reason, never a
+  majority vote.
 - Directions are expressed earlier -> later: "more_water" means the later image shows more visible
   water. If the reviewer's reference was the later image, their label is flipped to match.
 
@@ -32,7 +39,8 @@ from openfloodai.curation.common import (
 )
 from openfloodai.curation.snapshot import LoadedObservation
 
-MIN_REVIEWERS = 2
+MIN_JUDGMENTS = 1
+MIN_INDEPENDENT_REVIEWERS = 2  # what "independent blind agreement" means in an annotation
 DIRECTION_BY_LABEL = {
     "water_level_rising": "more_water",
     "water_level_falling": "less_water",
@@ -50,6 +58,7 @@ class Judgment:
     direction: str | None  # earlier -> later; None for "cannot judge" / "camera problem"
     camera_stable: str | None
     reviewed_at_utc: str
+    stage: str = "blind"  # "blind", or "informed" when the evidence had been shown first
 
 
 def _reference_filename(observation: dict[str, Any]) -> str:
@@ -66,15 +75,18 @@ def _observations(run_dir: Path) -> list[dict[str, Any]]:
     return [dict(r) for r in read_jsonl_records(path) if r.get("kind") == "image"]
 
 
-def _blind_latest(
+def _latest_counted(
     run_dir: Path, current_filename: str, reference_filename: str
 ) -> tuple[dict[str, dict[str, Any]], int]:
-    """The latest BLIND label of each reviewer for this image against this reference.
+    """The label of each reviewer that counts for this image against this reference.
 
-    Also counts the labels that were set aside (informed, unspecified or unattributed).
+    A reviewer's latest blind label wins; without one, their latest informed label. Also counts the
+    labels that were set aside: no stage or no reviewer code, and informed labels of a reviewer who
+    also has a blind one.
     """
 
-    latest: dict[str, dict[str, Any]] = {}
+    blind: dict[str, dict[str, Any]] = {}
+    informed: dict[str, dict[str, Any]] = {}
     set_aside = 0
     for observation in _observations(run_dir):
         if observation.get("filename") != current_filename:
@@ -84,14 +96,22 @@ def _blind_latest(
         raw_label = observation.get("label")
         label: dict[str, Any] = raw_label if isinstance(raw_label, dict) else {}
         reviewer = str(label.get("reviewer_id") or "").strip()
-        if observation.get("review_stage") != "blind" or not reviewer:
+        stage = observation.get("review_stage")
+        if stage not in ("blind", "informed") or not reviewer:
             set_aside += 1
             continue
+        bucket = blind if stage == "blind" else informed
         key = reviewer.casefold()
-        previous = latest.get(key)
+        previous = bucket.get(key)
         if previous is None or int(observation.get("label_revision") or 0) >= int(
             previous.get("label_revision") or 0
         ):
+            bucket[key] = observation
+    latest = dict(blind)
+    for key, observation in informed.items():
+        if key in blind:
+            set_aside += 1
+        else:
             latest[key] = observation
     return latest, set_aside
 
@@ -102,7 +122,7 @@ def collect_judgments(
     later_run: Path,
     later_filename: str,
 ) -> tuple[list[Judgment], int]:
-    """Blind judgments for the pair in earlier -> later terms, and how many were set aside."""
+    """Judgments for the pair in earlier -> later terms, and how many were set aside."""
 
     found: dict[str, Judgment] = {}
     set_aside = 0
@@ -110,7 +130,7 @@ def collect_judgments(
         (later_run, later_filename, earlier_filename, False),  # reviewed the later image
         (earlier_run, earlier_filename, later_filename, True),  # reviewed the earlier image
     ):
-        latest, ignored = _blind_latest(run_dir, current, reference)
+        latest, ignored = _latest_counted(run_dir, current, reference)
         set_aside += ignored
         for key, observation in latest.items():
             label_data = observation["label"]
@@ -124,9 +144,14 @@ def collect_judgments(
                 direction=direction,
                 camera_stable=label_data.get("camera_stable"),
                 reviewed_at_utc=str(observation.get("reviewed_at_utc") or ""),
+                stage=str(observation.get("review_stage")),
             )
             existing = found.get(key)
-            if existing is None or judgment.reviewed_at_utc >= existing.reviewed_at_utc:
+            # Between the two images a blind judgment beats an informed one, then the later wins.
+            if existing is None or (judgment.stage == "blind", judgment.reviewed_at_utc) >= (
+                existing.stage == "blind",
+                existing.reviewed_at_utc,
+            ):
                 found[key] = judgment
     return sorted(found.values(), key=lambda j: j.reviewer.casefold()), set_aside
 
@@ -156,9 +181,9 @@ def evaluate_visual_pair(
     judgments: list[Judgment],
     *,
     set_aside: int = 0,
-    min_reviewers: int = MIN_REVIEWERS,
+    min_judgments: int = MIN_JUDGMENTS,
 ) -> dict[str, Any]:
-    """Is this pair, with its recorded blind judgments, an eligible visual-change example?"""
+    """Is this pair, with its recorded judgments, an eligible visual-change example?"""
 
     e, ls = earlier.snapshot, later.snapshot
     reasons: list[dict[str, str]] = []
@@ -201,17 +226,28 @@ def evaluate_visual_pair(
         reasons.append(
             reason(
                 "reviews_set_aside",
-                f"{set_aside} review(s) were not counted: informed revisions, older saves with no "
-                "blind stage, or reviews with no reviewer code.",
+                f"{set_aside} review(s) were not counted: older saves with no stage, reviews "
+                "with no reviewer code, or informed labels replaced by the same reviewer's "
+                "blind label.",
                 SEVERITY_WARNING,
             )
         )
-    if len(judgments) < min_reviewers:
+    informed = [j.reviewer for j in judgments if j.stage != "blind"]
+    if informed:
         reasons.append(
             reason(
-                "needs_more_reviewers",
-                f"{len(judgments)} independent blind reviewer(s) so far; at least {min_reviewers} "
-                "different reviewers must judge this pair before it can be used.",
+                "informed_judgments_counted",
+                f"{', '.join(informed)} judged this pair after seeing machine evidence (informed). "
+                "The judgment is counted and marked; it is not an independent blind judgment.",
+                SEVERITY_WARNING,
+            )
+        )
+    if len(judgments) < min_judgments:
+        reasons.append(
+            reason(
+                "needs_a_judgment",
+                "Nobody has judged this pair yet. Label it first (for example your own judgment) "
+                "so the pair has a direction. Other reviewers confirm it after it is in a dataset.",
             )
         )
     undecided = [j.reviewer for j in judgments if j.direction is None]
@@ -254,13 +290,28 @@ def evaluate_visual_pair(
     annotation: dict[str, Any] | None = None
     if not errors_in(reasons):
         direction = next(iter(decided))
+        blind_only = not informed
+        independent = blind_only and len(judgments) >= MIN_INDEPENDENT_REVIEWERS
         annotation = {
             "kind": "visual_change",
-            "source": "independent_blind_human_judgments_in_agreement",
-            "note": (
-                "What at least two reviewers independently saw, before any machine or gauge "
-                "evidence. It is not a gauge measurement and not a flood decision."
+            "source": (
+                "independent_blind_human_judgments_in_agreement"
+                if independent
+                else "human_judgments_awaiting_dataset_review"
             ),
+            "note": (
+                "What "
+                + (
+                    "at least two reviewers saw, each judged blind, before any machine or gauge "
+                    "evidence. "
+                    if independent
+                    else f"{len(judgments)} reviewer(s) saw"
+                    + (", some after machine evidence was shown" if informed else "")
+                    + ". It is awaiting review inside the dataset. "
+                )
+                + "It is not a gauge measurement and not a flood decision."
+            ),
+            "dataset_review": "pending",
             "earlier_observation": e["observation_key"],
             "later_observation": ls["observation_key"],
             "direction": direction,
@@ -268,10 +319,16 @@ def evaluate_visual_pair(
             "reviewer_count": len(judgments),
             "reviewers": reviewers,
             "judgments": [
-                {"reviewer": j.reviewer, "label": j.label, "reviewed_at_utc": j.reviewed_at_utc}
+                {
+                    "reviewer": j.reviewer,
+                    "label": j.label,
+                    "reviewed_at_utc": j.reviewed_at_utc,
+                    "stage": j.stage,
+                }
                 for j in judgments
             ],
-            "blind_judgments_only": True,
+            "informed_count": len(informed),
+            "blind_judgments_only": blind_only,
         }
     eligible = annotation is not None
     return {
@@ -290,7 +347,8 @@ def agreement_summary(judgments: list[Judgment]) -> dict[str, Any]:
         by_direction[j.direction or "cannot_judge"].append(j.reviewer)
     return {
         "reviewers": len(judgments),
-        "needed": MIN_REVIEWERS,
+        "needed": MIN_JUDGMENTS,
+        "informed": sorted(j.reviewer for j in judgments if j.stage != "blind"),
         "by_direction": {k: sorted(v) for k, v in sorted(by_direction.items())},
         "agree": len(by_direction) == 1 and "cannot_judge" not in by_direction,
     }
