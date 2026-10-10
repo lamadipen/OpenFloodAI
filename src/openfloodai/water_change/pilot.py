@@ -189,7 +189,39 @@ def load_pairs(pilot_dir: Path) -> tuple[str, list[PilotPair]]:
                 framing_confirmed_by=framing,
             )
         )
+    _check_independent_split(pairs)
     return folder, pairs
+
+
+def _images(pair: PilotPair) -> set[str]:
+    return {pair.earlier.filename, pair.later.filename}
+
+
+def _check_independent_split(pairs: list[PilotPair]) -> None:
+    """No image pair twice, and no image shared between development and held-out pairs.
+
+    A held-out evaluation is only a fair last check if it uses images nothing else was tuned or
+    judged on. The same two images under different pair names, in either order, or one image used
+    in both groups, would leak the held-out data into development.
+    """
+
+    by_images: dict[frozenset[str], str] = {}
+    for pair in pairs:
+        key = frozenset(_images(pair))
+        if key in by_images:
+            raise PilotError(
+                f"Pairs '{by_images[key]}' and '{pair.pair_id}' use the same two images. "
+                "A pair may appear once, in either order."
+            )
+        by_images[key] = pair.pair_id
+    development = {name for p in pairs if not p.held_out for name in _images(p)}
+    held_out = {name for p in pairs if p.held_out for name in _images(p)}
+    shared = sorted(development & held_out)
+    if shared:
+        raise PilotError(
+            "Development and held-out pairs share images, so the held-out check would not be "
+            f"independent: {', '.join(shared)}. Give held-out pairs images no other pair uses."
+        )
 
 
 # ---------------------------------------------------------------- freezing the pairs

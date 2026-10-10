@@ -67,6 +67,10 @@ watched area, calculation version and the frozen matched gauge context. The key 
 review decision or mask changes, and also when the image's human review changes: its revision, time
 and camera and visibility answers. So a later rejection, or marking the camera as moved, never
 silently reuses an old "available" number; it makes a new result and the old one is kept as it was.
+The key also records whether each original image is still present and unchanged right now. Delete or
+change an image and the same pair gives a new, unavailable result (`…_SOURCE_MISSING` or
+`…_SOURCE_CHANGED`) instead of replaying the saved one; put the identical file back and the original
+result is valid and reused again.
 Original runs, reviews and masks are never edited. Running the same pair again returns the saved
 result.
 
@@ -93,7 +97,10 @@ unavailable cases. It is not an accuracy study.
    the first measurement. After that, a changed `pairs.json` is refused, every measurement records
    the pairs hash it ran under, and the report takes the held-out split from the frozen file. An
    edited `pairs.json`, a measurement under other pairs, or no frozen file is reported as a protocol
-   problem. To change the pairs, start a new pilot folder.
+   problem. To change the pairs, start a new pilot folder. The pairs must also keep the final check
+   independent: the same two images cannot appear twice (under another name or in the other order),
+   and no image may be used by both a development pair and a held-out pair. Sharing an image between
+   two development pairs, or between two held-out pairs, is allowed.
 4. **Judge blind.** `blind-sheet` writes images only. A hydrologist or reviewer and a second person
    each fill `judgments/<name>.json` saying whether the later image shows more, less or about the
    same visible water (or `cannot_judge`), before seeing machine results or gauge values. Files
