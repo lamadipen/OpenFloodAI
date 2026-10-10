@@ -68,6 +68,8 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+# discussion/ holds working notes and a demo notebook, not project source.
+extend-exclude = ["discussion"]
 
 [tool.ruff.lint]
 select = [
