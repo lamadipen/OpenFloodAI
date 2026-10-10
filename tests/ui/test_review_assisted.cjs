@@ -251,3 +251,122 @@ test("keyboard use, a pinned dial, and responsive layout are present", () => {
   assert.match(css, /@media \(max-width: 1120px\)/);
   assert.match(css, /@media \(max-width: 760px\)/);
 });
+
+function withDatasets(ctx) {
+  vm.runInContext('datasets = [{ dataset_id: "d-vis", name: "Visible", task: "visual_change", task_title: "Visible water change" }, { dataset_id: "d-seg", name: "Seg", task: "water_segmentation", task_title: "Water segmentation" }]; selectedDatasetId = "d-vis";', ctx);
+}
+
+test("the dataset panel sits in the right column and the pair is sent earlier first", () => {
+  assert.match(script, /id="assistDataset"/);
+  assert.match(script, /class="assist-right"/);
+  const ctx = load();
+  withPoints(ctx, ["base.jpg", "a.jpg", "b.jpg"]);
+  withDatasets(ctx);
+  vm.runInContext("selectedIndex = 2;", ctx);
+  const request = ctx.datasetRequest(day(ctx, 2));
+  assert.equal(request.pair, true);
+  assert.deepEqual(JSON.parse(JSON.stringify(request.body)), {
+    dataset_id: "d-vis",
+    earlier: { folder_name: "demo", run_id: "run-1", filename: "base.jpg" },
+    later: { folder_name: "demo", run_id: "run-1", filename: "b.jpg" }
+  });
+  const panel = ctx.datasetPanelHtml(day(ctx, 2));
+  assert.match(panel, /Add to dataset/);
+  assert.match(panel, /Visible · Visible water change/);
+  assert.match(panel, /Labels saved on this page are informed, so they do not count/);
+  assert.match(panel, /data-add-dataset disabled/); // nothing can be added before the check says eligible
+});
+
+test("a single-image dataset sends the run, the image and the accepted mask", () => {
+  const ctx = load();
+  withPoints(ctx, ["base.jpg", "a.jpg", "b.jpg"]);
+  vm.runInContext('selectedDatasetId = "d-seg"; samResults = [{ filename: "b.jpg", status: "completed", review_status: "accepted", prompt: "river water", run_id: "sam-1", result_id: "r-1" }];', ctx);
+  withDatasets(ctx);
+  vm.runInContext('selectedDatasetId = "d-seg";', ctx);
+  const body = JSON.parse(JSON.stringify(ctx.datasetRequest(day(ctx, 2)).body));
+  assert.deepEqual(body, { dataset_id: "d-seg", folder_name: "demo", run_id: "run-1", filename: "b.jpg", mask_run_id: "sam-1", mask_result_id: "r-1" });
+  assert.match(ctx.datasetPanelHtml(day(ctx, 2)), /Accepted mask/);
+});
+
+test("the add button is enabled only when the check says eligible, and ineligible shows the reasons", () => {
+  const ctx = load();
+  withPoints(ctx, ["base.jpg", "a.jpg", "b.jpg"]);
+  withDatasets(ctx);
+  vm.runInContext('datasetCheck = { status: "ineligible", reasons: [{ message: "Needs two blind reviewers", severity: "error" }], agreement: { reviewers: 0, needed: 2, by_direction: {} } };', ctx);
+  const blocked = ctx.datasetPanelHtml(day(ctx, 2));
+  assert.match(blocked, /Not eligible for this dataset/);
+  assert.match(blocked, /Needs two blind reviewers/);
+  assert.match(blocked, /0 of 2 needed independent blind reviewers/);
+  assert.match(blocked, /data-add-dataset disabled/);
+  vm.runInContext('datasetCheck = { status: "eligible", reasons: [] };', ctx);
+  const open = ctx.datasetPanelHtml(day(ctx, 2));
+  assert.match(open, /Eligible: nothing has been added yet/);
+  assert.doesNotMatch(open, /data-add-dataset disabled/);
+});
+
+test("with no dataset the panel points to where one is created, and the baseline cannot be added alone", () => {
+  const ctx = load();
+  withPoints(ctx, ["base.jpg", "a.jpg", "b.jpg"]);
+  assert.match(ctx.datasetPanelHtml(day(ctx, 2)), /No dataset drafts exist yet/);
+  withDatasets(ctx);
+  assert.match(ctx.datasetPanelHtml(day(ctx, 0)), /This image is the reference, so it cannot be added on its own/);
+});
+
+test("the eligibility check runs once the dial settles, not on every image it passes", async () => {
+  const posts = [];
+  const ctx = load({ fetch: async (path, init) => { posts.push({ path, body: JSON.parse(init.body) }); return { ok: true, status: 200, json: async () => ({ status: "eligible", reasons: [] }) }; } });
+  withPoints(ctx, ["base.jpg", "a.jpg", "b.jpg"]);
+  withDatasets(ctx);
+  vm.runInContext("selectedIndex = 2;", ctx);
+  ctx.show(1, true);
+  ctx.show(2, true);
+  assert.equal(posts.length, 0, "moving the dial does not check");
+  await ctx.refreshDatasetCheck(day(ctx, 2));
+  await ctx.refreshDatasetCheck(day(ctx, 2));
+  assert.equal(posts.length, 1, "the same request is not repeated");
+  assert.equal(posts[0].path, "/api/dataset-check");
+});
+
+test("side by side shows the reference and the current image together, both in the chosen view", () => {
+  const ctx = load();
+  withPoints(ctx, ["base.jpg", "a.jpg", "b.jpg"]);
+  vm.runInContext('selectedIndex = 2; compareMode = "side";', ctx);
+  const html = ctx.viewerHtml(day(ctx, 2), false);
+  assert.equal((html.match(/class="assist-fig"/g) || []).length, 2);
+  assert.match(html, /assist-chip">Reference · run baseline/);
+  assert.match(html, /assist-chip">Current</);
+  assert.match(html, /data-pan-group/);
+  assert.doesNotMatch(html, /assist-inset/); // nothing to inset when both are shown
+  assert.match(html, /alt="Reference river image"/);
+  assert.match(html, /alt="Current river image"/);
+  vm.runInContext('viewMode = "guide";', ctx);
+  assert.equal((ctx.viewerHtml(day(ctx, 2), false).match(/class="guide-svg"/g) || []).length, 2, "the base guide is on both pictures");
+  assert.doesNotMatch(ctx.viewerHtml(day(ctx, 2), true), /image-sequence-image/, "a preview is used while the dial moves");
+});
+
+test("overlay blends the current image over the reference with an opacity", () => {
+  const ctx = load();
+  withPoints(ctx, ["base.jpg", "a.jpg", "b.jpg"]);
+  vm.runInContext('selectedIndex = 2; compareMode = "overlay"; overlayOpacity = 30;', ctx);
+  const html = ctx.viewerHtml(day(ctx, 2), false);
+  assert.match(html, /assist-overlay-current" style="width:100%;opacity:0\.3"/);
+  assert.match(html, /Current 30%/);
+  assert.match(html, /assist-chip left">Reference/);
+  const toolbar = ctx.toolbarHtml();
+  assert.match(toolbar, /id="opacityControl"/);
+  vm.runInContext('compareMode = "side";', ctx);
+  assert.doesNotMatch(ctx.toolbarHtml(), /opacityControl/);
+});
+
+test("the layout choice needs a reference, so the baseline stays on the single view", () => {
+  const ctx = load();
+  withPoints(ctx, ["base.jpg", "a.jpg", "b.jpg"]);
+  vm.runInContext('selectedIndex = 0; compareMode = "side";', ctx);
+  const baseline = ctx.viewerHtml(day(ctx, 0), false);
+  assert.match(baseline, /This image is the reference for the run/);
+  assert.doesNotMatch(baseline, /assist-fig/);
+  assert.match(ctx.toolbarHtml(), /data-compare="side" aria-pressed="true" disabled/);
+  vm.runInContext("selectedIndex = 2;", ctx);
+  assert.doesNotMatch(ctx.toolbarHtml(), /data-compare="overlay" aria-pressed="false" disabled/);
+  assert.match(ctx.toolbarHtml(), /data-compare="single"/);
+});

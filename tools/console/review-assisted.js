@@ -38,6 +38,15 @@ const METRICS = [
 
 const STEP = 24; // dial pixels between two images
 
+const DATASET_HELP = {
+  water_segmentation: "Requires a completed water mask that a person accepted for this exact image.",
+  level_classification: "Requires this human review, a matched gauge reading, and an approved site category definition.",
+  gauge_height: "Requires this image's matched gauge reading, station, unit, and quality.",
+  level_change: "Uses the reference and this image, earlier first. The target comes from the two gauge readings, not from your label.",
+  visual_change: "Uses the reference and this image, earlier first. The target is what at least two reviewers independently saw, judged blind. Labels saved on this page are informed, so they do not count."
+};
+const PAIR_TASK_IDS = ["level_change", "visual_change"];
+
 const folderName = qs("site");
 const runId = qs("run_id");
 let detail = null;
@@ -49,6 +58,8 @@ let samResults = [];
 let selectedIndex = 0;
 let viewMode = "original";
 let zoom = 1;
+let compareMode = "single"; // "single" | "side" | "overlay"
+let overlayOpacity = 50;
 let swapped = false; // the big view shows the reference and the inset shows the current image
 let metricId = "pixel";
 let referenceMode = "baseline"; // "baseline" | "previous"
@@ -60,6 +71,14 @@ let saving = false;
 let reviewerId = loadSetting("openfloodai.reviewerId");
 let revealedFiles = new Set();
 let marks = [];
+let datasets = [];
+let selectedDatasetId = "";
+let datasetCheck = null;
+let datasetCheckKey = "";
+let datasetResult = null;
+let datasetMaskChoice = "";
+let savingDataset = false;
+let quickShown = false;
 
 function loadSetting(key) {
   try { return localStorage.getItem(key) || ""; } catch (error) { return ""; }
@@ -364,10 +383,50 @@ function layerHtml(layer, id, alt) {
   return `<div class="assist-layer" style="width:${zoom * 100}%"><img ${id ? `id="${id}"` : ""} src="${layer.imageUrl}" alt="${escapeHtml(alt)}">${layer.overlay}</div>`;
 }
 
-function viewerHtml(day, quick) {
+function panesFor(day, quick) {
   const reference = referenceFor(day);
   const current = refFromDay(day);
   const hasReference = !!reference.filename && !sameImage(reference, current);
+  return { reference, current, hasReference, kindText: { baseline: "run baseline", previous: "previous image" }[reference.kind] || "reference" };
+}
+
+function navHtml() {
+  return `<button class="assist-nav prev" data-step="-1" aria-label="Previous image" ${selectedIndex === 0 ? "disabled" : ""}>&lsaquo;</button>
+      <button class="assist-nav next" data-step="1" aria-label="Next image" ${selectedIndex === days.length - 1 ? "disabled" : ""}>&rsaquo;</button>`;
+}
+
+function paneClass() {
+  return `assist-pane ${zoom > 1 ? "zoomed" : ""}`;
+}
+
+// The reference and the current image next to each other, both in the chosen view.
+function sideBySideHtml(reference, current, quick, kindText) {
+  const ref = evidenceLayer(reference, quick);
+  const cur = evidenceLayer(current, quick);
+  return `<div class="assist-stage-body assist-side" data-pan-group>
+      <figure class="assist-fig"><div class="${paneClass()}">${layerHtml(ref, "", "Reference river image")}</div><span class="assist-chip">Reference · ${escapeHtml(kindText)}</span></figure>
+      <figure class="assist-fig"><div class="${paneClass()}">${layerHtml(cur, "", "Current river image")}</div><span class="assist-chip">Current</span></figure>
+      ${navHtml()}
+      <div class="assist-tag">${selectedIndex + 1} / ${days.length}</div>
+    </div><div class="pane-note"><strong>Reference:</strong> ${escapeHtml(ref.note)} · ${escapeHtml(formatUtc(reference.capturedAtUtc))} &middot; <strong>Current:</strong> ${escapeHtml(cur.note)} · ${escapeHtml(formatUtc(current.capturedAtUtc))}</div>`;
+}
+
+// The current image blended over the reference; the slider sets how much of the current one shows.
+function overlayHtml(reference, current, quick) {
+  const ref = evidenceLayer(reference, quick);
+  const cur = evidenceLayer(current, quick);
+  return `<div class="assist-stage-body">
+      <div class="${paneClass()}" id="assistPane">${layerHtml(ref, "assistImg", "Reference river image")}<div class="assist-layer assist-overlay-current" style="width:${zoom * 100}%;opacity:${overlayOpacity / 100}"><img src="${cur.imageUrl}" alt="Current river image over the reference">${cur.overlay}</div></div>
+      ${navHtml()}
+      <div class="assist-tag">${selectedIndex + 1} / ${days.length}</div>
+      <span class="assist-chip left">Reference</span><span class="assist-chip right" id="overlayChip">Current ${overlayOpacity}%</span>
+    </div><div class="pane-note"><strong>Reference:</strong> ${escapeHtml(ref.note)} · ${escapeHtml(formatUtc(reference.capturedAtUtc))} &middot; <strong>Current:</strong> ${escapeHtml(cur.note)} · ${escapeHtml(formatUtc(current.capturedAtUtc))}</div>`;
+}
+
+function viewerHtml(day, quick) {
+  const { reference, current, hasReference, kindText } = panesFor(day);
+  if (hasReference && compareMode === "side") return sideBySideHtml(reference, current, quick, kindText);
+  if (hasReference && compareMode === "overlay") return overlayHtml(reference, current, quick);
   const showReference = swapped && hasReference;
   const main = showReference ? reference : current;
   const inset = showReference ? current : reference;
@@ -376,7 +435,6 @@ function viewerHtml(day, quick) {
   const insetLayer = evidenceLayer(inset, quick || viewMode === "original");
   const mainName = showReference ? "Reference" : "Current";
   const insetName = showReference ? "Current" : "Reference";
-  const kindText = { baseline: "run baseline", previous: "previous image" }[reference.kind] || "reference";
   const insetHtml = hasReference
     ? `<button class="assist-inset" data-swap aria-label="Show the ${insetName.toLowerCase()} image large (R)" title="Show the ${insetName.toLowerCase()} image large (R)"><div class="inset-frame"><img src="${insetLayer.imageUrl}" alt="${insetName} image">${insetLayer.overlay}</div><span class="inset-caption">${insetName}${showReference ? "" : ` · ${escapeHtml(kindText)}`}</span></button>`
     : "";
@@ -384,9 +442,8 @@ function viewerHtml(day, quick) {
     ? `${mainName}: ${escapeHtml(mainLayer.note)} · ${escapeHtml(formatUtc(main.capturedAtUtc))}`
     : "This image is the reference for the run. Choose “Previous image” as the reference to compare it.";
   return `<div class="assist-stage-body">
-      <div class="assist-pane ${zoom > 1 ? "zoomed" : ""}" id="assistPane">${layerHtml(mainLayer, "assistImg", `${mainName} river image`)}</div>
-      <button class="assist-nav prev" data-step="-1" aria-label="Previous image" ${selectedIndex === 0 ? "disabled" : ""}>&lsaquo;</button>
-      <button class="assist-nav next" data-step="1" aria-label="Next image" ${selectedIndex === days.length - 1 ? "disabled" : ""}>&rsaquo;</button>
+      <div class="${paneClass()}" id="assistPane">${layerHtml(mainLayer, "assistImg", `${mainName} river image`)}</div>
+      ${navHtml()}
       <div class="assist-tag">${selectedIndex + 1} / ${days.length} · ${escapeHtml(mainName)}</div>
       ${insetHtml}
     </div><div class="pane-note">${caption}</div>`;
@@ -394,8 +451,18 @@ function viewerHtml(day, quick) {
 
 function toolbarHtml() {
   const views = [["original", "Original"], ["segmentation", "Segmentation"], ["guide", "Riverbank guide"]];
+  const layouts = [["single", "Single"], ["side", "Side by side"], ["overlay", "Overlay"]];
+  const usable = !!selectedDay() && panesFor(selectedDay()).hasReference;
   return `<div class="view-tabs" role="group" aria-label="Picture view">${views.map(([id, text]) => `<button class="view-tab" data-view="${id}" aria-pressed="${viewMode === id}">${text}</button>`).join("")}</div>
-    <label class="compact-control">Zoom <input type="range" id="zoomControl" min="1" max="3" step="0.25" value="${zoom}"></label>`;
+    <div class="view-tabs" role="group" aria-label="Comparison layout">${layouts.map(([id, text]) => `<button class="view-tab" data-compare="${id}" aria-pressed="${compareMode === id}" ${id !== "single" && !usable ? "disabled" : ""}>${text}</button>`).join("")}</div>
+    <div class="assist-sliders">
+      ${compareMode === "overlay" ? `<label class="compact-control">Current image <input type="range" id="opacityControl" min="0" max="100" value="${overlayOpacity}"></label>` : ""}
+      <label class="compact-control">Zoom <input type="range" id="zoomControl" min="1" max="3" step="0.25" value="${zoom}"></label>
+    </div>`;
+}
+
+function selectedDay() {
+  return days[selectedIndex] || null;
 }
 
 // ---- side panel ------------------------------------------------------------------------------
@@ -671,7 +738,7 @@ function animateTo(index) {
   target = index;
   vel = 0;
   programmatic = true;
-  if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) { pos = index; programmatic = false; drawDial(); } else kick();
+  if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) { pos = index; programmatic = false; drawDial(); scheduleSettle(); } else kick();
 }
 
 function wireDial() {
@@ -724,6 +791,10 @@ function resetDraftForDay(day) {
   draftNote = own && own.label ? own.label.note || "" : "";
   draftCameraStable = own && own.label && own.label.camera_stable ? own.label.camera_stable : "";
   swapped = false;
+  datasetResult = null;
+  datasetCheck = null;
+  datasetCheckKey = "";
+  datasetMaskChoice = "";
 }
 
 function nextUnreviewedIndex() {
@@ -748,12 +819,13 @@ function renderViewer(quick) {
   const stage = $("assistViewer");
   if (!stage) return;
   stage.innerHTML = viewerHtml(days[selectedIndex], quick);
-  const image = $("assistImg");
-  const fit = () => {
-    const pane = $("assistPane");
-    if (pane && image && image.naturalWidth) pane.style.setProperty("--ar", `${image.naturalWidth} / ${image.naturalHeight}`);
-  };
-  if (image) { image.addEventListener("load", fit); if (image.complete) fit(); }
+  quickShown = !!quick;
+  stage.querySelectorAll(".assist-pane").forEach((pane) => {
+    const image = pane.querySelector("img");
+    const fit = () => { if (image.naturalWidth) pane.style.setProperty("--ar", `${image.naturalWidth} / ${image.naturalHeight}`); };
+    image.addEventListener("load", fit);
+    if (image.complete) fit();
+  });
   wireViewer();
 }
 
@@ -812,7 +884,11 @@ function syncUrl() {
 // While the dial is moving the viewer shows a small preview; once it stops, the full picture.
 function scheduleSettle() {
   clearTimeout(settleTimer);
-  settleTimer = setTimeout(() => { renderViewer(false); syncUrl(); }, 140);
+  settleTimer = setTimeout(() => {
+    if (quickShown) renderViewer(false);
+    syncUrl();
+    refreshDatasetCheck(days[selectedIndex]);
+  }, 140);
 }
 
 function show(index, fromDial) {
@@ -820,10 +896,161 @@ function show(index, fromDial) {
   const changed = next !== selectedIndex || !fromDial;
   selectedIndex = next;
   if (changed) resetDraftForDay(days[selectedIndex]);
+  if (!fromDial) renderToolbar();
   renderViewer(!!fromDial);
   renderPanel();
+  renderDataset();
   renderHead();
   if (fromDial) scheduleSettle(); else { syncUrl(); animateTo(selectedIndex); }
+}
+
+// ---- datasets --------------------------------------------------------------------------------
+// The same eligibility check and add calls as Blind review. Labels saved on this page are informed,
+// so the visible-change task will refuse them; the reasons are shown before anything is added.
+
+function selectedDataset() {
+  return datasets.find((dataset) => dataset.dataset_id === selectedDatasetId) || null;
+}
+
+function acceptedMasks(day) {
+  return samResults.filter((result) => result.filename === day.filename && result.status === "completed" && result.review_status === "accepted" && ["river water", "water"].includes(result.prompt));
+}
+
+// Reference and current image in time order, as the pair tasks need them.
+function orderedPair(day) {
+  const reference = referenceFor(day);
+  const current = refFromDay(day);
+  const refTime = Date.parse(reference.capturedAtUtc);
+  const curTime = Date.parse(current.capturedAtUtc);
+  const referenceIsLater = !Number.isNaN(refTime) && !Number.isNaN(curTime) && refTime > curTime;
+  return referenceIsLater ? { earlier: current, later: reference } : { earlier: reference, later: current };
+}
+
+function pairRef(ref) {
+  return { folder_name: folderName, run_id: ref.run_id || runId, filename: ref.filename };
+}
+
+function datasetRequest(day) {
+  const dataset = selectedDataset();
+  if (!dataset) return null;
+  if (PAIR_TASK_IDS.includes(dataset.task)) {
+    const pair = orderedPair(day);
+    return { dataset, pair: true, body: { dataset_id: dataset.dataset_id, earlier: pairRef(pair.earlier), later: pairRef(pair.later) } };
+  }
+  const body = { dataset_id: dataset.dataset_id, folder_name: folderName, run_id: runId, filename: day.filename };
+  if (dataset.task === "water_segmentation") {
+    const first = acceptedMasks(day)[0];
+    const choice = datasetMaskChoice || (first ? `${first.run_id}|${first.result_id}` : "");
+    if (choice) [body.mask_run_id, body.mask_result_id] = choice.split("|");
+  }
+  return { dataset, pair: false, body };
+}
+
+async function postDataset(path, body) {
+  const response = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const data = await response.json();
+  if (!response.ok && !(response.status === 409 && data.conflict)) return { error: data.message || "Could not update the dataset." };
+  return data;
+}
+
+async function refreshDatasetCheck(day) {
+  if (!day || !canReview(day)) return;
+  const request = datasetRequest(day);
+  if (!request) { datasetCheck = null; datasetCheckKey = ""; return; }
+  const key = JSON.stringify(request.body);
+  if (key === datasetCheckKey) return;
+  datasetCheckKey = key;
+  datasetCheck = { pending: true };
+  renderDataset();
+  try {
+    const result = await postDataset("/api/dataset-check", request.body);
+    if (datasetCheckKey !== key) return;
+    datasetCheck = result.error ? { error: result.error } : result;
+  } catch (error) {
+    if (datasetCheckKey !== key) return;
+    datasetCheck = { error: error.message };
+  }
+  renderDataset();
+}
+
+async function addToDataset(day) {
+  const request = datasetRequest(day);
+  if (!request) return;
+  savingDataset = true;
+  renderDataset();
+  try {
+    datasetResult = await postDataset(request.pair ? "/api/dataset-add-pair" : "/api/dataset-add", request.body);
+    datasets = (await api("/api/datasets")).datasets || datasets;
+  } catch (error) { datasetResult = { error: error.message }; }
+  savingDataset = false;
+  datasetCheckKey = ""; // re-check: it is now already included
+  renderDataset();
+  refreshDatasetCheck(day);
+}
+
+function reasonListHtml(reasons) {
+  const items = (reasons || []).map((reason) => `<li class="${reason.severity === "warning" ? "reason-warning" : ""}">${escapeHtml(reason.message)}</li>`).join("");
+  return items ? `<ul>${items}</ul>` : "";
+}
+
+function agreementLineHtml(agreement) {
+  if (!agreement) return "";
+  const directions = Object.entries(agreement.by_direction || {}).map(([direction, who]) => `${direction.replaceAll("_", " ")}: ${who.join(", ")}`).join(" · ");
+  return `<div class="dataset-agreement">${agreement.reviewers} of ${agreement.needed} needed independent blind reviewers${directions ? ` · ${escapeHtml(directions)}` : ""}</div>`;
+}
+
+function datasetCheckHtml() {
+  if (!datasetCheck) return "";
+  if (datasetCheck.pending) return `<div class="dataset-result">Checking eligibility…</div>`;
+  if (datasetCheck.error) return `<div class="error-note mt-10">${escapeHtml(datasetCheck.error)}</div>`;
+  const status = datasetCheck.status;
+  const title = status === "eligible" ? "Eligible: nothing has been added yet" : status === "already_included" ? "Already in this dataset" : "Not eligible for this dataset";
+  return `<div class="dataset-result ${status === "eligible" ? "ok" : status === "ineligible" ? "bad" : ""}"><strong>${title}</strong>${agreementLineHtml(datasetCheck.agreement)}${reasonListHtml(datasetCheck.reasons)}</div>`;
+}
+
+function datasetResultHtml() {
+  if (!datasetResult) return "";
+  if (datasetResult.error) return `<div class="error-note mt-10">${escapeHtml(datasetResult.error)}</div>`;
+  const title = datasetResult.status === "ineligible" ? "Not eligible for this dataset" : datasetResult.message || `Dataset: ${datasetResult.status || "updated"}`;
+  return `<div class="dataset-result"><strong>${escapeHtml(title)}</strong>${reasonListHtml(datasetResult.reasons)}</div>`;
+}
+
+function datasetPanelHtml(day) {
+  const head = `<h3>Add to dataset</h3><div class="hint">Nothing is trained, uploaded, or published.</div>`;
+  if (!datasets.length) {
+    return `<div class="curation-block">${head}<div class="hint">No dataset drafts exist yet. Create one on the <a href="/console/datasets.html">Datasets page</a> or in <a href="${blindHref(day.filename)}">Blind review</a>.</div></div>`;
+  }
+  const dataset = selectedDataset();
+  const isPair = !!dataset && PAIR_TASK_IDS.includes(dataset.task);
+  const pair = isPair ? orderedPair(day) : null;
+  const masks = dataset && dataset.task === "water_segmentation" ? acceptedMasks(day) : [];
+  const maskSelect = masks.length ? `<label>Accepted mask<select id="datasetMask">${masks.map((mask) => `<option value="${escapeHtml(mask.run_id)}|${escapeHtml(mask.result_id)}" ${datasetMaskChoice === `${mask.run_id}|${mask.result_id}` ? "selected" : ""}>${escapeHtml(mask.prompt)} · ${escapeHtml(formatUtc(mask.processed_at_utc))}</option>`).join("")}</select></label>` : "";
+  const pairNote = pair ? `<div class="dataset-pair">Pair, earlier first: ${escapeHtml(formatUtc(pair.earlier.capturedAtUtc))} → ${escapeHtml(formatUtc(pair.later.capturedAtUtc))}</div>` : "";
+  const eligible = datasetCheck && datasetCheck.status === "eligible";
+  const label = savingDataset ? "Adding…" : isPair ? "Add pair to dataset" : "Add to dataset";
+  const options = datasets.map((candidate) => `<option value="${escapeHtml(candidate.dataset_id)}" ${candidate.dataset_id === selectedDatasetId ? "selected" : ""}>${escapeHtml(candidate.name)} · ${escapeHtml(candidate.task_title)}</option>`).join("");
+  return `<div class="curation-block">${head}<label for="datasetSelect">Dataset</label><select id="datasetSelect">${options}</select>
+    <div class="hint">${escapeHtml(DATASET_HELP[(dataset || {}).task] || "")}</div>${maskSelect}${pairNote}${canReview(day) ? datasetCheckHtml() : `<div class="hint">This image is the reference, so it cannot be added on its own.</div>`}
+    <button class="btn primary" data-add-dataset ${savingDataset || !eligible ? "disabled" : ""}>${label}</button>${datasetResultHtml()}</div>`;
+}
+
+function renderDataset() {
+  const box = $("assistDataset");
+  if (!box || !days.length) return;
+  const day = days[selectedIndex];
+  box.innerHTML = datasetPanelHtml(day);
+  const select = $("datasetSelect");
+  if (select) select.addEventListener("change", () => {
+    selectedDatasetId = select.value;
+    datasetResult = null; datasetCheck = null; datasetCheckKey = "";
+    saveSetting("openfloodai.reviewDataset", selectedDatasetId);
+    renderDataset();
+    refreshDatasetCheck(day);
+  });
+  const mask = $("datasetMask");
+  if (mask) mask.addEventListener("change", () => { datasetMaskChoice = mask.value; datasetCheckKey = ""; renderDataset(); refreshDatasetCheck(day); });
+  const add = box.querySelector("[data-add-dataset]");
+  if (add) add.addEventListener("click", () => addToDataset(day));
 }
 
 // ---- saving ----------------------------------------------------------------------------------
@@ -873,40 +1100,70 @@ async function saveLabel(advance) {
     toast("Saved as an informed label. It is not counted as an independent judgment.");
   } catch (error) { toast(error.message); }
   saving = false;
+  datasetCheckKey = ""; // a saved label can change eligibility
   renderHead();
   drawDial();
   if (saved && advance && selectedIndex < days.length - 1) { show(selectedIndex + 1); return; }
   if (saved) resetDraftForDay(day);
   renderPanel();
+  renderDataset();
+  refreshDatasetCheck(day);
 }
 
 // ---- wiring ----------------------------------------------------------------------------------
 
 function applyZoom(value) {
   zoom = value;
-  const pane = $("assistPane");
-  if (pane) pane.classList.toggle("zoomed", zoom > 1);
+  document.querySelectorAll(".assist-pane").forEach((pane) => pane.classList.toggle("zoomed", zoom > 1));
   document.querySelectorAll(".assist-layer").forEach((layer) => { layer.style.width = `${zoom * 100}%`; });
 }
 
+function applyOpacity(value) {
+  overlayOpacity = value;
+  document.querySelectorAll(".assist-overlay-current").forEach((layer) => { layer.style.opacity = String(overlayOpacity / 100); });
+  const chip = $("overlayChip");
+  if (chip) chip.textContent = `Current ${overlayOpacity}%`;
+}
+
+let panDrag = null;
+let syncingPanes = false;
+
+// One pair of window listeners for dragging a zoomed picture, however often the viewer is redrawn.
+function wirePanOnce() {
+  if (wirePanOnce.done) return;
+  wirePanOnce.done = true;
+  window.addEventListener("mousemove", (event) => {
+    if (!panDrag) return;
+    panDrag.pane.scrollLeft = panDrag.left - (event.clientX - panDrag.x);
+    panDrag.pane.scrollTop = panDrag.top - (event.clientY - panDrag.y);
+  });
+  window.addEventListener("mouseup", () => {
+    if (panDrag) panDrag.pane.classList.remove("panning");
+    panDrag = null;
+  });
+}
+
 function wireViewer() {
+  wirePanOnce();
   document.querySelectorAll("#assistViewer [data-step]").forEach((button) => button.addEventListener("click", () => show(selectedIndex + Number(button.dataset.step))));
   document.querySelectorAll("#assistViewer [data-swap]").forEach((button) => button.addEventListener("click", () => { swapped = !swapped; renderViewer(false); }));
-  const pane = $("assistPane");
-  if (!pane) return;
-  let drag = null;
-  pane.addEventListener("mousedown", (event) => {
+  const panes = [...document.querySelectorAll("#assistViewer .assist-pane")];
+  panes.forEach((pane) => pane.addEventListener("mousedown", (event) => {
     if (zoom <= 1 || event.button !== 0) return;
-    drag = { x: event.clientX, y: event.clientY, left: pane.scrollLeft, top: pane.scrollTop };
+    panDrag = { pane, x: event.clientX, y: event.clientY, left: pane.scrollLeft, top: pane.scrollTop };
     pane.classList.add("panning");
     event.preventDefault();
+  }));
+  // Side by side: both pictures scroll together so the same spot is compared.
+  document.querySelectorAll("#assistViewer [data-pan-group]").forEach((group) => {
+    const members = [...group.querySelectorAll(".assist-pane")];
+    members.forEach((pane) => pane.addEventListener("scroll", () => {
+      if (syncingPanes) return;
+      syncingPanes = true;
+      members.forEach((other) => { if (other !== pane) { other.scrollLeft = pane.scrollLeft; other.scrollTop = pane.scrollTop; } });
+      syncingPanes = false;
+    }));
   });
-  window.addEventListener("mousemove", (event) => {
-    if (!drag) return;
-    pane.scrollLeft = drag.left - (event.clientX - drag.x);
-    pane.scrollTop = drag.top - (event.clientY - drag.y);
-  });
-  window.addEventListener("mouseup", () => { drag = null; pane.classList.remove("panning"); });
 }
 
 function wireToolbar() {
@@ -916,8 +1173,15 @@ function wireToolbar() {
     renderViewer(false);
   }));
   // Updated in place: redrawing the page on every move would replace the slider under the pointer.
+  document.querySelectorAll("#assistToolbar [data-compare]").forEach((button) => button.addEventListener("click", () => {
+    compareMode = button.dataset.compare;
+    renderToolbar();
+    renderViewer(false);
+  }));
   const zoomControl = $("zoomControl");
   if (zoomControl) zoomControl.addEventListener("input", () => applyZoom(Number(zoomControl.value)));
+  const opacityControl = $("opacityControl");
+  if (opacityControl) opacityControl.addEventListener("input", () => applyOpacity(Number(opacityControl.value)));
 }
 
 function wirePanel() {
@@ -931,8 +1195,10 @@ function wirePanel() {
     resetDraftForDay(days[selectedIndex]);
     renderViewer(false);
     renderPanel();
+    renderDataset();
     renderHead();
     drawDial();
+    refreshDatasetCheck(days[selectedIndex]);
   });
   on("[data-save]", () => saveLabel(true));
   on("[data-next-unreviewed]", () => { const index = nextUnreviewedIndex(); if (index >= 0) show(index); });
@@ -994,14 +1260,19 @@ function render() {
       <div class="focus-progress"><span id="assistProgress"></span><div class="assist-bar"><i id="assistBar"></i></div></div></div>
     <div class="assist-banner"><strong>Machine evidence is visible.</strong><span>Labels saved here are recorded as informed, not as independent judgments. For independent labels use <a href="${blindHref(days[selectedIndex].filename)}">Blind review</a>. Open the <a href="${fullReview}">detailed review page</a> for masks and datasets.</span></div>
     <div class="assist-layout">
+      <div class="assist-left">
       <section class="card assist-stage" aria-label="Image viewer"><div class="evidence-toolbar" id="assistToolbar"></div><div id="assistViewer"></div></section>
-      <aside class="card assist-panel" id="assistPanel" aria-label="Machine reading and human label"></aside>
-    </div>
     <section class="card assist-dial-card" aria-label="Timeline">
       <div class="assist-dial-head"><span id="dialInfo" class="assist-dial-info"></span><div class="view-tabs" id="dialMetrics" role="group" aria-label="Timeline measurement"></div></div>
       <div class="assist-dial-legend" id="dialLegend"></div>
       <div class="dialwrap" id="dial" tabindex="0" role="slider" aria-label="Timeline of images. Drag sideways, or use the arrow keys." aria-valuemin="1" aria-valuemax="${days.length}" aria-valuenow="${selectedIndex + 1}"><canvas id="dialCanvas"></canvas></div>
-    </section>`;
+    </section>
+      </div>
+      <div class="assist-right">
+        <aside class="card assist-panel" id="assistPanel" aria-label="Machine reading and human label"></aside>
+        <section class="card assist-dataset" id="assistDataset" aria-label="Add to dataset"></section>
+      </div>
+    </div>`;
   renderToolbar();
   renderDialHead();
   computeSeries();
@@ -1009,8 +1280,10 @@ function render() {
   pos = target = selectedIndex;
   renderViewer(false);
   renderPanel();
+  renderDataset();
   renderHead();
   sizeDial();
+  refreshDatasetCheck(days[selectedIndex]);
 }
 
 async function main() {
@@ -1033,14 +1306,18 @@ async function main() {
     days = buildDays(detail.records);
     if (!days.length) throw new Error("This run has no image records to review.");
     const sequenceId = detail.summary.sequence_id;
-    const [workspace, coverage, sam] = await Promise.all([
+    const [workspace, coverage, sam, datasetListing] = await Promise.all([
       api(`/api/workspace-evidence?${new URLSearchParams({ folder_name: folderName, kind: "image", run_id: runId, media_id: sequenceId })}`).catch(() => ({ points: [] })),
       api(`/api/compare/series?${new URLSearchParams({ folder_name: folderName, run_id: runId })}`).catch(() => ({ images: [] })),
-      api(`/api/hosted-sam/results?${new URLSearchParams({ folder_name: folderName, sequence_id: sequenceId })}`).catch(() => ({ results: [] }))
+      api(`/api/hosted-sam/results?${new URLSearchParams({ folder_name: folderName, sequence_id: sequenceId })}`).catch(() => ({ results: [] })),
+      api("/api/datasets").catch(() => ({ datasets: [] }))
     ]);
     evidencePoints = workspace.points || [];
     coverageByFile = new Map((coverage.images || []).map((row) => [row.filename, row]));
     samResults = sam.results || [];
+    datasets = datasetListing.datasets || [];
+    const rememberedDataset = loadSetting("openfloodai.reviewDataset");
+    selectedDatasetId = datasets.some((dataset) => dataset.dataset_id === rememberedDataset) ? rememberedDataset : (datasets[0] || {}).dataset_id || "";
     gaugeByImage = new Map((((detail.gauge_evidence || {}).images) || []).map((row) => [gaugeKey(row.filename, row.captured_at_utc), row]));
     loadRevealed();
     refreshMarks();
@@ -1063,7 +1340,7 @@ document.addEventListener("keydown", (event) => {
   if (label) { event.preventDefault(); selectedLabel = label[0]; renderPanel(); return; }
   const camera = { s: "yes", m: "no", u: "unsure" }[event.key];
   if (camera) { event.preventDefault(); draftCameraStable = camera; renderPanel(); return; }
-  if (event.key === "r" || event.key === "R") { event.preventDefault(); swapped = !swapped; renderViewer(false); return; }
+  if ((event.key === "r" || event.key === "R") && compareMode === "single") { event.preventDefault(); swapped = !swapped; renderViewer(false); return; }
   if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
     event.preventDefault();
     show(selectedIndex + (event.key === "ArrowRight" ? 1 : -1));
