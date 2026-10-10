@@ -35,7 +35,12 @@
   align-items: start;
 }
 
-.assist-layout { --pane-h: clamp(240px, 38vh, 460px); }
+.assist-layout { --pane-h: clamp(320px, 54vh, 620px); }
+.assist-left,
+.assist-right { min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+.assist-dataset { padding: 16px; }
+.assist-dataset select { width: 100%; }
+.assist-dataset .curation-block > label { margin-top: 10px; }
 .assist-stage { overflow: hidden; min-width: 0; }
 
 .assist-stage-body {
@@ -118,8 +123,6 @@
 .assist-panel {
   padding: 16px;
   min-width: 0;
-  max-height: calc(var(--pane-h) + 96px);
-  overflow: auto;
 }
 
 .assist-readout { margin-top: 6px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
@@ -154,13 +157,13 @@
 /* ---- the dial ---- */
 .assist-dial-card { padding: 12px 14px 14px; }
 
-/* Pinned along the bottom only where the screen has room; on a phone it would cover the picture. */
+/* On a wide screen the viewer and the dial stay in view while the labelling column scrolls. On a
+   phone they scroll with the page, since pinning them would cover the rest. */
 @media (min-width: 1121px) {
-  .assist-dial-card {
+  .assist-left {
     position: sticky;
-    bottom: 12px;
-    z-index: 4;
-    box-shadow: 0 -6px 18px rgba(18, 32, 46, 0.1);
+    top: 12px;
+    align-self: start;
   }
 }
 
@@ -231,7 +234,6 @@
 
 @media (max-width: 1120px) {
   .assist-layout { grid-template-columns: minmax(0, 1fr); }
-  .assist-panel { max-height: none; }
   .assist-pane { height: auto; width: 100%; }
 }
 
@@ -246,3 +248,109 @@
 @media (prefers-reduced-motion: reduce) {
   .assist-nav { transition: none; }
 }
+
+/* ---- side by side and overlay ---- */
+.assist-stage .evidence-toolbar { flex-wrap: wrap; }
+.assist-stage .view-tabs { grid-auto-columns: minmax(0, auto); }
+.assist-sliders { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+
+.assist-stage-body.assist-side {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
+  align-items: center;
+}
+
+.assist-fig { position: relative; margin: 0; min-width: 0; }
+.assist-side .assist-pane { height: auto; width: 100%; max-width: 100%; }
+
+.assist-chip {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  z-index: 2;
+  padding: 4px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 6px;
+  background: rgba(14, 26, 40, 0.88);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.assist-chip.right { left: auto; right: 10px; }
+.assist-layer.assist-overlay-current { position: absolute; top: 0; left: 0; }
+
+.dataset-next { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--ink-soft); line-height: 1.5; }
+.dataset-next a { color: var(--accent); font-weight: 650; text-decoration: underline; }
+
+/* ---- water mask review under the segmentation picture ---- */
+.mask-bar {
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  border-top: 1px solid var(--line-soft);
+  background: #fff;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--ink-soft);
+}
+
+.mask-bar-label { display: inline-flex; align-items: center; gap: 8px; }
+.mask-bar-actions { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.mask-bar .btn { height: 30px; font-size: 11px; }
+
+/* ---- picking the pair on the dial ---- */
+.pair-pick { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pair-pick .btn { height: 30px; font-size: 11px; }
+
+.pair-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px 3px 9px;
+  border-radius: 7px;
+  background: var(--sam-soft);
+  color: var(--sam);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.pair-chip button {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.pair-chip button:hover { background: rgba(109, 40, 217, 0.14); }
+
+.assist-dataset:focus { outline: none; }
+.assist-dataset:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---- the status legend and the dataset chips ---- */
+.status-key { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 3px 6px; }
+.status-key strong { color: var(--ink-soft); font-weight: 650; }
+.status-key .g { display: inline-block; width: 9px; height: 9px; margin-left: 4px; vertical-align: middle; }
+.status-key .g.sq.ok { background: var(--ok); }
+.status-key .g.sq.hollow { border: 1.5px solid var(--ink-muted); }
+.status-key .g.dia { background: #d9962b; transform: rotate(45deg) scale(0.8); }
+.status-key .g.x { width: auto; height: auto; color: var(--bad); font-style: normal; font-weight: 700; line-height: 1; }
+.status-key .g.dot { border-radius: 50%; }
+.status-key .g.dot.ok { background: var(--ok); }
+.status-key .g.dot.ring { border: 1.5px solid var(--ok); }
+.letter { display: inline-block; min-width: 14px; margin: 0 3px 0 4px; padding: 0 3px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); font-size: 10px; font-weight: 700; text-align: center; }
+
+.set-chip { display: inline-block; margin: 0 4px 3px 0; padding: 1px 6px 1px 0; border-radius: 5px; background: var(--line-soft); font-family: var(--sans); font-size: 11px; font-weight: 500; }
+.set-chip .letter { margin-left: 2px; }
+.set-chip.rejected { color: var(--bad); }
+.set-chip.rejected .letter { background: var(--bad-soft); color: var(--bad); }

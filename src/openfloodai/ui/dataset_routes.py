@@ -18,6 +18,7 @@ _GET_PATHS = {
     "/api/dataset",
     "/api/dataset-verify",
     "/api/dataset-label-definitions",
+    "/api/dataset-memberships",
 }
 _POST_PATHS = {
     "/api/dataset-create",
@@ -63,6 +64,11 @@ def handle_get(handler: Any, path: str) -> bool:
         elif path == "/api/dataset":
             handler._send_json(
                 curation.dataset_view(datasets_dir, first("dataset_id"), handler.sites_dir),
+                status_code=200,
+            )
+        elif path == "/api/dataset-memberships":
+            handler._send_json(
+                {"memberships": curation.memberships(datasets_dir, first("folder_name"))},
                 status_code=200,
             )
         elif path == "/api/dataset-verify":

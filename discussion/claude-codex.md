@@ -1463,12 +1463,192 @@ rules above were updated to match. No app code, issue or other PR was changed.
 
 Decision status: explicitly approved by Dipen (commit, push, PR).
 
+### 032 | Dipen, summarized by Claude | 2026-10-10 | How are we different from existing flood-camera technology?
+
+Summary, not a quote. Dipen asks how this project differs from OpenRiverCam (and a "Pi
+OpenRiverCam") and other image or video flood-detection libraries, why we are not using their
+techniques, where we are heading, and asks Claude to scan the web and list the algorithms (the
+technique, not the programming language) used to determine flooding from images or video. Dipen
+then asked Claude to record the answer in this file.
+
+### 033 | Claude | 2026-10-10 | Survey of image and video flood-detection techniques, and where we sit
+
+Replying to: 032. Research note, not a decision. Nothing was built, downloaded or changed. Claims
+come from web search results and pages read on 2026-10-10; the search was not exhaustive, I found
+no survey paper that covers all of this, and I found no sources on optical-flow flood detection.
+Performance numbers below are as reported in search summaries; verify them in the original
+papers before relying on them. The hydrologist and flood specialist should review the list.
+
+**1. OpenRiverCam and "Pi OpenRiverCam"**
+- OpenRiverCam is a software stack built on the open-source library pyorc
+  (https://github.com/localdevices/pyorc). It measures river SURFACE VELOCITY and DISCHARGE from
+  video with Large-Scale Particle Image Velocimetry (LSPIV), using frame reprojection to the water
+  surface and a surveyed cross-section. Its README does not mention flood detection, water level
+  or Raspberry Pi. Space-Time Image Velocimetry (STIV) and particle tracking are listed as planned.
+  Licence: AGPL-3.0 (copyleft; check implications before building on it).
+- The Raspberry Pi part: pyorc lists on-site Pi edge computing among things it still seeks funding
+  for, so I did not find a delivered "Pi OpenRiverCam". The Pi-based open-source flood camera I
+  found is AquaCam (a research paper describing a low-cost Raspberry Pi camera that estimates
+  stream level). I could not verify AquaCam's repository.
+
+**2. Technique families found**
+
+| Family | Algorithm idea | Needs | Weak points |
+| --- | --- | --- | --- |
+| Surface velocity (LSPIV, STIV, particle tracking) | Follow ripples/bubbles between video frames to get flow speed, then discharge. USGS uses LSPIV at some gauges. | Video, control points, surveyed cross-section | Glare, fog; space-time variants need longer, higher-frame-rate clips |
+| Staff-gauge reading | Detect the gauge plate (SSD, EdgeSAM) and read the waterline on it. | A visible gauge plate, perspective correction | Camera tilt and movement |
+| Water segmentation + reference | A neural net outlines the water (DeepLab, SegNet, FCN, UperNet, transfer learning from ADE20k/COCO-stuff); level from a "virtual gauge" or landmarks with surveyed heights (HESS 2021, Eltner 2021, Heliyon 2024). | Labelled images or transfer learning; surveyed reference heights | Water appearance changes by season; retraining per site |
+| Landmark flooding test | Declare flood when segmented water reaches a landmark (Vandaele et al.). | A landmark in view | Same as segmentation |
+| Urban flood segmentation / depth | Video segmentation of flooded streets (V-FloodNet); depth from partly submerged objects (e.g. stop sign with Canny edges and Hough transform). | Labelled flood images, known object sizes | Street scenes, not rivers |
+| Camera-stage with reference objects | USGS Wisconsin study used white pipes and a concrete wall at three gauges. | Purpose-installed reference objects | Only 38% to 92% of images were suitable in four trials |
+| Classical image processing | Background subtraction, morphological closing, Canny edges, colour/texture/motion features, region growing, graph-based segmentation, waterline pixel row. Raspberry Pi prototypes compare the river surface with the bank line. | Little | Reflections, lighting, glare |
+| Foundation models / direct regression | Segment-anything-style models, vision-language models (FloodLense, a mixture-of-foundation-models waterlogging pipeline), or a network regressing gauge height from the whole scene (a 2026 conference abstract reports EfficientNet-B0). | Prompts, or labelled gauge data | Hard to audit; generalisation unproven |
+| Added sensors | Ultrasonic sensors with a camera; RGB plus long-wave infrared cameras for night. | Hardware | Cost |
+
+**3. Where this project sits**
+- Pixel change (region change score, riverbank_crossing_v1) is in the classical family and is the
+  weakest: it cannot tell water from light, shadow, snow or a moved camera.
+- Segmentation coverage (#222, the Review chart) is in the "segmentation + reference" family,
+  using hosted SAM drafts that a person accepts, measured against a human-drawn watched area.
+- What differs is the PROCESS, not a new algorithm: human-drawn watched area and bank guides;
+  drafts become verified only when accepted; the gauge is only an external check; pilot criteria
+  are written before any machine result is seen; every output is frozen with image and mask
+  hashes; no production or warning claim. I did not find that combination in the sources, but I
+  did not read every one.
+- Where we are behind: the literature spends much effort on geometry (perspective correction,
+  camera-motion recovery with feature matching or fiducials) and on image-quality gating. We do
+  neither: a person confirms the view did not move, and the quality evidence is not built.
+
+**4. Why not use the others now**
+- LSPIV/STIV (pyorc): our USGS images are stills about 15 minutes apart; the method needs video,
+  control points and a surveyed cross-section; it answers speed/discharge, not visible extent;
+  AGPL licence needs review. It becomes relevant when video cameras exist, because it would give
+  the "sudden rise and movement" cue Dipen described, which stills cannot.
+- Staff-gauge reading and surveyed-landmark heights: need a visible gauge plate or surveyed
+  heights, and Dipen said estimating gauge height is never the goal.
+- Flood-specific trained models and direct gauge regression: we hold no labelled flood images
+  (entry 023 gap 1) and the readiness gate blocks training.
+
+**5. Suggestions (proposed, none approved)**
+1. Treat the human-drawn lines as a "virtual gauge" in the literature's sense; the published
+   virtual-gauge results support running the pilot.
+2. Add a camera-movement check (feature matching or fiducial markers) before trusting
+   measurements across weeks or months.
+3. Consider the USGS Wisconsin camera-stage data release (images, R code, results) as an outside
+   benchmark. It needs a download, so Dipen's approval is required first.
+4. When video cameras exist, evaluate pyorc (LSPIV/STIV) as an optional motion cue, after a
+   licence check.
+
+**Questions for Dipen / the specialists:** (a) Which of these families should the hydrologist
+review first? (b) Is a camera-movement check a prerequisite for the pilot? (c) May Claude fetch
+the USGS Wisconsin data release for benchmarking?
+
+Sources: pyorc https://github.com/localdevices/pyorc ; PyPI https://pypi.org/project/pyopenrivercam/ ;
+USGS LSPIV https://www.usgs.gov/centers/pennsylvania-water-science-center/science/streamflow-estimation-advanced-imaging-lspiv ;
+USGS 2D-STIV https://www.usgs.gov/publications/a-two-dimensional-reach-scale-implementation-space-time-image-velocimetry-stiv-and ;
+HESS 2021 https://hess.copernicus.org/articles/25/4435/2021/ ;
+Eltner 2021 https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2020WR027608 ;
+Reading segmentation https://centaur.reading.ac.uk/93823/1/035.pdf ;
+V-FloodNet https://www.sciencedirect.com/science/article/abs/pii/S1364815222002869 ;
+NOAA stop-sign depth https://repository.library.noaa.gov/view/noaa/57907/noaa_57907_DS1.pdf ;
+SSD staff gauge https://www.sciencedirect.com/science/article/abs/pii/S0263224121009726 ;
+EdgeSAM staff gauge https://www.sciencedirect.com/science/article/abs/pii/S0022169425020645 ;
+Heliyon 2024 https://www.cell.com/heliyon/fulltext/S2405-8440(24)02020-6 ;
+2025 review https://arxiv.org/html/2605.14645 ;
+classical video flood detection https://www.researchgate.net/publication/304411522_Real-time_flood_detection_for_video_surveillance ;
+FloodLense https://arxiv.org/pdf/2401.15501 ;
+waterlogging foundation models https://arxiv.org/pdf/2510.18425 ;
+Raspberry Pi riverbank monitoring https://publisher.uthm.edu.my/ojs/index.php/ijie/article/view/10754 .
+
+Decision status: research recorded; suggestions proposed, awaiting Dipen. No code, issue, PR,
+dataset, paid call, download or training was done for this entry.
+
+### 034 | Dipen, summarized by Claude | 2026-10-10 | What technology does Noema use, and how confident are we?
+
+Summary, not a quote. Dipen shared https://noema.tech/flood/ and asked what technology the
+company appears to use, saying he wants to build something similar and ideally better, not a
+copy. He also asked how confident Claude is that the work so far can become a flood detection
+system within a couple of months to a year. (The message said "fraud detection"; Claude read it
+as flood detection and stated that assumption.)
+
+### 035 | Claude | 2026-10-10 | Noema flood product: what the page says, where we differ, and a confidence estimate
+
+Replying to: 034. Research and opinion, not a decision. Nothing was built, downloaded or changed.
+Based only on the public page read on 2026-10-10; the page gives no accuracy figures and no
+model names, so anything beyond what it states is inference.
+
+**1. What the page states (https://noema.tech/flood/)**
+- Smart cameras and computer vision that monitor water levels and raise flood alarms.
+- Techniques named: water segmentation ("water fragmentation"); "virtual rulers" (several, with
+  placement configured remotely by the operator); monitoring of water COVERAGE in predefined
+  areas; colour-coded water-level categories as the level rises; real-time analysis, 24/7.
+- Delivery: edge or cloud; smart camera, AI box, VMS or SCADA; any CCTV, including physical or
+  electronic PTZ cameras; NVIDIA-compatible and Arm64 devices; works with little bandwidth;
+  remote installation and configuration, no on-site measurements required.
+- Output per event: original and annotated frame, the rulers with water-level information, and a
+  timestamp; levels are shown in video pixels. Customisable alarms and integration with other
+  backends.
+- Claims "all light and weather conditions". It criticises tipping-bucket gauges and radar level
+  sensors as costly to install and maintain.
+- NOT stated: accuracy or error figures, the calibration method, the model or architecture,
+  velocity measurement, customers or case studies, pricing, or camera models.
+
+**2. Reading it against our work**
+- The core idea matches ours: segment the water, then measure it against operator-placed lines
+  and areas. Our watched area and bank guides correspond to their predefined areas and virtual
+  rulers; our coverage chart corresponds to their coverage monitoring. Their level is in video
+  pixels, which suggests no physical calibration, like our image-space measurement.
+- They are ahead on: real-time 24/7 operation, edge deployment (including on the camera), PTZ
+  handling, alarm integration, an in-house model (no per-image hosted cost), and a claim of
+  all-weather operation (unevidenced on the page).
+- We could credibly be better on: published validation (they state no accuracy; our
+  pre-registered pilot, blind judgments and gauge cross-check are the opposite posture), honest
+  unavailable states instead of a number, frozen provenance (image and mask hashes, review state),
+  and an independent public check (USGS gauges).
+- We would need to build to compete on their ground: a local segmentation model (hosted SAM is
+  paid and slow), camera-movement detection, night/fog/ice/glare handling, real-time operation,
+  and edge deployment. See entry 033 for how these relate to the wider literature.
+
+**3. Confidence (rough judgment, not a measured probability)**
+
+| Goal | In a few months | Within about a year |
+| --- | --- | --- |
+| Tool showing reviewers visible water change, with human review, on a few fixed cameras | Fairly confident (most pieces exist; the #222 pilot is next) | Confident |
+| A local model that segments water as well as hosted SAM, offline | Plausible, not certain (needs a few hundred reviewed masks) | Fairly confident |
+| Near-real-time monitoring on a few cameras in shadow mode, no alerts | Possible in 6 to 9 months | Likely |
+| A system that can credibly be called flood detection with validated accuracy and safe for warnings | Not realistic | Low confidence; well under even odds |
+
+The last row is low mainly for reasons outside the code: floods are rare and our cameras have not
+seen them (entry 023 gap 1); a year may not cover the seasonal and weather range; hydrologist and
+second-reviewer time is the real bottleneck; independent QA and per-site conditions can reverse a
+result; and AGENTS.md forbids production accuracy claims and sending alerts. Realistic one-year
+outcome: a validated measurement tool, a documented comparison with gauges at our sites, and a
+shadow-mode monitor. Whether it detects floods reliably is decided by rare events.
+
+**4. Suggested path to try to beat it (proposed, none approved)**
+1. Run the #222 pilot on one camera.
+2. Add camera-movement and image-quality checks.
+3. Fine-tune a small segmenter from the masks that reviewers accept, and compare it with hosted
+   SAM on held-out images.
+4. Run in shadow mode on a few cameras against gauges and official flood categories.
+5. Collect flood images from new cameras and documented events.
+
+**Questions for Dipen:** (a) Is "better than Noema" mainly about validated accuracy and
+transparency, or about matching their real-time edge features? (b) Is a one-year target a
+validated measurement tool plus shadow mode acceptable? (c) May Claude later sketch the
+local-model path (data needed, candidate lightweight models, Raspberry Pi feasibility)?
+
+Source: https://noema.tech/flood/
+
+Decision status: research and opinion recorded; suggestions proposed, awaiting Dipen. No code,
+issue, PR, dataset, paid call, download or training was done for this entry.
+
 ### Next Entry Template
 
 Copy this structure into a new entry; leave existing entries intact:
 
 ```text
-### 032 | Claude or Codex | YYYY-MM-DD | Topic
+### 036 | Claude or Codex | YYYY-MM-DD | Topic
 Replying to: entry number or Dipen's request
 Understanding:
 Evidence / assumptions:

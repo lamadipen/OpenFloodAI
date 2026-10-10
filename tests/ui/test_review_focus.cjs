@@ -252,7 +252,7 @@ test("datasets: eligibility is checked before adding, and a dataset can be creat
   assert.match(script, /Not eligible for this dataset/);
   assert.match(script, /\/api\/dataset-create/);
   assert.match(script, /Visible water change \(human-judged pair\)/);
-  assert.match(script, /needed independent blind reviewers/);
+  assert.match(script, /judged this pair \(at least/);
   assert.match(script, /data-add-dataset \$\{savingDataset \|\| !eligible \? "disabled" : ""\}/);
 });
 
