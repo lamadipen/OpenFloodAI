@@ -79,6 +79,7 @@ let datasetResult = null;
 let datasetMaskChoice = "";
 let savingDataset = false;
 let quickShown = false;
+let savingMask = false;
 
 function loadSetting(key) {
   try { return localStorage.getItem(key) || ""; } catch (error) { return ""; }
@@ -423,7 +424,27 @@ function overlayHtml(reference, current, quick) {
     </div><div class="pane-note"><strong>Reference:</strong> ${escapeHtml(ref.note)} · ${escapeHtml(formatUtc(reference.capturedAtUtc))} &middot; <strong>Current:</strong> ${escapeHtml(cur.note)} · ${escapeHtml(formatUtc(current.capturedAtUtc))}</div>`;
 }
 
+// Approve the water mask of the current image right under the segmentation picture. This is the same
+// review as in Blind review and the detailed page; it decides whether the image can go into a
+// segmentation dataset, not what you label.
+function maskActionsHtml(day, quick) {
+  if (viewMode !== "segmentation" || quick) return "";
+  const result = segmentationFor(day);
+  if (!result) return "";
+  const status = result.review_status || "unreviewed";
+  const pill = status === "accepted" ? "ok" : status === "rejected" ? "bad" : "warn";
+  const decisions = [["accepted", "Accept"], ["rejected", "Reject"], ["needs_correction", "Needs correction"]];
+  return `<div class="mask-bar" role="group" aria-label="Water mask review for the current image">
+      <span class="mask-bar-label">Water mask of the current image <span class="pill ${pill}">${escapeHtml(status.replaceAll("_", " "))}</span></span>
+      <span class="mask-bar-actions">${decisions.map(([value, text]) => `<button class="btn ${status === value ? "primary" : ""}" data-mask-decision="${value}" data-mask-run="${escapeHtml(result.run_id)}" data-mask-result="${escapeHtml(result.result_id)}" ${savingMask ? "disabled" : ""}>${text}</button>`).join("")}</span>
+    </div>`;
+}
+
 function viewerHtml(day, quick) {
+  return viewerPicturesHtml(day, quick) + maskActionsHtml(day, quick);
+}
+
+function viewerPicturesHtml(day, quick) {
   const { reference, current, hasReference, kindText } = panesFor(day);
   if (hasReference && compareMode === "side") return sideBySideHtml(reference, current, quick, kindText);
   if (hasReference && compareMode === "overlay") return overlayHtml(reference, current, quick);
@@ -999,13 +1020,27 @@ function agreementLineHtml(agreement) {
   return `<div class="dataset-agreement">${agreement.reviewers} of ${agreement.needed} needed independent blind reviewers${directions ? ` · ${escapeHtml(directions)}` : ""}</div>`;
 }
 
+// What to do next for the reasons that a person can fix, with a link to the page that does it.
+function nextStepHtml(reasons) {
+  const codes = (reasons || []).map((reason) => reason.code || "");
+  const day = days[selectedIndex];
+  if (codes.includes("needs_more_reviewers")) {
+    return `<div class="dataset-next">A pair needs two different reviewers who judged it <strong>blind</strong>. Labels saved on this page do not count. <a href="${blindHref(day.filename)}">Label this image in Blind review</a>, then have a second reviewer do the same.</div>`;
+  }
+  if (codes.some((code) => code.startsWith("mask_"))) {
+    const href = `/console/review.html?${new URLSearchParams({ site: folderName, run_id: runId, select: day.filename })}`;
+    return `<div class="dataset-next">A person has to accept a water mask for this image first. <a href="${href}">Open the detailed review page</a> to run segmentation and accept the mask.</div>`;
+  }
+  return "";
+}
+
 function datasetCheckHtml() {
   if (!datasetCheck) return "";
   if (datasetCheck.pending) return `<div class="dataset-result">Checking eligibility…</div>`;
   if (datasetCheck.error) return `<div class="error-note mt-10">${escapeHtml(datasetCheck.error)}</div>`;
   const status = datasetCheck.status;
   const title = status === "eligible" ? "Eligible: nothing has been added yet" : status === "already_included" ? "Already in this dataset" : "Not eligible for this dataset";
-  return `<div class="dataset-result ${status === "eligible" ? "ok" : status === "ineligible" ? "bad" : ""}"><strong>${title}</strong>${agreementLineHtml(datasetCheck.agreement)}${reasonListHtml(datasetCheck.reasons)}</div>`;
+  return `<div class="dataset-result ${status === "eligible" ? "ok" : status === "ineligible" ? "bad" : ""}"><strong>${title}</strong>${agreementLineHtml(datasetCheck.agreement)}${reasonListHtml(datasetCheck.reasons)}${status === "ineligible" ? nextStepHtml(datasetCheck.reasons) : ""}</div>`;
 }
 
 function datasetResultHtml() {
@@ -1051,6 +1086,36 @@ function renderDataset() {
   if (mask) mask.addEventListener("change", () => { datasetMaskChoice = mask.value; datasetCheckKey = ""; renderDataset(); refreshDatasetCheck(day); });
   const add = box.querySelector("[data-add-dataset]");
   if (add) add.addEventListener("click", () => addToDataset(day));
+}
+
+async function reviewMask(button) {
+  savingMask = true;
+  renderViewer(false);
+  try {
+    await api("/api/hosted-sam/review", {
+      folder_name: folderName,
+      run_id: button.dataset.maskRun,
+      result_id: button.dataset.maskResult,
+      decision: button.dataset.maskDecision
+    });
+    const sequenceId = detail.summary.sequence_id;
+    const [sam, coverage] = await Promise.all([
+      api(`/api/hosted-sam/results?${new URLSearchParams({ folder_name: folderName, sequence_id: sequenceId })}`),
+      api(`/api/compare/series?${new URLSearchParams({ folder_name: folderName, run_id: runId })}`)
+    ]);
+    samResults = sam.results || [];
+    coverageByFile = new Map((coverage.images || []).map((row) => [row.filename, row]));
+    datasetCheckKey = ""; // a changed mask changes eligibility
+    toast("Mask review saved.");
+  } catch (error) { toast(error.message); }
+  savingMask = false;
+  computeSeries();
+  renderDialHead();
+  renderViewer(false);
+  renderPanel();
+  renderDataset();
+  drawDial();
+  refreshDatasetCheck(days[selectedIndex]);
 }
 
 // ---- saving ----------------------------------------------------------------------------------
@@ -1146,6 +1211,7 @@ function wirePanOnce() {
 function wireViewer() {
   wirePanOnce();
   document.querySelectorAll("#assistViewer [data-step]").forEach((button) => button.addEventListener("click", () => show(selectedIndex + Number(button.dataset.step))));
+  document.querySelectorAll("#assistViewer [data-mask-decision]").forEach((button) => button.addEventListener("click", () => reviewMask(button)));
   document.querySelectorAll("#assistViewer [data-swap]").forEach((button) => button.addEventListener("click", () => { swapped = !swapped; renderViewer(false); }));
   const panes = [...document.querySelectorAll("#assistViewer .assist-pane")];
   panes.forEach((pane) => pane.addEventListener("mousedown", (event) => {

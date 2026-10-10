@@ -370,3 +370,65 @@ test("the layout choice needs a reference, so the baseline stays on the single v
   assert.doesNotMatch(ctx.toolbarHtml(), /data-compare="overlay" aria-pressed="false" disabled/);
   assert.match(ctx.toolbarHtml(), /data-compare="single"/);
 });
+
+test("an ineligible check says what to do next, with a link", () => {
+  const ctx = load();
+  withPoints(ctx, ["base.jpg", "a.jpg", "b.jpg"]);
+  withDatasets(ctx);
+  vm.runInContext("selectedIndex = 2;", ctx);
+  vm.runInContext('datasetCheck = { status: "ineligible", reasons: [{ code: "needs_more_reviewers", message: "0 independent blind reviewer(s)", severity: "error" }] };', ctx);
+  const pair = ctx.datasetPanelHtml(day(ctx, 2));
+  assert.match(pair, /Labels saved on this page do not count/);
+  assert.match(pair, /href="\/console\/review-focus\.html\?site=demo&amp;run_id=run-1&amp;select=b\.jpg"|href="\/console\/review-focus\.html\?site=demo&run_id=run-1&select=b\.jpg"/);
+  vm.runInContext('datasetCheck = { status: "ineligible", reasons: [{ code: "mask_missing", message: "No saved water segmentation", severity: "error" }] };', ctx);
+  assert.match(ctx.datasetPanelHtml(day(ctx, 2)), /accept a water mask[\s\S]*review\.html/);
+  vm.runInContext('datasetCheck = { status: "eligible", reasons: [] };', ctx);
+  assert.doesNotMatch(ctx.datasetPanelHtml(day(ctx, 2)), /dataset-next/);
+});
+
+test("the water mask can be accepted, rejected or sent for correction under the segmentation picture", () => {
+  const ctx = load();
+  withPoints(ctx, ["base.jpg", "a.jpg", "b.jpg"]);
+  vm.runInContext('samResults = [{ filename: "b.jpg", status: "completed", review_status: "unreviewed", prompt: "river water", run_id: "sam-1", result_id: "r-1" }]; selectedIndex = 2;', ctx);
+  // only in the segmentation view
+  assert.doesNotMatch(ctx.viewerHtml(day(ctx, 2), false), /mask-bar/);
+  vm.runInContext('viewMode = "segmentation";', ctx);
+  const html = ctx.viewerHtml(day(ctx, 2), false);
+  assert.match(html, /Water mask of the current image/);
+  assert.match(html, /pill warn">unreviewed/);
+  ["accepted", "rejected", "needs_correction"].forEach((value) => assert.match(html, new RegExp(`data-mask-decision="${value}" data-mask-run="sam-1" data-mask-result="r-1"`)));
+  // not while the dial is moving, and not in the other layouts' pictures
+  assert.doesNotMatch(ctx.viewerHtml(day(ctx, 2), true), /mask-bar/);
+  vm.runInContext('compareMode = "side";', ctx);
+  assert.match(ctx.viewerHtml(day(ctx, 2), false), /mask-bar/);
+  // an image with no segmentation has nothing to approve
+  vm.runInContext('compareMode = "single"; selectedIndex = 1;', ctx);
+  assert.doesNotMatch(ctx.viewerHtml(day(ctx, 1), false), /mask-bar/);
+  // the accepted mask shows as accepted, with its button marked
+  vm.runInContext('samResults[0].review_status = "accepted"; selectedIndex = 2;', ctx);
+  const accepted = ctx.viewerHtml(day(ctx, 2), false);
+  assert.match(accepted, /pill ok">accepted/);
+  assert.match(accepted, /btn primary" data-mask-decision="accepted"/);
+});
+
+test("reviewing a mask posts the decision, reloads results and re-checks eligibility", async () => {
+  const calls = [];
+  const ctx = load({
+    api: async (path, body) => {
+      calls.push({ path, body });
+      if (path.startsWith("/api/hosted-sam/results")) return { results: [{ filename: "b.jpg", status: "completed", review_status: "accepted", prompt: "river water", run_id: "sam-1", result_id: "r-1" }] };
+      if (path.startsWith("/api/compare/series")) return { images: [{ filename: "b.jpg", coverage: 0.4, basis: "accepted" }] };
+      return {};
+    }
+  });
+  withPoints(ctx, ["base.jpg", "a.jpg", "b.jpg"]);
+  vm.runInContext('selectedIndex = 2; datasetCheckKey = "stale"; reviewerId = "reviewer-a";', ctx);
+  await ctx.reviewMask({ dataset: { maskRun: "sam-1", maskResult: "r-1", maskDecision: "accepted" } });
+  const post = calls.find((call) => call.path === "/api/hosted-sam/review");
+  assert.deepEqual(JSON.parse(JSON.stringify(post.body)), { folder_name: "demo", run_id: "sam-1", result_id: "r-1", decision: "accepted" });
+  assert.ok(calls.some((call) => call.path.startsWith("/api/hosted-sam/results")));
+  assert.ok(calls.some((call) => call.path.startsWith("/api/compare/series")));
+  assert.equal(vm.runInContext("samResults[0].review_status", ctx), "accepted");
+  assert.equal(vm.runInContext("coverageByFile.get('b.jpg').basis", ctx), "accepted");
+  assert.equal(vm.runInContext("savingMask", ctx), false);
+});

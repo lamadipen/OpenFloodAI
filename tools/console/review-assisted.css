@@ -280,3 +280,25 @@
 
 .assist-chip.right { left: auto; right: 10px; }
 .assist-layer.assist-overlay-current { position: absolute; top: 0; left: 0; }
+
+.dataset-next { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--ink-soft); line-height: 1.5; }
+.dataset-next a { color: var(--accent); font-weight: 650; text-decoration: underline; }
+
+/* ---- water mask review under the segmentation picture ---- */
+.mask-bar {
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  border-top: 1px solid var(--line-soft);
+  background: #fff;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--ink-soft);
+}
+
+.mask-bar-label { display: inline-flex; align-items: center; gap: 8px; }
+.mask-bar-actions { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.mask-bar .btn { height: 30px; font-size: 11px; }
