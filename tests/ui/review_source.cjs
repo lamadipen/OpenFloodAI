@@ -1,11 +1,11 @@
-// The review page is split across review.js, review-charts.js, review-sam.js and review-onion.js.
+// The review page is split across review.js, review-charts.js, review-sam.js, review-onion.js and review-compare.js.
 // Tests slice functions out of the page script by marker text, so this rebuilds the page as one
 // document with a single inline script, in the same order the browser loads the files.
 const fs = require("node:fs");
 const path = require("node:path");
 
 const consoleDir = path.join(__dirname, "../../tools/console");
-const FILES = ["review.js", "review-charts.js", "review-sam.js", "review-onion.js", "review-datasets.js"];
+const FILES = ["review.js", "review-charts.js", "review-sam.js", "review-onion.js", "review-compare.js", "review-datasets.js"];
 
 function reviewHtml() {
   const page = fs.readFileSync(path.join(consoleDir, "review.html"), "utf8");

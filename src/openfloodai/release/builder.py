@@ -170,6 +170,20 @@ def _public_annotation(sample: dict[str, Any], ids: dict[str, str]) -> dict[str,
             "station_relationship",
         )
         return {"kind": kind, **{k: a.get(k) for k in keep}}
+    if kind == "visual_change":
+        # Reviewer codes stay private: a release says how many people agreed, not who they were.
+        return {
+            "kind": kind,
+            "source": a["source"],
+            "earlier_observation": ids.get(a["earlier_observation"], a["earlier_observation"]),
+            "later_observation": ids.get(a["later_observation"], a["later_observation"]),
+            "direction": a["direction"],
+            "elapsed_seconds": a.get("elapsed_seconds"),
+            "reviewer_count": a.get("reviewer_count"),
+            "blind_judgments_only": a.get("blind_judgments_only"),
+            "informed_judgment_count": a.get("informed_count", 0),
+            "dataset_review": a.get("dataset_review", "not_applicable"),
+        }
     pair_keys = (
         "earlier_value",
         "later_value",

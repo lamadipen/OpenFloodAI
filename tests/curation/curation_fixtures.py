@@ -254,30 +254,38 @@ def add_mask_result(
     detections: bool = True,
     status: str = "completed",
     result_id: str | None = None,
+    mask: np.ndarray | None = None,
+    transform: dict[str, Any] | None = None,
+    masks: list[np.ndarray] | None = None,
 ) -> str:
-    """A saved hosted-segmentation result with a mask file; returns its result id."""
+    """A saved hosted-segmentation result with a mask file; returns its result id.
+
+    ``mask``/``masks`` are full-size source-pixel rasters (non-zero = water), like real results;
+    without them a small random 8x8 mask is written, enough for dataset-curation tests.
+    """
 
     run_dir = fixture.site_dir / "outputs" / "hosted-sam-runs" / run_id
     (run_dir / "results").mkdir(parents=True)
     (run_dir / "masks").mkdir()
     result_id = result_id or f"001-{prompt.replace(' ', '-')}-{run_id[-4:]}"
-    mask = np.random.default_rng(mask_seed).integers(0, 2, size=(8, 8), dtype=np.uint8) * 255
-    ok, encoded = cv2.imencode(".png", mask)
-    assert ok
-    mask_name = f"masks/{result_id}-0.png"
-    (run_dir / mask_name).write_bytes(bytes(encoded))
-    detection_rows = (
-        [
+    rasters = masks if masks is not None else [mask] if mask is not None else None
+    if rasters is None:
+        rasters = [np.random.default_rng(mask_seed).integers(0, 2, size=(8, 8), dtype=np.uint8)]
+    detection_rows: list[dict[str, Any]] = []
+    for index, raster in enumerate(rasters if detections else []):
+        ok, encoded = cv2.imencode(".png", (np.asarray(raster) > 0).astype(np.uint8) * 255)
+        assert ok
+        mask_name = f"masks/{result_id}-{index}.png"
+        (run_dir / mask_name).write_bytes(bytes(encoded))
+        height, width = np.asarray(raster).shape
+        detection_rows.append(
             {
-                "object_id": "0",
+                "object_id": str(index),
                 "mask_png": mask_name,
-                "mask_size": [8, 8],
-                "box_source_px": [0, 0, 8, 8],
+                "mask_size": [width, height],
+                "box_source_px": [0, 0, width, height],
             }
-        ]
-        if detections
-        else []
-    )
+        )
     (run_dir / "results" / f"{result_id}.json").write_text(
         json.dumps(
             {
@@ -288,7 +296,7 @@ def add_mask_result(
                 "model_requested": "sam-3.1",
                 "status": status,
                 "processed_at_utc": "2026-10-07T20:54:30+00:00",
-                "transform": {"crop_px": [0, 0, 8, 8]},
+                "transform": transform or {"crop_px": [0, 0, 8, 8]},
                 "detections": detection_rows,
             }
         ),

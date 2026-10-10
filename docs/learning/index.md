@@ -13,6 +13,7 @@ Start here if you want to understand how the current proof of concept works and 
 - [Curate Training Datasets](dataset-curation.md) — pick reviewed images from different runs into a local, versioned dataset.
 
 - [Export A Dataset Release](dataset-release.md) — build a clean, verified, versioned export with approvals, a dataset card and checksums.
+- [Measure Water Change From Masks](water-change-measurement.md) — measure visible water change between two images from accepted masks, and run the one-camera feasibility pilot.
 
 ## Important Reminder
 

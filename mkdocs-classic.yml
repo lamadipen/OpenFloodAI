@@ -22,6 +22,7 @@ nav:
       - Sample Images By Water Level: learning/water-level-sampling.md
       - Curate Training Datasets: learning/dataset-curation.md
       - Export A Dataset Release: learning/dataset-release.md
+      - Measure Water Change From Masks: learning/water-change-measurement.md
   - Privacy And Retention: privacy-retention.md
   - V1 Requirements: product/requirements.md
   - Labelled Data Quality Checklist: product/data-quality-checklist.md

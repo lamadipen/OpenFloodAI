@@ -26,6 +26,13 @@ workflow and rules for the classic documentation.
 | Low / middle / high classification | The image, a human review, its own matched gauge reading and an approved, versioned category definition for the site |
 | Gauge-height estimation | The image and its own matched gauge reading with unit, station, time and quality |
 | Rising / falling | An earlier and a later image you choose, from the same camera view, each with a gauge reading |
+| Visible water change (human-judged pair) | An earlier and a later image you choose, from the same camera view, plus what at least two independent reviewers saw between them, judged blind |
+
+The visible-change task takes its target from people, not the gauge. A pair counts only when at least
+two different reviewer codes judged it in the blind stage of the focused review page and agree (no
+majority vote). A "cannot judge" or "camera problem" answer, a reported camera move, or an informed
+revision (made after seeing machine evidence) is never counted. A release reports how many reviewers
+agreed, not who they were.
 
 A single image never needs a low partner. For a rise, pair a high image with an earlier
 one that may already be high. Pairs are never made automatically.

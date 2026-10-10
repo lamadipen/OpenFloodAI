@@ -199,20 +199,19 @@ def _review_reasons(task: str, snapshot: dict[str, Any]) -> list[dict[str, str]]
     ]
 
 
-def evaluate_segmentation(
-    loaded: LoadedObservation,
+def select_water_mask(
     masks: list[MaskCandidate],
     mask_result_id: str | None = None,
     mask_run_id: str | None = None,
-) -> dict[str, Any]:
-    """A water-segmentation example needs a WATER mask for these image bytes that a person accepted.
+) -> tuple[MaskCandidate | None, list[dict[str, str]]]:
+    """The one human-accepted WATER mask to use for an image, or why there is none.
 
     A result is identified by its segmentation run AND its result id, because result ids repeat
     across runs. An explicit choice goes through the same water-mask rules as an automatic one:
     a riverbank (or any other concept) mask is never a water label.
     """
 
-    reasons = _common_reasons(TASK_WATER_SEGMENTATION, loaded)
+    reasons: list[dict[str, str]] = []
     water = [m for m in masks if m.prompt in WATER_MASK_PROMPTS and m.status == "completed"]
     pool = water
     explained = False
@@ -292,6 +291,25 @@ def evaluate_segmentation(
                     "to use.",
                 )
             )
+    return chosen, reasons
+
+
+def evaluate_segmentation(
+    loaded: LoadedObservation,
+    masks: list[MaskCandidate],
+    mask_result_id: str | None = None,
+    mask_run_id: str | None = None,
+) -> dict[str, Any]:
+    """A water-segmentation example needs a WATER mask for these image bytes that a person accepted.
+
+    A result is identified by its segmentation run AND its result id, because result ids repeat
+    across runs. An explicit choice goes through the same water-mask rules as an automatic one:
+    a riverbank (or any other concept) mask is never a water label.
+    """
+
+    reasons = _common_reasons(TASK_WATER_SEGMENTATION, loaded)
+    chosen, selection_reasons = select_water_mask(masks, mask_result_id, mask_run_id)
+    reasons.extend(selection_reasons)
     annotation = None
     if chosen is not None:
         hashes = _mask_hashes(chosen)

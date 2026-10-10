@@ -7,7 +7,8 @@ const TASKS = [
   { id: "water_segmentation", title: "Water segmentation", help: "Image plus a water mask that a person accepted." },
   { id: "level_classification", title: "Low / middle / high classification", help: "Image, a human review, its own gauge reading and an approved category definition for the site." },
   { id: "gauge_height", title: "Gauge-height estimation", help: "Image plus its own matched gauge reading. No low image is needed." },
-  { id: "level_change", title: "Rising / falling (height change)", help: "An earlier and a later image you pair yourself, each with a gauge reading." }
+  { id: "level_change", title: "Rising / falling (height change)", help: "An earlier and a later image you pair yourself, each with a gauge reading." },
+  { id: "visual_change", title: "Visible water change (human-judged pair)", help: "An earlier and a later image you pair yourself, plus what a reviewer saw between them. One judgment is enough to add a pair; it is stored as awaiting review inside the dataset. Judgments made after seeing machine evidence count too and are marked as informed. Add pairs from the focused or assisted review page." }
 ];
 
 const dsPage = { datasets: [], view: null, id: qs("dataset_id"), message: "" };
@@ -86,9 +87,22 @@ function createFormHtml() {
   return `<form class="card card-pad" id="createForm">
     <div class="title-s mb-8">New dataset</div>
     <label for="dsName">Name</label><input id="dsName" class="full-width" maxlength="80" required>
-    <label class="mt-10" for="dsTask">Task</label>
+    <label class="mt-10" for="dsTask">What should the model learn?</label>
     <select id="dsTask" class="full-width">${TASKS.map((t) => `<option value="${t.id}">${escapeHtml(t.title)}</option>`).join("")}</select>
     <div class="hint" id="dsTaskHelp">${escapeHtml(TASKS[0].help)}</div>
+    <p class="hint">Each dataset has one learning task, not one water condition. For example, a water-segmentation dataset can contain low, middle and high water images together.</p>
+    <details class="mt-10">
+      <summary class="soft-12">Understand the task choices</summary>
+      <dl class="soft-12" style="line-height:1.6;overflow-wrap:anywhere;">
+        <dt><strong>Water segmentation</strong></dt><dd>Where is the water? Keep an image with a water mask approved by a person.</dd>
+        <dt><strong>Low / middle / high classification</strong></dt><dd>Which water-level category fits? Use reviewed images, matched gauge readings and approved definitions for that site.</dd>
+        <dt><strong>Gauge-height estimation</strong></dt><dd>What gauge reading corresponds to this image? Keep the image and its matched reading.</dd>
+        <dt><strong>Rising / falling (height change)</strong></dt><dd>Did gauge height change? Compare two images using their matched gauge readings.</dd>
+        <dt><strong>Visible water change</strong></dt><dd>Does water visibly cover more or less area? Keep two images and independent human judgments.</dd>
+      </dl>
+      <p class="hint">The same image can belong to different datasets when it has the evidence each task needs. For example, May 1 can have an approved water mask in one dataset and be paired with April 1 for visible-change review in another. Supporting timestamps, site information and available gauge context stay with the examples.</p>
+      <p class="hint">You do not need to create every dataset type. Creating a dataset does not train a model.</p>
+    </details>
     <div id="toleranceRow" hidden><label class="mt-10" for="dsTolerance">No-change tolerance (optional)</label>
       <input id="dsTolerance" class="full-width" type="number" min="0" step="any" placeholder="Leave empty for a numeric change only">
       <div class="hint">In the gauge's unit. Without it, pairs get a numeric change but no rising / falling label.</div></div>
@@ -184,6 +198,7 @@ function annotationText(a) {
   if (a.kind === "gauge_height") return `${a.value} ${a.unit}`;
   if (a.kind === "water_mask") return `${a.masks.length} mask file(s)`;
   if (a.kind === "level_change") return `${a.delta} ${a.unit}${a.direction ? ` · ${a.direction}` : ""}`;
+  if (a.kind === "visual_change") return `${String(a.direction || "").replaceAll("_", " ")} · ${a.reviewer_count} reviewers agree`;
   return "";
 }
 

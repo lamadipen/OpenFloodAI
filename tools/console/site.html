@@ -10,7 +10,7 @@
 <script src="/console/shared.js"></script>
 <script>
 const folderName = qs("site");
-let state = { tab: ["overview", "setup", "sequences", "dataset", "settings"].includes(qs("tab")) ? qs("tab") : "overview", config: null, status: null, sequences: [], runsBySequence: {}, manifest: [], evidenceAdapters: [] };
+let state = { tab: ["overview", "setup", "sequences", "dataset", "settings"].includes(qs("tab")) ? qs("tab") : "overview", config: null, status: null, sequences: [], runsBySequence: {}, manifest: [], evidenceAdapters: [], sam: null, maskPlans: {} };
 
 async function main() {
   if (!folderName) {
@@ -37,13 +37,15 @@ async function main() {
 
 async function load() {
   try {
-    const [sitesData, configData, sequenceData, manifestData, evidenceData] = await Promise.all([
+    const [sitesData, configData, sequenceData, manifestData, evidenceData, samData] = await Promise.all([
       api("/api/sites"),
       api(`/api/site-config?${new URLSearchParams({ folder_name: folderName })}`),
       api(`/api/site-image-sequences?${new URLSearchParams({ folder_name: folderName })}`),
       api(`/api/site-manifest?${new URLSearchParams({ folder_name: folderName })}`).catch(() => ({ records: [] })),
-      api(`/api/evidence-adapters?${new URLSearchParams({ folder_name: folderName })}`).catch(() => ({ adapters: [] }))
+      api(`/api/evidence-adapters?${new URLSearchParams({ folder_name: folderName })}`).catch(() => ({ adapters: [] })),
+      api(`/api/hosted-sam/status?${new URLSearchParams({ folder_name: folderName })}`).catch(() => null)
     ]);
+    state.sam = samData;
     state.status = (sitesData.sites || []).find((s) => s.site_name === folderName) || null;
     state.config = configData.config || {};
     state.sequences = sequenceData.sequences || [];
@@ -388,6 +390,57 @@ function baselineOptionsHtml(seq) {
   }).join("");
 }
 
+// ---- fetch water masks together with a run ----
+// Off unless hosted SAM is turned on, has a key and a decoder. Ticking it only ever plans
+// (free, local); nothing is sent until the person confirms the exact number of paid requests.
+function samMaskGate() {
+  const st = state.sam;
+  if (!st) return { ok: false, why: "Hosted SAM status is unavailable." };
+  if (!st.enabled) return { ok: false, why: "Turn on Hosted SAM segmentation in Settings to use this." };
+  if (!st.credential || !st.credential.configured) return { ok: false, why: "Add your own API key in Settings to use this." };
+  if (!st.decoder_available) return { ok: false, why: "The SAM mask decoder is not installed on this machine." };
+  return { ok: true, why: "" };
+}
+
+function maskPlanText(plan) {
+  if (!plan) return "";
+  if (plan.error) return plan.error;
+  if (plan.to_send === 0) return `All ${plan.total_images} images already have masks. Nothing will be sent and nothing is charged.`;
+  const have = plan.already_have_masks ? ` ${plan.already_have_masks} already have masks and are not sent again.` : "";
+  const limit = plan.over_limit ? ` That is over the ${plan.limit}-request limit for one click.` : "";
+  return `${plan.to_send} of ${plan.total_images} images have no mask and would be sent (paid).${have}${limit}`;
+}
+
+function maskOptionHtml(id) {
+  const gate = samMaskGate();
+  const plan = state.maskPlans[id];
+  const note = gate.ok
+    ? (plan ? maskPlanText(plan) : "Only images without a mask are sent. You confirm the count first.")
+    : gate.why;
+  return `<label style="display:flex;gap:6px;align-items:flex-start;justify-content:flex-end;margin-top:8px;font-size:12px;color:var(--ink-soft);text-align:left;max-width:260px;margin-left:auto;">
+      <input type="checkbox" data-fetch-masks="${id}" ${gate.ok ? "" : "disabled"} ${plan && plan.checked ? "checked" : ""}>
+      <span>Also fetch water masks<br><span class="hint" data-mask-note="${id}">${escapeHtml(note)}</span></span>
+    </label>`;
+}
+
+function maskCheckbox(sequenceId) {
+  return Array.from(document.querySelectorAll("[data-fetch-masks]")).find((el) => el.dataset.fetchMasks === sequenceId);
+}
+
+async function planMasks(sequenceId) {
+  return (await api("/api/hosted-sam/sequence-masks/preflight", { folder_name: folderName, sequence_id: sequenceId })).plan;
+}
+
+function maskConfirmText(plan) {
+  const provider = (state.sam && state.sam.provider) || {};
+  const have = plan.already_have_masks ? `\n${plan.already_have_masks} image(s) already have masks and are not sent again.` : "";
+  return `Fetch water masks with Meta's hosted SAM?\n\n` +
+    `${plan.to_send} of ${plan.total_images} images have no mask. They will be cropped to the watched area, uploaded to the provider, and may be billed to your account.${have}\n` +
+    `${provider.pricing_note ? `\n${provider.pricing_note}\n` : ""}` +
+    `\nThe masks are unreviewed drafts until you accept them in Review. Continue?`;
+}
+// ---- end fetch water masks ----
+
 function sequenceRowHtml(seq) {
   const id = escapeHtml(seq.sequence_id);
   const needsBaseline = isWaterLevelSequence(seq);
@@ -401,7 +454,7 @@ function sequenceRowHtml(seq) {
     <td>${seq.downloaded_count ?? 0}</td>
     <td>${seq.missing_count ?? 0}</td>
     <td>${seq.failed_count ?? 0}</td>
-    <td style="text-align:right;vertical-align:top;"><button class="btn" data-run-sequence="${id}" ${needsBaseline ? "disabled" : ""} style="font-size:12px;padding:5px 10px;">Run validation</button></td>
+    <td style="text-align:right;vertical-align:top;min-width:230px;"><button class="btn" data-run-sequence="${id}" ${needsBaseline ? "disabled" : ""} style="font-size:12px;padding:5px 10px;">Run validation</button>${maskOptionHtml(id)}</td>
   </tr>`;
 }
 // ---- end sequence rows ----
@@ -434,7 +487,7 @@ function renderImageSequenceOption() {
               <td class="mono-12">${escapeHtml(run.run_id)}<div style="font-family:inherit;color:var(--ink-muted);margin-top:2px;">${escapeHtml(run.sequence_label || seq.label || seq.sequence_id)}</div></td>
               <td style="color:var(--ink-soft);">${run.created_at ? new Date(run.created_at).toLocaleString() : ""}</td>
               <td>${run.no_water_level_change_count || 0} no-change &middot; ${run.camera_or_image_problem_count || 0} problem</td>
-              <td style="text-align:right;"><a href="/console/review.html?${new URLSearchParams({ site: folderName, run_id: run.run_id })}" style="font-size:12px;font-weight:600;color:var(--accent);">Review &rarr;</a></td>
+              <td style="text-align:right;white-space:nowrap;"><a href="/console/review-focus.html?${new URLSearchParams({ site: folderName, run_id: run.run_id })}" title="Compare each image with a reference and label it before seeing any machine result" style="font-size:12px;font-weight:600;color:var(--accent);margin-right:14px;">Blind review &rarr;</a><a href="/console/review-assisted.html?${new URLSearchParams({ site: folderName, run_id: run.run_id })}" title="Move through the run on a timeline with the machine results visible beside each image" style="font-size:12px;font-weight:600;color:var(--accent);margin-right:14px;">Assisted review &rarr;</a><a href="/console/review.html?${new URLSearchParams({ site: folderName, run_id: run.run_id })}" style="font-size:12px;font-weight:600;color:var(--accent);">Review &rarr;</a></td>
             </tr>`
               )
               .join("") || `<tr><td colspan="4" style="color:var(--ink-muted);">No runs yet for this sequence.</td></tr>`}
@@ -615,6 +668,20 @@ function wireTabActions() {
   document.querySelectorAll("[data-run-sequence]").forEach((btn) => {
     btn.addEventListener("click", () => runSequenceValidation(btn.dataset.runSequence, btn));
   });
+  document.querySelectorAll("[data-fetch-masks]").forEach((box) => {
+    box.addEventListener("change", async () => {
+      const id = box.dataset.fetchMasks;
+      const note = document.querySelector(`[data-mask-note="${id}"]`);
+      if (!box.checked) { state.maskPlans[id] = null; if (note) note.textContent = "Only images without a mask are sent. You confirm the count first."; return; }
+      if (note) note.textContent = "Checking which images already have masks…";
+      try {
+        state.maskPlans[id] = { ...(await planMasks(id)), checked: true };
+      } catch (error) {
+        state.maskPlans[id] = { error: error.message, checked: true };
+      }
+      if (note) note.textContent = maskPlanText(state.maskPlans[id]);
+    });
+  });
   document.querySelectorAll("[data-baseline-for]").forEach((select) => {
     select.addEventListener("change", () => {
       const button = Array.from(document.querySelectorAll("[data-run-sequence]")).find((b) => b.dataset.runSequence === select.dataset.baselineFor);
@@ -631,14 +698,46 @@ async function runSequenceValidation(sequenceId, btn) {
   const picker = Array.from(document.querySelectorAll("[data-baseline-for]")).find((el) => el.dataset.baselineFor === sequenceId);
   const body = { folder_name: folderName, sequence_id: sequenceId };
   if (picker && picker.value) body.baseline_filename = picker.value;
-  try {
-    const result = await api("/api/run-image-sequence-validation", body);
-    location.href = `/console/review.html?${new URLSearchParams({ site: folderName, run_id: result.run_id })}`;
-  } catch (error) {
-    errorBox.hidden = false;
-    errorBox.textContent = error.message;
+  const maskBox = maskCheckbox(sequenceId);
+  const wantMasks = !!(maskBox && maskBox.checked);
+  const reset = () => {
     btn.disabled = !!(picker && !picker.value);
     btn.textContent = "Run validation";
+  };
+  const fail = (message) => { errorBox.hidden = false; errorBox.textContent = message; };
+  let maskPlan = null;
+  try {
+    if (wantMasks) {
+      // Ask first, before anything runs: a refused or cancelled confirmation leaves everything as it was.
+      maskPlan = await planMasks(sequenceId);
+      if (maskPlan.over_limit) { fail(maskPlanText(maskPlan) + " Segment a smaller group from the review page."); reset(); return; }
+      if (maskPlan.to_send > 0 && !window.confirm(maskConfirmText(maskPlan))) { reset(); return; }
+    }
+    const result = await api("/api/run-image-sequence-validation", body);
+    const reviewUrl = `/console/review.html?${new URLSearchParams({ site: folderName, run_id: result.run_id })}`;
+    if (wantMasks && maskPlan.to_send > 0) {
+      btn.innerHTML = '<span class="spinner"></span>Fetching masks…';
+      try {
+        const out = (await api("/api/hosted-sam/sequence-masks/run", {
+          folder_name: folderName, sequence_id: sequenceId, confirmed_request_count: maskPlan.to_send, acknowledge: true
+        })).result;
+        if (out.stopped_because || out.failed || out.not_sent) {
+          fail(`Validation finished. Masks: ${out.completed} done, ${out.failed} failed, ${out.not_sent} not sent${out.stopped_because ? ` (stopped: ${out.stopped_because.replace(/_/g, " ")})` : ""}. Review shows what was saved.`);
+          errorBox.insertAdjacentHTML("beforeend", ` <a href="${reviewUrl}" style="color:var(--accent);font-weight:600;">Open review &rarr;</a>`);
+          btn.textContent = "Run validation"; btn.disabled = false;
+          return;
+        }
+      } catch (error) {
+        fail(`Validation finished, but the masks could not be fetched: ${error.message}`);
+        errorBox.insertAdjacentHTML("beforeend", ` <a href="${reviewUrl}" style="color:var(--accent);font-weight:600;">Open review &rarr;</a>`);
+        btn.textContent = "Run validation"; btn.disabled = false;
+        return;
+      }
+    }
+    location.href = reviewUrl;
+  } catch (error) {
+    fail(error.message);
+    reset();
   }
 }
 

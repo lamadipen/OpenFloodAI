@@ -748,3 +748,83 @@ def test_a_conflict_is_reported_in_the_plan_and_never_overwritten(env: dict[str,
     assert (plan["new"], plan["duplicates"], plan["conflicts"]) == (0, 0, 1)
     assert code == 200 and out["conflict_count"] == 1 and out["no_op"] is True
     assert (directory / "images" / name).read_bytes() == b"\xff\xd8\xff-different-and-longer"
+
+
+def month_refs(proposal: dict[str, Any], month: str, group: str) -> list[dict[str, str]]:
+    found = next(
+        g for g in proposal["selection"]["groups"] if g["group"] == group and g["month"] == month
+    )
+    return [
+        {
+            "group": group,
+            "month": month,
+            "reading_datetime_utc": s["motivating_reading"]["datetime_utc"],
+            "filename": s["image"]["filename"],
+        }
+        for s in found["samples"]
+    ]
+
+
+def test_preview_by_month_returns_month_tagged_groups_and_no_whole_range_bands(
+    env: dict[str, Any],
+) -> None:
+    with serve(env["sites"]) as base:
+        code, out = post(f"{base}/api/preview-water-level-sampling", {**BASE, "months": [3, 4]})
+        _, plain = post(f"{base}/api/preview-water-level-sampling", BASE)
+
+    assert code == 200 and out["state"] == "ok"
+    groups = out["selection"]["groups"]
+    assert {(g["month"], g["group"]) for g in groups} == {
+        ("2026-03", "low"),
+        ("2026-03", "high"),
+        ("2026-04", "low"),
+        ("2026-04", "high"),
+    }
+    assert out["selection"]["thresholds"] is None and len(out["selection"]["months"]) == 2
+    assert out["request"]["periods"] == ["2026-03", "2026-04"]
+    assert all(g["found"] <= 2 for g in groups)
+    assert "months" not in plain["request"] and plain["selection"]["thresholds"] is not None
+
+
+def test_months_are_validated_by_the_route(env: dict[str, Any]) -> None:
+    with serve(env["sites"]) as base:
+        bad_number = post(f"{base}/api/preview-water-level-sampling", {**BASE, "months": [13]})
+        not_a_list = post(f"{base}/api/preview-water-level-sampling", {**BASE, "months": "3"})
+        outside = post(f"{base}/api/preview-water-level-sampling", {**BASE, "months": [8]})
+
+    assert bad_number[0] == 400 and "Months must be" in bad_number[1]["message"]
+    assert not_a_list[0] == 400
+    assert outside[0] == 400 and "None of the chosen months" in outside[1]["message"]
+
+
+def test_a_monthly_download_fetches_only_the_approved_images_and_saves_the_month(
+    env: dict[str, Any],
+) -> None:
+    with serve(env["sites"]) as base:
+        _, proposal = post(f"{base}/api/preview-water-level-sampling", {**BASE, "months": [3, 4]})
+        approved = (
+            month_refs(proposal, "2026-03", "high")[:1] + month_refs(proposal, "2026-04", "low")[:1]
+        )
+        body = {**BASE, "months": [3, 4], "folder_name": "demo", "approved": approved}
+        code, out = post(
+            f"{base}/api/download-water-level-sampling",
+            {**body, "confirmed": True, "confirmed_count": 2},
+        )
+        # the same approval sent as a whole-range request must be refused
+        refused = post(
+            f"{base}/api/download-water-level-sampling",
+            {
+                **BASE,
+                "folder_name": "demo",
+                "approved": approved,
+                "confirmed": True,
+                "confirmed_count": 2,
+            },
+        )
+
+    assert code == 200 and out["downloaded_count"] == 2 and len(env["fetched"]) == 2
+    batch = env["site"] / "inputs" / "image-sequences" / out["sequence_id"] / "sampling-batches"
+    saved = json.loads((batch / "batch-0001.json").read_text())
+    assert {s["month"] for s in saved["samples"]} == {"2026-03", "2026-04"}
+    assert saved["request"]["periods"] == ["2026-03", "2026-04"]
+    assert refused[0] == 400 and "month that was not requested" in refused[1]["message"]

@@ -390,3 +390,123 @@ test("a camera notice is shown in the preview when the site's label differs from
   load(ctx, without);
   assert.doesNotMatch(vm.runInContext("wlPanelHtml()", ctx), /own camera id is/);
 });
+
+// ---- sampling by month ----------------------------------------------------
+
+const monthGroup = (name, month, label, samples, requested = 3) => ({
+  group: name, month, month_label: label, requested, samples, shortfall: null, skipped: {}
+});
+const monthSample = (group, month, name, when, value) =>
+  sample(group, name, when, value, { sample: { month } });
+const monthProposal = (groups) => ({
+  ...proposal(groups),
+  selection: {
+    thresholds: null,
+    groups,
+    months: [
+      { month: "2026-03", label: "March 2026", reading_count: 31, thresholds: { minimum: 1, maximum: 31, median: 16 } },
+      { month: "2026-04", label: "April 2026", reading_count: 0, thresholds: null }
+    ]
+  }
+});
+
+test("without months the request, the slots and the panel are exactly as before", () => {
+  const ctx = context();
+  const body = JSON.parse(JSON.stringify(vm.runInContext("wlRequestBody()", ctx)));
+  assert.equal("months" in body, false);
+  assert.equal(ctx.wlSlot("high", ""), "high");
+  assert.equal(ctx.wlSlot("high", undefined), "high");
+  const out = vm.runInContext("wlPanelHtml()", ctx);
+  assert.match(out, /Months \(optional\)/);
+  assert.match(out, /None ticked: the whole date range is sampled as one, exactly as before/);
+  assert.equal((out.match(/data-wl-month="/g) || []).length, 12);
+  assert.doesNotMatch(out, /data-wl-month="\d+" checked/);
+});
+
+test("ticked months are sent sorted and make the preview stale when they change", () => {
+  const ctx = context();
+  vm.runInContext("wl.months = [8, 1, 2];", ctx);
+  assert.deepEqual(JSON.parse(JSON.stringify(vm.runInContext("wlRequestBody()", ctx))).months, [1, 2, 8]);
+  const before = vm.runInContext("wlSettingsKey()", ctx);
+  vm.runInContext("wl.months = [1, 2];", ctx);
+  assert.notEqual(vm.runInContext("wlSettingsKey()", ctx), before);
+  assert.match(vm.runInContext("wlPanelHtml()", ctx), /data-wl-month="1" checked/);
+});
+
+test("the form says how many months of the dates match and the most it can download", () => {
+  const ctx = context(); // dates 2026-03-01 to 2026-04-29
+  vm.runInContext("wl.months = [3, 4, 8]; wl.perGroup = 3;", ctx);
+  assert.equal(ctx.wlMonthPeriodCount(), 2);
+  assert.match(ctx.wlMonthsHintHtml(), /2 months\): up to 3 images for each ticked group, so at most 18/);
+  vm.runInContext("wl.months = [8];", ctx);
+  assert.equal(ctx.wlMonthPeriodCount(), 0);
+  assert.match(ctx.wlMonthsHintHtml(), /None of the ticked months fall inside your dates/);
+  vm.runInContext("wl.months = [1,2,3,4,5,6,7,8,9,10,11,12];", ctx);
+  assert.equal(ctx.wlMonthPeriodCount(), 2);
+});
+
+test("a range over several years counts each matching month once per year", () => {
+  const values = { camera_url: "u", start_date: "2024-12-15", end_date: "2026-01-20" };
+  const sandbox = { escapeHtml: String, $: (id) => ({ value: values[id] || "" }), folderName: "demo",
+    Intl, Date, Number, String, Object, Map, Array, JSON, URLSearchParams };
+  vm.createContext(sandbox);
+  vm.runInContext(helpers, sandbox);
+  vm.runInContext("wl.months = [12, 1];", sandbox);
+  assert.equal(sandbox.wlMonthPeriodCount(), 4); // Dec 2024, Jan 2025, Dec 2025, Jan 2026
+  vm.runInContext("wl.months = [1,2,3,4,5,6,7,8,9,10,11,12];", sandbox);
+  assert.equal(sandbox.wlMonthPeriodCount(), 14);
+  values.end_date = "2027-12-20"; // 36 months, all ticked: more than one search allows
+  assert.match(sandbox.wlMonthsHintHtml(), /limit is 24/);
+});
+
+test("samples are listed, approved and sent per month and group", () => {
+  const ctx = context();
+  const mar = monthSample("high", "2026-03", "m.jpg", "2026-03-30T18:00:00+00:00", 31);
+  const apr = monthSample("high", "2026-04", "a.jpg", "2026-04-28T18:00:00+00:00", 29);
+  load(ctx, monthProposal([
+    monthGroup("high", "2026-03", "March 2026", [mar], 1),
+    monthGroup("high", "2026-04", "April 2026", [apr], 1)
+  ]));
+  assert.deepEqual(Object.keys(JSON.parse(JSON.stringify(vm.runInContext("wl.rows", ctx)))), ["2026-03~high", "2026-04~high"]);
+  const refs = JSON.parse(JSON.stringify(vm.runInContext("wlApprovedRefs()", ctx)));
+  assert.deepEqual(refs.map((r) => [r.month, r.group, r.filename]), [
+    ["2026-03", "high", "m.jpg"], ["2026-04", "high", "a.jpg"]
+  ]);
+  const out = vm.runInContext("wlPanelHtml()", ctx);
+  assert.match(out, /March 2026/);
+  assert.match(out, /April 2026/);
+  assert.match(out, /relative to this month/);
+  assert.match(out, /31 readings in March 2026, ranging 1\.00 to 31\.00 ft/);
+  assert.match(out, /no valid gauge readings in April 2026/);
+  assert.match(out, /data-wl-approve="2026-03~high:0"/);
+  assert.match(out, /data-wl-replace="2026-04~high:0"/);
+});
+
+test("the same image in two months does not collide and a plain request omits the month", () => {
+  const ctx = context();
+  load(ctx, proposal([group("high", [sample("high", "a.jpg", "2026-03-01T18:00:00+00:00", 60)], 1)]));
+  const refs = JSON.parse(JSON.stringify(vm.runInContext("wlApprovedRefs()", ctx)));
+  assert.equal("month" in refs[0], false);
+  assert.notEqual(
+    ctx.wlRowKey({ group: "high", month: "2026-03", image: { filename: "a.jpg" } }),
+    ctx.wlRowKey({ group: "high", month: "2026-04", image: { filename: "a.jpg" } })
+  );
+});
+
+test("a replacement is limited to one month and group and keeps that slot's other rows", () => {
+  const ctx = context();
+  vm.runInContext("wl.months = [3, 4];", ctx);
+  const first = monthSample("high", "2026-03", "m1.jpg", "2026-03-30T18:00:00+00:00", 31);
+  const second = monthSample("high", "2026-03", "m2.jpg", "2026-03-27T18:00:00+00:00", 28);
+  const other = monthSample("high", "2026-04", "a1.jpg", "2026-04-28T18:00:00+00:00", 29);
+  load(ctx, monthProposal([
+    monthGroup("high", "2026-03", "March 2026", [first, second]),
+    monthGroup("high", "2026-04", "April 2026", [other])
+  ]));
+  const body = JSON.parse(JSON.stringify(vm.runInContext("wlReplacementBody('2026-03~high', 'm1.jpg')", ctx)));
+  assert.deepEqual(body.groups, ["high"]);
+  assert.equal(body.only_month, "2026-03");
+  assert.deepEqual(body.months, [3, 4]);
+  assert.deepEqual(body.declined, ["m1.jpg"]);
+  assert.deepEqual(body.kept.map((k) => [k.month, k.group, k.filename]), [["2026-03", "high", "m2.jpg"]]);
+});

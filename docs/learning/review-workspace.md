@@ -81,6 +81,19 @@ A run made before gauge evidence was saved shows that it was **not captured**.
 It is never rebuilt from gauge data downloaded later, so a finished run keeps
 showing what it showed when it was made.
 
+### Chart measurements
+
+The region chart has a **Measurement** switch: the original pixel appearance change, or the water coverage
+of the watched area from segmentation masks (filled when accepted, hollow when still a draft). See
+[Measure Water Change From Masks](water-change-measurement.md#the-review-chart-pixel-change-or-water-coverage).
+
+### Compare with another image
+
+Beside the comparison view switch, **Compare with another image…** lets you pick any other saved
+image of the same camera and see the two earlier-then-later in the same views, with a mask-based
+water coverage change when both have accepted masks. It is optional and changes nothing unless you
+press Save this comparison. See [Measure Water Change From Masks](water-change-measurement.md).
+
 ## 4. Assign a dataset group
 
 Select **Edit dataset group** to open the dataset form in a modal.
@@ -92,6 +105,83 @@ Videos use the existing `practice` and `locked_validation` manifest values.
 Images use the existing date-range group assignments. Conflicting image date
 ranges are refused rather than silently replaced. Tags do not start training
 or grant permission to share media.
+
+## Focused blind review
+
+`/console/review-focus.html?site=<site>&run_id=<run>` is a calmer page for collecting independent human
+judgments. It works in two stages.
+
+**Stage 1: blind.** You see the current image next to a **reference image** (side by side or as an
+overlay, with zoom, drag-to-pan and synchronized scrolling). Machine results, masks, gauge values and
+other reviewers' labels are hidden.
+
+- **Reference.** The run baseline by default, the previous image, or any other saved image of the same
+  camera (nearest in time first). The label means "the current image compared with the reference", and the
+  reference is saved with it. A reference far in time shows a warning about seasons. The baseline cannot be
+  judged against itself, so the page skips it.
+- **Label.** Water is rising, falling, unchanged, cannot judge, or camera problem (keys 1 to 5), and
+  whether the camera view stayed the same (keys s, m, u). A moved camera looks like a water change, so
+  the answer is required for a rising, falling or unchanged label. Enter a short reviewer code; it is
+  not a login, so independence rests on honest use.
+
+**Stage 2: evidence.** After you save, the machine result, gauge context, segmentation and guide appear,
+with whether independent reviewers agree. The reference stays beside the current image in every view:
+*Original*, *Segmentation* (each image with its own saved mask, marked accepted or draft) and *Riverbank
+guide* (the run's confirmed base guide and watched area drawn on both images, assuming the camera did
+not move). Each of these views can be shown side by side or blended as an overlay with an opacity slider. You can switch **Show the machine evidence right after I save**
+off to review a whole batch blind and reveal evidence image by image later.
+
+- **Revising.** *Revise my label* saves a new revision. Once you have seen the evidence it is stored as an
+  **informed revision**: kept in the history, never counted as an independent judgment.
+- **Masks and datasets.** Accept, reject or mark a mask as needing correction, then **check** whether the
+  image or pair is eligible for a dataset (the reasons are shown before anything is added), and add it.
+  You can create a dataset in the page. The visible-change task needs one judgment of the pair; see
+  [Curate Training Datasets](dataset-curation.md).
+- **Pilot judgments.** `python scripts/water_change_pilot.py judgments --pilot-dir <dir> --reviewer <code>`
+  exports your blind labels for the pilot's pairs as `judgments/<code>.json`, with the blind attestation
+  the pilot report requires. See [Measure Water Change From Masks](water-change-measurement.md).
+
+## Assisted review
+
+`/console/review-assisted.html?site=<site>&run_id=<run>` is the open counterpart of the blind page: one image
+at a time with the machine evidence visible, and a **dial** along the bottom to move through the run.
+
+- **Viewer.** The current image with the run's reference as a small picture in the corner (click it, or press
+  R, to swap them). The *Original*, *Segmentation* and *Riverbank guide* views apply to both pictures, with
+  zoom and drag-to-pan. While the dial is moving it shows a small preview; the full picture loads when it
+  stops.
+- **Reading panel.** The chosen measurement for this image, the machine result, the change since the previous
+  image and the reference, and the gauge, water-mask and guide context. Nothing is pre-selected: the machine
+  never suggests a label.
+- **Dial.** Plots one measurement at a time: pixel change, water coverage (hollow points are draft masks) or
+  the matched gauge reading (context only). An image with no value leaves a gap, never a zero. Marks show
+  the reference image, the images you labelled and the images the machine flagged. Drag it, scroll sideways
+  over it, or use the arrow keys. It is pinned to the bottom of the screen on wide displays.
+- **Status rows on the dial.** Three rows above the line show, for every image, what has already been done,
+  loaded from what is saved when the page opens: **Mask** (filled square accepted, hollow square an
+  unreviewed draft, amber diamond needs correction, cross rejected), **Label** (filled circle: you labelled
+  it against the current reference; ring: someone else did, or you did against another reference) and
+  **Dataset** (one letter per dataset that holds the image: S water segmentation, C low / middle / high,
+  G gauge height, R rising / falling, V visible water change; red when that example was rejected). The side
+  panel repeats this for the current image under *Human label* and *In datasets*, with the pair role and
+  the other image's date for pair examples. The dataset letters refresh when you add an image or pair.
+- **Picking a pair.** When the dataset selected in the dataset card is a pair task (visible water change or
+  rising / falling), the dial header gets one extra button, **Set reference here** (key P). It pins the image
+  under the needle as a reference marker, shown on the dial and as the "Dial marker" choice under *Judge
+  against*. Move the dial to another image and that image is compared with the marker. The two are the pair,
+  ordered by time when you add it. With a single-image dataset the button is not shown.
+  While a marker is set, **Save & next** becomes **Save**: it saves your label and stays on the image, then
+  moves the keyboard focus to **Add pair to dataset** (or to the card, with the reason, if the pair is not
+  eligible yet), so Enter adds the pair.
+- **Labels.** The same labels, camera question and reference rules as Blind review, judged against the run
+  baseline or the previous image. Every label saved here is stored as **informed**: kept in the history and
+  never counted as an independent judgment. It can go into the visible-change dataset, where it is marked as
+  informed (and the pair is no longer blind-only).
+
+Because the dial shows the machine result of every image, the page asks once for your reviewer code and
+explains this before it opens. Confirming marks every image of the run as already revealed for that code,
+so a label made later in Blind review for the same code is also stored as informed. Collect independent
+labels in Blind review first.
 
 ## Where reviews are saved
 

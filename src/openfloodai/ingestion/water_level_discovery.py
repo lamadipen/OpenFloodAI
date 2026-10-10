@@ -18,7 +18,7 @@ edited request cannot put an unqualified image into a sequence.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -55,14 +55,20 @@ from openfloodai.ingestion.water_level_sampling import (
     NOTE_RELATIVE,
     POLICY_VERSION,
     LookupLimitReached,
+    Period,
     SamplingError,
     SelectedSample,
+    combine_period_results,
+    month_periods,
     select_samples,
+    tag_month,
     time_of_day_description,
     validate_approved_against_request,
+    validate_months,
     validate_time_of_day,
     verify_approved,
     water_level_unavailable,
+    whole_range_period,
 )
 
 SELECTION_SCHEMA_VERSION = 1
@@ -202,8 +208,75 @@ def _association(camera: CameraRecord) -> dict[str, Any]:
     }
 
 
+def resolve_periods(
+    context: DiscoveryContext, months: Sequence[object], only_period: str | None = None
+) -> tuple[list[Period], bool]:
+    """The span(s) to sample on their own, and whether this is a month-by-month request.
+
+    No months chosen: the whole date range as one period, exactly as before. With months:
+    one period per matching calendar month of the range. `only_period` ("YYYY-MM")
+    narrows a month-by-month request to one month, used when replacing a sample.
+    """
+
+    chosen = validate_months(months)
+    if not chosen:
+        if only_period:
+            raise SamplingError("A month was named but no months were requested.")
+        return [whole_range_period(context.start_utc, context.end_utc)], False
+    periods = month_periods(chosen, context.start_utc, context.end_utc, context.timezone)
+    if only_period:
+        periods = [p for p in periods if p.key == only_period]
+        if not periods:
+            raise SamplingError("That month is not part of this request. Run Find samples again.")
+    return periods, True
+
+
+def _in_window(readings: Sequence[GageReading], period: Period) -> list[GageReading]:
+    return [
+        reading
+        for reading in readings
+        if period.start_utc <= datetime.fromisoformat(reading.datetime_utc) < period.end_utc
+    ]
+
+
+def _verify_by_period(
+    approved: Sequence[Mapping[str, str]],
+    periods: Sequence[Period],
+    by_month: bool,
+    readings: Sequence[GageReading],
+    series: GageSeries,
+    finder: Any,
+    context: DiscoveryContext,
+    time_of_day: str,
+) -> list[SelectedSample]:
+    """Re-derive approved samples from fresh data, inside each month when sampling by month."""
+
+    verified: list[SelectedSample] = []
+    for period in periods:
+        items = [a for a in approved if (a.get("month", "") if by_month else "") == period.key]
+        if not items:
+            continue
+        samples = verify_approved(
+            items,
+            _in_window(readings, period) if by_month else readings,
+            finder,
+            timezone_name=context.timezone,
+            unit=series.unit,
+            time_of_day=time_of_day,
+            matching_readings=series.readings,
+            period=(period.start_utc, period.end_utc),
+        )
+        verified.extend(replace(sample, month=period.key) for sample in samples)
+    return verified
+
+
 def _base(
-    context: DiscoveryContext, groups: Sequence[str], per_group: int, time_of_day: str
+    context: DiscoveryContext,
+    groups: Sequence[str],
+    per_group: int,
+    time_of_day: str,
+    periods: Sequence[Period] = (),
+    by_month: bool = False,
 ) -> dict[str, Any]:
     return {
         "policy_version": POLICY_VERSION,
@@ -216,6 +289,14 @@ def _base(
             "groups": list(groups),
             "images_per_group": per_group,
             "time_of_day": time_of_day_description(time_of_day),
+            **(
+                {
+                    "months": sorted({int(p.key[5:]) for p in periods}),
+                    "periods": [p.key for p in periods],
+                }
+                if by_month
+                else {}
+            ),
         },
         "association": _association(context.camera) if context.camera else None,
     }
@@ -229,16 +310,26 @@ def discover(
     kept: Sequence[Mapping[str, str]] = (),
     declined: Sequence[str] = (),
     time_of_day: str = "any",
+    months: Sequence[object] = (),
+    only_period: str | None = None,
     fetch_gauge: GaugeFetcher | None = None,
     list_images: ImageLister | None = None,
 ) -> dict[str, Any]:
-    """Propose samples, or explain why water-level sampling cannot be used here."""
+    """Propose samples, or explain why water-level sampling cannot be used here.
+
+    With `months` chosen, each matching calendar month of the date range is sampled on its
+    own: its own low / middle / high bands and `images_per_group` per group. Without
+    months the whole date range is one period, as it always was.
+    """
 
     fetch_gauge = fetch_gauge or fetch_gage_readings
     list_images = list_images or list_archive_images_between
     validate_time_of_day(time_of_day)
-    validate_approved_against_request(kept, groups, images_per_group)
-    out = _base(context, groups, images_per_group, time_of_day)
+    periods, by_month = resolve_periods(context, months, only_period)
+    validate_approved_against_request(
+        kept, groups, images_per_group, [p.key for p in periods] if by_month else None
+    )
+    out = _base(context, groups, images_per_group, time_of_day, periods, by_month)
     out["selected_at_utc"] = datetime.now(tz=UTC).isoformat()
     camera = context.camera
     if camera is None or camera.gage_relationship == "unavailable":
@@ -264,35 +355,33 @@ def discover(
     }
     finder = ArchiveDayFinder(context.slug, list_images)
     kept_samples = (
-        verify_approved(
-            kept,
-            readings,
-            finder,
-            timezone_name=context.timezone,
-            unit=series.unit,
-            time_of_day=time_of_day,
-            matching_readings=series.readings,
-            period=(context.start_utc, context.end_utc),
-        )
+        _verify_by_period(kept, periods, by_month, readings, series, finder, context, time_of_day)
         if kept
         else []
     )
-    kept_by_group: dict[str, list[SelectedSample]] = {}
+    kept_by_period: dict[str, dict[str, list[SelectedSample]]] = {}
     for sample in kept_samples:
-        kept_by_group.setdefault(sample.group, []).append(sample)
-    result = select_samples(
-        readings,
-        finder,
-        groups=groups,
-        images_per_group=images_per_group,
-        timezone_name=context.timezone,
-        unit=series.unit,
-        kept=kept_by_group,
-        declined_images=frozenset(declined),
-        time_of_day=time_of_day,
-        matching_readings=series.readings,
-        period=(context.start_utc, context.end_utc),
-    )
+        kept_by_period.setdefault(sample.month, {}).setdefault(sample.group, []).append(sample)
+    results = []
+    for period in periods:
+        results.append(
+            tag_month(
+                select_samples(
+                    _in_window(readings, period) if by_month else readings,
+                    finder,
+                    groups=groups,
+                    images_per_group=images_per_group,
+                    timezone_name=context.timezone,
+                    unit=series.unit,
+                    kept=kept_by_period.get(period.key, {}),
+                    declined_images=frozenset(declined),
+                    time_of_day=time_of_day,
+                    matching_readings=series.readings,
+                    period=(period.start_utc, period.end_utc),
+                ),
+                period,
+            )
+        )
     out["archive"] = {
         "days_checked": finder.days_checked,
         "images_seen": finder.images_seen,
@@ -307,7 +396,9 @@ def discover(
         )
         return out
     out["state"] = STATE_OK
-    out["selection"] = result.to_dict()
+    out["selection"] = (
+        combine_period_results(periods, results) if by_month else results[0].to_dict()
+    )
     out["declined_images"] = sorted(set(declined))
     if camera.gage_relationship == "nearby":
         out["warning"] = (
@@ -360,10 +451,12 @@ def build_provenance(
         "association": discovery["association"],
         "gauge": discovery["gauge"],
         "thresholds": selection["thresholds"],
+        **({"months": selection["months"]} if selection.get("months") else {}),
         "samples": [{**sample.to_dict(), "filename": sample.filename} for sample in samples],
         "groups": [
             {
                 "group": group["group"],
+                **({"month": group["month"]} if group.get("month") else {}),
                 "requested": group["requested"],
                 "approved": approved_count,
                 "shortfall": (
@@ -375,7 +468,13 @@ def build_provenance(
                 "policy_skipped_examples": group["skipped_examples"],
             }
             for group in selection["groups"]
-            for approved_count in [sum(1 for s in samples if s.group == group["group"])]
+            for approved_count in [
+                sum(
+                    1
+                    for s in samples
+                    if s.group == group["group"] and s.month == group.get("month", "")
+                )
+            ]
         ],
         "policy_run_note": (
             "Thresholds and skip reasons come from a fresh policy run on the same readings "
@@ -395,13 +494,17 @@ def _verified(
     time_of_day: str,
     fetch_gauge: GaugeFetcher,
     list_images: ImageLister,
+    months: Sequence[object] = (),
 ) -> tuple[CameraRecord, GageSeries, list[SelectedSample]]:
     """Check the request, then re-derive every approved sample from fresh data."""
 
     if not approved:
         raise RiverImageError("Approve at least one sample before downloading.")
     try:
-        validate_approved_against_request(approved, groups, images_per_group)
+        periods, by_month = resolve_periods(context, months)
+        validate_approved_against_request(
+            approved, groups, images_per_group, [p.key for p in periods] if by_month else None
+        )
         validate_time_of_day(time_of_day)
     except SamplingError as error:
         raise RiverImageError(str(error)) from error
@@ -412,15 +515,15 @@ def _verified(
     if problem is not None or series is None:
         raise RiverImageError(problem[1] if problem else "Gauge data is unavailable.")
     try:
-        samples = verify_approved(
+        samples = _verify_by_period(
             approved,
+            periods,
+            by_month,
             readings,
+            series,
             ArchiveDayFinder(context.slug, list_images),
-            timezone_name=context.timezone,
-            unit=series.unit,
-            time_of_day=time_of_day,
-            matching_readings=series.readings,
-            period=(context.start_utc, context.end_utc),
+            context,
+            time_of_day,
         )
     except SamplingError as error:
         raise RiverImageError(f"{error} Run Find samples again before downloading.") from error
@@ -436,6 +539,7 @@ def plan_intake(
     site_dir: Path,
     destination_id: str | None,
     time_of_day: str = "any",
+    months: Sequence[object] = (),
     fetch_gauge: GaugeFetcher | None = None,
     list_images: ImageLister | None = None,
 ) -> IntakePlan:
@@ -451,6 +555,7 @@ def plan_intake(
         groups=groups,
         images_per_group=images_per_group,
         time_of_day=time_of_day,
+        months=months,
         fetch_gauge=fetch_gauge or fetch_gage_readings,
         list_images=list_images or list_archive_images_between,
     )
@@ -488,6 +593,7 @@ def download_approved(
     destination_id: str | None = None,
     display_name: object = None,
     time_of_day: str = "any",
+    months: Sequence[object] = (),
     fetch_gauge: GaugeFetcher | None = None,
     list_images: ImageLister | None = None,
     fetch_image: ImageFetcher | None = None,
@@ -506,6 +612,7 @@ def download_approved(
         groups=groups,
         images_per_group=images_per_group,
         time_of_day=time_of_day,
+        months=months,
         fetch_gauge=fetch_gauge,
         list_images=list_images,
     )
@@ -517,6 +624,7 @@ def download_approved(
         images_per_group=images_per_group,
         declined=declined,
         time_of_day=time_of_day,
+        months=months,
         fetch_gauge=lambda *_: series,
         list_images=list_images,
     )

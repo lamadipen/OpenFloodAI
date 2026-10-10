@@ -22,13 +22,34 @@ tool says so instead of inventing them.
 2. Choose **Sample by water level**.
 3. Tick Low, Middle, and/or High, set **Images per group** (default 3, at most 10), and
    choose **Any time of day** or **Daytime only** (10:00 to 14:00 local).
-4. Select **Find samples**. This reads the gauge data and checks the camera archive
+4. Optionally tick **Months** to sample by month (below). Leave them all unticked to sample
+   the whole date range as one.
+5. Select **Find samples**. This reads the gauge data and checks the camera archive
    only around the readings it considers. It downloads no images.
-5. Review the preview: group, gauge reading time, height, unit, USGS quality
+6. Review the preview: group, gauge reading time, height, unit, USGS quality
    (provisional is marked), image time, and the exact gap (within 15 minutes). Untick
    a row or select **Replace** for another candidate.
-6. Choose the destination, read the summary, tick the confirmation, and select the
+7. Choose the destination, read the summary, tick the confirmation, and select the
    button. Only approved rows are downloaded, after the server re-checks them.
+
+## Sample by month (optional)
+
+Months help when seasons matter, because a winter image compared with a summer baseline is a
+weak comparison. Tick one or more months (for example January, February, and August) and set
+**Images per group**. For each ticked month inside your dates, the search picks up to that many
+images for each ticked group, so three months at 3 images per group is at most 27 images. With
+no month ticked nothing changes.
+
+- Low, middle, and high are decided **inside each month** from that month's own gauge
+  readings; spacing and shortfalls are per month too. A month's "high" is high for that
+  month only.
+- Months are calendar months on the camera's clock, cut to your dates when only partly
+  covered. A range over several years gives one period per matching month per year, up to 24
+  in one search. A ticked month outside your dates is ignored, and if none match, Find samples
+  says so.
+- Counts are maximums: a month with no readings or images is reported as a shortfall for that
+  month and group, never padded from another month.
+- Each saved image keeps its month beside its group. Month is a collection detail, not a label.
 
 ## Destination: a new sequence, or add to an existing one
 
