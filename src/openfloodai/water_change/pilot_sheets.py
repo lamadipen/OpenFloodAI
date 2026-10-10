@@ -189,7 +189,7 @@ def _resolve(
 def render_blind_sheet(pilot_dir: Path, sites_dir: Path) -> Path:
     """Images only, for people judging BEFORE they see machine results or gauge values."""
 
-    folder, pairs, _ = frozen_pairs(pilot_dir)
+    folder, pairs, _ = frozen_pairs(pilot_dir, sites_dir)
     out = pilot_dir / "blind-sheet"
     out.mkdir(exist_ok=True)
     cards: list[tuple[str, str | None, str]] = []
@@ -246,7 +246,7 @@ def render_measured_sheet(pilot_dir: Path, sites_dir: Path, measurement: dict[st
     """Images, masks, the spatial overlay and the numbers. Open it only after judging."""
 
     criteria = load_criteria(pilot_dir)
-    folder, pairs, _ = frozen_pairs(pilot_dir)
+    folder, pairs, _ = frozen_pairs(pilot_dir, sites_dir)
     by_id = {p.pair_id: p for p in pairs}
     out = pilot_dir / "contact-sheet"
     out.mkdir(exist_ok=True)

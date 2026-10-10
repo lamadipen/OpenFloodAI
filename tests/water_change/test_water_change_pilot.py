@@ -406,7 +406,7 @@ def test_pairs_cannot_be_edited_after_they_are_frozen(tmp_path: Path, fx: Fixtur
     with pytest.raises(PilotError, match="frozen before measurement"):
         run_measurements(pilot, fx.sites_dir)
     with pytest.raises(PilotError, match="no longer matches"):
-        frozen_pairs(pilot)
+        frozen_pairs(pilot, fx.sites_dir)
 
 
 def test_editing_pairs_json_cannot_change_which_old_results_count_as_held_out(
@@ -508,7 +508,7 @@ def test_the_same_two_images_cannot_be_both_development_and_held_out(
     # the held-out pair h1 uses images 6 and 7; another name for the same two images is a duplicate
     _write_pairs(pilot, fx, [pair("again", 6, 7, "difficult", fx)])
     with pytest.raises(PilotError, match="use the same two images"):
-        load_pairs(pilot)
+        frozen_pairs(pilot, fx.sites_dir)
     _write_pairs(pilot, fx, [pair("again", 7, 6, "difficult", fx, held_out=True)])  # reversed
     with pytest.raises(PilotError, match="use the same two images"):
         run_measurements(pilot, fx.sites_dir)
@@ -519,7 +519,7 @@ def test_a_development_pair_cannot_borrow_a_held_out_image(tmp_path: Path, fx: F
     pilot = setup_pilot(tmp_path, fx)
     _write_pairs(pilot, fx, [pair("leak", 5, 7, "difficult", fx)])  # image 7 is held-out h1's
     with pytest.raises(PilotError, match="share images") as error:
-        load_pairs(pilot)
+        frozen_pairs(pilot, fx.sites_dir)
     assert fx.filenames[7] in str(error.value)
     with pytest.raises(PilotError, match="independent"):
         render_blind_sheet(pilot, fx.sites_dir)
@@ -531,5 +531,113 @@ def test_images_may_be_shared_inside_development_and_inside_held_out(
     pilot = setup_pilot(tmp_path, fx)
     # p1 and p2 already share image 1 (development); two held-out pairs may share one image too
     _write_pairs(pilot, fx, [pair("h2", 7, 5, "difficult", fx, held_out=True)])
-    _, pairs = load_pairs(pilot)
+    _, pairs, _ = frozen_pairs(pilot, fx.sites_dir)
     assert {p.pair_id for p in pairs if p.held_out} == {"h1", "h2"}
+
+
+RUN_X = "20261001T100000Z-aaaaaaaa"
+RUN_Y = "20261005T100000Z-bbbbbbbb"
+
+
+def two_runs(tmp_path: Path, *, same_bytes: bool) -> tuple[Fixture, Fixture]:
+    """Two runs of one site, each holding images with the same file names.
+
+    With ``same_bytes`` the images are the very same pictures reused by both runs; without it they
+    are different pictures that only share a name (two sequences both holding the same frame names).
+    """
+
+    def images() -> list[Img]:
+        return [Img(day=d, human=None, seed=900 + d if same_bytes else None) for d in (1, 2, 3, 4)]
+
+    return (
+        make_run(tmp_path, images(), run_id=RUN_X),
+        make_run(tmp_path, images(), run_id=RUN_Y),
+    )
+
+
+def _cross_run_pairs(
+    pilot: Path,
+    x: Fixture,
+    y: Fixture,
+    rows: list[tuple[str, tuple[Fixture, int], tuple[Fixture, int], bool]],
+) -> None:
+    pairs = [
+        {
+            "pair_id": pair_id,
+            "case_type": "rising",
+            "held_out": held_out,
+            "framing_confirmed_by": "Dipen",
+            "earlier": {"run_id": a.run_id, "filename": a.filenames[i]},
+            "later": {"run_id": b.run_id, "filename": b.filenames[j]},
+        }
+        for pair_id, (a, i), (b, j), held_out in rows
+    ]
+    pilot.mkdir(exist_ok=True)
+    (pilot / "pairs.json").write_text(
+        json.dumps({"site_folder": x.folder_name, "pairs": pairs}), encoding="utf-8"
+    )
+
+
+def test_different_images_that_share_file_names_across_sequences_are_not_duplicates(
+    tmp_path: Path,
+) -> None:
+    x, y = two_runs(tmp_path, same_bytes=False)
+    assert x.filenames == y.filenames and x.shas != y.shas  # same names, different pictures
+    pilot = tmp_path / "pilot"
+    _cross_run_pairs(
+        pilot,
+        x,
+        y,
+        [
+            ("dev", (x, 0), (x, 1), False),
+            # the same two names in the other sequence: different images, so a valid held-out pair
+            ("held", (y, 0), (y, 1), True),
+            # and a pair whose two ends come from the two sequences
+            ("mixed", (x, 2), (y, 3), False),
+        ],
+    )
+    folder, pairs, _ = frozen_pairs(pilot, x.sites_dir)
+    assert folder == x.folder_name and {p.pair_id for p in pairs} == {"dev", "held", "mixed"}
+    frozen = json.loads((pilot / "pairs.frozen.json").read_text(encoding="utf-8"))
+    ends = {
+        p["pair_id"]: (p["earlier_image_identity"], p["later_image_identity"])
+        for p in frozen["pairs"]
+    }
+    assert ends["dev"][0] != ends["held"][0] and ends["dev"][1] != ends["held"][1]
+    assert ends["dev"][0] == f"sha256:{x.shas[x.filenames[0]]}"
+
+
+def test_the_same_image_reused_across_runs_is_one_image(tmp_path: Path) -> None:
+    x, y = two_runs(tmp_path, same_bytes=True)
+    assert x.filenames == y.filenames and x.shas == y.shas  # the very same pictures
+    pilot = tmp_path / "pilot"
+
+    # the same two images through another run, in the other order, is a duplicate pair
+    _cross_run_pairs(pilot, x, y, [("a", (x, 0), (x, 1), False), ("b", (y, 1), (y, 0), False)])
+    with pytest.raises(PilotError, match="use the same two images"):
+        frozen_pairs(pilot, x.sites_dir)
+
+    # one image reused in a development pair (run X) and a held-out pair (run Y) leaks
+    _cross_run_pairs(pilot, x, y, [("dev", (x, 0), (x, 1), False), ("held", (y, 0), (y, 2), True)])
+    with pytest.raises(PilotError, match="share images") as error:
+        frozen_pairs(pilot, x.sites_dir)
+    assert x.filenames[0] in str(error.value)
+    assert not (pilot / "pairs.frozen.json").exists()
+
+    # distinct images in each group stay valid even though both runs hold all four
+    _cross_run_pairs(pilot, x, y, [("dev", (x, 0), (x, 1), False), ("held", (y, 2), (y, 3), True)])
+    assert {p.pair_id for p in frozen_pairs(pilot, x.sites_dir)[1]} == {"dev", "held"}
+
+
+def test_an_image_that_cannot_be_identified_is_never_equal_to_another(tmp_path: Path) -> None:
+    from openfloodai.water_change.identity import ImageIdentities
+
+    x, _ = two_runs(tmp_path, same_bytes=False)
+    identities = ImageIdentities(x.site_dir, x.folder_name)
+    known = identities.of(RUN_X, x.filenames[0])
+    assert known == f"sha256:{x.shas[x.filenames[0]]}"
+    missing = identities.of(RUN_X, "no-such-frame.jpg")
+    assert missing.startswith("unresolved:") and missing != known
+    assert identities.of("no-such-run", x.filenames[0]).startswith("unresolved:")
+    assert identities.of("../escape", x.filenames[0]).startswith("unresolved:")
+    assert missing != identities.of("no-such-run", "no-such-frame.jpg")

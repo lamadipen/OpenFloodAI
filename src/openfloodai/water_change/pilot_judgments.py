@@ -37,7 +37,7 @@ def export_reviewer_judgments(pilot_dir: Path, sites_dir: Path, reviewer: str) -
     wanted = reviewer.strip()
     if not wanted:
         raise PilotError("Name the reviewer code to export.")
-    folder, pairs, _ = frozen_pairs(pilot_dir)
+    folder, pairs, _ = frozen_pairs(pilot_dir, sites_dir)
     judgments: dict[str, dict[str, str]] = {}
     times: list[str] = []
     missing: list[str] = []
