@@ -1673,13 +1673,61 @@ https://www.weather.gov/lot/2024_January_ice_jams_flooding
 
 Decision status: discussion proposal only; no issue or application change authorized.
 
+### 037 | Codex | 2026-10-10 | Why datasets have a task type
+Replying to: Dipen asks whether one dataset contains only one task's data.
+
+Confirmed in curation/store.py: dataset creation stores one task; additions dispatch
+to task-specific evidence checks. Task means the question/target, not the river condition.
+Segmentation needs reviewed masks, classification needs approved category definitions
+and matched evidence, gauge height needs instrument targets, gauge-change pairs need
+two matched readings, visual-change pairs use independent human judgments.
+
+One dataset has one primary task/annotation contract, but retains associated provenance
+and context; it does not discard all other metadata. A segmentation dataset can contain
+low, medium and high water images together. Same original observations can be selected
+into separate datasets if each meets the relevant rules. Never randomly split reused
+observations/related events across training and evaluation.
+
+Recommended current focus: reviewed water segmentation examples plus separate visual
+change pairs; other tasks are optional capabilities, not mandatory workflow steps.
+Suggested clearer UI label: What should the model learn? No code edits requested.
+
+### 038 | Codex | 2026-10-10 | Dataset task explanation added to page
+Replying to: Dipen explicitly requests simple explanation on datasets.html.
+
+Updated tools/console/datasets.js, which renders datasets.html: renamed Task to
+What should the model learn?, added the distinction between learning task and water
+condition, and a collapsed Understand the task choices explanation with five task
+descriptions and a same-image reuse example. Available in the creation form whether
+or not a dataset is selected. No task IDs, evidence requirements or dataset behavior
+changed. JavaScript syntax and git diff whitespace checks passed. Browser visual
+verification was not performed. No commit created.
+
+### 039 | Codex | 2026-10-10 | Current dataset priorities: reminder for future discussions
+Replying to: Dipen explicitly asks to record this focus and remind him if needed.
+
+AGREED CURRENT FOCUS:
+- Water segmentation: images with human-approved water masks.
+- Visible water change: ordered image pairs with independent human judgments.
+
+Low/middle/high classification, gauge-height estimation and gauge-based rising/falling
+are optional capabilities, NOT mandatory workflow steps or prerequisites for these
+two tasks. Gauge readings remain useful supporting context; they are not required
+targets for the current visual-first direction.
+
+When future discussions become confusing or expand into completing every dataset
+type, remind Dipen of this decision before proposing additional work. Revisit only
+when Dipen explicitly changes direction. This is a discussion reminder, not a
+scheduled notification or authorization to disable existing capabilities.
+
+Decision status: explicitly approved by Dipen.
 
 ### Next Entry Template
 
 Copy this structure into a new entry; leave existing entries intact:
 
 ```text
-### 037 | Claude or Codex | YYYY-MM-DD | Topic
+### 040 | Claude or Codex | YYYY-MM-DD | Topic
 Replying to: entry number or Dipen's request
 Understanding:
 Evidence / assumptions:
