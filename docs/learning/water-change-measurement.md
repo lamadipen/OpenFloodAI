@@ -101,6 +101,10 @@ unavailable cases. It is not an accuracy study.
    independent: the same two images cannot appear twice (under another name or in the other order),
    and no image may be used by both a development pair and a held-out pair. Sharing an image between
    two development pairs, or between two held-out pairs, is allowed.
+   Images are compared by identity, not by file name: the checksum their run froze. Two different
+   sequences that both hold `frame-001.jpg` are different images, and one image reused by several
+   runs is still one image. An image that cannot be identified (a run or file missing from the frozen
+   inputs) is never treated as equal to another. The frozen pairs file records each end's identity.
 4. **Judge blind.** `blind-sheet` writes images only. A hydrologist or reviewer and a second person
    each fill `judgments/<name>.json` saying whether the later image shows more, less or about the
    same visible water (or `cannot_judge`), before seeing machine results or gauge values. Files

@@ -29,7 +29,8 @@ from pathlib import Path
 from typing import Any
 
 from openfloodai.curation.common import CurationError, sha256_file, utc_now
-from openfloodai.water_change.pair import EndpointRef, measure_pair
+from openfloodai.water_change.identity import ImageIdentities
+from openfloodai.water_change.pair import EndpointRef, _site_dir, measure_pair
 
 CRITERIA_FILE = "criteria.json"
 PAIRS_FILE = "pairs.json"
@@ -189,39 +190,49 @@ def load_pairs(pilot_dir: Path) -> tuple[str, list[PilotPair]]:
                 framing_confirmed_by=framing,
             )
         )
-    _check_independent_split(pairs)
     return folder, pairs
 
 
-def _images(pair: PilotPair) -> set[str]:
-    return {pair.earlier.filename, pair.later.filename}
-
-
-def _check_independent_split(pairs: list[PilotPair]) -> None:
+def check_independent_split(folder: str, pairs: list[PilotPair], sites_dir: Path) -> dict[str, str]:
     """No image pair twice, and no image shared between development and held-out pairs.
 
     A held-out evaluation is only a fair last check if it uses images nothing else was tuned or
     judged on. The same two images under different pair names, in either order, or one image used
     in both groups, would leak the held-out data into development.
+
+    Images are compared by identity (the checksum their run froze), not by file name: different
+    images that share a name in two sequences are different images, and one image reused across
+    runs is still one image. Returns each pair endpoint's identity, to record with the pairs.
     """
 
-    by_images: dict[frozenset[str], str] = {}
+    identities = ImageIdentities(_site_dir(sites_dir, folder), folder)
+
+    def who(ref: EndpointRef) -> str:
+        return identities.of(ref.run_id, ref.filename)
+
+    names: dict[str, str] = {}  # identity -> a file name to show in a message
+    seen: dict[frozenset[str], str] = {}
+    development: set[str] = set()
+    held_out: set[str] = set()
     for pair in pairs:
-        key = frozenset(_images(pair))
-        if key in by_images:
+        ends = {who(pair.earlier), who(pair.later)}
+        names.setdefault(who(pair.earlier), pair.earlier.filename)
+        names.setdefault(who(pair.later), pair.later.filename)
+        key = frozenset(ends)
+        if key in seen:
             raise PilotError(
-                f"Pairs '{by_images[key]}' and '{pair.pair_id}' use the same two images. "
+                f"Pairs '{seen[key]}' and '{pair.pair_id}' use the same two images. "
                 "A pair may appear once, in either order."
             )
-        by_images[key] = pair.pair_id
-    development = {name for p in pairs if not p.held_out for name in _images(p)}
-    held_out = {name for p in pairs if p.held_out for name in _images(p)}
-    shared = sorted(development & held_out)
+        seen[key] = pair.pair_id
+        (held_out if pair.held_out else development).update(ends)
+    shared = sorted(names[identity] for identity in development & held_out)
     if shared:
         raise PilotError(
             "Development and held-out pairs share images, so the held-out check would not be "
             f"independent: {', '.join(shared)}. Give held-out pairs images no other pair uses."
         )
+    return {identity: names[identity] for identity in names}
 
 
 # ---------------------------------------------------------------- freezing the pairs
@@ -284,7 +295,7 @@ def _pairs_from_frozen(frozen: dict[str, Any]) -> tuple[str, list[PilotPair]]:
     return str(frozen.get("site_folder") or ""), pairs
 
 
-def frozen_pairs(pilot_dir: Path) -> tuple[str, list[PilotPair], str]:
+def frozen_pairs(pilot_dir: Path, sites_dir: Path) -> tuple[str, list[PilotPair], str]:
     """The pilot's pairs, frozen on first use, with their hash.
 
     The first call writes ``pairs.frozen.json``. Every later call re-reads ``pairs.json`` and
@@ -293,9 +304,11 @@ def frozen_pairs(pilot_dir: Path) -> tuple[str, list[PilotPair], str]:
     """
 
     folder, pairs = load_pairs(pilot_dir)
+    check_independent_split(folder, pairs, sites_dir)
     digest = pairs_sha256(folder, pairs)
     frozen = read_frozen_pairs(pilot_dir)
     if frozen is None:
+        identities = ImageIdentities(_site_dir(sites_dir, folder), folder)
         payload = {
             "frozen_at_utc": utc_now(),
             "criteria_sha256": (
@@ -305,7 +318,19 @@ def frozen_pairs(pilot_dir: Path) -> tuple[str, list[PilotPair], str]:
             ),
             "pairs_sha256": digest,
             "site_folder": folder,
-            "pairs": sorted((_pair_dict(p) for p in pairs), key=_pair_id),
+            "pairs": sorted(
+                (
+                    {
+                        **_pair_dict(p),
+                        "earlier_image_identity": identities.of(
+                            p.earlier.run_id, p.earlier.filename
+                        ),
+                        "later_image_identity": identities.of(p.later.run_id, p.later.filename),
+                    }
+                    for p in pairs
+                ),
+                key=_pair_id,
+            ),
             "note": "Written once, before any measurement. Do not edit.",
         }
         with (pilot_dir / PAIRS_FROZEN_FILE).open("x", encoding="utf-8") as handle:
@@ -332,7 +357,7 @@ def run_measurements(
     """
 
     criteria = load_criteria(pilot_dir)
-    folder, pairs, pairs_digest = frozen_pairs(pilot_dir)
+    folder, pairs, pairs_digest = frozen_pairs(pilot_dir, sites_dir)
     chosen = [p for p in pairs if include_held_out or not p.held_out]
     if include_held_out:
         _log_held_out(pilot_dir, criteria.sha256, "measure")

@@ -29,6 +29,7 @@ from openfloodai.curation.tasks import WATER_MASK_PROMPTS, select_water_mask
 from openfloodai.validation import hosted_sam_runner
 from openfloodai.vision.water_change import WaterChangeInputError, roi_from_crop, water_fraction
 from openfloodai.water_change.compare import _run_summary, _site_dir
+from openfloodai.water_change.identity import frozen_image_shas
 from openfloodai.water_change.region import expected_crop_px
 
 _STATE_RANK = {"accepted": 0, "needs_correction": 1, "unreviewed": 2, "rejected": 3}
@@ -65,18 +66,6 @@ def _union(paths: tuple[Path, ...]) -> np.ndarray | None:
         else:
             union = union | wet
     return union
-
-
-def _frozen_shas(run_dir: Path) -> dict[str, str]:
-    try:
-        rows = json.loads((run_dir / "inputs-used" / "images.snapshot.json").read_text("utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return {
-        str(r["filename"]): str(r["sha256"])
-        for r in rows
-        if isinstance(r, dict) and r.get("filename") and r.get("sha256")
-    }
 
 
 def _pick_mask(candidates: list[MaskCandidate]) -> tuple[MaskCandidate | None, str]:
@@ -123,7 +112,7 @@ def run_series(sites_dir: Path, folder: str, run_id: str) -> dict[str, Any]:
     except (OSError, ValueError) as error:
         raise CurationError("Run not found.") from error
     records.sort(key=lambda r: (str(r.get("captured_at_utc", "")), str(r["filename"])))
-    shas = _frozen_shas(run_dir)
+    shas = frozen_image_shas(run_dir)
     region = _frozen_region(run_dir)
     results = hosted_sam_runner.list_sam_results(site_dir, sequence_id) if sequence_id else []
 
