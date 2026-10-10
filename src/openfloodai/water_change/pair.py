@@ -177,6 +177,11 @@ def resolve_endpoint(site_dir: Path, ref: EndpointRef, prefix: str) -> ResolvedE
         "reference_region": snap["configuration"]["reference_region"],
         "dataset_group": snap["dataset_group"],
         "review_state": _review_state(review),
+        # Whether the original image is still there and unchanged right now. Part of the result's
+        # identity: a saved "available" result is only reused while the inputs are as they were.
+        "source_integrity": sorted(
+            problem["code"] for problem in loaded.problems if problem["severity"] == SEVERITY_ERROR
+        ),
     }
     if chosen is not None:
         _attach_mask(out, chosen)
@@ -259,6 +264,7 @@ def pair_key(earlier: ResolvedEndpoint, later: ResolvedEndpoint, framing_by: str
         "config_sha256",
         "mask_crop_px",
         "review_state",
+        "source_integrity",
     )
     return content_id(
         {

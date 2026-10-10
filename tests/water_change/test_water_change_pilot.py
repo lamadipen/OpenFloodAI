@@ -50,7 +50,7 @@ def build_site(root: Path) -> Fixture:
 
     images = [
         Img(day=d, human=None, level=lvl)
-        for d, lvl in zip(range(1, 7), (3, 5, 3, 3, 3, 3), strict=True)
+        for d, lvl in zip(range(1, 9), (3, 5, 3, 3, 3, 3, 3, 5), strict=True)
     ]
     fx = make_run(root, images, run_id="20261001T100000Z-aaaaaaaa")
     shapes = {
@@ -59,10 +59,12 @@ def build_site(root: Path) -> Fixture:
         2: water(8),  # falling vs 1
         3: water(8),  # stable vs 2
         4: water(18, x0=13),  # same 5 cols, other place (equal area, different shape vs 3)
+        6: water(8),  # the held-out pair uses images no development pair uses
+        7: water(14),
     }
     for index, mask in shapes.items():
         add_water_mask(fx, index, mask, run_id=_run_id(index + 1))
-    return fx  # image 5 has no mask
+    return fx  # image 5 has no mask; images 6 and 7 are only for the held-out pair
 
 
 def pair(
@@ -89,7 +91,7 @@ def setup_pilot(tmp_path: Path, fx: Fixture, *, with_hard: bool = True) -> Path:
     ]
     if with_hard:
         pairs.append(pair("p5", 4, 5, "difficult", fx))
-    pairs.append(pair("h1", 0, 2, "rising", fx, held_out=True))
+    pairs.append(pair("h1", 6, 7, "rising", fx, held_out=True))
     (pilot / "pairs.json").write_text(
         json.dumps({"site_folder": fx.folder_name, "pairs": pairs}), encoding="utf-8"
     )
@@ -220,8 +222,9 @@ def test_returning_unknown_for_everything_cannot_pass(tmp_path: Path, fx: Fixtur
     judge(pilot, "A", TRUTH)
     judge(pilot, "B", TRUTH)
     pairs = json.loads((pilot / "pairs.json").read_text())
-    for row in pairs["pairs"]:  # point every pair at the image that has no mask
-        row["later"]["filename"] = fx.filenames[5]
+    for row in pairs["pairs"]:  # point every development pair at the image that has no mask
+        if not row["held_out"]:
+            row["later"]["filename"] = fx.filenames[5]
     (pilot / "pairs.json").write_text(json.dumps(pairs), encoding="utf-8")
     run_measurements(pilot, fx.sites_dir)
     dev = build_report(pilot)["development"]
@@ -348,11 +351,11 @@ def test_measured_sheet_shows_numbers_overlay_and_unavailable_reasons(
 
 def test_inventory_lists_only_accepted_completed_water_masks(tmp_path: Path, fx: Fixture) -> None:
     add_water_mask(fx, 5, water(10), run_id=_run_id(6), review="rejected")
-    add_water_mask(fx, 5, water(10), run_id=_run_id(7), prompt="riverbank")
+    add_water_mask(fx, 5, water(10), run_id=_run_id(9), prompt="riverbank")
     inventory = inventory_accepted_masks(fx.sites_dir)
-    assert inventory["accepted_water_masks"] == 5
+    assert inventory["accepted_water_masks"] == 7
     group = inventory["by_camera_and_watched_area"][0]
-    assert group["distinct_images_with_accepted_mask"] == 5
+    assert group["distinct_images_with_accepted_mask"] == 7
     assert group["camera_id"] == "CAM_A" and group["crop_px"] == [3, 4, 23, 15]
     assert fx.run_id in inventory["masks"][0]["image_runs"]
 
@@ -364,13 +367,11 @@ def _edit_pairs(pilot: Path, change: Any) -> None:
     path.write_text(json.dumps(data), encoding="utf-8")
 
 
-def _swap_held_out(data: dict[str, Any]) -> None:
-    # move a pair out of the held-out group and put a measured one in, after measuring
+def _expose_held_out(data: dict[str, Any]) -> None:
+    # after measuring, quietly move the reserved pair into the development group
     for row in data["pairs"]:
         if row["pair_id"] == "h1":
             row["held_out"] = False
-        if row["pair_id"] == "p2":
-            row["held_out"] = True
 
 
 def test_the_pairs_are_frozen_with_a_hash_before_the_first_measurement(
@@ -393,7 +394,7 @@ def test_the_blind_sheet_freezes_the_pairs_before_anyone_judges(
     pilot = setup_pilot(tmp_path, fx)
     render_blind_sheet(pilot, fx.sites_dir)
     assert (pilot / "pairs.frozen.json").is_file()
-    _edit_pairs(pilot, _swap_held_out)
+    _edit_pairs(pilot, _expose_held_out)
     with pytest.raises(PilotError, match="no longer matches pairs.frozen.json"):
         run_measurements(pilot, fx.sites_dir)
 
@@ -401,7 +402,7 @@ def test_the_blind_sheet_freezes_the_pairs_before_anyone_judges(
 def test_pairs_cannot_be_edited_after_they_are_frozen(tmp_path: Path, fx: Fixture) -> None:
     pilot = setup_pilot(tmp_path, fx)
     run_measurements(pilot, fx.sites_dir)
-    _edit_pairs(pilot, _swap_held_out)
+    _edit_pairs(pilot, _expose_held_out)
     with pytest.raises(PilotError, match="frozen before measurement"):
         run_measurements(pilot, fx.sites_dir)
     with pytest.raises(PilotError, match="no longer matches"):
@@ -414,18 +415,18 @@ def test_editing_pairs_json_cannot_change_which_old_results_count_as_held_out(
     pilot = setup_pilot(tmp_path, fx)
     judge(pilot, "A", TRUTH)
     judge(pilot, "B", TRUTH)
-    run_measurements(pilot, fx.sites_dir)
+    run_measurements(pilot, fx.sites_dir, include_held_out=True)
     honest = build_report(pilot)
     assert honest["protocol_problems"] == []
-    assert honest["development"]["pairs"] == 5 and honest["held_out"]["pairs_reserved"] == 0
+    assert honest["development"]["pairs"] == 5 and honest["held_out"]["pairs_reserved"] == 1
 
-    _edit_pairs(pilot, _swap_held_out)  # try to hide p2 from development and expose h1
+    _edit_pairs(pilot, _expose_held_out)  # try to move the measured held-out pair into development
     report = build_report(pilot)
     assert "pairs.json was edited after the pairs were frozen" in report["protocol_problems"]
     assert report["mechanical_status"] == "protocol_not_followed"
     # the split still comes from the frozen file, not from the edited pairs.json
     assert report["development"]["pairs"] == 5
-    assert report["held_out"]["pairs_reserved"] == 0
+    assert report["held_out"]["pairs_reserved"] == 1
 
 
 def test_a_measurement_made_under_other_pairs_is_a_protocol_problem(
@@ -484,3 +485,51 @@ def test_a_gauge_comparison_needs_the_same_station_and_measurement() -> None:
         "gauge readings were taken from different measurements"
     )
     assert compare(_gauge(usable=False), _gauge())[0] is None
+
+
+def _write_pairs(pilot: Path, fx: Fixture, extra: list[dict[str, Any]]) -> None:
+    pairs = [
+        pair("p1", 0, 1, "rising", fx),
+        pair("p2", 1, 2, "falling", fx),
+        pair("p3", 2, 3, "stable_high", fx),
+        pair("p4", 3, 4, "equal_area_different_shape", fx),
+        pair("h1", 6, 7, "rising", fx, held_out=True),
+        *extra,
+    ]
+    (pilot / "pairs.json").write_text(
+        json.dumps({"site_folder": fx.folder_name, "pairs": pairs}), encoding="utf-8"
+    )
+
+
+def test_the_same_two_images_cannot_be_both_development_and_held_out(
+    tmp_path: Path, fx: Fixture
+) -> None:
+    pilot = setup_pilot(tmp_path, fx)
+    # the held-out pair h1 uses images 6 and 7; another name for the same two images is a duplicate
+    _write_pairs(pilot, fx, [pair("again", 6, 7, "difficult", fx)])
+    with pytest.raises(PilotError, match="use the same two images"):
+        load_pairs(pilot)
+    _write_pairs(pilot, fx, [pair("again", 7, 6, "difficult", fx, held_out=True)])  # reversed
+    with pytest.raises(PilotError, match="use the same two images"):
+        run_measurements(pilot, fx.sites_dir)
+    assert not (pilot / "pairs.frozen.json").exists()  # nothing was frozen from invalid pairs
+
+
+def test_a_development_pair_cannot_borrow_a_held_out_image(tmp_path: Path, fx: Fixture) -> None:
+    pilot = setup_pilot(tmp_path, fx)
+    _write_pairs(pilot, fx, [pair("leak", 5, 7, "difficult", fx)])  # image 7 is held-out h1's
+    with pytest.raises(PilotError, match="share images") as error:
+        load_pairs(pilot)
+    assert fx.filenames[7] in str(error.value)
+    with pytest.raises(PilotError, match="independent"):
+        render_blind_sheet(pilot, fx.sites_dir)
+
+
+def test_images_may_be_shared_inside_development_and_inside_held_out(
+    tmp_path: Path, fx: Fixture
+) -> None:
+    pilot = setup_pilot(tmp_path, fx)
+    # p1 and p2 already share image 1 (development); two held-out pairs may share one image too
+    _write_pairs(pilot, fx, [pair("h2", 7, 5, "difficult", fx, held_out=True)])
+    _, pairs = load_pairs(pilot)
+    assert {p.pair_id for p in pairs if p.held_out} == {"h1", "h2"}

@@ -331,3 +331,45 @@ def test_a_changed_quality_answer_alone_also_makes_a_new_result(fixture: Fixture
     _camera_review(fixture, fixture.filenames[1], revision=2, stable="unsure")
     second = measure(fixture)
     assert second["pair_key"] != first["pair_key"]
+
+
+def _image_file(fx: Fixture, index: int) -> Path:
+    return (
+        fx.site_dir / "inputs" / "image-sequences" / fx.sequence_id / "images" / fx.filenames[index]
+    )
+
+
+def test_a_saved_result_is_not_reused_once_its_original_image_is_gone(fixture: Fixture) -> None:
+    first = measure(fixture)
+    assert first["evidence"]["status"] == "available" and first["reused"] is False
+    assert measure(fixture)["reused"] is True
+
+    image = _image_file(fixture, 1)
+    kept = image.read_bytes()
+    image.unlink()
+    after = measure(fixture)
+    # a fresh calculation says what is true now, never the saved "available"
+    assert after["reused"] is False and after["pair_key"] != first["pair_key"]
+    assert after["evidence"]["status"] != "available" and after["evidence"]["value"] is None
+    assert "LATER_SOURCE_MISSING" in after["evidence"]["reason_codes"]
+    assert after["later"]["source_integrity"] == ["source_missing"]
+    # the historical record is preserved exactly as it was
+    saved = json.loads(Path(first["path"]).read_text(encoding="utf-8"))
+    assert saved["evidence"]["status"] == "available" and saved["pair_key"] == first["pair_key"]
+    assert Path(after["path"]).is_file() and after["path"] != first["path"]
+
+    # putting the same file back makes the original result valid again, and it is reused
+    image.write_bytes(kept)
+    restored = measure(fixture)
+    assert restored["reused"] is True and restored["pair_key"] == first["pair_key"]
+    assert restored["evidence"]["status"] == "available"
+
+
+def test_a_changed_original_image_is_not_the_saved_result_either(fixture: Fixture) -> None:
+    first = measure(fixture)
+    image = _image_file(fixture, 0)
+    image.write_bytes(image.read_bytes() + b"x")
+    after = measure(fixture)
+    assert after["reused"] is False and after["pair_key"] != first["pair_key"]
+    assert after["evidence"]["status"] != "available"
+    assert "EARLIER_SOURCE_CHANGED" in after["evidence"]["reason_codes"]
