@@ -180,7 +180,8 @@ def test_changed_watched_area_between_endpoints_is_invalid(tmp_path: Path) -> No
     shifted = {"crop_px": [4, 4, 23, 15], "source_size": [32, 24]}
     add_water_mask(fx, 1, water(18), run_id=RUN_B, transform=shifted)
     evidence = measure(fx)["evidence"]
-    assert evidence["status"] == "invalid" and "WATCHED_AREA_CHANGED" in evidence["reason_codes"]
+    assert evidence["status"] == "invalid" and evidence["value"] is None
+    assert "LATER_MASK_WATCHED_AREA_DIFFERS_FROM_RUN" in evidence["reason_codes"]
 
 
 def test_a_mask_with_the_wrong_image_size_is_invalid(tmp_path: Path) -> None:
@@ -246,3 +247,87 @@ def test_unknown_site_or_image_is_a_clear_error_or_unavailable(fixture: Fixture)
     )
     assert result["evidence"]["status"] in {"unavailable", "invalid"}
     assert "LATER_IMAGE_NOT_AVAILABLE" in result["evidence"]["reason_codes"]
+
+
+def test_masks_from_a_smaller_stale_region_never_give_a_number(tmp_path: Path) -> None:
+    # Both masks share one (wrong) crop, so they agree with each other; only the run's frozen
+    # watched area shows they were cut from a region that is not this run's.
+    fx = two_image_run(tmp_path)
+    stale = {"crop_px": [4, 4, 12, 10], "source_size": [32, 24]}
+    add_water_mask(fx, 0, water(7, x0=4, y0=4, y1=10), run_id=RUN_A, transform=stale)
+    add_water_mask(fx, 1, water(12, x0=4, y0=4, y1=10), run_id=RUN_B, transform=stale)
+    result = measure(fx)
+    evidence = result["evidence"]
+    assert evidence["status"] == "invalid" and evidence["value"] is None
+    assert "EARLIER_MASK_WATCHED_AREA_DIFFERS_FROM_RUN" in evidence["reason_codes"]
+    assert "LATER_MASK_WATCHED_AREA_DIFFERS_FROM_RUN" in evidence["reason_codes"]
+    assert result["earlier"]["mask_crop_px"] == [4, 4, 12, 10]
+    assert result["earlier"]["expected_crop_px"] == CROP
+
+
+def test_a_run_with_no_frozen_watched_area_cannot_verify_a_mask(tmp_path: Path) -> None:
+    fx = two_image_run(tmp_path)
+    add_water_mask(fx, 0, water(10), run_id=RUN_A)
+    add_water_mask(fx, 1, water(18), run_id=RUN_B)
+    config = fx.site_dir / "outputs" / "image-sequence-runs" / fx.run_id / "inputs-used"
+    path = config / "site-config.snapshot.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["reference_region"] = None
+    path.write_text(json.dumps(data), encoding="utf-8")
+    evidence = measure(fx)["evidence"]
+    assert evidence["value"] is None and evidence["status"] != "available"
+    assert "EARLIER_WATCHED_AREA_NOT_VERIFIABLE" in evidence["reason_codes"]
+
+
+def _camera_review(fx: Fixture, filename: str, *, revision: int, stable: str) -> None:
+    path = fx.site_dir / "outputs" / "image-sequence-runs" / fx.run_id / "human-review"
+    path.mkdir(parents=True, exist_ok=True)
+    row = {
+        "kind": "image",
+        "filename": filename,
+        "media_id": fx.sequence_id,
+        "observation_id": f"obs-{filename}",
+        "label": {
+            "human_label": "no_water_level_change",
+            "confidence": "high",
+            "camera_stable": stable,
+        },
+        "label_revision": revision,
+        "reviewed_at_utc": f"2026-10-08T10:0{revision}:00+00:00",
+        "change_presence": "no_change",
+        "event_validity": "not_reviewed",
+        "dataset_group": "development_candidate",
+        "config_sha256": "c" * 64,
+    }
+    with (path / "observations.jsonl").open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(row) + "\n")
+
+
+def test_marking_the_camera_as_moved_later_makes_a_new_result_and_keeps_the_old(
+    fixture: Fixture,
+) -> None:
+    fx = fixture
+    _camera_review(fx, fx.filenames[1], revision=1, stable="yes")
+    first = measure(fx)
+    assert first["evidence"]["status"] == "available" and first["reused"] is False
+    assert measure(fx)["reused"] is True  # nothing changed, so the frozen result is reused
+
+    _camera_review(fx, fx.filenames[1], revision=2, stable="no")
+    second = measure(fx)
+    assert second["reused"] is False and second["pair_key"] != first["pair_key"]
+    assert second["evidence"]["status"] != "available"
+    assert "LATER_CAMERA_NOT_STABLE" in second["evidence"]["reason_codes"]
+    # the earlier result is still there, unchanged, as it was when it was made
+    old = json.loads(Path(first["path"]).read_text(encoding="utf-8"))
+    assert old["evidence"]["status"] == "available"
+    assert Path(first["path"]).is_file() and Path(second["path"]).is_file()
+    assert first["later"]["review_state"]["label_revision"] == 1
+    assert second["later"]["review_state"]["label_revision"] == 2
+
+
+def test_a_changed_quality_answer_alone_also_makes_a_new_result(fixture: Fixture) -> None:
+    _camera_review(fixture, fixture.filenames[1], revision=1, stable="yes")
+    first = measure(fixture)
+    _camera_review(fixture, fixture.filenames[1], revision=2, stable="unsure")
+    second = measure(fixture)
+    assert second["pair_key"] != first["pair_key"]

@@ -29,6 +29,8 @@ const CMP_REASON_TEXT = {
   CAMERA_NOT_STABLE: "was marked by a reviewer as having an unstable camera.",
   IMAGE_SIZE_DIFFERS_FROM_SEGMENTATION: "has a different size from the one its mask was made for.",
   WATCHED_AREA_CHANGED: "The two images were segmented with different watched areas, so the view may not match.",
+  MASK_WATCHED_AREA_DIFFERS_FROM_RUN: "has a mask that was cut from a different watched area than the one this run froze, so it would measure the wrong region. Run segmentation again for the current watched area.",
+  WATCHED_AREA_NOT_VERIFIABLE: "has no recorded watched area in its run, so its mask cannot be checked against it.",
   WATCHED_AREA_CONFIG_CHANGED: "The watched area saved with the two runs differs, so the view may not match.",
   IMAGE_SIZE_CHANGED: "The two images have different sizes, so they cannot be assumed to line up.",
   DIFFERENT_CAMERA: "These images are from different cameras. Quantitative comparison is only for one camera.",

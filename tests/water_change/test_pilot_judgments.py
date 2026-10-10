@@ -144,3 +144,22 @@ def test_a_measurement_that_already_exists_produces_a_warning(tmp_path: Path, fx
     assert (
         result["measurements_already_exist"] is True and "set this file aside" in result["warning"]
     )
+
+
+def test_a_label_made_with_the_evidence_in_view_is_never_exported_as_blind(
+    tmp_path: Path, fx: Fixture
+) -> None:
+    # Visible-change datasets count informed labels (Assisted review), but the pilot attests that
+    # judgments were made blind to machine results, so an informed-only reviewer exports nothing.
+    label(fx, 1, 0, "reviewer-a", "water_level_rising", stage="informed")
+    label(fx, 2, 1, "reviewer-a", "water_level_rising", stage="informed")
+    directory = pilot(tmp_path, fx)
+    with pytest.raises(PilotError, match="No blind labels"):
+        export_reviewer_judgments(directory, fx.sites_dir, "reviewer-a")
+    assert not (directory / "judgments" / "reviewer-a.json").exists()
+    # a blind label for one pair exports that pair only; the informed one is set aside
+    label(fx, 1, 0, "reviewer-a", "water_level_rising", stage="blind", revision=2)
+    result = export_reviewer_judgments(directory, fx.sites_dir, "reviewer-a")
+    saved = json.loads(Path(result["path"]).read_text())
+    assert saved["judgments"] == {"p1": {"later_vs_earlier": "more_water"}}
+    assert result["not_labelled_by_reviewer"] == ["p2"] and result["labels_set_aside"] >= 1

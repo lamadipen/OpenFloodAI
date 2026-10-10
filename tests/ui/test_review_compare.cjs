@@ -241,3 +241,9 @@ test("the detailed review page links to the blind review of the same run", () =>
   assert.match(reviewSource, /\/console\/review-focus\.html\?\$\{new URLSearchParams\(\{ site: folderName, run_id: runId \}\)\}/);
   assert.match(reviewSource, />Blind review<\/a>/);
 });
+
+test("a mask cut from another watched area than the run's is explained in plain language", () => {
+  const source = fs.readFileSync("tools/console/review-compare.js", "utf8");
+  assert.match(source, /MASK_WATCHED_AREA_DIFFERS_FROM_RUN: "has a mask that was cut from a different watched area/);
+  assert.match(source, /WATCHED_AREA_NOT_VERIFIABLE: "has no recorded watched area in its run/);
+});

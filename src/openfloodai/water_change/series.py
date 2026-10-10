@@ -29,6 +29,7 @@ from openfloodai.curation.tasks import WATER_MASK_PROMPTS, select_water_mask
 from openfloodai.validation import hosted_sam_runner
 from openfloodai.vision.water_change import WaterChangeInputError, roi_from_crop, water_fraction
 from openfloodai.water_change.compare import _run_summary, _site_dir
+from openfloodai.water_change.region import expected_crop_px
 
 _STATE_RANK = {"accepted": 0, "needs_correction": 1, "unreviewed": 2, "rejected": 3}
 SERIES_NOTE = (
@@ -94,6 +95,18 @@ def _pick_mask(candidates: list[MaskCandidate]) -> tuple[MaskCandidate | None, s
     return (drafts[0], "draft") if drafts else (None, "none")
 
 
+def _frozen_region(run_dir: Path) -> Any:
+    """The watched area this run was made with, as recorded when the run started."""
+
+    try:
+        snapshot = json.loads(
+            (run_dir / "inputs-used" / "site-config.snapshot.json").read_text("utf-8")
+        )
+    except (OSError, ValueError):
+        return None
+    return snapshot.get("reference_region") if isinstance(snapshot, dict) else None
+
+
 def run_series(sites_dir: Path, folder: str, run_id: str) -> dict[str, Any]:
     """Water coverage for every downloaded image of the run, in capture order."""
 
@@ -111,6 +124,7 @@ def run_series(sites_dir: Path, folder: str, run_id: str) -> dict[str, Any]:
         raise CurationError("Run not found.") from error
     records.sort(key=lambda r: (str(r.get("captured_at_utc", "")), str(r["filename"])))
     shas = _frozen_shas(run_dir)
+    region = _frozen_region(run_dir)
     results = hosted_sam_runner.list_sam_results(site_dir, sequence_id) if sequence_id else []
 
     rows: list[dict[str, Any]] = []
@@ -134,22 +148,27 @@ def run_series(sites_dir: Path, folder: str, run_id: str) -> dict[str, Any]:
             if union is None or not isinstance(size, list) or len(size) != 2:
                 row["reason"] = "mask_unreadable"
             else:
-                row["_frame"] = (tuple(size), tuple(transform.get("crop_px") or ()))
-                row["_mask"], row["_size"], row["_crop"] = (
-                    union,
-                    (int(size[0]), int(size[1])),
-                    transform.get("crop_px"),
-                )
+                frame = (int(size[0]), int(size[1]))
+                expected = expected_crop_px(region, frame)
+                if expected is None:
+                    row["reason"] = "run_watched_area_not_recorded"
+                elif list(transform.get("crop_px") or ()) != expected:
+                    # cut from another watched area than this run's frozen one: never measured
+                    row["reason"] = "mask_watched_area_differs_from_run"
+                else:
+                    row["_frame"] = (frame, tuple(expected))
+                    row["_mask"], row["_size"], row["_crop"] = union, frame, expected
         rows.append(row)
 
-    # One watched area and image size for the whole chart: the most common among the masks.
+    # Every mask now matches the run's frozen watched area. One image size for the whole chart: the
+    # most common among them.
     common = Counter(r["_frame"] for r in rows if "_frame" in r).most_common(1)
     reference = common[0][0] if common else None
     for row in rows:
         if "_frame" not in row:
             continue
         if row["_frame"] != reference:
-            row["reason"] = "different_watched_area_or_size"
+            row["reason"] = "different_image_size"
             continue
         try:
             roi = roi_from_crop(row["_crop"], row["_size"])
