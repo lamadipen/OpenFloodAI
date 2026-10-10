@@ -38,6 +38,10 @@ const METRICS = [
 
 const STEP = 24; // dial pixels between two images
 
+// One letter per dataset task, shown on the dial and beside an image's other details.
+const TASK_PREFIX = { water_segmentation: "S", level_classification: "C", gauge_height: "G", level_change: "R", visual_change: "V" };
+const TASK_WORD = { water_segmentation: "water segmentation", level_classification: "low / middle / high", gauge_height: "gauge height", level_change: "rising / falling", visual_change: "visible water change" };
+
 const DATASET_HELP = {
   water_segmentation: "Requires a completed water mask that a person accepted for this exact image.",
   level_classification: "Requires this human review, a matched gauge reading, and an approved site category definition.",
@@ -72,6 +76,7 @@ let saving = false;
 let reviewerId = loadSetting("openfloodai.reviewerId");
 let revealedFiles = new Set();
 let marks = [];
+let memberships = {}; // filename -> the datasets that hold the image
 let datasets = [];
 let selectedDatasetId = "";
 let datasetCheck = null;
@@ -205,8 +210,36 @@ function reviewedByCurrentCount() {
   return days.filter((day) => canReview(day) && reviewForCurrentReviewer(day)).length;
 }
 
+// The strongest saved state of this image's water mask: accepted, needs correction, an unreviewed
+// draft, or rejected. "" when there is no completed segmentation.
+const MASK_RANK = ["accepted", "needs_correction", "draft", "rejected"];
+
+function maskState(day) {
+  const states = samResults
+    .filter((result) => result.filename === day.filename && result.status === "completed")
+    .map((result) => (result.review_status === "unreviewed" || !result.review_status ? "draft" : result.review_status));
+  return MASK_RANK.find((state) => states.includes(state)) || "";
+}
+
+// Who has labelled this image: you against the current reference, or anyone against any reference.
+function labelState(day) {
+  if (reviewForCurrentReviewer(day)) return "mine";
+  return reviewsFor(day).some((review) => review.label && review.label.reviewer_id) ? "others" : "";
+}
+
+function datasetsHolding(day) {
+  return memberships[day.filename] || [];
+}
+
 function refreshMarks() {
-  marks = days.map((day) => !!reviewForCurrentReviewer(day));
+  marks = days.map((day) => ({ label: labelState(day), mask: maskState(day), sets: datasetsHolding(day) }));
+}
+
+async function loadMemberships() {
+  try {
+    memberships = (await api(`/api/dataset-memberships?${new URLSearchParams({ folder_name: folderName })}`)).memberships || {};
+  } catch (error) { memberships = {}; }
+  refreshMarks();
 }
 
 // ---- blind-review bookkeeping ----------------------------------------------------------------
@@ -530,6 +563,35 @@ function contextRowsHtml(day) {
     <span>Normal guide</span><b title="Images are not camera-aligned, so a moved camera can look like a crossing.">${escapeHtml(guide)}</b>`;
 }
 
+function labelSummary(day) {
+  const reviews = reviewsFor(day).filter((review) => review.label && review.label.reviewer_id);
+  if (!reviews.length) return "None yet";
+  const own = reviewForCurrentReviewer(day);
+  const parts = [];
+  if (own) {
+    const stage = own.review_stage === "blind" ? "blind" : own.review_stage === "informed" ? "informed" : "";
+    parts.push(`You: ${LABEL_TEXT[own.label.human_label] || own.label.human_label}${stage ? ` (${stage})` : ""}`);
+  }
+  const wanted = normalizedReviewer(reviewerId);
+  const others = new Set(reviews.map((review) => normalizedReviewer(review.label.reviewer_id)).filter((code) => code !== wanted));
+  if (others.size) parts.push(`${others.size} other reviewer${others.size === 1 ? "" : "s"}`);
+  if (!own && wanted && reviews.some((review) => normalizedReviewer(review.label.reviewer_id) === wanted)) parts.push("you, against another reference");
+  return parts.join(" · ");
+}
+
+// "S Water seg DS · V Visible DS (earlier, with 2026-01-23)": the letter is the task.
+function datasetsSummaryHtml(day) {
+  const held = datasetsHolding(day);
+  if (!held.length) return "Not in a dataset";
+  return held.map((member) => {
+    const letter = TASK_PREFIX[member.task] || "?";
+    const partner = member.with_filename ? days.find((candidate) => candidate.filename === member.with_filename) : null;
+    const role = member.role === "single" ? "" : ` (${member.role}${partner ? `, with ${partner.date}` : ""})`;
+    const rejected = member.status === "rejected" ? " · rejected" : "";
+    return `<span class="set-chip${member.status === "rejected" ? " rejected" : ""}"><b class="letter">${letter}</b>${escapeHtml(member.name)}${escapeHtml(role)}${rejected}</span>`;
+  }).join(" ");
+}
+
 function metaHtml(day) {
   const reference = referenceFor(day);
   const refDay = dayFor(reference);
@@ -543,6 +605,8 @@ function metaHtml(day) {
     <span>Δ vs reference</span><b>${escapeHtml(hasReference ? vsReference : "–")}</b>
     <span>Δ vs previous</span><b>${escapeHtml(deltaText(metricId, previousDay(day), day))}</b>
     ${contextRowsHtml(day)}
+    <span>Human label</span><b>${escapeHtml(labelSummary(day))}</b>
+    <span>In datasets</span><b>${datasetsSummaryHtml(day)}</b>
   </div>`;
 }
 
@@ -622,6 +686,38 @@ function sizeDial() {
   drawDial();
 }
 
+// The three rows above the line for one image: its water mask, whether it has a human label, and the
+// datasets that hold it (one letter per task).
+function drawStatus(ctx, x, mark, colors) {
+  const { ok, warn, bad, dim, line, bg } = colors;
+  ctx.save();
+  // water mask: filled square accepted, amber diamond needs correction, hollow square draft, cross rejected
+  if (mark.mask === "accepted") { ctx.fillStyle = ok; ctx.fillRect(x - 3.5, 5.5, 7, 7); }
+  else if (mark.mask === "draft") { ctx.strokeStyle = dim; ctx.lineWidth = 1.5; ctx.strokeRect(x - 3, 6, 6, 6); }
+  else if (mark.mask === "needs_correction") {
+    ctx.fillStyle = warn;
+    ctx.beginPath(); ctx.moveTo(x, 4.5); ctx.lineTo(x + 4.5, 9); ctx.lineTo(x, 13.5); ctx.lineTo(x - 4.5, 9); ctx.fill();
+  } else if (mark.mask === "rejected") {
+    ctx.strokeStyle = bad; ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.moveTo(x - 3, 6); ctx.lineTo(x + 3, 12); ctx.moveTo(x + 3, 6); ctx.lineTo(x - 3, 12); ctx.stroke();
+  }
+  // human label: filled circle yours (against this reference), ring labelled by someone or against another reference
+  if (mark.label === "mine") { ctx.fillStyle = ok; ctx.beginPath(); ctx.arc(x, 22, 3.6, 0, Math.PI * 2); ctx.fill(); }
+  else if (mark.label === "others") { ctx.strokeStyle = ok; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, 22, 3.2, 0, Math.PI * 2); ctx.stroke(); }
+  // datasets: task letters, red when the example was rejected
+  const letters = mark.sets.map((member) => ({ text: TASK_PREFIX[member.task] || "?", rejected: member.status === "rejected" }));
+  if (letters.length) {
+    ctx.font = "700 10px 'Fira Sans', system-ui, sans-serif";
+    ctx.textAlign = "left";
+    const width = letters.length * 8;
+    letters.forEach((letter, n) => {
+      ctx.fillStyle = letter.rejected ? bad : line;
+      ctx.fillText(letter.text, x - width / 2 + n * 8, 40);
+    });
+  }
+  ctx.restore();
+}
+
 function drawDial() {
   const canvas = $("dialCanvas");
   if (!canvas || !dialSeries || !days.length) return;
@@ -641,7 +737,7 @@ function drawDial() {
   const bg = dialColor("--dial-bg");
   const base = H - 34;
   const { values, lo, hi } = dialSeries;
-  const gy = (v) => base - ((v - lo) / (hi - lo)) * (base - 22);
+  const gy = (v) => base - ((v - lo) / (hi - lo)) * (base - 64);
   const xAt = (i) => mid + (i - pos) * STEP;
   const first = Math.max(0, Math.floor(pos - mid / STEP) - 1);
   const last = Math.min(days.length - 1, Math.ceil(pos + mid / STEP) + 1);
@@ -698,10 +794,10 @@ function drawDial() {
     const newDate = i === 0 || day.date !== days[i - 1].date;
     const fade = 1 - Math.min(1, Math.abs(x - mid) / (mid + 1)) * 0.65;
     ctx.globalAlpha = fade;
-    ctx.fillStyle = marks[i] ? ok : day.code === "P" ? warn : day.code === "C" ? bad : newDate ? fg : dim;
+    const mark = marks[i] || { label: "", mask: "", sets: [] };
+    ctx.fillStyle = mark.label === "mine" ? ok : day.code === "P" ? warn : day.code === "C" ? bad : newDate ? fg : dim;
     ctx.fillRect(Math.round(x) - 0.5, base + 6, 1.5, newDate ? 14 : 8);
-    if (marks[i]) ctx.fillRect(Math.round(x) - 2.5, 6, 5, 5);
-    if (day.code === "P" && !marks[i]) { ctx.beginPath(); ctx.arc(x, 8.5, 2.5, 0, Math.PI * 2); ctx.fill(); }
+    drawStatus(ctx, x, mark, { ok, warn, bad, dim, line, bg });
     if (newDate && x - lastLabelX > 46) {
       ctx.fillStyle = fg;
       ctx.fillText(shortDate(day.date), x, H - 4);
@@ -709,6 +805,16 @@ function drawDial() {
     }
   }
   ctx.globalAlpha = 1;
+
+  // what the three status rows are, at the left edge
+  ctx.save();
+  ctx.font = "600 9px 'Fira Sans', system-ui, sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillStyle = dim;
+  ctx.fillText("Mask", 8, 11);
+  ctx.fillText("Label", 8, 24);
+  ctx.fillText("Dataset", 8, 39);
+  ctx.restore();
 
   // the reference image
   const reference = days[selectedIndex] ? referenceFor(days[selectedIndex]) : null;
@@ -719,9 +825,9 @@ function drawDial() {
     ctx.strokeStyle = refColor;
     ctx.fillStyle = refColor;
     ctx.setLineDash([3, 4]);
-    ctx.beginPath(); ctx.moveTo(x, 16); ctx.lineTo(x, base + 4); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, 62); ctx.lineTo(x, base + 4); ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillText("Reference", Math.min(W - 30, Math.max(30, x)), 12);
+    ctx.fillText("Reference", Math.min(W - 30, Math.max(30, x)), 58);
     ctx.restore();
   }
 
@@ -955,7 +1061,10 @@ function renderDialHead() {
   }).join("");
   const legend = $("dialLegend");
   if (legend) {
-    legend.innerHTML = `<span class="key line">${escapeHtml(metricSpec(metricId).title)}</span><span class="key ref">reference</span><span class="key ok">labelled by you</span><span class="key warn">machine: possible change</span>${metricId === "coverage" ? '<span class="key hollow">hollow: draft mask</span>' : ""}`;
+    legend.innerHTML = `<span class="key line">${escapeHtml(metricSpec(metricId).title)}</span><span class="key ref">reference</span><span class="key warn">amber tick: machine says possible change</span>${metricId === "coverage" ? '<span class="key hollow">hollow point: draft mask</span>' : ""}
+      <span class="status-key"><strong>Mask</strong> <i class="g sq ok"></i>accepted <i class="g sq hollow"></i>draft <i class="g dia"></i>needs correction <i class="g x">&times;</i>rejected</span>
+      <span class="status-key"><strong>Label</strong> <i class="g dot ok"></i>yours <i class="g dot ring"></i>others, or another reference</span>
+      <span class="status-key"><strong>Dataset</strong> ${Object.entries(TASK_PREFIX).map(([task, letter]) => `<b class="letter">${letter}</b>${escapeHtml(TASK_WORD[task])}`).join(" ")}</span>`;
   }
   tabs.querySelectorAll("[data-metric]").forEach((button) => button.addEventListener("click", () => {
     metricId = button.dataset.metric;
@@ -1077,7 +1186,10 @@ async function addToDataset(day) {
   } catch (error) { datasetResult = { error: error.message }; }
   savingDataset = false;
   datasetCheckKey = ""; // re-check: it is now already included
+  await loadMemberships();
   renderDataset();
+  renderPanel();
+  drawDial();
   refreshDatasetCheck(day);
 }
 
@@ -1194,6 +1306,7 @@ async function reviewMask(button) {
     samResults = sam.results || [];
     coverageByFile = new Map((coverage.images || []).map((row) => [row.filename, row]));
     datasetCheckKey = ""; // a changed mask changes eligibility
+    refreshMarks();
     toast("Mask review saved.");
   } catch (error) { toast(error.message); }
   savingMask = false;
@@ -1455,12 +1568,14 @@ async function main() {
     days = buildDays(detail.records);
     if (!days.length) throw new Error("This run has no image records to review.");
     const sequenceId = detail.summary.sequence_id;
-    const [workspace, coverage, sam, datasetListing] = await Promise.all([
+    const [workspace, coverage, sam, datasetListing, held] = await Promise.all([
       api(`/api/workspace-evidence?${new URLSearchParams({ folder_name: folderName, kind: "image", run_id: runId, media_id: sequenceId })}`).catch(() => ({ points: [] })),
       api(`/api/compare/series?${new URLSearchParams({ folder_name: folderName, run_id: runId })}`).catch(() => ({ images: [] })),
       api(`/api/hosted-sam/results?${new URLSearchParams({ folder_name: folderName, sequence_id: sequenceId })}`).catch(() => ({ results: [] })),
-      api("/api/datasets").catch(() => ({ datasets: [] }))
+      api("/api/datasets").catch(() => ({ datasets: [] })),
+      api(`/api/dataset-memberships?${new URLSearchParams({ folder_name: folderName })}`).catch(() => ({ memberships: {} }))
     ]);
+    memberships = held.memberships || {};
     evidencePoints = workspace.points || [];
     coverageByFile = new Map((coverage.images || []).map((row) => [row.filename, row]));
     samResults = sam.results || [];

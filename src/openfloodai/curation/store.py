@@ -164,6 +164,43 @@ def list_datasets(datasets_dir: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def memberships(datasets_dir: Path, site_folder: str) -> dict[str, list[dict[str, Any]]]:
+    """Which datasets hold each image of one site, by filename.
+
+    A light read of the saved drafts for badges on the review pages: it does not re-check members,
+    so it is fast and writes nothing. A pair puts both of its images in the result, with the role
+    ("earlier" or "later") and the filename of the other image. A single-image example has the
+    role "single". Rejected members are included so a page can show they were turned down.
+    """
+
+    found: dict[str, list[dict[str, Any]]] = {}
+    if not datasets_dir.is_dir():
+        return found
+    for folder in sorted(datasets_dir.iterdir()):
+        if folder.name.startswith("_") or not (folder / DATASET_FILE).is_file():
+            continue
+        dataset = load_dataset(datasets_dir, folder.name)
+        for member in read_draft(datasets_dir, folder.name).values():
+            if member["status"] not in ("included", "rejected"):
+                continue
+            units = _units(member)
+            for index, snapshot in enumerate(units):
+                if snapshot["site"]["folder_name"] != site_folder:
+                    continue
+                pair = member["kind"] == "pair"
+                found.setdefault(snapshot["image"]["filename"], []).append(
+                    {
+                        "dataset_id": dataset["dataset_id"],
+                        "name": dataset["name"],
+                        "task": dataset["task"],
+                        "status": member["status"],
+                        "role": ("earlier" if index == 0 else "later") if pair else "single",
+                        "with_filename": units[1 - index]["image"]["filename"] if pair else None,
+                    }
+                )
+    return found
+
+
 def set_split_policy(datasets_dir: Path, dataset_id: str, policy: dict[str, Any]) -> dict[str, Any]:
     with _locked(datasets_dir, dataset_id):
         dataset = load_dataset(datasets_dir, dataset_id)

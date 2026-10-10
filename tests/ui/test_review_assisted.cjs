@@ -565,3 +565,109 @@ test("without a marker Save & next still moves on and does not take the focus", 
   assert.equal(vm.runInContext("selectedIndex", ctx), 2);
   assert.equal(vm.runInContext("focusAddAfterSave", ctx), false);
 });
+
+function withSamResults(ctx, rows) {
+  ctx.rows = rows;
+  vm.runInContext("samResults = rows;", ctx);
+}
+
+const mask = (filename, review_status, status = "completed") => ({ filename, status, review_status, prompt: "river water", run_id: "sam-1", result_id: `${filename}-${review_status}` });
+
+test("the dial knows each image's strongest saved mask state", () => {
+  const ctx = load();
+  withSamResults(ctx, [
+    mask("a.jpg", "unreviewed"), mask("a.jpg", "accepted"), // an accepted mask beats a draft
+    mask("b.jpg", "unreviewed"),
+    mask("base.jpg", "rejected"),
+    mask("gone.jpg", "unreviewed", "no_match") // no mask was found: nothing to show
+  ]);
+  assert.equal(ctx.maskState(day(ctx, 1)), "accepted");
+  assert.equal(ctx.maskState(day(ctx, 2)), "draft");
+  assert.equal(ctx.maskState(day(ctx, 0)), "rejected");
+  assert.equal(ctx.maskState(day(ctx, 3)), "");
+  withSamResults(ctx, [mask("a.jpg", "needs_correction"), mask("a.jpg", "unreviewed")]);
+  assert.equal(ctx.maskState(day(ctx, 1)), "needs_correction");
+  withSamResults(ctx, [mask("a.jpg", "rejected"), mask("a.jpg", "unreviewed")]);
+  assert.equal(ctx.maskState(day(ctx, 1)), "draft", "a draft is still open, so it shows as a draft");
+});
+
+test("the label row separates your label for this reference from other labels", () => {
+  const ctx = load();
+  ctx.points = [
+    { key: "k-base.jpg", filename: "base.jpg", reviews: [] },
+    { key: "k-a.jpg", filename: "a.jpg", reviews: [{ label: { human_label: "water_level_rising", reviewer_id: "Reviewer-A" }, review_stage: "informed", reference: { sequence_id: "seq-a", filename: "base.jpg" } }] },
+    { key: "k-b.jpg", filename: "b.jpg", reviews: [{ label: { human_label: "no_water_level_change", reviewer_id: "reviewer-z" }, review_stage: "blind" }] },
+    { key: "k-gone.jpg", filename: "gone.jpg", reviews: [{ label: { human_label: "water_level_rising", reviewer_id: "reviewer-a" }, review_stage: "informed", reference: { sequence_id: "seq-a", filename: "a.jpg" } }] }
+  ];
+  vm.runInContext('evidencePoints = points; reviewerId = "reviewer-a";', ctx);
+  assert.equal(ctx.labelState(day(ctx, 0)), "");
+  assert.equal(ctx.labelState(day(ctx, 1)), "mine");
+  assert.equal(ctx.labelState(day(ctx, 2)), "others");
+  assert.equal(ctx.labelState(day(ctx, 3)), "others", "yours, but against another reference");
+  assert.equal(ctx.labelSummary(day(ctx, 1)), "You: Water level is rising (informed)");
+  assert.equal(ctx.labelSummary(day(ctx, 2)), "1 other reviewer");
+  assert.match(ctx.labelSummary(day(ctx, 3)), /against another reference/);
+  assert.equal(ctx.labelSummary(day(ctx, 0)), "None yet");
+});
+
+test("datasets that hold an image show with their task letter, pair role and rejection", () => {
+  const ctx = load();
+  ctx.held = {
+    "a.jpg": [
+      { dataset_id: "d1", name: "Seg DS", task: "water_segmentation", status: "included", role: "single", with_filename: null },
+      { dataset_id: "d2", name: "Visible DS", task: "visual_change", status: "included", role: "earlier", with_filename: "b.jpg" }
+    ],
+    "b.jpg": [{ dataset_id: "d3", name: "Gauge DS", task: "gauge_height", status: "rejected", role: "single", with_filename: null }]
+  };
+  vm.runInContext("memberships = held; refreshMarks();", ctx);
+  const a = ctx.datasetsSummaryHtml(day(ctx, 1));
+  assert.match(a, /<b class="letter">S<\/b>Seg DS/);
+  assert.match(a, /<b class="letter">V<\/b>Visible DS \(earlier, with 2026-01-03\)/);
+  const b = ctx.datasetsSummaryHtml(day(ctx, 2));
+  assert.match(b, /set-chip rejected/);
+  assert.match(b, /<b class="letter">G<\/b>Gauge DS · rejected/);
+  assert.equal(ctx.datasetsSummaryHtml(day(ctx, 0)), "Not in a dataset");
+  const marks = JSON.parse(vm.runInContext("JSON.stringify(marks.map((m) => m.sets.map((s) => s.task)))", ctx));
+  assert.deepEqual(marks, [[], ["water_segmentation", "visual_change"], ["gauge_height"], []]);
+  assert.match(ctx.panelHtml(day(ctx, 1)), /In datasets/);
+  assert.match(ctx.panelHtml(day(ctx, 1)), /Human label/);
+});
+
+test("the task letters are fixed so a letter always means the same task", () => {
+  const prefix = JSON.parse(vm.runInContext("JSON.stringify(TASK_PREFIX)", load()));
+  assert.deepEqual(prefix, { water_segmentation: "S", level_classification: "C", gauge_height: "G", level_change: "R", visual_change: "V" });
+  assert.equal(new Set(Object.values(prefix)).size, 5);
+});
+
+test("drawStatus paints mask, label and dataset marks for one image", () => {
+  const ctx = load();
+  const calls = [];
+  const canvas = new Proxy({}, { get: (_, name) => (name === "save" || name === "restore" ? () => {} : (...args) => calls.push([name, ...args])), set: () => true });
+  const colors = { ok: "ok", warn: "warn", bad: "bad", dim: "dim", line: "line", bg: "bg" };
+  ctx.drawStatus(canvas, 100, { label: "mine", mask: "accepted", sets: [{ task: "water_segmentation", status: "included" }, { task: "visual_change", status: "rejected" }] }, colors);
+  const names = calls.map((call) => call[0]);
+  assert.ok(names.includes("fillRect"), "accepted mask is a filled square");
+  assert.ok(names.includes("arc"), "your label is a circle");
+  const letters = calls.filter((call) => call[0] === "fillText").map((call) => call[1]);
+  assert.deepEqual(letters, ["S", "V"]);
+  calls.length = 0;
+  ctx.drawStatus(canvas, 100, { label: "", mask: "", sets: [] }, colors);
+  assert.deepEqual(calls.filter((call) => ["fillRect", "strokeRect", "arc", "fillText"].includes(call[0])), [], "an image with nothing saved draws nothing");
+});
+
+test("memberships load from the site and a failure leaves the dial without dataset letters", async () => {
+  const ctx = load({ api: async (path) => { if (path.startsWith("/api/dataset-memberships")) return { memberships: { "a.jpg": [{ dataset_id: "d", name: "N", task: "level_change", status: "included", role: "single" }] } }; return {}; } });
+  await ctx.loadMemberships();
+  assert.deepEqual(JSON.parse(vm.runInContext("JSON.stringify(Object.keys(memberships))", ctx)), ["a.jpg"]);
+  const broken = load({ api: async () => { throw new Error("offline"); } });
+  await broken.loadMemberships();
+  assert.deepEqual(JSON.parse(vm.runInContext("JSON.stringify(memberships)", broken)), {});
+});
+
+test("the legend explains the three rows and the page reads memberships when it opens", () => {
+  assert.match(script, /\/api\/dataset-memberships/);
+  assert.match(script, /<strong>Mask<\/strong>/);
+  assert.match(script, /<strong>Label<\/strong>/);
+  assert.match(script, /<strong>Dataset<\/strong>/);
+  assert.match(script, /await loadMemberships\(\);/); // refreshed after a pair or image is added
+});

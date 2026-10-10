@@ -17,6 +17,7 @@ from openfloodai.curation import (
     check_pair,
     create_dataset,
     freeze_version,
+    memberships,
     read_draft,
     verify_version,
 )
@@ -462,3 +463,22 @@ def test_a_pair_with_one_judgment_can_be_added_and_is_stored_as_awaiting_dataset
         {"annotation": member["annotation"]}, {k: f"id-{i}" for i, k in enumerate(keys)}
     )
     assert public["dataset_review"] == "pending" and public["reviewer_count"] == 1
+
+
+def test_memberships_list_both_images_of_a_pair_with_their_role(tmp_path: Path) -> None:
+    fx = build(tmp_path)
+    review(fx, 1, 0, "reviewer-a")
+    ds = dataset(tmp_path)
+    assert memberships(datasets(tmp_path), fx.folder_name) == {}
+    add_pair(
+        datasets(tmp_path), fx.sites_dir, ds["dataset_id"], earlier=ref(fx, 0), later=ref(fx, 1)
+    )
+    found = memberships(datasets(tmp_path), fx.folder_name)
+    first, second = found[fx.filenames[0]], found[fx.filenames[1]]
+    assert [(m["task"], m["role"], m["status"], m["with_filename"]) for m in first] == [
+        (TASK_VISUAL_CHANGE, "earlier", "included", fx.filenames[1])
+    ]
+    assert [(m["role"], m["with_filename"]) for m in second] == [("later", fx.filenames[0])]
+    assert first[0]["dataset_id"] == ds["dataset_id"] and first[0]["name"] == "Visible change"
+    assert memberships(datasets(tmp_path), "another-site") == {}
+    assert memberships(tmp_path / "missing", fx.folder_name) == {}

@@ -157,6 +157,14 @@ at a time with the machine evidence visible, and a **dial** along the bottom to 
   the matched gauge reading (context only). An image with no value leaves a gap, never a zero. Marks show
   the reference image, the images you labelled and the images the machine flagged. Drag it, scroll sideways
   over it, or use the arrow keys. It is pinned to the bottom of the screen on wide displays.
+- **Status rows on the dial.** Three rows above the line show, for every image, what has already been done,
+  loaded from what is saved when the page opens: **Mask** (filled square accepted, hollow square an
+  unreviewed draft, amber diamond needs correction, cross rejected), **Label** (filled circle: you labelled
+  it against the current reference; ring: someone else did, or you did against another reference) and
+  **Dataset** (one letter per dataset that holds the image: S water segmentation, C low / middle / high,
+  G gauge height, R rising / falling, V visible water change; red when that example was rejected). The side
+  panel repeats this for the current image under *Human label* and *In datasets*, with the pair role and
+  the other image's date for pair examples. The dataset letters refresh when you add an image or pair.
 - **Picking a pair.** When the dataset selected in the dataset card is a pair task (visible water change or
   rising / falling), the dial header gets one extra button, **Set reference here** (key P). It pins the image
   under the needle as a reference marker, shown on the dial and as the "Dial marker" choice under *Judge

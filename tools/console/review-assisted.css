@@ -336,3 +336,21 @@
 
 .assist-dataset:focus { outline: none; }
 .assist-dataset:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---- the status legend and the dataset chips ---- */
+.status-key { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 3px 6px; }
+.status-key strong { color: var(--ink-soft); font-weight: 650; }
+.status-key .g { display: inline-block; width: 9px; height: 9px; margin-left: 4px; vertical-align: middle; }
+.status-key .g.sq.ok { background: var(--ok); }
+.status-key .g.sq.hollow { border: 1.5px solid var(--ink-muted); }
+.status-key .g.dia { background: #d9962b; transform: rotate(45deg) scale(0.8); }
+.status-key .g.x { width: auto; height: auto; color: var(--bad); font-style: normal; font-weight: 700; line-height: 1; }
+.status-key .g.dot { border-radius: 50%; }
+.status-key .g.dot.ok { background: var(--ok); }
+.status-key .g.dot.ring { border: 1.5px solid var(--ok); }
+.letter { display: inline-block; min-width: 14px; margin: 0 3px 0 4px; padding: 0 3px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); font-size: 10px; font-weight: 700; text-align: center; }
+
+.set-chip { display: inline-block; margin: 0 4px 3px 0; padding: 1px 6px 1px 0; border-radius: 5px; background: var(--line-soft); font-family: var(--sans); font-size: 11px; font-weight: 500; }
+.set-chip .letter { margin-left: 2px; }
+.set-chip.rejected { color: var(--bad); }
+.set-chip.rejected .letter { background: var(--bad-soft); color: var(--bad); }

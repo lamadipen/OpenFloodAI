@@ -65,6 +65,25 @@ def test_curating_across_two_runs_over_http_freezes_a_verified_version(tmp_path:
         assert view["ready_to_freeze"] is True and view["label_counts"]["examples"] == 2
         assert [d["included"] for d in get_json(f"{base}/api/datasets")["datasets"]] == [2]
 
+        # each site's images say which dataset holds them, for the badges on the review pages
+        held = get_json(f"{base}/api/dataset-memberships?folder_name={a.folder_name}")[
+            "memberships"
+        ]
+        assert list(held) == [a.filenames[0]]
+        assert held[a.filenames[0]] == [
+            {
+                "dataset_id": dataset_id,
+                "name": "Heights",
+                "task": "gauge_height",
+                "status": "included",
+                "role": "single",
+                "with_filename": None,
+            }
+        ]
+        assert get_json(f"{base}/api/dataset-memberships?folder_name=nowhere") == {
+            "memberships": {}
+        }
+
         status, frozen = post(
             base,
             "/api/dataset-freeze",
