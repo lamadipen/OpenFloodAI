@@ -35,11 +35,22 @@ runs are never modified. The adapter `water_change_mask_v1` is off by default.
 ## The pilot
 
 10–15 diverse pairs from one camera (rising, falling, stable-high, equal area different shape,
-difficult). Write the criteria first; two reviewers judge blind to machine results and gauge; then
+difficult). Write the criteria first; two reviewers judge blind to machine results and gauge (they can label on the focused review page and export their blind labels with the `judgments` command); then
 measure, view the contact sheet and report; show frozen gauge context last; a person records
 proceed, revise or stop. Errors and the unavailable rate are both reported, held-out pairs are
 scored only on request and logged, and unknown-for-everything cannot pass. Commands are in
 `scripts/water_change_pilot.py`.
+
+## The Review chart: pixel change or water coverage
+
+The second Review chart has a **Measurement** switch with two choices, each explained under the switch.
+**Pixel appearance change** (the default and original region change score) is how different the watched
+area looks from the baseline, from pixel brightness. **Segmentation: water coverage** is, for each image,
+the share of the watched area the segmentation marks as water, in percent, so the line shows how visible
+water changes from image to image (the picture, not depth or flow). Filled points use a mask a reviewer
+accepted; hollow points use an unreviewed draft; an image with no usable mask has no point, never zero.
+Masks must share one image size and watched area, camera movement is not detected, and the two numbers are
+never combined. The choice is remembered in your browser only.
 
 ## Compare any two images in Review
 

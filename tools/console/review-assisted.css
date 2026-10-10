@@ -1,0 +1,248 @@
+/* Assisted review: image viewer, reading panel and a dial along the bottom.
+   Uses the console tokens from shared.css; only the dial and the viewer use the dark rail colour. */
+
+.assist-banner {
+  padding: 10px 14px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  border: 1px solid var(--warn-line);
+  border-radius: 8px;
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.assist-banner strong { flex: 0 0 auto; }
+.assist-banner a { color: inherit; font-weight: 650; text-decoration: underline; }
+
+.assist-bar {
+  width: 140px;
+  height: 6px;
+  margin: 6px 0 0 auto;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.assist-bar i { display: block; height: 100%; width: 0; background: var(--ok); }
+
+.assist-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 16px;
+  align-items: start;
+}
+
+.assist-layout { --pane-h: clamp(240px, 38vh, 460px); }
+.assist-stage { overflow: hidden; min-width: 0; }
+
+.assist-stage-body {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  background: var(--rail);
+}
+
+/* The pane takes the picture's own shape (set from the loaded image) so a drawn guide lines up. */
+.assist-pane {
+  --ar: 16 / 9;
+  position: relative;
+  height: var(--pane-h);
+  aspect-ratio: var(--ar);
+  max-width: 100%;
+  overflow: hidden;
+  cursor: default;
+}
+
+.assist-pane.zoomed { overflow: auto; cursor: grab; }
+.assist-pane.panning { cursor: grabbing; user-select: none; }
+.assist-layer { position: relative; }
+.assist-layer img { display: block; width: 100%; height: auto; }
+.assist-layer .guide-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+
+.assist-nav {
+  position: absolute;
+  top: 50%;
+  width: 34px;
+  height: 56px;
+  margin-top: -28px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(14, 26, 40, 0.62);
+  color: #fff;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.assist-nav:hover:not(:disabled) { background: rgba(36, 86, 201, 0.85); }
+.assist-nav.prev { left: 10px; }
+.assist-nav.next { right: 10px; }
+
+.assist-tag {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 4px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 6px;
+  background: rgba(14, 26, 40, 0.88);
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.assist-inset {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  width: clamp(120px, 20%, 200px);
+  padding: 0;
+  overflow: hidden;
+  border: 2px solid #fff;
+  border-radius: 7px;
+  background: var(--rail);
+  color: #fff;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+}
+
+.assist-inset:hover { border-color: var(--accent-soft); }
+.assist-inset img { display: block; width: 100%; height: auto; }
+.assist-inset .inset-frame { position: relative; }
+.assist-inset .guide-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.assist-inset .inset-caption { display: block; padding: 3px 7px; background: rgba(14, 26, 40, 0.92); font-size: 10px; font-weight: 650; text-align: left; }
+
+.assist-panel {
+  padding: 16px;
+  min-width: 0;
+  max-height: calc(var(--pane-h) + 96px);
+  overflow: auto;
+}
+
+.assist-readout { margin-top: 6px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.assist-value { font-size: 40px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -0.5px; }
+.assist-unit { color: var(--ink-muted); font-size: 16px; font-weight: 600; }
+.assist-sub { margin-top: 5px; color: var(--ink-muted); font-size: 11px; line-height: 1.4; }
+
+.assist-meta {
+  margin-top: 12px;
+  padding: 10px 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 3px 12px;
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+.assist-meta b { min-width: 0; color: var(--ink); font-family: var(--mono); font-size: 11px; font-weight: 500; overflow-wrap: anywhere; }
+
+.assist-reference { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+.assist-reference .view-tabs { width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.assist-panel .panel-title { margin-top: 16px; }
+.assist-panel .informed-banner { margin: 0 0 8px; }
+.assist-panel .view-tab kbd { display: none; }
+.assist-panel .label-choices { gap: 5px; margin-top: 10px; }
+.assist-panel .label-choice { min-height: 36px; }
+.assist-actions { margin-top: 12px; display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.assist-actions .confirm-label { margin-top: 0; }
+
+/* ---- the dial ---- */
+.assist-dial-card { padding: 12px 14px 14px; }
+
+/* Pinned along the bottom only where the screen has room; on a phone it would cover the picture. */
+@media (min-width: 1121px) {
+  .assist-dial-card {
+    position: sticky;
+    bottom: 12px;
+    z-index: 4;
+    box-shadow: 0 -6px 18px rgba(18, 32, 46, 0.1);
+  }
+}
+
+.assist-dial-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  flex-wrap: wrap;
+}
+
+.assist-dial-info { color: var(--ink-soft); font-family: var(--mono); font-size: 11px; }
+.assist-dial-head .view-tabs { grid-auto-columns: minmax(0, auto); }
+.tab-count { margin-left: 4px; color: var(--ink-muted); font-weight: 500; font-size: 10px; }
+
+.assist-dial-legend {
+  margin: 8px 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  color: var(--ink-muted);
+  font-size: 11px;
+}
+
+.assist-dial-legend .key::before {
+  content: "";
+  display: inline-block;
+  width: 12px;
+  height: 3px;
+  margin-right: 6px;
+  vertical-align: middle;
+  background: var(--key, var(--accent));
+}
+
+.assist-dial-legend .key.line { --key: var(--accent); }
+.assist-dial-legend .key.ref { --key: var(--sam); }
+.assist-dial-legend .key.ok { --key: var(--ok); }
+.assist-dial-legend .key.warn { --key: #d9962b; }
+.assist-dial-legend .key.hollow::before { width: 8px; height: 8px; border: 2px solid var(--accent); border-radius: 50%; background: transparent; }
+
+.dialwrap {
+  --dial-bg: #0e1a28;
+  --dial-fg: #dbe6f2;
+  --dial-dim: #7d8fa1;
+  --dial-line: #8fb0ff;
+  --dial-ok: #4fc58a;
+  --dial-warn: #f0b957;
+  --dial-bad: #ff8585;
+  --dial-ref: #b79cff;
+  --dial-needle: #ffffff;
+  position: relative;
+  height: 132px;
+  border-radius: 10px;
+  background: var(--dial-bg);
+  box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.35);
+  cursor: grab;
+  touch-action: pan-y;
+  user-select: none;
+}
+
+.dialwrap.drag { cursor: grabbing; }
+.dialwrap:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dialwrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+.assist-gate { max-width: 560px; padding: 22px; }
+.assist-gate .focus-title { margin-bottom: 10px; }
+.assist-gate input { width: 100%; }
+
+@media (max-width: 1120px) {
+  .assist-layout { grid-template-columns: minmax(0, 1fr); }
+  .assist-panel { max-height: none; }
+  .assist-pane { height: auto; width: 100%; }
+}
+
+@media (max-width: 760px) {
+  .assist-inset { width: 92px; }
+  .assist-nav { top: 38%; height: 46px; margin-top: -23px; }
+  .assist-banner { flex-direction: column; gap: 2px; }
+  .assist-value { font-size: 32px; }
+  .assist-dial-head .view-tabs { width: 100%; grid-auto-columns: minmax(0, 1fr); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .assist-nav { transition: none; }
+}

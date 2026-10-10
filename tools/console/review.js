@@ -19,6 +19,20 @@ const CODE_LABEL = {
 const CODE_COLOR = { C: "#9b1c31", P: "#9a5b13", U: "#9a5b13", N: "#98a2b3", M: "#98a2b3" };
 const GRANULARITY_LABEL = { hourly: "Hourly", daily: "Daily", weekly: "Weekly", monthly: "Monthly", yearly: "Yearly" };
 
+// Water-coverage values per image from accepted masks (see review-charts.js); null if unavailable.
+let segSeries = null;
+let segByFile = new Map();
+
+async function loadSegSeries() {
+  try {
+    segSeries = await api(`/api/compare/series?${new URLSearchParams({ folder_name: folderName, run_id: runId })}`);
+    segByFile = new Map((segSeries.images || []).map((row) => [row.filename, row]));
+  } catch (error) {
+    segSeries = null;
+    segByFile = new Map();
+  }
+}
+
 const folderName = qs("site");
 const runId = qs("run_id");
 let detail = null;
@@ -29,7 +43,7 @@ let gaugeEvidence = null;
 let gaugeImages = new Map();
 let gaugeMeta = { label: "Gage height", unit: "", usedFallbackDischarge: false };
 let evidencePoints = [];
-let state = { filter: null, selectedIndex: 0, eventCursor: -1, granularity: "daily", compareView: loadCompareView(), collapsed: loadCollapsed() };
+let state = { filter: null, selectedIndex: 0, eventCursor: -1, granularity: "daily", compareView: loadCompareView(), metric: loadChartMetric(), collapsed: loadCollapsed() };
 
 function isoMean(values) {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
@@ -423,9 +437,19 @@ function selectedDaySummaryHtml() {
   return `
     <div style="background:var(--paper);border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px;color:var(--ink-soft);">
       <strong style="color:var(--ink);">${escapeHtml(sel.date)}, ${escapeHtml(sel.time)} local</strong>
-      &middot; change score ${scoreText}${gaugeText}
+      &middot; change score ${scoreText}${gaugeText}${segSummaryText(sel)}
       &middot; <span style="color:${CODE_COLOR[sel.code]};font-weight:700;">${escapeHtml(sel.resultLabel)}</span>
     </div>`;
+}
+
+// The selected image's mask-based value, shown only when this run has any usable masks.
+function segSummaryText(day) {
+  if (!segSeries || !segSeries.counts.with_value) return "";
+  const value = segValueFor(day, "coverage");
+  const row = segRow(day);
+  return value == null
+    ? " &middot; no segmentation mask"
+    : ` &middot; water coverage ${value.toFixed(1)}%${row && row.basis === "draft" ? " (draft mask)" : ""}`;
 }
 
 function granularityButtonsHtml() {
@@ -502,7 +526,9 @@ async function main() {
   }
 
   const sequenceLabel = detail.summary.sequence_label || detail.summary.sequence_id;
-  $("topbarActions").innerHTML = `<span class="soft-12">${escapeHtml(sequenceLabel)} &middot; <span style="font-family:var(--mono);">${escapeHtml(runId)}</span></span>`;
+  const blindHref = `/console/review-focus.html?${new URLSearchParams({ site: folderName, run_id: runId })}`;
+  const assistedHref = `/console/review-assisted.html?${new URLSearchParams({ site: folderName, run_id: runId })}`;
+  $("topbarActions").innerHTML = `<a class="btn" href="${blindHref}" title="Label each image against a reference before seeing any machine result">Blind review</a><a class="btn" href="${assistedHref}" title="Move through the run on a timeline with the machine results visible">Assisted review</a><span class="soft-12">${escapeHtml(sequenceLabel)} &middot; <span style="font-family:var(--mono);">${escapeHtml(runId)}</span></span>`;
   days = buildDays(detail.records);
   events = buildEvents(days);
   changeInfo = findChangeStart(days);
@@ -523,6 +549,8 @@ async function main() {
   } catch (error) {
     evidencePoints = [];
   }
+
+  await loadSegSeries();
 
   await loadSam();
   await loadDatasets();
@@ -694,6 +722,26 @@ function loadCompareView() {
   return "side";
 }
 
+// Which measurement the second chart shows. Remembered in this browser only; the pixel score
+// stays the default so nothing changes for anyone who does not use segmentation.
+function loadChartMetric() {
+  try {
+    const saved = localStorage.getItem("openfloodai.reviewChartMetric");
+    if (["pixel", "coverage"].includes(saved)) return saved;
+  } catch (error) {
+    // Storage can be blocked; the default still works.
+  }
+  return "pixel";
+}
+
+function saveChartMetric(metric) {
+  try {
+    localStorage.setItem("openfloodai.reviewChartMetric", metric);
+  } catch (error) {
+    // Remembering the choice is a convenience only.
+  }
+}
+
 function saveCompareView(view) {
   try {
     localStorage.setItem("openfloodai.reviewCompareView", view);
@@ -847,8 +895,9 @@ function renderNow() {
         </div>
 
         <div class="card card-pad">
-          ${collapseHeaderHtml("region", `Region change score, ${granularityLabelSuffix()}`)}
+          ${collapseHeaderHtml("region", `${escapeHtml(chartTitleText())}, ${granularityLabelSuffix()}`)}
           ${isCollapsed("region") ? "" : `
+          ${chartMetricSwitchHtml()}
           ${selectedDaySummaryHtml()}
           ${scoreChartSvg()}`}
         </div>
@@ -1036,6 +1085,10 @@ function wireActions() {
       } else if (act === "compare-view") {
         state.compareView = el.dataset.value;
         saveCompareView(state.compareView);
+        render();
+      } else if (act === "chart-metric") {
+        state.metric = el.dataset.value;
+        saveChartMetric(state.metric);
         render();
       } else if (act === "granularity") {
         state.granularity = el.dataset.value;

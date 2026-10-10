@@ -27,6 +27,7 @@ from typing import Any
 from openfloodai.curation import labels as label_defs
 from openfloodai.curation import splits as split_rules
 from openfloodai.curation import tasks as task_rules
+from openfloodai.curation import visual_change
 from openfloodai.curation.common import (
     CONTRACT_NAME,
     CONTRACT_VERSION,
@@ -36,6 +37,7 @@ from openfloodai.curation.common import (
     TASK_LEVEL_CHANGE,
     TASK_LEVEL_CLASSIFICATION,
     TASK_TITLES,
+    TASK_VISUAL_CHANGE,
     TASK_WATER_SEGMENTATION,
     TASKS,
     CurationConflict,
@@ -315,7 +317,7 @@ def _evaluate_single(
     if task == TASK_LEVEL_CLASSIFICATION:
         definition = _definition_for(datasets_dir, dataset, loaded.snapshot["site"]["site_id"])
         return task_rules.evaluate_classification(loaded, definition), masks
-    raise CurationError("Add a pair of observations to a rising / falling dataset.")
+    raise CurationError("Add a pair of observations to a pair-based dataset.")
 
 
 def add_observation(
@@ -341,8 +343,8 @@ def add_observation(
     _check_decision(decision)
     with _locked(datasets_dir, dataset_id):
         dataset = load_dataset(datasets_dir, dataset_id)
-        if dataset["task"] == TASK_LEVEL_CHANGE:
-            raise CurationError("Add a pair of observations to a rising / falling dataset.")
+        if dataset["task"] in PAIR_TASKS:
+            raise CurationError("Add a pair of observations to a pair-based dataset.")
         folder = _dataset_dir(datasets_dir, dataset_id)
         site_dir = _site_dir(sites_dir, folder_name)
         loaded = load_observation(site_dir, run_id, filename)
@@ -425,6 +427,103 @@ def add_observation(
         }
 
 
+PAIR_TASKS = (TASK_LEVEL_CHANGE, TASK_VISUAL_CHANGE)
+
+
+def _evaluate_pair(
+    sites_dir: Path,
+    dataset: dict[str, Any],
+    earlier: dict[str, str],
+    later: dict[str, str],
+) -> tuple[LoadedObservation, LoadedObservation, dict[str, Any]]:
+    """Load both images and judge the pair for the dataset's task. Writes nothing."""
+
+    task = dataset["task"]
+    if task not in PAIR_TASKS:
+        raise CurationError("Only a pair-based dataset takes pairs of observations.")
+    site_first = _site_dir(sites_dir, earlier["folder_name"])
+    site_second = _site_dir(sites_dir, later["folder_name"])
+    first = load_observation(site_first, earlier["run_id"], earlier["filename"])
+    second = load_observation(site_second, later["run_id"], later["filename"])
+    if task == TASK_LEVEL_CHANGE:
+        return (
+            first,
+            second,
+            task_rules.evaluate_pair(first, second, change_tolerance=dataset["change_tolerance"]),
+        )
+    judgments, set_aside = visual_change.collect_judgments(
+        site_first / "outputs" / "image-sequence-runs" / earlier["run_id"],
+        earlier["filename"],
+        site_second / "outputs" / "image-sequence-runs" / later["run_id"],
+        later["filename"],
+    )
+    evaluation = visual_change.evaluate_visual_pair(first, second, judgments, set_aside=set_aside)
+    evaluation["agreement"] = visual_change.agreement_summary(judgments)
+    return first, second, evaluation
+
+
+def check_pair(
+    datasets_dir: Path,
+    sites_dir: Path,
+    dataset_id: str,
+    *,
+    earlier: dict[str, str],
+    later: dict[str, str],
+) -> dict[str, Any]:
+    """Would this pair be accepted? Read-only: nothing is added, copied or recorded."""
+
+    dataset = load_dataset(datasets_dir, dataset_id)
+    first, second, evaluation = _evaluate_pair(sites_dir, dataset, earlier, later)
+    member_id = "pair-" + content_id(
+        [first.snapshot["observation_key"], second.snapshot["observation_key"]], 20
+    )
+    existing = read_draft(datasets_dir, dataset_id).get(member_id)
+    out = {"member_id": member_id, **_outline(evaluation)}
+    if "agreement" in evaluation:
+        out["agreement"] = evaluation["agreement"]
+    out["status"] = (
+        "already_included"
+        if existing and existing["status"] == "included"
+        else "eligible"
+        if evaluation["eligible"]
+        else "ineligible"
+    )
+    return out
+
+
+def check_observation(
+    datasets_dir: Path,
+    sites_dir: Path,
+    dataset_id: str,
+    *,
+    folder_name: str,
+    run_id: str,
+    filename: str,
+    mask_result_id: str | None = None,
+    mask_run_id: str | None = None,
+) -> dict[str, Any]:
+    """Would this single image be accepted? Read-only, same rules as `add_observation`."""
+
+    dataset = load_dataset(datasets_dir, dataset_id)
+    if dataset["task"] in PAIR_TASKS:
+        raise CurationError("Check a pair of observations for a pair-based dataset.")
+    site_dir = _site_dir(sites_dir, folder_name)
+    loaded = load_observation(site_dir, run_id, filename)
+    evaluation, _ = _evaluate_single(
+        datasets_dir, dataset, site_dir, loaded, mask_result_id, mask_run_id
+    )
+    key = loaded.snapshot["observation_key"]
+    existing = read_draft(datasets_dir, dataset_id).get(key)
+    status = (
+        "already_included"
+        if existing and existing["status"] == "included"
+        else "eligible"
+        if evaluation["eligible"]
+        else "ineligible"
+    )
+    return {"status": status, "member_id": key, **_outline(evaluation)}
+
+
 def add_pair(
     datasets_dir: Path,
     sites_dir: Path,
@@ -434,27 +533,18 @@ def add_pair(
     later: dict[str, str],
     decision: str | None = None,
 ) -> dict[str, Any]:
-    """Add an explicitly chosen earlier/later pair to a rising / falling dataset.
+    """Add an explicitly chosen earlier/later pair to a pair-based dataset.
 
     Pairs are never made automatically: the reviewer names both observations, which must come from
-    the same stable camera view.
+    the same stable camera view. A rising / falling dataset takes its target from the gauge; a
+    visible-water-change dataset takes it from independent blind human judgments.
     """
 
     _check_decision(decision)
     with _locked(datasets_dir, dataset_id):
         dataset = load_dataset(datasets_dir, dataset_id)
-        if dataset["task"] != TASK_LEVEL_CHANGE:
-            raise CurationError("Only a rising / falling dataset takes pairs of observations.")
         folder = _dataset_dir(datasets_dir, dataset_id)
-        first = load_observation(
-            _site_dir(sites_dir, earlier["folder_name"]), earlier["run_id"], earlier["filename"]
-        )
-        second = load_observation(
-            _site_dir(sites_dir, later["folder_name"]), later["run_id"], later["filename"]
-        )
-        evaluation = task_rules.evaluate_pair(
-            first, second, change_tolerance=dataset["change_tolerance"]
-        )
+        first, second, evaluation = _evaluate_pair(sites_dir, dataset, earlier, later)
         member_id = "pair-" + content_id(
             [first.snapshot["observation_key"], second.snapshot["observation_key"]], 20
         )
@@ -694,6 +784,28 @@ def recheck_member(
                     f"uses version {pinned}. Add it again to re-categorize under the new version.",
                 )
             )
+    elif task == TASK_VISUAL_CHANGE:
+        # The judgments were frozen with the member. Re-check only what can still change: the
+        # pair's structure and the images themselves; the people's labels stay as they were.
+        again = visual_change.evaluate_visual_pair(
+            LoadedObservation(member["snapshots"]["earlier"], None),
+            LoadedObservation(member["snapshots"]["later"], None),
+            [
+                visual_change.Judgment(
+                    reviewer=j["reviewer"],
+                    label=j["label"],
+                    direction=visual_change.DIRECTION_BY_LABEL.get(j["label"]),
+                    camera_stable="yes",
+                    reviewed_at_utc=j["reviewed_at_utc"],
+                )
+                for j in annotation.get("judgments", [])
+            ],
+        )
+        problems += [
+            p
+            for p in errors_in(again["reasons"])
+            if p["code"] in {"pair_same_image", "pair_different_camera", "pair_not_ordered"}
+        ]
     elif task == TASK_LEVEL_CHANGE:
         again = task_rules.evaluate_pair(
             LoadedObservation(member["snapshots"]["earlier"], None),
@@ -818,7 +930,7 @@ def _label_counts(
     annotations = [m["annotation"] for m in included.values()]
     if task == TASK_LEVEL_CLASSIFICATION:
         counts["by_category"] = dict(Counter(a["category"] for a in annotations))
-    elif task == TASK_LEVEL_CHANGE:
+    elif task in PAIR_TASKS:
         counts["by_direction"] = dict(Counter(a["direction"] or "unlabelled" for a in annotations))
     elif task == TASK_GAUGE_HEIGHT:
         values = [a["value"] for a in annotations]

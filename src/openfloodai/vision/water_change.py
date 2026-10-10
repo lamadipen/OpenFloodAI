@@ -176,6 +176,19 @@ def _water_inside(mask: MaskArray | None, roi: Roi, image_size: tuple[int, int],
     return inside[roi.y0 : roi.y1, roi.x0 : roi.x1]
 
 
+def water_fraction(mask: MaskArray | None, roi: Roi, image_size: tuple[int, int]) -> float:
+    """Water pixels inside the watched area divided by the watched-area pixels, for one mask.
+
+    The same validity rules as the pair measurement: a missing mask, a wrong-size mask or water
+    outside the watched area raises ``WaterChangeInputError`` instead of returning a number.
+    """
+
+    if roi.pixels <= 0:
+        raise WaterChangeInputError("INVALID_WATCHED_AREA", "The watched area is empty.")
+    inside = _water_inside(mask, roi, image_size, "image")
+    return float(inside.sum()) / roi.pixels
+
+
 def measure_water_change(
     earlier_mask: MaskArray | None,
     later_mask: MaskArray | None,

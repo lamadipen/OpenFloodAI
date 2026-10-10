@@ -23,6 +23,7 @@ _POST_PATHS = {
     "/api/dataset-create",
     "/api/dataset-add",
     "/api/dataset-add-pair",
+    "/api/dataset-check",
     "/api/dataset-reject",
     "/api/dataset-remove",
     "/api/dataset-split-policy",
@@ -140,6 +141,24 @@ def _dispatch(path: str, data: dict[str, Any], datasets_dir: Any, sites_dir: Any
             earlier=_ref(data.get("earlier")),
             later=_ref(data.get("later")),
             decision=decision,
+        )
+    if path == "/api/dataset-check":
+        # Read-only: says whether an image or pair would be accepted, and why not. Writes nothing.
+        if isinstance(data.get("earlier"), dict) or isinstance(data.get("later"), dict):
+            return curation.check_pair(
+                datasets_dir,
+                sites_dir,
+                dataset_id,
+                earlier=_ref(data.get("earlier")),
+                later=_ref(data.get("later")),
+            )
+        return curation.check_observation(
+            datasets_dir,
+            sites_dir,
+            dataset_id,
+            **_ref(data),
+            mask_result_id=_text(data, "mask_result_id") or None,
+            mask_run_id=_text(data, "mask_run_id") or None,
         )
     if path == "/api/dataset-reject":
         return curation.reject_observation(

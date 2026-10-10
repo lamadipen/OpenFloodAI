@@ -9,6 +9,7 @@ from openfloodai.curation.common import (
     TASK_LEVEL_CHANGE,
     TASK_LEVEL_CLASSIFICATION,
     TASK_TITLES,
+    TASK_VISUAL_CHANGE,
     TASK_WATER_SEGMENTATION,
 )
 from openfloodai.release.policy import USGS_CREDIT
@@ -18,6 +19,7 @@ HF_TASK_CATEGORIES = {
     TASK_LEVEL_CLASSIFICATION: ["image-classification"],
     TASK_GAUGE_HEIGHT: ["image-classification"],
     TASK_LEVEL_CHANGE: ["image-classification"],
+    TASK_VISUAL_CHANGE: ["image-classification"],
 }
 
 FIELD_DOCS = [

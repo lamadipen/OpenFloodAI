@@ -7,7 +7,8 @@ const TASKS = [
   { id: "water_segmentation", title: "Water segmentation", help: "Image plus a water mask that a person accepted." },
   { id: "level_classification", title: "Low / middle / high classification", help: "Image, a human review, its own gauge reading and an approved category definition for the site." },
   { id: "gauge_height", title: "Gauge-height estimation", help: "Image plus its own matched gauge reading. No low image is needed." },
-  { id: "level_change", title: "Rising / falling (height change)", help: "An earlier and a later image you pair yourself, each with a gauge reading." }
+  { id: "level_change", title: "Rising / falling (height change)", help: "An earlier and a later image you pair yourself, each with a gauge reading." },
+  { id: "visual_change", title: "Visible water change (human-judged pair)", help: "An earlier and a later image you pair yourself, plus what at least two independent reviewers saw between them, judged blind. Add pairs from the focused review page." }
 ];
 
 const dsPage = { datasets: [], view: null, id: qs("dataset_id"), message: "" };
@@ -184,6 +185,7 @@ function annotationText(a) {
   if (a.kind === "gauge_height") return `${a.value} ${a.unit}`;
   if (a.kind === "water_mask") return `${a.masks.length} mask file(s)`;
   if (a.kind === "level_change") return `${a.delta} ${a.unit}${a.direction ? ` · ${a.direction}` : ""}`;
+  if (a.kind === "visual_change") return `${String(a.direction || "").replaceAll("_", " ")} · ${a.reviewer_count} reviewers agree`;
   return "";
 }
 

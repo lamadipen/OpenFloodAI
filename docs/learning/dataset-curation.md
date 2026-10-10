@@ -36,11 +36,30 @@ Existing runs work as they are. You do not need to download anything again.
 | Low / middle / high classification | The image, a human review, the image's own matched gauge reading, and an approved, versioned category definition for the site | No (the whole dataset needs a suitable spread of categories) |
 | Gauge-height estimation | The image and its own matched gauge reading with unit, station, time and quality | No |
 | Rising / falling | An earlier and a later image **you choose**, from the same camera view, each with a gauge reading | Needs time context; the earlier image can already be high |
+| Visible water change (human-judged pair) | An earlier and a later image **you choose**, from the same camera view, and what at least **two independent reviewers** saw between them, judged blind | No gauge needed; the target is the people's answer |
 
 **Example.** A high-water image can be added to a gauge-height dataset on its own. To
 teach a rise, add an earlier observation as a pair. The earlier one may itself already
 be high. Pairs are never made automatically from unrelated runs or cameras: use **Use
 as earlier** on one image, then **Add pair with this as later** on another.
+
+### Visible water change (human-judged pair)
+
+This task keeps the human judgment as the target instead of the gauge. A pair is only eligible when:
+
+- at least **two different reviewer codes** judged it, each in the **blind stage** of the focused
+  review page (before seeing machine results, masks, gauge or other reviewers);
+- they **agree** on the direction (more water, less water, or about the same, earlier to later). A
+  disagreement is never settled by a majority vote, and a "cannot judge" or "camera problem" answer
+  makes the pair ineligible;
+- nobody reported that the camera view moved between the two images;
+- the images pass the usual rules (same camera and watched area, earlier before later, files intact).
+
+Informed revisions (labels made after the evidence was shown) and older saves with no blind stage are
+kept as history but never counted. Labels made against the later image as the reference are flipped to
+read earlier to later. Reviewer codes stay in your local draft for audit; a release says how many
+reviewers agreed, not who they were. Use **Check** (the focused review page does this for you) to see
+whether a pair would be accepted before adding it; checking writes nothing.
 
 If a mask was marked **needs correction**, it is not added. A corrected mask must come
 from an established workflow; there is no mask editor here, and the page does not
