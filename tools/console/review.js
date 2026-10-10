@@ -527,7 +527,8 @@ async function main() {
 
   const sequenceLabel = detail.summary.sequence_label || detail.summary.sequence_id;
   const blindHref = `/console/review-focus.html?${new URLSearchParams({ site: folderName, run_id: runId })}`;
-  $("topbarActions").innerHTML = `<a class="btn" href="${blindHref}" title="Label each image against a reference before seeing any machine result">Blind review</a><span class="soft-12">${escapeHtml(sequenceLabel)} &middot; <span style="font-family:var(--mono);">${escapeHtml(runId)}</span></span>`;
+  const assistedHref = `/console/review-assisted.html?${new URLSearchParams({ site: folderName, run_id: runId })}`;
+  $("topbarActions").innerHTML = `<a class="btn" href="${blindHref}" title="Label each image against a reference before seeing any machine result">Blind review</a><a class="btn" href="${assistedHref}" title="Move through the run on a timeline with the machine results visible">Assisted review</a><span class="soft-12">${escapeHtml(sequenceLabel)} &middot; <span style="font-family:var(--mono);">${escapeHtml(runId)}</span></span>`;
   days = buildDays(detail.records);
   events = buildEvents(days);
   changeInfo = findChangeStart(days);

@@ -1093,7 +1093,7 @@ async function main() {
     loadRevealed();
     selectedIndex = chooseInitialIndex();
     resetDraftForDay(days[selectedIndex]);
-    $("topbarActions").innerHTML = `<a class="btn" href="/console/review.html?${new URLSearchParams({ site: folderName, run_id: runId })}">Detailed review</a>`;
+    $("topbarActions").innerHTML = `<a class="btn" href="/console/review-assisted.html?${new URLSearchParams({ site: folderName, run_id: runId })}" title="Move through the run with the machine results visible">Assisted review</a><a class="btn" href="/console/review.html?${new URLSearchParams({ site: folderName, run_id: runId })}">Detailed review</a>`;
     render();
   } catch (error) {
     content.innerHTML = `<div class="card error-note">Could not load this review: ${escapeHtml(error.message)}</div>`;

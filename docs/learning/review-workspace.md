@@ -141,6 +141,31 @@ off to review a whole batch blind and reveal evidence image by image later.
   exports your blind labels for the pilot's pairs as `judgments/<code>.json`, with the blind attestation
   the pilot report requires. See [Measure Water Change From Masks](water-change-measurement.md).
 
+## Assisted review
+
+`/console/review-assisted.html?site=<site>&run_id=<run>` is the open counterpart of the blind page: one image
+at a time with the machine evidence visible, and a **dial** along the bottom to move through the run.
+
+- **Viewer.** The current image with the run's reference as a small picture in the corner (click it, or press
+  R, to swap them). The *Original*, *Segmentation* and *Riverbank guide* views apply to both pictures, with
+  zoom and drag-to-pan. While the dial is moving it shows a small preview; the full picture loads when it
+  stops.
+- **Reading panel.** The chosen measurement for this image, the machine result, the change since the previous
+  image and the reference, and the gauge, water-mask and guide context. Nothing is pre-selected: the machine
+  never suggests a label.
+- **Dial.** Plots one measurement at a time: pixel change, water coverage (hollow points are draft masks) or
+  the matched gauge reading (context only). An image with no value leaves a gap, never a zero. Marks show
+  the reference image, the images you labelled and the images the machine flagged. Drag it, scroll sideways
+  over it, or use the arrow keys. It is pinned to the bottom of the screen on wide displays.
+- **Labels.** The same labels, camera question and reference rules as Blind review, judged against the run
+  baseline or the previous image. Every label saved here is stored as **informed**: kept in the history, never
+  counted as an independent judgment, and never a dataset target for the visible-change task.
+
+Because the dial shows the machine result of every image, the page asks once for your reviewer code and
+explains this before it opens. Confirming marks every image of the run as already revealed for that code,
+so a label made later in Blind review for the same code is also stored as informed. Collect independent
+labels in Blind review first.
+
 ## Where reviews are saved
 
 Video labels use the existing site label files under `labels/`. The workspace
