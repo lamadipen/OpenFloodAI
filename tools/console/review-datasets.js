@@ -11,7 +11,7 @@ const DATASET_TASK_HELP = {
   level_classification: "Needs a human review of this image, its own matched gauge reading, and an approved category definition for this site.",
   gauge_height: "Needs this image's own matched gauge reading with unit, station and quality. It does not need a low image.",
   level_change: "Needs an earlier and a later image from the same camera view, each with a gauge reading. Choose both yourself; pairs are never made automatically.",
-  visual_change: "Needs an earlier and a later image from the same camera view, and at least two independent blind reviewers who agree on what changed. Choose both yourself; the focused review page shows whether reviewers agree before you add."
+  visual_change: "Needs an earlier and a later image from the same camera view, and at least one reviewer's judgment of what changed (blind or informed; informed ones are marked). Other reviewers confirm it later, inside the dataset. Choose both yourself; the focused review page shows whether reviewers agree before you add."
 };
 
 let dsState = { datasets: [], selectedId: "", result: null, busy: false, pairEarlier: null, pendingReject: false };

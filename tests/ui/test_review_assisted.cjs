@@ -212,7 +212,7 @@ test("swapping shows the reference large and the baseline explains it cannot be 
   assert.match(swapped, /inset-caption">Current/);
   vm.runInContext("selectedIndex = 0; swapped = true;", ctx);
   const baseline = ctx.viewerHtml(day(ctx, 0), false);
-  assert.match(baseline, /This image is the reference for the run/);
+  assert.match(baseline, /This image is the reference\./);
   assert.doesNotMatch(baseline, /assist-inset/);
 });
 
@@ -243,7 +243,7 @@ test("a blind label made earlier stays on record and the panel says so", () => {
 });
 
 test("keyboard use, a pinned dial, and responsive layout are present", () => {
-  assert.match(script, /Ctrl\/⌘\+Enter save &amp; next/);
+  assert.match(script, /Ctrl\/⌘\+Enter \$\{pairMode\(\)/);
   assert.match(script, /event\.key === "ArrowLeft"/);
   assert.match(script, /role="slider"/);
   assert.match(script, /prefers-reduced-motion/);
@@ -273,7 +273,7 @@ test("the dataset panel sits in the right column and the pair is sent earlier fi
   const panel = ctx.datasetPanelHtml(day(ctx, 2));
   assert.match(panel, /Add to dataset/);
   assert.match(panel, /Visible · Visible water change/);
-  assert.match(panel, /Labels saved on this page are informed, so they do not count/);
+  assert.match(panel, /One judgment is enough to add the pair/);
   assert.match(panel, /data-add-dataset disabled/); // nothing can be added before the check says eligible
 });
 
@@ -296,7 +296,7 @@ test("the add button is enabled only when the check says eligible, and ineligibl
   const blocked = ctx.datasetPanelHtml(day(ctx, 2));
   assert.match(blocked, /Not eligible for this dataset/);
   assert.match(blocked, /Needs two blind reviewers/);
-  assert.match(blocked, /0 of 2 needed independent blind reviewers/);
+  assert.match(blocked, /0 reviewers judged this pair \(at least 2 needed\)/);
   assert.match(blocked, /data-add-dataset disabled/);
   vm.runInContext('datasetCheck = { status: "eligible", reasons: [] };', ctx);
   const open = ctx.datasetPanelHtml(day(ctx, 2));
@@ -363,7 +363,7 @@ test("the layout choice needs a reference, so the baseline stays on the single v
   withPoints(ctx, ["base.jpg", "a.jpg", "b.jpg"]);
   vm.runInContext('selectedIndex = 0; compareMode = "side";', ctx);
   const baseline = ctx.viewerHtml(day(ctx, 0), false);
-  assert.match(baseline, /This image is the reference for the run/);
+  assert.match(baseline, /This image is the reference\./);
   assert.doesNotMatch(baseline, /assist-fig/);
   assert.match(ctx.toolbarHtml(), /data-compare="side" aria-pressed="true" disabled/);
   vm.runInContext("selectedIndex = 2;", ctx);
@@ -376,10 +376,10 @@ test("an ineligible check says what to do next, with a link", () => {
   withPoints(ctx, ["base.jpg", "a.jpg", "b.jpg"]);
   withDatasets(ctx);
   vm.runInContext("selectedIndex = 2;", ctx);
-  vm.runInContext('datasetCheck = { status: "ineligible", reasons: [{ code: "needs_more_reviewers", message: "0 independent blind reviewer(s)", severity: "error" }] };', ctx);
+  vm.runInContext('datasetCheck = { status: "ineligible", reasons: [{ code: "needs_a_judgment", message: "Nobody has judged this pair yet.", severity: "error" }] };', ctx);
   const pair = ctx.datasetPanelHtml(day(ctx, 2));
-  assert.match(pair, /Labels saved on this page do not count/);
-  assert.match(pair, /href="\/console\/review-focus\.html\?site=demo&amp;run_id=run-1&amp;select=b\.jpg"|href="\/console\/review-focus\.html\?site=demo&run_id=run-1&select=b\.jpg"/);
+  assert.match(pair, /Label this pair first/);
+  assert.doesNotMatch(pair, /Blind review/); // nothing to hand off: the person adding it labels it
   vm.runInContext('datasetCheck = { status: "ineligible", reasons: [{ code: "mask_missing", message: "No saved water segmentation", severity: "error" }] };', ctx);
   assert.match(ctx.datasetPanelHtml(day(ctx, 2)), /accept a water mask[\s\S]*review\.html/);
   vm.runInContext('datasetCheck = { status: "eligible", reasons: [] };', ctx);
@@ -431,4 +431,137 @@ test("reviewing a mask posts the decision, reloads results and re-checks eligibi
   assert.equal(vm.runInContext("samResults[0].review_status", ctx), "accepted");
   assert.equal(vm.runInContext("coverageByFile.get('b.jpg').basis", ctx), "accepted");
   assert.equal(vm.runInContext("savingMask", ctx), false);
+});
+
+test("the agreement line names reviewers who judged after seeing machine evidence", () => {
+  const ctx = load();
+  withPoints(ctx, ["base.jpg", "a.jpg", "b.jpg"]);
+  withDatasets(ctx);
+  vm.runInContext('datasetCheck = { status: "eligible", reasons: [{ code: "informed_judgments_counted", message: "reviewer-b judged this pair after seeing machine evidence (informed).", severity: "warning" }], agreement: { reviewers: 2, needed: 1, informed: ["reviewer-b"], by_direction: { more_water: ["reviewer-a", "reviewer-b"] } } };', ctx);
+  const html = ctx.datasetPanelHtml(day(ctx, 2));
+  assert.match(html, /2 reviewers judged this pair \(at least 1 needed\)/);
+  assert.match(html, /informed \(saw machine evidence\): reviewer-b/);
+  assert.match(html, /after seeing machine evidence/);
+  assert.doesNotMatch(html, /data-add-dataset disabled/);
+});
+
+test("the dial gets a reference marker button only while a pair dataset is selected", () => {
+  const ctx = load();
+  withPoints(ctx, ["base.jpg", "a.jpg", "b.jpg"]);
+  assert.equal(ctx.pairPickHtml(), "", "no dataset, no button");
+  withDatasets(ctx); // starts on the visible-change (pair) dataset
+  assert.match(ctx.pairPickHtml(), /data-set-marker[^>]*>Set reference here</);
+  vm.runInContext('selectedDatasetId = "d-seg";', ctx);
+  assert.equal(ctx.pairPickHtml(), "", "a single-image dataset needs no pair");
+  vm.runInContext('datasets.push({ dataset_id: "d-lvl", name: "Rise", task: "level_change", task_title: "Rising / falling" }); selectedDatasetId = "d-lvl";', ctx);
+  assert.match(ctx.pairPickHtml(), /Set reference here/);
+});
+
+test("setting the marker pins the image under the needle as the reference for the others", () => {
+  const ctx = load();
+  withPoints(ctx, ["base.jpg", "a.jpg", "b.jpg"]);
+  withDatasets(ctx);
+  vm.runInContext("selectedIndex = 1;", ctx);
+  ctx.setMarkerAtNeedle();
+  assert.equal(vm.runInContext("referenceMode", ctx), "marker");
+  assert.equal(vm.runInContext("markerFilename", ctx), "a.jpg");
+  // the needle moves on; the reference stays put
+  vm.runInContext("selectedIndex = 2;", ctx);
+  const ref = ctx.referenceFor(day(ctx, 2));
+  assert.equal(ref.filename, "a.jpg");
+  assert.equal(ref.kind, "marker");
+  assert.equal(ctx.canReview(day(ctx, 2)), true);
+  assert.equal(ctx.canReview(day(ctx, 1)), false, "the marked image is not compared with itself");
+  const pair = JSON.parse(JSON.stringify(ctx.datasetRequest(day(ctx, 2)).body));
+  assert.equal(pair.earlier.filename, "a.jpg");
+  assert.equal(pair.later.filename, "b.jpg");
+  // the choice shows as its own tab and in the button
+  assert.match(ctx.referenceChoiceHtml(day(ctx, 2)), /data-ref-mode="marker" aria-pressed="true"/);
+  assert.match(ctx.pairPickHtml(), /Move reference here/);
+  assert.match(ctx.pairPickHtml(), /Reference: 2026-01-02 11:00/);
+  assert.match(ctx.viewerHtml(day(ctx, 2), false), /dial marker/);
+});
+
+test("a marker earlier or later than the image is ordered by time, and clearing returns to the baseline", () => {
+  const ctx = load();
+  withPoints(ctx, ["base.jpg", "a.jpg", "b.jpg"]);
+  withDatasets(ctx);
+  vm.runInContext('selectedIndex = 2;', ctx);
+  ctx.setMarkerAtNeedle(); // b.jpg is the later image
+  vm.runInContext("selectedIndex = 1;", ctx);
+  const pair = JSON.parse(JSON.stringify(ctx.datasetRequest(day(ctx, 1)).body));
+  assert.equal(pair.earlier.filename, "a.jpg");
+  assert.equal(pair.later.filename, "b.jpg");
+  ctx.clearMarker();
+  assert.equal(vm.runInContext("referenceMode", ctx), "baseline");
+  assert.equal(ctx.referenceFor(day(ctx, 1)).filename, "base.jpg");
+  assert.doesNotMatch(ctx.referenceChoiceHtml(day(ctx, 1)), /data-ref-mode="marker"/);
+});
+
+test("a label made against the marker saves that image as its reference", async () => {
+  const ctx = load();
+  withPoints(ctx, ["base.jpg", "a.jpg", "b.jpg"]);
+  withDatasets(ctx);
+  vm.runInContext('selectedIndex = 1;', ctx);
+  ctx.setMarkerAtNeedle();
+  vm.runInContext('selectedIndex = 2; reviewerId = "reviewer-a"; selectedLabel = "water_level_rising"; draftCameraStable = "yes";', ctx);
+  await ctx.saveLabel(false);
+  const post = ctx.__calls.find((call) => call.path === "/api/workspace-label");
+  assert.deepEqual(JSON.parse(JSON.stringify(post.body.reference)), { sequence_id: "seq-a", run_id: "run-1", filename: "a.jpg" });
+  assert.equal(post.body.review_stage, "informed");
+});
+
+test("the marker control lives in the dial header and has a keyboard shortcut", () => {
+  assert.match(script, /id="pairPick"/);
+  assert.match(script, /event\.key === "p"/);
+  assert.match(css, /\.pair-chip/);
+});
+
+test("with a reference marker set, Save replaces Save & next and stays on the image", async () => {
+  const ctx = load();
+  withPoints(ctx, ["base.jpg", "a.jpg", "b.jpg"]);
+  withDatasets(ctx);
+  assert.match(ctx.panelHtml(day(ctx, 2)), /data-save [^>]*>Save & next</);
+  vm.runInContext("selectedIndex = 1;", ctx);
+  ctx.setMarkerAtNeedle();
+  vm.runInContext('selectedIndex = 2; reviewerId = "reviewer-a"; selectedLabel = "water_level_rising"; draftCameraStable = "yes";', ctx);
+  const panel = ctx.panelHtml(day(ctx, 2));
+  assert.match(panel, /data-save [^>]*>Save</);
+  assert.doesNotMatch(panel, /Save & next</);
+  assert.match(panel, /Ctrl\/⌘\+Enter save, then add the pair/);
+  await ctx.saveLabel(!ctx.pairMode());
+  assert.equal(vm.runInContext("selectedIndex", ctx), 2, "the page stays on the image just saved");
+  assert.match(ctx.__calls.filter((call) => call.toast).pop().toast, /Add the pair to the dataset below/);
+});
+
+test("after the save, focus goes to Add pair once the check says eligible", () => {
+  const focused = [];
+  const add = { disabled: false, focus() { focused.push("add"); } };
+  const box = { innerHTML: "", scrollIntoView() {}, focus() { focused.push("card"); }, querySelector: () => add, addEventListener() {} };
+  const ctx = load({ $: (id) => (id === "assistDataset" ? box : null) });
+  withPoints(ctx, ["base.jpg", "a.jpg", "b.jpg"]);
+  withDatasets(ctx);
+  vm.runInContext('selectedIndex = 2; focusAddAfterSave = true; datasetCheck = { pending: true };', ctx);
+  ctx.focusAddWhenReady();
+  assert.deepEqual(focused, [], "no focus while the check is still running");
+  vm.runInContext('datasetCheck = { status: "eligible", reasons: [] };', ctx);
+  ctx.focusAddWhenReady();
+  assert.deepEqual(focused, ["add"]);
+  ctx.focusAddWhenReady();
+  assert.deepEqual(focused, ["add"], "focus moves once");
+  // an ineligible pair has nothing to press, so the card with its reason gets the focus
+  add.disabled = true;
+  vm.runInContext('focusAddAfterSave = true; datasetCheck = { status: "ineligible", reasons: [] };', ctx);
+  ctx.focusAddWhenReady();
+  assert.deepEqual(focused, ["add", "card"]);
+});
+
+test("without a marker Save & next still moves on and does not take the focus", async () => {
+  const ctx = load();
+  withPoints(ctx, ["base.jpg", "a.jpg", "b.jpg"]);
+  withDatasets(ctx);
+  vm.runInContext('selectedIndex = 1; reviewerId = "reviewer-a"; selectedLabel = "water_level_rising"; draftCameraStable = "yes";', ctx);
+  await ctx.saveLabel(!ctx.pairMode());
+  assert.equal(vm.runInContext("selectedIndex", ctx), 2);
+  assert.equal(vm.runInContext("focusAddAfterSave", ctx), false);
 });

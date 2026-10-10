@@ -302,3 +302,37 @@
 .mask-bar-label { display: inline-flex; align-items: center; gap: 8px; }
 .mask-bar-actions { display: inline-flex; gap: 6px; flex-wrap: wrap; }
 .mask-bar .btn { height: 30px; font-size: 11px; }
+
+/* ---- picking the pair on the dial ---- */
+.pair-pick { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pair-pick .btn { height: 30px; font-size: 11px; }
+
+.pair-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px 3px 9px;
+  border-radius: 7px;
+  background: var(--sam-soft);
+  color: var(--sam);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.pair-chip button {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.pair-chip button:hover { background: rgba(109, 40, 217, 0.14); }
+
+.assist-dataset:focus { outline: none; }
+.assist-dataset:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

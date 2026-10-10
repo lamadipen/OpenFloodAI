@@ -135,7 +135,7 @@ off to review a whole batch blind and reveal evidence image by image later.
   **informed revision**: kept in the history, never counted as an independent judgment.
 - **Masks and datasets.** Accept, reject or mark a mask as needing correction, then **check** whether the
   image or pair is eligible for a dataset (the reasons are shown before anything is added), and add it.
-  You can create a dataset in the page. The visible-change task needs two agreeing blind reviewers; see
+  You can create a dataset in the page. The visible-change task needs one judgment of the pair; see
   [Curate Training Datasets](dataset-curation.md).
 - **Pilot judgments.** `python scripts/water_change_pilot.py judgments --pilot-dir <dir> --reviewer <code>`
   exports your blind labels for the pilot's pairs as `judgments/<code>.json`, with the blind attestation
@@ -157,9 +157,18 @@ at a time with the machine evidence visible, and a **dial** along the bottom to 
   the matched gauge reading (context only). An image with no value leaves a gap, never a zero. Marks show
   the reference image, the images you labelled and the images the machine flagged. Drag it, scroll sideways
   over it, or use the arrow keys. It is pinned to the bottom of the screen on wide displays.
+- **Picking a pair.** When the dataset selected in the dataset card is a pair task (visible water change or
+  rising / falling), the dial header gets one extra button, **Set reference here** (key P). It pins the image
+  under the needle as a reference marker, shown on the dial and as the "Dial marker" choice under *Judge
+  against*. Move the dial to another image and that image is compared with the marker. The two are the pair,
+  ordered by time when you add it. With a single-image dataset the button is not shown.
+  While a marker is set, **Save & next** becomes **Save**: it saves your label and stays on the image, then
+  moves the keyboard focus to **Add pair to dataset** (or to the card, with the reason, if the pair is not
+  eligible yet), so Enter adds the pair.
 - **Labels.** The same labels, camera question and reference rules as Blind review, judged against the run
-  baseline or the previous image. Every label saved here is stored as **informed**: kept in the history, never
-  counted as an independent judgment, and never a dataset target for the visible-change task.
+  baseline or the previous image. Every label saved here is stored as **informed**: kept in the history and
+  never counted as an independent judgment. It can go into the visible-change dataset, where it is marked as
+  informed (and the pair is no longer blind-only).
 
 Because the dial shows the machine result of every image, the page asks once for your reviewer code and
 explains this before it opens. Confirming marks every image of the run as already revealed for that code,

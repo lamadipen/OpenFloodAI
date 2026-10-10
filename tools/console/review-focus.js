@@ -27,7 +27,7 @@ const DATASET_HELP = {
   level_classification: "Requires this human review, a matched gauge reading, and an approved site category definition.",
   gauge_height: "Requires this image's matched gauge reading, station, unit, and quality.",
   level_change: "Uses the reference and this image, earlier first. The target comes from the two gauge readings, not from your label.",
-  visual_change: "Uses the reference and this image, earlier first. The target is what at least two reviewers independently saw, judged blind. It needs agreement, not a vote."
+  visual_change: "Uses the reference and this image, earlier first. The target is what the reviewer saw. One judgment is enough to add the pair; it is stored as awaiting review inside the dataset. If several people judged it they must agree, not vote. Informed judgments (made after machine evidence) count too and are marked."
 };
 
 const FAR_REFERENCE_DAYS = 45;
@@ -641,7 +641,8 @@ function reasonListHtml(reasons) {
 function agreementLineHtml(agreement) {
   if (!agreement) return "";
   const directions = Object.entries(agreement.by_direction || {}).map(([direction, who]) => `${direction.replaceAll("_", " ")}: ${who.join(", ")}`).join(" · ");
-  return `<div class="dataset-agreement">${agreement.reviewers} of ${agreement.needed} needed independent blind reviewers${directions ? ` · ${escapeHtml(directions)}` : ""}</div>`;
+  const informed = (agreement.informed || []).length ? ` · informed (saw machine evidence): ${agreement.informed.map(escapeHtml).join(", ")}` : "";
+  return `<div class="dataset-agreement">${agreement.reviewers} reviewer${agreement.reviewers === 1 ? "" : "s"} judged this pair (at least ${agreement.needed} needed)${directions ? ` · ${escapeHtml(directions)}` : ""}${informed}</div>`;
 }
 
 function datasetCheckHtml() {

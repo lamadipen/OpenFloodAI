@@ -43,7 +43,7 @@ const DATASET_HELP = {
   level_classification: "Requires this human review, a matched gauge reading, and an approved site category definition.",
   gauge_height: "Requires this image's matched gauge reading, station, unit, and quality.",
   level_change: "Uses the reference and this image, earlier first. The target comes from the two gauge readings, not from your label.",
-  visual_change: "Uses the reference and this image, earlier first. The target is what at least two reviewers independently saw, judged blind. Labels saved on this page are informed, so they do not count."
+  visual_change: "Uses the reference and this image, earlier first. The target is what the reviewer saw. One judgment is enough to add the pair; it is stored as awaiting review inside the dataset. Labels saved on this page count and are marked informed, because the machine evidence was visible."
 };
 const PAIR_TASK_IDS = ["level_change", "visual_change"];
 
@@ -62,7 +62,8 @@ let compareMode = "single"; // "single" | "side" | "overlay"
 let overlayOpacity = 50;
 let swapped = false; // the big view shows the reference and the inset shows the current image
 let metricId = "pixel";
-let referenceMode = "baseline"; // "baseline" | "previous"
+let referenceMode = "baseline"; // "baseline" | "previous" | "marker"
+let markerFilename = ""; // the image the reference marker was set on, on the dial
 let selectedLabel = null;
 let confidence = "medium";
 let draftNote = "";
@@ -80,6 +81,7 @@ let datasetMaskChoice = "";
 let savingDataset = false;
 let quickShown = false;
 let savingMask = false;
+let focusAddAfterSave = false; // after a save in reference-marker mode, move focus to Add pair
 
 function loadSetting(key) {
   try { return localStorage.getItem(key) || ""; } catch (error) { return ""; }
@@ -146,8 +148,15 @@ function baselineDay() {
   };
 }
 
-// The image this one is judged against: the run baseline, or the previous image of the run.
+const KIND_TEXT = { baseline: "run baseline", previous: "previous image", marker: "dial marker" };
+
+// The image this one is judged against: the run baseline, the previous image of the run, or the
+// image the reference marker was set on.
 function referenceFor(day) {
+  if (referenceMode === "marker") {
+    const marked = days.find((candidate) => candidate.filename === markerFilename);
+    if (marked) return { ...refFromDay(marked), kind: "marker" };
+  }
   if (referenceMode === "previous") {
     const previous = previousDay(day);
     if (previous) return { ...refFromDay(previous), kind: "previous" };
@@ -388,7 +397,7 @@ function panesFor(day, quick) {
   const reference = referenceFor(day);
   const current = refFromDay(day);
   const hasReference = !!reference.filename && !sameImage(reference, current);
-  return { reference, current, hasReference, kindText: { baseline: "run baseline", previous: "previous image" }[reference.kind] || "reference" };
+  return { reference, current, hasReference, kindText: KIND_TEXT[reference.kind] || "reference" };
 }
 
 function navHtml() {
@@ -461,7 +470,7 @@ function viewerPicturesHtml(day, quick) {
     : "";
   const caption = hasReference
     ? `${mainName}: ${escapeHtml(mainLayer.note)} · ${escapeHtml(formatUtc(main.capturedAtUtc))}`
-    : "This image is the reference for the run. Choose “Previous image” as the reference to compare it.";
+    : "This image is the reference. Move the dial to the image to compare with it, or choose another reference.";
   return `<div class="assist-stage-body">
       <div class="${paneClass()}" id="assistPane">${layerHtml(mainLayer, "assistImg", `${mainName} river image`)}</div>
       ${navHtml()}
@@ -524,7 +533,7 @@ function contextRowsHtml(day) {
 function metaHtml(day) {
   const reference = referenceFor(day);
   const refDay = dayFor(reference);
-  const kindText = { baseline: "run baseline", previous: "previous image" }[reference.kind] || "reference";
+  const kindText = KIND_TEXT[reference.kind] || "reference";
   const hasReference = !!reference.filename && !sameImage(reference, refFromDay(day));
   const vsReference = metricId === "pixel" ? (reference.kind === "baseline" ? "scored against it" : "–") : deltaText(metricId, refDay, day);
   return `<div class="assist-meta">
@@ -538,7 +547,7 @@ function metaHtml(day) {
 }
 
 function referenceChoiceHtml(day) {
-  const modes = [["baseline", "Run baseline"], ["previous", "Previous image"]];
+  const modes = [["baseline", "Run baseline"], ["previous", "Previous image"], ...(markerFilename ? [["marker", "Dial marker"]] : [])];
   return `<div class="assist-reference"><span class="ref-label">Judge against</span><div class="view-tabs" role="group" aria-label="Reference image">${modes.map(([id, text]) => `<button class="view-tab" data-ref-mode="${id}" aria-pressed="${referenceMode === id}" ${id === "previous" && days.findIndex((d) => d.code !== "M") === days.indexOf(day) ? "disabled" : ""}>${text}</button>`).join("")}</div></div>`;
 }
 
@@ -568,8 +577,8 @@ function panelHtml(day) {
     <label class="reviewer-field" for="reviewNote">Optional note</label><textarea id="reviewNote" rows="2" placeholder="What did you see in the pictures?">${escapeHtml(draftNote)}</textarea>
     <label class="reviewer-field" for="reviewerId">Reviewer code</label><input id="reviewerId" value="${escapeHtml(reviewerId)}" maxlength="80" placeholder="Example: reviewer-a" autocomplete="off">
     <div id="labelMessage" class="form-message" aria-live="polite"></div>
-    <div class="assist-actions"><button class="btn primary confirm-label" data-save ${canLabel && !saving ? "" : "disabled"}>${saving ? "Saving…" : "Save & next"}</button><button class="btn" data-next-unreviewed ${nextUnreviewedIndex() < 0 ? "disabled" : ""}>Next unreviewed</button></div>
-    <div class="shortcut-note">Keys: ← → step · 1–5 label · s/m/u camera · R swap reference · Ctrl/⌘+Enter save &amp; next</div>`;
+    <div class="assist-actions"><button class="btn primary confirm-label" data-save ${canLabel && !saving ? "" : "disabled"}>${saving ? "Saving…" : pairMode() ? "Save" : "Save & next"}</button><button class="btn" data-next-unreviewed ${nextUnreviewedIndex() < 0 ? "disabled" : ""}>Next unreviewed</button></div>
+    <div class="shortcut-note">Keys: ← → step · 1–5 label · s/m/u camera · R swap reference · Ctrl/⌘+Enter ${pairMode() ? "save, then add the pair" : "save &amp; next"}</div>`;
 }
 
 // ---- dial ------------------------------------------------------------------------------------
@@ -818,6 +827,12 @@ function resetDraftForDay(day) {
   datasetMaskChoice = "";
 }
 
+// Picking a pair on the dial: the reference marker is set. Saving then stays on the image, because
+// the next step is adding this pair to the dataset, not moving on.
+function pairMode() {
+  return referenceMode === "marker";
+}
+
 function nextUnreviewedIndex() {
   for (let offset = 1; offset <= days.length; offset += 1) {
     const index = (selectedIndex + offset) % days.length;
@@ -871,6 +886,63 @@ function renderHead() {
   if (bar) bar.style.width = `${total ? (100 * done) / total : 0}%`;
   const title = $("assistTitle");
   if (title) title.textContent = `${days[selectedIndex].date}, ${days[selectedIndex].time} local`;
+}
+
+// ---- picking the pair on the dial ------------------------------------------------------------
+// For a pair dataset the dial gets one extra control: set a reference marker at the needle, then
+// move the needle to the image to compare it with. The two images are the pair; the dataset card
+// orders them by time.
+
+function isPairDataset() {
+  const dataset = selectedDataset();
+  return !!dataset && PAIR_TASK_IDS.includes(dataset.task);
+}
+
+function markerDay() {
+  return days.find((day) => day.filename === markerFilename) || null;
+}
+
+function pairPickHtml() {
+  if (!isPairDataset()) return "";
+  const marked = markerDay();
+  return `<span class="pair-pick"><button class="btn" data-set-marker title="Pin the image under the needle as the reference (P). Then move the dial to the image to compare with it.">${marked ? "Move reference here" : "Set reference here"}</button>${marked ? `<span class="pair-chip">Reference: ${escapeHtml(marked.date)} ${escapeHtml(marked.time)}<button data-clear-marker aria-label="Clear the reference marker" title="Clear the reference marker">&times;</button></span>` : ""}</span>`;
+}
+
+function renderPairPick() {
+  const box = $("pairPick");
+  if (!box) return;
+  box.innerHTML = pairPickHtml();
+  const set = box.querySelector("[data-set-marker]");
+  if (set) set.addEventListener("click", setMarkerAtNeedle);
+  const clear = box.querySelector("[data-clear-marker]");
+  if (clear) clear.addEventListener("click", clearMarker);
+}
+
+function referenceChanged() {
+  refreshMarks();
+  resetDraftForDay(days[selectedIndex]);
+  renderPairPick();
+  renderViewer(false);
+  renderPanel();
+  renderDataset();
+  renderHead();
+  drawDial();
+  refreshDatasetCheck(days[selectedIndex]);
+}
+
+function setMarkerAtNeedle() {
+  const day = days[selectedIndex];
+  if (!day || day.code === "M") { toast("This image is unavailable, so it cannot be the reference."); return; }
+  markerFilename = day.filename;
+  referenceMode = "marker";
+  referenceChanged();
+  toast("Reference set. Move the dial to the image to compare with it.");
+}
+
+function clearMarker() {
+  markerFilename = "";
+  if (referenceMode === "marker") referenceMode = "baseline";
+  referenceChanged();
 }
 
 function renderDialHead() {
@@ -1017,15 +1089,16 @@ function reasonListHtml(reasons) {
 function agreementLineHtml(agreement) {
   if (!agreement) return "";
   const directions = Object.entries(agreement.by_direction || {}).map(([direction, who]) => `${direction.replaceAll("_", " ")}: ${who.join(", ")}`).join(" · ");
-  return `<div class="dataset-agreement">${agreement.reviewers} of ${agreement.needed} needed independent blind reviewers${directions ? ` · ${escapeHtml(directions)}` : ""}</div>`;
+  const informed = (agreement.informed || []).length ? ` · informed (saw machine evidence): ${agreement.informed.map(escapeHtml).join(", ")}` : "";
+  return `<div class="dataset-agreement">${agreement.reviewers} reviewer${agreement.reviewers === 1 ? "" : "s"} judged this pair (at least ${agreement.needed} needed)${directions ? ` · ${escapeHtml(directions)}` : ""}${informed}</div>`;
 }
 
 // What to do next for the reasons that a person can fix, with a link to the page that does it.
 function nextStepHtml(reasons) {
   const codes = (reasons || []).map((reason) => reason.code || "");
   const day = days[selectedIndex];
-  if (codes.includes("needs_more_reviewers")) {
-    return `<div class="dataset-next">A pair needs two different reviewers who judged it <strong>blind</strong>. Labels saved on this page do not count. <a href="${blindHref(day.filename)}">Label this image in Blind review</a>, then have a second reviewer do the same.</div>`;
+  if (codes.includes("needs_a_judgment")) {
+    return `<div class="dataset-next">Label this pair first: choose what changed and press Save &amp; next, then come back to this image with ← to add it. Other reviewers confirm it after it is in the dataset.</div>`;
   }
   if (codes.some((code) => code.startsWith("mask_"))) {
     const href = `/console/review.html?${new URLSearchParams({ site: folderName, run_id: runId, select: day.filename })}`;
@@ -1069,6 +1142,19 @@ function datasetPanelHtml(day) {
     <button class="btn primary" data-add-dataset ${savingDataset || !eligible ? "disabled" : ""}>${label}</button>${datasetResultHtml()}</div>`;
 }
 
+// Once the check that follows a save has an answer, put the keyboard on Add pair so Enter adds it. If
+// the pair is not eligible there is nothing to press, so the card itself gets the focus and its reason.
+function focusAddWhenReady() {
+  if (!focusAddAfterSave || !datasetCheck || datasetCheck.pending) return;
+  focusAddAfterSave = false;
+  const box = $("assistDataset");
+  const add = box && box.querySelector("[data-add-dataset]");
+  const target = add && !add.disabled ? add : box;
+  if (!target) return;
+  target.focus();
+  if (target.scrollIntoView) target.scrollIntoView({ block: "nearest" });
+}
+
 function renderDataset() {
   const box = $("assistDataset");
   if (!box || !days.length) return;
@@ -1080,12 +1166,14 @@ function renderDataset() {
     datasetResult = null; datasetCheck = null; datasetCheckKey = "";
     saveSetting("openfloodai.reviewDataset", selectedDatasetId);
     renderDataset();
+    renderPairPick();
     refreshDatasetCheck(day);
   });
   const mask = $("datasetMask");
   if (mask) mask.addEventListener("change", () => { datasetMaskChoice = mask.value; datasetCheckKey = ""; renderDataset(); refreshDatasetCheck(day); });
   const add = box.querySelector("[data-add-dataset]");
   if (add) add.addEventListener("click", () => addToDataset(day));
+  focusAddWhenReady();
 }
 
 async function reviewMask(button) {
@@ -1162,7 +1250,7 @@ async function saveLabel(advance) {
     });
     await refreshReviewData();
     saved = true;
-    toast("Saved as an informed label. It is not counted as an independent judgment.");
+    toast(pairMode() ? "Saved. Add the pair to the dataset below." : "Saved as an informed label. It is not counted as an independent judgment.");
   } catch (error) { toast(error.message); }
   saving = false;
   datasetCheckKey = ""; // a saved label can change eligibility
@@ -1170,6 +1258,7 @@ async function saveLabel(advance) {
   drawDial();
   if (saved && advance && selectedIndex < days.length - 1) { show(selectedIndex + 1); return; }
   if (saved) resetDraftForDay(day);
+  focusAddAfterSave = saved && !advance && !!selectedDataset();
   renderPanel();
   renderDataset();
   refreshDatasetCheck(day);
@@ -1257,16 +1346,9 @@ function wirePanel() {
   on("[data-confidence]", (button) => { confidence = button.dataset.confidence; renderPanel(); });
   on("[data-ref-mode]", (button) => {
     referenceMode = button.dataset.refMode;
-    refreshMarks();
-    resetDraftForDay(days[selectedIndex]);
-    renderViewer(false);
-    renderPanel();
-    renderDataset();
-    renderHead();
-    drawDial();
-    refreshDatasetCheck(days[selectedIndex]);
+    referenceChanged();
   });
-  on("[data-save]", () => saveLabel(true));
+  on("[data-save]", () => saveLabel(!pairMode()));
   on("[data-next-unreviewed]", () => { const index = nextUnreviewedIndex(); if (index >= 0) show(index); });
   const noteInput = $("reviewNote");
   if (noteInput) noteInput.addEventListener("input", () => { draftNote = noteInput.value; });
@@ -1289,7 +1371,7 @@ function gateHtml() {
   return `<section class="card assist-gate" aria-label="Before assisted review">
     <div class="focus-kicker">Assisted review</div>
     <h1 class="focus-title">Machine results are shown for every image in this run</h1>
-    <p class="hint">The timeline plots the machine result of each image, so opening this page reveals them. Images you have not labelled blind yet will count as <strong>informed</strong> for you afterwards, and informed labels are not used as independent judgments in datasets. If you still need independent labels, do those in Blind review first.</p>
+    <p class="hint">The timeline plots the machine result of each image, so opening this page reveals them. Images you have not labelled blind yet will count as <strong>informed</strong> for you afterwards, and informed labels are marked as not independent wherever they are used in a dataset. If you still need independent labels, do those in Blind review first.</p>
     <label class="reviewer-field" for="gateReviewer">Reviewer code</label>
     <input id="gateReviewer" value="${escapeHtml(reviewerId)}" maxlength="80" placeholder="Example: reviewer-a" autocomplete="off">
     <div class="field-help">Use a short team code, not a full personal name.</div>
@@ -1329,18 +1411,19 @@ function render() {
       <div class="assist-left">
       <section class="card assist-stage" aria-label="Image viewer"><div class="evidence-toolbar" id="assistToolbar"></div><div id="assistViewer"></div></section>
     <section class="card assist-dial-card" aria-label="Timeline">
-      <div class="assist-dial-head"><span id="dialInfo" class="assist-dial-info"></span><div class="view-tabs" id="dialMetrics" role="group" aria-label="Timeline measurement"></div></div>
+      <div class="assist-dial-head"><span id="dialInfo" class="assist-dial-info"></span><span id="pairPick"></span><div class="view-tabs" id="dialMetrics" role="group" aria-label="Timeline measurement"></div></div>
       <div class="assist-dial-legend" id="dialLegend"></div>
       <div class="dialwrap" id="dial" tabindex="0" role="slider" aria-label="Timeline of images. Drag sideways, or use the arrow keys." aria-valuemin="1" aria-valuemax="${days.length}" aria-valuenow="${selectedIndex + 1}"><canvas id="dialCanvas"></canvas></div>
     </section>
       </div>
       <div class="assist-right">
         <aside class="card assist-panel" id="assistPanel" aria-label="Machine reading and human label"></aside>
-        <section class="card assist-dataset" id="assistDataset" aria-label="Add to dataset"></section>
+        <section class="card assist-dataset" id="assistDataset" tabindex="-1" aria-label="Add to dataset"></section>
       </div>
     </div>`;
   renderToolbar();
   renderDialHead();
+  renderPairPick();
   computeSeries();
   wireDial();
   pos = target = selectedIndex;
@@ -1400,13 +1483,14 @@ document.addEventListener("keydown", (event) => {
   if (!days.length || needsGate() || event.altKey) return;
   const target = event.target;
   const typing = target && (/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName) || target.isContentEditable);
-  if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); saveLabel(true); return; }
+  if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); saveLabel(!pairMode()); return; }
   if (typing || event.ctrlKey || event.metaKey || event.shiftKey) return;
   const label = LABELS.find(([, , key]) => key === event.key);
   if (label) { event.preventDefault(); selectedLabel = label[0]; renderPanel(); return; }
   const camera = { s: "yes", m: "no", u: "unsure" }[event.key];
   if (camera) { event.preventDefault(); draftCameraStable = camera; renderPanel(); return; }
   if ((event.key === "r" || event.key === "R") && compareMode === "single") { event.preventDefault(); swapped = !swapped; renderViewer(false); return; }
+  if ((event.key === "p" || event.key === "P") && isPairDataset()) { event.preventDefault(); setMarkerAtNeedle(); return; }
   if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
     event.preventDefault();
     show(selectedIndex + (event.key === "ArrowRight" ? 1 : -1));
