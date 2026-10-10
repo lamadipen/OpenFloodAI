@@ -236,3 +236,8 @@ test("the reason lines name the image concerned and never invent a reason", () =
   assert.ok(lines.includes("SOMETHING_NEW"));
   assert.equal(lines.length, 4);
 });
+
+test("the detailed review page links to the blind review of the same run", () => {
+  assert.match(reviewSource, /\/console\/review-focus\.html\?\$\{new URLSearchParams\(\{ site: folderName, run_id: runId \}\)\}/);
+  assert.match(reviewSource, />Blind review<\/a>/);
+});

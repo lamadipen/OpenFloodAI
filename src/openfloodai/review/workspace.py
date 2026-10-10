@@ -63,6 +63,12 @@ ALLOWED_PILOT_CONDITIONS = {
     "snow",
     "low_light",
 }
+# How a review was made. "blind": the reviewer had not seen machine results, masks, gauge or other
+# reviewers' labels. "informed": made after that evidence was shown (a revision, for example), kept
+# as history but never counted as an independent judgment. "unspecified": saved by an older form.
+ALLOWED_REVIEW_STAGES = {"blind", "informed", "unspecified"}
+REFERENCE_RUN_BASELINE = "run_baseline"
+REFERENCE_CHOSEN = "chosen"
 _CHANGE_PRESENCE_BY_HUMAN_LABEL = {
     "water_level_rising": "change",
     "water_level_falling": "change",
@@ -278,6 +284,11 @@ def evidence(site: Path, kind: str, run_id: str, media_id: str) -> dict[str, Any
         for record in records:
             key = _key(record)
             review = current_reviews.get(key)
+            review_history = [
+                candidate
+                for candidate in reviews
+                if candidate.get("media_id") == media_id and candidate.get("sample_key") == key
+            ]
             riverbank = next(
                 (
                     evidence_record
@@ -311,6 +322,22 @@ def evidence(site: Path, kind: str, run_id: str, media_id: str) -> dict[str, Any
                         if review
                         else None
                     ),
+                    "reviews": [
+                        {
+                            "label": candidate.get("label"),
+                            "label_revision": candidate.get("label_revision"),
+                            "reviewed_at_utc": candidate.get("reviewed_at_utc"),
+                            "dataset_group": candidate.get("dataset_group"),
+                            "review_stage": candidate.get("review_stage") or "unspecified",
+                            "reference_kind": candidate.get("reference_kind")
+                            or REFERENCE_RUN_BASELINE,
+                            "reference": candidate.get("reference"),
+                            "crossing_review": candidate.get("crossing_review"),
+                            "overlay_review": candidate.get("overlay_review"),
+                            "pilot_conditions": candidate.get("pilot_conditions") or [],
+                        }
+                        for candidate in review_history
+                    ],
                     "riverbank_evidence_record_id": (
                         riverbank.get("record_id") if riverbank is not None else None
                     ),
@@ -524,6 +551,66 @@ def _label_fields(data: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _review_stage_field(data: dict[str, Any]) -> str:
+    value = str(data.get("review_stage") or "unspecified").strip()
+    if value not in ALLOWED_REVIEW_STAGES:
+        raise ValueError(f"review_stage must be one of {sorted(ALLOWED_REVIEW_STAGES)}.")
+    return value
+
+
+def _reference_fields(
+    site: Path,
+    data: dict[str, Any],
+    *,
+    media_id: str,
+    run_id: str,
+    point: dict[str, Any],
+    baseline_filename: str,
+    review_stage: str,
+) -> dict[str, Any]:
+    """Which image the reviewer compared this one against: the run's baseline or a chosen image.
+
+    The label "rising / falling / no change" only means something relative to a reference, so the
+    reference is saved with the label. A chosen reference must be a different saved image.
+    """
+
+    current = str(point.get("filename") or "")
+    raw = data.get("reference")
+    if raw is None:
+        if review_stage != "unspecified" and current == baseline_filename:
+            raise ValueError(
+                "This image is the run's baseline, so it has nothing to be compared with. "
+                "Choose a different reference image."
+            )
+        return {
+            "reference_kind": REFERENCE_RUN_BASELINE,
+            "reference": {
+                "sequence_id": media_id,
+                "run_id": run_id,
+                "filename": baseline_filename,
+            },
+        }
+    if not isinstance(raw, dict):
+        raise ValueError("reference must name a sequence, run and image.")
+    sequence_id = str(raw.get("sequence_id") or "")
+    reference_run = str(raw.get("run_id") or "")
+    filename = str(raw.get("filename") or "")
+    if not (_ID.fullmatch(sequence_id) and _ID.fullmatch(reference_run) and filename):
+        raise ValueError("reference must name a sequence, run and image.")
+    if sequence_id == media_id and filename == current:
+        raise ValueError("The reference must be a different image from the one being reviewed.")
+    try:
+        resolve_sequence_image(site, sequence_id, filename)
+    except Exception as error:  # noqa: BLE001 -- any unreadable reference is the same refusal
+        raise ValueError("The chosen reference image is not a saved image of this site.") from error
+    run_path(site, "image", reference_run)  # raises if the run does not exist
+    is_baseline = sequence_id == media_id and filename == baseline_filename
+    return {
+        "reference_kind": REFERENCE_RUN_BASELINE if is_baseline else REFERENCE_CHOSEN,
+        "reference": {"sequence_id": sequence_id, "run_id": reference_run, "filename": filename},
+    }
+
+
 def _event_validity_field(data: dict[str, Any]) -> str:
     value = str(data.get("event_validity") or "not_reviewed").strip()
     if value not in ALLOWED_EVENT_VALIDITY:
@@ -586,6 +673,7 @@ def save_observation(site: Path, data: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("Selected sample was not found in the saved machine evidence.")
         label = _label_fields(data)
         event_validity = _event_validity_field(data)
+        review_stage = _review_stage_field(data)
         pilot_review = _pilot_review_fields(data, point)
         run = run_path(site, kind, run_id)
         if kind == "video":
@@ -615,6 +703,19 @@ def save_observation(site: Path, data: dict[str, Any]) -> dict[str, Any]:
         review_path = _inside(run, "human-review", "observations.jsonl")
         existing_reviews = read_jsonl_records(review_path) if review_path.exists() else []
         human_label = label.get("human_label") if isinstance(label, dict) else None
+        reference = (
+            _reference_fields(
+                site,
+                data,
+                media_id=media_id,
+                run_id=run_id,
+                point=point,
+                baseline_filename=str(payload["baseline_filename"]),
+                review_stage=review_stage,
+            )
+            if kind == "image"
+            else {}
+        )
         observation = {
             "schema_version": OBSERVATION_SCHEMA_VERSION,
             "observation_id": observation_id,
@@ -635,6 +736,8 @@ def save_observation(site: Path, data: dict[str, Any]) -> dict[str, Any]:
             "captured_at_utc": point.get("time"),
             "config_sha256": _hash(run / "inputs-used" / "site-config.snapshot.json"),
             "reviewed_at_utc": datetime.now(UTC).isoformat(),
+            "review_stage": review_stage,
+            **reference,
             **pilot_review,
         }
         try:

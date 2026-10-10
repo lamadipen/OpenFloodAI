@@ -4,6 +4,7 @@ Order (see docs/learning/water-change-measurement.md):
 
     inventory      list the human-accepted water masks per camera (read-only)
     blind-sheet    images only, for people to judge BEFORE seeing machine results or the gauge
+    judgments      export a reviewer's blind labels from the focused review page as a judgments file
     measure        measure the pairs under the written criteria (held-out pairs are skipped
                    unless --include-held-out)
     sheet          contact sheet with masks, spatial overlay, numbers and frozen gauge context
@@ -27,6 +28,7 @@ from openfloodai.water_change.pilot import (
     record_decision,
     run_measurements,
 )
+from openfloodai.water_change.pilot_judgments import export_reviewer_judgments
 from openfloodai.water_change.pilot_sheets import (
     inventory_accepted_masks,
     render_blind_sheet,
@@ -41,9 +43,13 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--sites-dir", type=Path, default=Path("data/sites"))
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("inventory", help="List accepted water masks per camera and watched area.")
-    for name in ("blind-sheet", "measure", "sheet", "report", "decision"):
+    for name in ("blind-sheet", "judgments", "measure", "sheet", "report", "decision"):
         step = sub.add_parser(name)
         step.add_argument("--pilot-dir", type=Path, required=True)
+        if name == "judgments":
+            step.add_argument(
+                "--reviewer", required=True, help="the reviewer code used when labelling"
+            )
         if name == "measure":
             step.add_argument("--include-held-out", action="store_true")
         if name == "report":
@@ -63,6 +69,14 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(inventory_accepted_masks(args.sites_dir), indent=2))
         elif args.command == "blind-sheet":
             print(render_blind_sheet(args.pilot_dir, args.sites_dir))
+        elif args.command == "judgments":
+            result = export_reviewer_judgments(args.pilot_dir, args.sites_dir, args.reviewer)
+            print(
+                f"Wrote {result['path']}: {len(result['exported_pairs'])} pair(s), "
+                f"{len(result['not_labelled_by_reviewer'])} not labelled by {result['reviewer']}."
+            )
+            if result["warning"]:
+                print(f"warning: {result['warning']}")
         elif args.command == "measure":
             result = run_measurements(
                 args.pilot_dir, args.sites_dir, include_held_out=args.include_held_out

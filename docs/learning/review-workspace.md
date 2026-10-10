@@ -106,6 +106,41 @@ Images use the existing date-range group assignments. Conflicting image date
 ranges are refused rather than silently replaced. Tags do not start training
 or grant permission to share media.
 
+## Focused blind review
+
+`/console/review-focus.html?site=<site>&run_id=<run>` is a calmer page for collecting independent human
+judgments. It works in two stages.
+
+**Stage 1: blind.** You see the current image next to a **reference image** (side by side or as an
+overlay, with zoom, drag-to-pan and synchronized scrolling). Machine results, masks, gauge values and
+other reviewers' labels are hidden.
+
+- **Reference.** The run baseline by default, the previous image, or any other saved image of the same
+  camera (nearest in time first). The label means "the current image compared with the reference", and the
+  reference is saved with it. A reference far in time shows a warning about seasons. The baseline cannot be
+  judged against itself, so the page skips it.
+- **Label.** Water is rising, falling, unchanged, cannot judge, or camera problem (keys 1 to 5), and
+  whether the camera view stayed the same (keys s, m, u). A moved camera looks like a water change, so
+  the answer is required for a rising, falling or unchanged label. Enter a short reviewer code; it is
+  not a login, so independence rests on honest use.
+
+**Stage 2: evidence.** After you save, the machine result, gauge context, segmentation and guide appear,
+with whether independent reviewers agree. The reference stays beside the current image in every view:
+*Original*, *Segmentation* (each image with its own saved mask, marked accepted or draft) and *Riverbank
+guide* (the run's confirmed base guide and watched area drawn on both images, assuming the camera did
+not move). Each of these views can be shown side by side or blended as an overlay with an opacity slider. You can switch **Show the machine evidence right after I save**
+off to review a whole batch blind and reveal evidence image by image later.
+
+- **Revising.** *Revise my label* saves a new revision. Once you have seen the evidence it is stored as an
+  **informed revision**: kept in the history, never counted as an independent judgment.
+- **Masks and datasets.** Accept, reject or mark a mask as needing correction, then **check** whether the
+  image or pair is eligible for a dataset (the reasons are shown before anything is added), and add it.
+  You can create a dataset in the page. The visible-change task needs two agreeing blind reviewers; see
+  [Curate Training Datasets](dataset-curation.md).
+- **Pilot judgments.** `python scripts/water_change_pilot.py judgments --pilot-dir <dir> --reviewer <code>`
+  exports your blind labels for the pilot's pairs as `judgments/<code>.json`, with the blind attestation
+  the pilot report requires. See [Measure Water Change From Masks](water-change-measurement.md).
+
 ## Where reviews are saved
 
 Video labels use the existing site label files under `labels/`. The workspace

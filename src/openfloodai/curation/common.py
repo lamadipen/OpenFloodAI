@@ -23,17 +23,20 @@ TASK_WATER_SEGMENTATION = "water_segmentation"
 TASK_LEVEL_CLASSIFICATION = "level_classification"
 TASK_GAUGE_HEIGHT = "gauge_height"
 TASK_LEVEL_CHANGE = "level_change"
+TASK_VISUAL_CHANGE = "visual_change"
 TASKS = (
     TASK_WATER_SEGMENTATION,
     TASK_LEVEL_CLASSIFICATION,
     TASK_GAUGE_HEIGHT,
     TASK_LEVEL_CHANGE,
+    TASK_VISUAL_CHANGE,
 )
 TASK_TITLES = {
     TASK_WATER_SEGMENTATION: "Water segmentation",
     TASK_LEVEL_CLASSIFICATION: "Low / middle / high classification",
     TASK_GAUGE_HEIGHT: "Gauge-height estimation",
     TASK_LEVEL_CHANGE: "Rising / falling (height change)",
+    TASK_VISUAL_CHANGE: "Visible water change (human-judged pair)",
 }
 
 SPLITS = ("train", "validation", "test")

@@ -83,7 +83,7 @@ unavailable cases. It is not an accuracy study.
 4. **Judge blind.** `blind-sheet` writes images only. A hydrologist or reviewer and a second person
    each fill `judgments/<name>.json` saying whether the later image shows more, less or about the
    same visible water (or `cannot_judge`), before seeing machine results or gauge values. Files
-   dated after the first measurement, or not marked blind, are set aside.
+   dated after the first measurement, or not marked blind, are set aside. You can also collect the judgments on the focused review page and export them: label each pair's later image against the earlier one in blind mode, then run `python scripts/water_change_pilot.py judgments --pilot-dir <dir> --reviewer <your code>`. Only blind labels are exported; informed revisions and unlabelled pairs are listed and left out.
 5. **Measure** (`measure`), view the contact sheet (`sheet`: images, masks, spatial overlay,
    numbers, reasons), then `report`.
 6. **Gauge context comes last**, from the readings frozen at run time with the existing ±15 minute

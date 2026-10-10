@@ -526,7 +526,8 @@ async function main() {
   }
 
   const sequenceLabel = detail.summary.sequence_label || detail.summary.sequence_id;
-  $("topbarActions").innerHTML = `<span class="soft-12">${escapeHtml(sequenceLabel)} &middot; <span style="font-family:var(--mono);">${escapeHtml(runId)}</span></span>`;
+  const blindHref = `/console/review-focus.html?${new URLSearchParams({ site: folderName, run_id: runId })}`;
+  $("topbarActions").innerHTML = `<a class="btn" href="${blindHref}" title="Label each image against a reference before seeing any machine result">Blind review</a><span class="soft-12">${escapeHtml(sequenceLabel)} &middot; <span style="font-family:var(--mono);">${escapeHtml(runId)}</span></span>`;
   days = buildDays(detail.records);
   events = buildEvents(days);
   changeInfo = findChangeStart(days);

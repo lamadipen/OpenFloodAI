@@ -3,11 +3,15 @@
 // This only keeps a reviewed example for later curation. Nothing is trained, uploaded or
 // published, and the run, its gauge match and its human review are never changed.
 
+// Tasks whose example is a pair of images the reviewer chooses.
+const PAIR_DATASET_TASKS = ["level_change", "visual_change"];
+
 const DATASET_TASK_HELP = {
   water_segmentation: "Needs a water mask (not a riverbank mask) for this exact image that a person accepted in the hosted segmentation panel below.",
   level_classification: "Needs a human review of this image, its own matched gauge reading, and an approved category definition for this site.",
   gauge_height: "Needs this image's own matched gauge reading with unit, station and quality. It does not need a low image.",
-  level_change: "Needs an earlier and a later image from the same camera view, each with a gauge reading. Choose both yourself; pairs are never made automatically."
+  level_change: "Needs an earlier and a later image from the same camera view, each with a gauge reading. Choose both yourself; pairs are never made automatically.",
+  visual_change: "Needs an earlier and a later image from the same camera view, and at least two independent blind reviewers who agree on what changed. Choose both yourself; the focused review page shows whether reviewers agree before you add."
 };
 
 let dsState = { datasets: [], selectedId: "", result: null, busy: false, pairEarlier: null, pendingReject: false };
@@ -44,6 +48,7 @@ function annotationSummary(a) {
   if (a.kind === "gauge_height") return `${a.value} ${a.unit} at station ${a.station_nwis_id}`;
   if (a.kind === "water_mask") return `${a.masks.length} accepted mask file(s) for "${a.prompt}"`;
   if (a.kind === "level_change") return `change ${a.delta} ${a.unit} over ${Math.round(a.elapsed_seconds / 3600)} h${a.direction ? ` (${a.direction})` : ""}`;
+  if (a.kind === "visual_change") return `${String(a.direction || "").replaceAll("_", " ")} over ${Math.round(a.elapsed_seconds / 3600)} h, ${a.reviewer_count} independent reviewers agree`;
   return "";
 }
 
@@ -99,7 +104,7 @@ function datasetPanelHtml(sel) {
     const maskPicker = masks.length > 1
       ? `<label class="mt-10" for="dsMask">Which accepted mask</label><select id="dsMask" class="full-width">${masks.map((m) => `<option value="${escapeHtml(m.run_id)}|${escapeHtml(m.result_id)}">${escapeHtml(m.prompt)} · ${escapeHtml(formatUtc(m.processed_at_utc))}</option>`).join("")}</select>`
       : "";
-    const pair = ds && ds.task === "level_change"
+    const pair = ds && PAIR_DATASET_TASKS.includes(ds.task)
       ? `<div class="mt-10" style="font-size:12px;">${dsState.pairEarlier ? `Earlier image: <strong>${escapeHtml(dsState.pairEarlier.filename)}</strong> <button class="btn" data-ds-act="clear-earlier" style="height:26px;">Clear</button>` : "No earlier image chosen yet."}</div>
          <div class="inline-row mt-6"><button class="btn" data-ds-act="set-earlier">Use as earlier</button><button class="btn primary" data-ds-act="add-pair" ${dsState.pairEarlier ? "" : "disabled"}>Add pair with this as later</button></div>`
       : `<div class="inline-row mt-10"><button class="btn primary" data-ds-act="add" ${dsState.busy ? "disabled" : ""}>Add this image</button><button class="btn" data-ds-act="reject">Reject</button></div>
@@ -175,6 +180,6 @@ function renderDatasetPanel() {
     })
   );
   el.querySelectorAll("[data-ds-decision]").forEach((btn) =>
-    btn.addEventListener("click", () => datasetAction(chosenDataset().task === "level_change" ? "add-pair" : "add", btn.dataset.dsDecision))
+    btn.addEventListener("click", () => datasetAction(PAIR_DATASET_TASKS.includes(chosenDataset().task) ? "add-pair" : "add", btn.dataset.dsDecision))
   );
 }

@@ -35,7 +35,7 @@ runs are never modified. The adapter `water_change_mask_v1` is off by default.
 ## The pilot
 
 10–15 diverse pairs from one camera (rising, falling, stable-high, equal area different shape,
-difficult). Write the criteria first; two reviewers judge blind to machine results and gauge; then
+difficult). Write the criteria first; two reviewers judge blind to machine results and gauge (they can label on the focused review page and export their blind labels with the `judgments` command); then
 measure, view the contact sheet and report; show frozen gauge context last; a person records
 proceed, revise or stop. Errors and the unavailable rate are both reported, held-out pairs are
 scored only on request and logged, and unknown-for-everything cannot pass. Commands are in

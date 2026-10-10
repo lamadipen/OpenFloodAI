@@ -200,3 +200,71 @@ def test_invalid_requests_are_refused_without_touching_anything(tmp_path: Path) 
             == 400
         )
         assert get_json(f"{base}/api/datasets") == {"datasets": []}
+
+
+def test_dataset_check_is_read_only_for_images_and_for_visual_pairs(tmp_path: Path) -> None:
+    fx = make_run(tmp_path, [Img(day=1, level=3.0, human=None), Img(day=2, level=4.0, human=None)])
+    for name in (fx.filenames[1],):
+        rows = fx.site_dir / "outputs" / "image-sequence-runs" / fx.run_id / "human-review"
+        rows.mkdir(parents=True, exist_ok=True)
+        with (rows / "observations.jsonl").open("a", encoding="utf-8") as handle:
+            for reviewer in ("reviewer-a", "reviewer-b"):
+                handle.write(
+                    json.dumps(
+                        {
+                            "kind": "image",
+                            "filename": name,
+                            "media_id": fx.sequence_id,
+                            "observation_id": f"o-{reviewer}",
+                            "label": {
+                                "human_label": "water_level_rising",
+                                "reviewer_id": reviewer,
+                                "camera_stable": "yes",
+                            },
+                            "label_revision": 1,
+                            "reviewed_at_utc": "2026-10-08T10:00:00+00:00",
+                            "review_stage": "blind",
+                            "baseline_filename": fx.filenames[0],
+                            "reference": {
+                                "sequence_id": fx.sequence_id,
+                                "run_id": fx.run_id,
+                                "filename": fx.filenames[0],
+                            },
+                        }
+                    )
+                    + "\n"
+                )
+    one = {"folder_name": fx.folder_name, "run_id": fx.run_id}
+
+    with serve_home_ui(tmp_path / "sites") as base:
+        _, gauge = post(base, "/api/dataset-create", {"name": "Heights", "task": "gauge_height"})
+        _, visual = post(base, "/api/dataset-create", {"name": "Visible", "task": "visual_change"})
+        gid, vid = gauge["dataset"]["dataset_id"], visual["dataset"]["dataset_id"]
+
+        single = post(
+            base,
+            "/api/dataset-check",
+            {"dataset_id": gid, **one, "filename": fx.filenames[1]},
+        )
+        pair = post(
+            base,
+            "/api/dataset-check",
+            {
+                "dataset_id": vid,
+                "earlier": {**one, "filename": fx.filenames[0]},
+                "later": {**one, "filename": fx.filenames[1]},
+            },
+        )
+        wrong = post(
+            base,
+            "/api/dataset-check",
+            {"dataset_id": vid, **one, "filename": fx.filenames[1]},
+        )
+        listing = get_json(f"{base}/api/datasets")["datasets"]
+
+    assert single[0] == 200 and single[1]["status"] == "eligible"
+    assert pair[0] == 200 and pair[1]["status"] == "eligible"
+    assert pair[1]["annotation"]["direction"] == "more_water"
+    assert pair[1]["agreement"]["reviewers"] == 2
+    assert wrong[0] == 400 and "pair" in wrong[1]["message"]
+    assert [d["included"] for d in listing] == [0, 0]  # checking added nothing

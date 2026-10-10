@@ -173,3 +173,8 @@ test("the confirmation names the exact counts, the upload and the possible charg
   assert.match(text, /\$2\.50 per 1,000 images/);
   assert.match(text, /unreviewed drafts/);
 });
+
+test("each run row links to the blind review beside the detailed review", () => {
+  assert.match(html, /\/console\/review-focus\.html\?\$\{new URLSearchParams\(\{ site: folderName, run_id: run\.run_id \}\)\}[^>]*>Blind review &rarr;/);
+  assert.ok(html.indexOf("Blind review &rarr;") < html.indexOf("Review &rarr;</a></td>"));
+});

@@ -10,6 +10,8 @@ from openfloodai.curation.common import (
 from openfloodai.curation.store import (
     add_observation,
     add_pair,
+    check_observation,
+    check_pair,
     create_dataset,
     dataset_view,
     freeze_version,
@@ -32,6 +34,8 @@ __all__ = [
     "CurationError",
     "add_observation",
     "add_pair",
+    "check_observation",
+    "check_pair",
     "create_dataset",
     "dataset_view",
     "freeze_version",

@@ -499,7 +499,7 @@ def test_workspace_gauge_keeps_captured_but_unmatched_states_distinct(
     assert text in gauge["message"]
 
 
-def test_a_re_review_adds_a_revision_and_the_point_shows_the_latest_one(tmp_path: Path) -> None:
+def test_a_re_review_adds_a_revision_and_exposes_the_history(tmp_path: Path) -> None:
     site = tmp_path / "site"
     run_id, sample_key = _run_a_real_image_sequence(site)
     base = {
@@ -509,9 +509,24 @@ def test_a_re_review_adds_a_revision_and_the_point_shows_the_latest_one(tmp_path
         "sample_key": sample_key,
     }
 
-    save_observation(site, {**base, "human_label": "no_water_level_change", "note": "first"})
     save_observation(
-        site, {**base, "human_label": "water_level_rising", "confidence": "high", "note": "second"}
+        site,
+        {
+            **base,
+            "human_label": "no_water_level_change",
+            "note": "first",
+            "reviewer_id": "reviewer-a",
+        },
+    )
+    save_observation(
+        site,
+        {
+            **base,
+            "human_label": "water_level_rising",
+            "confidence": "high",
+            "note": "second",
+            "reviewer_id": "reviewer-b",
+        },
     )
 
     rows = _saved_rows(site, run_id)
@@ -527,3 +542,125 @@ def test_a_re_review_adds_a_revision_and_the_point_shows_the_latest_one(tmp_path
     assert point["label"]["note"] == "second"
     assert point["review"]["label_revision"] == 2
     assert point["review"]["reviewed_at_utc"]
+    assert [review["label"]["reviewer_id"] for review in point["reviews"]] == [
+        "reviewer-a",
+        "reviewer-b",
+    ]
+    assert [review["label_revision"] for review in point["reviews"]] == [1, 2]
+
+
+def _label(site: Path, run_id: str, sample_key: str, **extra: Any) -> dict[str, Any]:
+    return save_observation(
+        site,
+        {
+            "kind": "image",
+            "run_id": run_id,
+            "media_id": SEQUENCE_ID,
+            "sample_key": sample_key,
+            "human_label": "water_level_rising",
+            "reviewer_id": "reviewer-a",
+            **extra,
+        },
+    )
+
+
+def test_a_label_records_its_reference_and_whether_it_was_blind(tmp_path: Path) -> None:
+    site = tmp_path / "site"
+    run_id, sample_key = _run_a_real_image_sequence(site)
+
+    _label(site, run_id, sample_key, review_stage="blind")
+    row = _saved_rows(site, run_id)[-1]
+    assert row["review_stage"] == "blind" and row["reference_kind"] == "run_baseline"
+    assert row["reference"] == {
+        "sequence_id": SEQUENCE_ID,
+        "run_id": run_id,
+        "filename": "camera___2026-09-01T00-00-00Z.jpg",
+    }
+
+    _label(site, run_id, sample_key, review_stage="informed")
+    from openfloodai.review.workspace import evidence
+
+    point = evidence(site, "image", run_id, SEQUENCE_ID)["points"][0]
+    assert [r["review_stage"] for r in point["reviews"]] == ["blind", "informed"]
+    assert point["reviews"][0]["reference_kind"] == "run_baseline"
+
+
+def test_an_older_save_without_a_stage_is_unspecified_and_unchanged(tmp_path: Path) -> None:
+    site = tmp_path / "site"
+    run_id, sample_key = _run_a_real_image_sequence(site)
+    _label(site, run_id, sample_key)
+    assert _saved_rows(site, run_id)[-1]["review_stage"] == "unspecified"
+
+
+def test_a_chosen_reference_is_saved_and_must_be_a_different_saved_image(tmp_path: Path) -> None:
+    site = tmp_path / "site"
+    run_id, sample_key = _run_a_real_image_sequence(site)
+    chosen = {
+        "sequence_id": SEQUENCE_ID,
+        "run_id": run_id,
+        "filename": "camera___2026-09-01T00-00-00Z.jpg",
+    }
+    _label(site, run_id, sample_key, review_stage="blind", reference=chosen)
+    row = _saved_rows(site, run_id)[-1]
+    assert row["reference"] == chosen
+
+    # naming the run's own baseline explicitly is still recorded as the run baseline
+    assert row["reference_kind"] == "run_baseline"
+
+    sequence = site / "inputs" / "image-sequences" / SEQUENCE_ID
+    other = "camera___2026-09-01T02-00-00Z.jpg"
+    _write_frame(sequence / "images" / other, 100)
+    with (sequence / "sequence-manifest.jsonl").open("a", encoding="utf-8") as handle:
+        handle.write(
+            json.dumps(
+                {
+                    "filename": other,
+                    "captured_at_utc": "2026-09-01T02:00:00+00:00",
+                    "download_status": "downloaded",
+                }
+            )
+            + "\n"
+        )
+    elsewhere = {**chosen, "filename": other}
+    _label(site, run_id, sample_key, review_stage="blind", reference=elsewhere)
+    row = _saved_rows(site, run_id)[-1]
+    assert row["reference_kind"] == "chosen" and row["reference"] == elsewhere
+
+    same = {**chosen, "filename": "camera___2026-09-01T01-00-00Z.jpg"}
+    with pytest.raises(ValueError, match="different image"):
+        _label(site, run_id, sample_key, reference=same)
+    with pytest.raises(ValueError, match="saved image"):
+        _label(site, run_id, sample_key, reference={**chosen, "filename": "camera___nope.jpg"})
+    with pytest.raises(ValueError, match="sequence, run and image"):
+        _label(site, run_id, sample_key, reference={"filename": "x.jpg"})
+    with pytest.raises(ValueError, match="sequence, run and image"):
+        _label(site, run_id, sample_key, reference="baseline")
+
+
+def test_the_stage_is_validated_and_the_baseline_cannot_be_its_own_reference() -> None:
+    from openfloodai.review import workspace
+
+    with pytest.raises(ValueError, match="review_stage"):
+        workspace._review_stage_field({"review_stage": "secret"})
+    point = {"filename": "base.jpg"}
+    with pytest.raises(ValueError, match="run's baseline"):
+        workspace._reference_fields(
+            Path("."),
+            {},
+            media_id="m",
+            run_id="r",
+            point=point,
+            baseline_filename="base.jpg",
+            review_stage="blind",
+        )
+    # an older caller that sends no stage keeps working exactly as before
+    legacy = workspace._reference_fields(
+        Path("."),
+        {},
+        media_id="m",
+        run_id="r",
+        point=point,
+        baseline_filename="base.jpg",
+        review_stage="unspecified",
+    )
+    assert legacy["reference_kind"] == "run_baseline"

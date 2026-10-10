@@ -487,7 +487,7 @@ function renderImageSequenceOption() {
               <td class="mono-12">${escapeHtml(run.run_id)}<div style="font-family:inherit;color:var(--ink-muted);margin-top:2px;">${escapeHtml(run.sequence_label || seq.label || seq.sequence_id)}</div></td>
               <td style="color:var(--ink-soft);">${run.created_at ? new Date(run.created_at).toLocaleString() : ""}</td>
               <td>${run.no_water_level_change_count || 0} no-change &middot; ${run.camera_or_image_problem_count || 0} problem</td>
-              <td style="text-align:right;"><a href="/console/review.html?${new URLSearchParams({ site: folderName, run_id: run.run_id })}" style="font-size:12px;font-weight:600;color:var(--accent);">Review &rarr;</a></td>
+              <td style="text-align:right;white-space:nowrap;"><a href="/console/review-focus.html?${new URLSearchParams({ site: folderName, run_id: run.run_id })}" title="Compare each image with a reference and label it before seeing any machine result" style="font-size:12px;font-weight:600;color:var(--accent);margin-right:14px;">Blind review &rarr;</a><a href="/console/review.html?${new URLSearchParams({ site: folderName, run_id: run.run_id })}" style="font-size:12px;font-weight:600;color:var(--accent);">Review &rarr;</a></td>
             </tr>`
               )
               .join("") || `<tr><td colspan="4" style="color:var(--ink-muted);">No runs yet for this sequence.</td></tr>`}
