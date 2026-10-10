@@ -23,7 +23,7 @@ from openfloodai.water_change.pilot import (
     JUDGMENTS_DIR,
     MEASUREMENTS_DIR,
     PilotError,
-    load_pairs,
+    frozen_pairs,
 )
 
 
@@ -37,7 +37,7 @@ def export_reviewer_judgments(pilot_dir: Path, sites_dir: Path, reviewer: str) -
     wanted = reviewer.strip()
     if not wanted:
         raise PilotError("Name the reviewer code to export.")
-    folder, pairs = load_pairs(pilot_dir)
+    folder, pairs, _ = frozen_pairs(pilot_dir)
     judgments: dict[str, dict[str, str]] = {}
     times: list[str] = []
     missing: list[str] = []
@@ -51,6 +51,11 @@ def export_reviewer_judgments(pilot_dir: Path, sites_dir: Path, reviewer: str) -
         )
         set_aside += ignored
         mine = next((j for j in found if j.reviewer.casefold() == wanted.casefold()), None)
+        if mine is not None and mine.stage != "blind":
+            # The pilot is judged blind to machine results. A label made with the evidence in view
+            # (Assisted review) can count in a dataset but never counts here.
+            set_aside += 1
+            mine = None
         if mine is None:
             missing.append(pair.pair_id)
             continue

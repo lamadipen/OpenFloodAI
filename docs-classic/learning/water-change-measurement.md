@@ -22,7 +22,7 @@ image pixels, right and bottom edges exclusive. Brightness is never read.
 ## Unavailable, never zero
 
 Missing, unreviewed, rejected, needs-correction or non-water masks; changed images; a different
-camera, image size or watched area; reversed or equal timestamps; or unconfirmed framing give an
+camera, image size or watched area (including a mask cut from a different watched area than the run froze); reversed or equal timestamps; or unconfirmed framing give an
 unavailable or invalid record with reason codes. An accepted "no match" is not a verified empty
 mask. A named person confirms the fixed framing; there is no automatic camera alignment.
 

@@ -12,7 +12,9 @@ from water_helpers import Fixture, add_water_mask, water
 
 from openfloodai.water_change.pilot import (
     PilotError,
+    _gauge_direction,
     build_report,
+    frozen_pairs,
     load_criteria,
     load_pairs,
     machine_direction,
@@ -353,3 +355,132 @@ def test_inventory_lists_only_accepted_completed_water_masks(tmp_path: Path, fx:
     assert group["distinct_images_with_accepted_mask"] == 5
     assert group["camera_id"] == "CAM_A" and group["crop_px"] == [3, 4, 23, 15]
     assert fx.run_id in inventory["masks"][0]["image_runs"]
+
+
+def _edit_pairs(pilot: Path, change: Any) -> None:
+    path = pilot / "pairs.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    change(data)
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+
+def _swap_held_out(data: dict[str, Any]) -> None:
+    # move a pair out of the held-out group and put a measured one in, after measuring
+    for row in data["pairs"]:
+        if row["pair_id"] == "h1":
+            row["held_out"] = False
+        if row["pair_id"] == "p2":
+            row["held_out"] = True
+
+
+def test_the_pairs_are_frozen_with_a_hash_before_the_first_measurement(
+    tmp_path: Path, fx: Fixture
+) -> None:
+    pilot = setup_pilot(tmp_path, fx)
+    assert not (pilot / "pairs.frozen.json").exists()
+    measured = run_measurements(pilot, fx.sites_dir)
+    frozen = json.loads((pilot / "pairs.frozen.json").read_text(encoding="utf-8"))
+    assert frozen["pairs_sha256"] == measured["pairs_sha256"]
+    assert frozen["criteria_sha256"] == load_criteria(pilot).sha256
+    assert {p["pair_id"] for p in frozen["pairs"]} == {"p1", "p2", "p3", "p4", "p5", "h1"}
+    assert [p["held_out"] for p in frozen["pairs"] if p["pair_id"] == "h1"] == [True]
+    assert frozen["frozen_at_utc"] < measured["measured_at_utc"]
+
+
+def test_the_blind_sheet_freezes_the_pairs_before_anyone_judges(
+    tmp_path: Path, fx: Fixture
+) -> None:
+    pilot = setup_pilot(tmp_path, fx)
+    render_blind_sheet(pilot, fx.sites_dir)
+    assert (pilot / "pairs.frozen.json").is_file()
+    _edit_pairs(pilot, _swap_held_out)
+    with pytest.raises(PilotError, match="no longer matches pairs.frozen.json"):
+        run_measurements(pilot, fx.sites_dir)
+
+
+def test_pairs_cannot_be_edited_after_they_are_frozen(tmp_path: Path, fx: Fixture) -> None:
+    pilot = setup_pilot(tmp_path, fx)
+    run_measurements(pilot, fx.sites_dir)
+    _edit_pairs(pilot, _swap_held_out)
+    with pytest.raises(PilotError, match="frozen before measurement"):
+        run_measurements(pilot, fx.sites_dir)
+    with pytest.raises(PilotError, match="no longer matches"):
+        frozen_pairs(pilot)
+
+
+def test_editing_pairs_json_cannot_change_which_old_results_count_as_held_out(
+    tmp_path: Path, fx: Fixture
+) -> None:
+    pilot = setup_pilot(tmp_path, fx)
+    judge(pilot, "A", TRUTH)
+    judge(pilot, "B", TRUTH)
+    run_measurements(pilot, fx.sites_dir)
+    honest = build_report(pilot)
+    assert honest["protocol_problems"] == []
+    assert honest["development"]["pairs"] == 5 and honest["held_out"]["pairs_reserved"] == 0
+
+    _edit_pairs(pilot, _swap_held_out)  # try to hide p2 from development and expose h1
+    report = build_report(pilot)
+    assert "pairs.json was edited after the pairs were frozen" in report["protocol_problems"]
+    assert report["mechanical_status"] == "protocol_not_followed"
+    # the split still comes from the frozen file, not from the edited pairs.json
+    assert report["development"]["pairs"] == 5
+    assert report["held_out"]["pairs_reserved"] == 0
+
+
+def test_a_measurement_made_under_other_pairs_is_a_protocol_problem(
+    tmp_path: Path, fx: Fixture
+) -> None:
+    pilot = setup_pilot(tmp_path, fx)
+    run_measurements(pilot, fx.sites_dir)
+    path = next((pilot / "measurements").glob("*.json"))
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["pairs_sha256"] = "0" * 64
+    path.write_text(json.dumps(data), encoding="utf-8")
+    problems = build_report(pilot)["protocol_problems"]
+    assert "a measurement was made under different pairs than the frozen ones" in problems
+
+
+def test_a_pilot_measured_without_frozen_pairs_is_flagged(tmp_path: Path, fx: Fixture) -> None:
+    pilot = setup_pilot(tmp_path, fx)
+    run_measurements(pilot, fx.sites_dir)
+    (pilot / "pairs.frozen.json").unlink()
+    problems = build_report(pilot)["protocol_problems"]
+    assert "the pairs and held-out marks were not frozen before measurement" in problems
+
+
+def _gauge(**overrides: Any) -> dict[str, Any]:
+    base = {
+        "usable": True,
+        "value": 3.0,
+        "unit": "ft",
+        "station_nwis_id": "09034250",
+        "parameter_code": "00065",
+        "used_fallback_discharge": False,
+    }
+    return {**base, **overrides}
+
+
+def test_a_gauge_comparison_needs_the_same_station_and_measurement() -> None:
+    def compare(earlier: dict[str, Any], later: dict[str, Any]) -> tuple[Any, Any, str]:
+        return _gauge_direction({"earlier_gauge": earlier, "later_gauge": later}, 0.2)
+
+    assert compare(_gauge(), _gauge(value=4.0)) == ("higher", 1.0, "")
+    direction, change, why = compare(_gauge(), _gauge(value=4.0, station_nwis_id="09999999"))
+    assert (
+        direction is None and change is None and why == "gauge station differs between the two ends"
+    )
+    assert compare(_gauge(), _gauge(parameter_code="00060"))[2] == (
+        "gauge measurement type differs between the two ends"
+    )
+    assert compare(_gauge(), _gauge(unit="m"))[2] == "gauge unit differs between the two ends"
+    assert compare(_gauge(station_nwis_id=None), _gauge())[2] == (
+        "gauge station is not recorded at both ends"
+    )
+    assert compare(_gauge(parameter_code=None), _gauge(parameter_code=None))[2] == (
+        "gauge measurement type is not recorded at both ends"
+    )
+    assert compare(_gauge(), _gauge(used_fallback_discharge=True))[2] == (
+        "gauge readings were taken from different measurements"
+    )
+    assert compare(_gauge(usable=False), _gauge())[0] is None

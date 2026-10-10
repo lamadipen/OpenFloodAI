@@ -144,8 +144,8 @@ def test_a_different_watched_area_means_the_camera_view_is_not_comparable(tmp_pa
     early, late = refs(fixture)
     result = go(fixture, early, late)
     assert result["evidence"]["status"] == "invalid"
-    assert "WATCHED_AREA_CHANGED" in result["evidence"]["reason_codes"]
-    with pytest.raises(compare.CompareUnavailable, match="share one image size"):
+    assert "LATER_MASK_WATCHED_AREA_DIFFERS_FROM_RUN" in result["evidence"]["reason_codes"]
+    with pytest.raises(compare.CompareUnavailable, match="accepted water mask"):
         compare.overlay_png(fixture.sites_dir, fixture.folder_name, early, late)
 
 

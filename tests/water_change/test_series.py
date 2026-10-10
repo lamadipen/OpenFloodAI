@@ -98,7 +98,9 @@ def test_without_masks_nothing_is_invented(tmp_path: Path) -> None:
         assert image["coverage"] is None and image["reason"] == "no_usable_water_mask"
 
 
-def test_the_watched_area_is_reported_and_a_different_one_is_excluded(tmp_path: Path) -> None:
+def test_the_runs_frozen_watched_area_is_reported_and_a_different_one_is_excluded(
+    tmp_path: Path,
+) -> None:
     fx = build(tmp_path, 3)
     add_water_mask(fx, 0, water(6), run_id=run_id(1))
     add_water_mask(fx, 1, water(8), run_id=run_id(2))
@@ -107,7 +109,7 @@ def test_the_watched_area_is_reported_and_a_different_one_is_excluded(tmp_path: 
     result = series.run_series(fx.sites_dir, fx.folder_name, fx.run_id)
     assert result["watched_area"]["crop_px"] == CROP
     odd = {i["filename"]: i for i in result["images"]}[fx.filenames[2]]
-    assert odd["coverage"] is None and odd["reason"] == "different_watched_area_or_size"
+    assert odd["coverage"] is None and odd["reason"] == "mask_watched_area_differs_from_run"
     assert "draft" in result["note"].lower() and "not water depth" in result["note"]
 
 
@@ -129,3 +131,32 @@ def test_reading_the_series_writes_nothing_and_unknown_runs_are_errors(tmp_path:
         series.run_series(fx.sites_dir, fx.folder_name, "20269999T000000Z-00000000")
     with pytest.raises(CurationError):
         series.run_series(fx.sites_dir, "../x", fx.run_id)
+
+
+def test_masks_that_all_share_a_stale_region_are_not_trusted_just_for_agreeing(
+    tmp_path: Path,
+) -> None:
+    # The old rule took the most common crop among the masks as "the" watched area, so a whole set
+    # cut from a smaller, stale region passed. Now each mask is checked against the run's own area.
+    fx = build(tmp_path, 3)
+    stale = {"crop_px": [4, 4, 12, 10], "source_size": [32, 24]}
+    for index in range(3):
+        add_water_mask(
+            fx, index, water(8, x0=4, y0=4, y1=10), run_id=run_id(index + 1), transform=stale
+        )
+    result = series.run_series(fx.sites_dir, fx.folder_name, fx.run_id)
+    assert result["watched_area"] is None
+    assert result["counts"]["with_value"] == 0
+    for image in result["images"]:
+        assert image["coverage"] is None and image["basis"] == "none"
+        assert image["reason"] == "mask_watched_area_differs_from_run"
+
+
+def test_a_run_with_no_recorded_watched_area_gives_no_coverage(tmp_path: Path) -> None:
+    fx = build(tmp_path, 2)
+    add_water_mask(fx, 0, water(6), run_id=run_id(1))
+    path = fx.site_dir / "outputs" / "image-sequence-runs" / fx.run_id / "inputs-used"
+    config = path / "site-config.snapshot.json"
+    config.write_text('{"normal_waterline_guides": []}', encoding="utf-8")
+    first = rows(fx)[fx.filenames[0]]
+    assert first["coverage"] is None and first["reason"] == "run_watched_area_not_recorded"

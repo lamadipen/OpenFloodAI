@@ -46,7 +46,13 @@ Rules that matter:
 A missing, unreviewed, rejected, needs-correction or non-water mask, a changed source image, a
 different camera, image size or watched area, reversed or equal timestamps, an unreadable file, or
 framing that nobody confirmed all produce an **unavailable** or **invalid** record with reason
-codes. The value is empty, never zero. An accepted "no match" result is not a verified empty
+codes. So does a mask that was cut from a different watched area than the one the run froze: each
+mask records the crop it was made with, and it is compared with the crop the run's own frozen
+watched area gives for that image size. A smaller or stale region would otherwise be measured
+against the wrong area and still return a number, so such a mask is **invalid**
+(`…_MASK_WATCHED_AREA_DIFFERS_FROM_RUN`), and a run with no recorded watched area leaves the mask
+unverifiable (`…_WATCHED_AREA_NOT_VERIFIABLE`). The Review chart applies the same check to every
+point. The value is empty, never zero. An accepted "no match" result is not a verified empty
 mask either: it means the provider found nothing, not that the area is dry.
 
 Framing is confirmed by a named person for this pilot. The software does not align cameras and
@@ -58,7 +64,9 @@ Each measurement is frozen once under the site folder in
 `outputs/water-change-pairs/<pair_key>.json`: the evidence record, both image hashes, mask
 hashes, the segmentation run and result ids, review decision and time, configuration hash,
 watched area, calculation version and the frozen matched gauge context. The key changes when the
-review decision or mask changes, so a later rejection never silently reuses an old number.
+review decision or mask changes, and also when the image's human review changes: its revision, time
+and camera and visibility answers. So a later rejection, or marking the camera as moved, never
+silently reuses an old "available" number; it makes a new result and the old one is kept as it was.
 Original runs, reviews and masks are never edited. Running the same pair again returns the saved
 result.
 
@@ -79,16 +87,25 @@ unavailable cases. It is not an accuracy study.
    human-to-human agreement the machine must be, and the stop conditions. Who wrote it and when
    is recorded; its hash is stored with every measurement.
 3. **Choose the pairs** in `pairs.json` (one site folder, each pair a `case_type`, a person who
-   confirmed the framing, and `held_out` for pairs reserved for the end).
+   confirmed the framing, and `held_out` for pairs reserved for the end). The pairs, their
+   references and the held-out marks are **frozen** into `pairs.frozen.json` with a hash the first
+   time anything uses them (the blind sheet, a judgments export or a measurement), so always before
+   the first measurement. After that, a changed `pairs.json` is refused, every measurement records
+   the pairs hash it ran under, and the report takes the held-out split from the frozen file. An
+   edited `pairs.json`, a measurement under other pairs, or no frozen file is reported as a protocol
+   problem. To change the pairs, start a new pilot folder.
 4. **Judge blind.** `blind-sheet` writes images only. A hydrologist or reviewer and a second person
    each fill `judgments/<name>.json` saying whether the later image shows more, less or about the
    same visible water (or `cannot_judge`), before seeing machine results or gauge values. Files
-   dated after the first measurement, or not marked blind, are set aside. You can also collect the judgments on the focused review page and export them: label each pair's later image against the earlier one in blind mode, then run `python scripts/water_change_pilot.py judgments --pilot-dir <dir> --reviewer <your code>`. Only blind labels are exported; informed revisions and unlabelled pairs are listed and left out.
+   dated after the first measurement, or not marked blind, are set aside. You can also collect the judgments on the focused review page and export them: label each pair's later image against the earlier one in blind mode, then run `python scripts/water_change_pilot.py judgments --pilot-dir <dir> --reviewer <your code>`. Only blind labels are exported; informed labels (made with machine evidence in view, for example in Assisted review) and unlabelled pairs are listed and left out.
 5. **Measure** (`measure`), view the contact sheet (`sheet`: images, masks, spatial overlay,
    numbers, reasons), then `report`.
 6. **Gauge context comes last**, from the readings frozen at run time with the existing ±15 minute
    match rule. Disagreement is flagged for investigation. Image area need not track gauge height
-   in a straight line, and a nearby station does not prove the same water level at the camera.
+   in a straight line, and a nearby station does not prove the same water level at the camera. A gauge
+   change is only computed when both ends have the same station, the same measurement type
+   (parameter) and the same unit; if any of these differs or is not recorded, the comparison is shown
+   as unavailable instead of subtracting unlike readings.
 7. **Record a decision** (`decision`): proceed, revise or stop, by a named person with reasoning
    and known limitations.
 
@@ -119,7 +136,9 @@ Water coverage rules:
 - **No point means no mask, not zero.** An image without a usable mask is simply missing from the line,
   and the button shows how many images have one (for example `6/8`). If nothing can be plotted the chart
   says what to do.
-- **Same watched area.** Masks must share one image size and watched area; any that do not are left out.
+- **Same watched area.** Each mask must have been cut from the watched area your run froze, and all must
+  share one image size; any that do not are left out, so a whole set from an older, smaller region is
+  not trusted just because it agrees with itself.
   The chart cannot detect a camera that moved, so treat it as a screening view and use **Compare with
   another image** for a pair you confirm yourself.
 - **Separate numbers.** The two measurements are never combined or substituted for each other. The

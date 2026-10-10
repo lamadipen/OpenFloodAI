@@ -3,7 +3,10 @@
 A pilot lives in one folder (``--pilot-dir``) and follows a fixed order that this module checks:
 
 1. ``criteria.json``      people write tolerances, thresholds and stop conditions FIRST;
-2. ``pairs.json``         the chosen ordered pairs (10-15), some marked held out;
+2. ``pairs.json``         the chosen ordered pairs (10-15), some marked held out. They are
+                          frozen into ``pairs.frozen.json`` (with a hash) the first time
+                          anything uses them, always before the first measurement; later edits
+                          to ``pairs.json`` are refused and the report uses the frozen split;
 3. ``judgments/*.json``   at least two reviewers judge the images blind to machine and gauge;
 4. ``measurements/*.json`` the machine measurement (records the criteria hash it ran under);
 5. ``report.json/.md``    errors AND unavailable counts, criteria checks, frozen gauge context
@@ -17,6 +20,7 @@ logged, so they cannot be quietly tuned on.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass
@@ -29,6 +33,7 @@ from openfloodai.water_change.pair import EndpointRef, measure_pair
 
 CRITERIA_FILE = "criteria.json"
 PAIRS_FILE = "pairs.json"
+PAIRS_FROZEN_FILE = "pairs.frozen.json"
 JUDGMENTS_DIR = "judgments"
 MEASUREMENTS_DIR = "measurements"
 HELD_OUT_LOG = "held-out-evaluations.jsonl"
@@ -187,6 +192,102 @@ def load_pairs(pilot_dir: Path) -> tuple[str, list[PilotPair]]:
     return folder, pairs
 
 
+# ---------------------------------------------------------------- freezing the pairs
+
+
+def _ref_dict(ref: EndpointRef) -> dict[str, str | None]:
+    return {
+        "run_id": ref.run_id,
+        "filename": ref.filename,
+        "mask_run_id": ref.mask_run_id,
+        "mask_result_id": ref.mask_result_id,
+    }
+
+
+def _pair_dict(pair: PilotPair) -> dict[str, Any]:
+    return {
+        "pair_id": pair.pair_id,
+        "earlier": _ref_dict(pair.earlier),
+        "later": _ref_dict(pair.later),
+        "case_type": pair.case_type,
+        "held_out": pair.held_out,
+        "framing_confirmed_by": pair.framing_confirmed_by,
+    }
+
+
+def pairs_sha256(folder: str, pairs: list[PilotPair]) -> str:
+    """A hash of exactly which pairs the pilot has, which are held out, and what they point at."""
+
+    body = {"site_folder": folder, "pairs": sorted((_pair_dict(p) for p in pairs), key=_pair_id)}
+    canonical = json.dumps(body, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _pair_id(entry: dict[str, Any]) -> str:
+    return str(entry["pair_id"])
+
+
+def read_frozen_pairs(pilot_dir: Path) -> dict[str, Any] | None:
+    path = pilot_dir / PAIRS_FROZEN_FILE
+    if not path.is_file():
+        return None
+    data = _read_json(path, "The frozen pairs file")
+    if not isinstance(data, dict) or not isinstance(data.get("pairs"), list):
+        raise PilotError("pairs.frozen.json is not a valid frozen pairs file.")
+    return data
+
+
+def _pairs_from_frozen(frozen: dict[str, Any]) -> tuple[str, list[PilotPair]]:
+    pairs = [
+        PilotPair(
+            pair_id=str(row["pair_id"]),
+            earlier=_ref(row.get("earlier"), f"Frozen pair '{row['pair_id']}' earlier"),
+            later=_ref(row.get("later"), f"Frozen pair '{row['pair_id']}' later"),
+            case_type=str(row["case_type"]),
+            held_out=bool(row.get("held_out", False)),
+            framing_confirmed_by=str(row.get("framing_confirmed_by") or ""),
+        )
+        for row in frozen["pairs"]
+    ]
+    return str(frozen.get("site_folder") or ""), pairs
+
+
+def frozen_pairs(pilot_dir: Path) -> tuple[str, list[PilotPair], str]:
+    """The pilot's pairs, frozen on first use, with their hash.
+
+    The first call writes ``pairs.frozen.json``. Every later call re-reads ``pairs.json`` and
+    refuses if its pairs or held-out marks no longer hash to the frozen value, so which pairs
+    count, and which are held out, cannot be changed after anyone has seen or measured them.
+    """
+
+    folder, pairs = load_pairs(pilot_dir)
+    digest = pairs_sha256(folder, pairs)
+    frozen = read_frozen_pairs(pilot_dir)
+    if frozen is None:
+        payload = {
+            "frozen_at_utc": utc_now(),
+            "criteria_sha256": (
+                sha256_file(pilot_dir / CRITERIA_FILE)
+                if (pilot_dir / CRITERIA_FILE).is_file()
+                else None
+            ),
+            "pairs_sha256": digest,
+            "site_folder": folder,
+            "pairs": sorted((_pair_dict(p) for p in pairs), key=_pair_id),
+            "note": "Written once, before any measurement. Do not edit.",
+        }
+        with (pilot_dir / PAIRS_FROZEN_FILE).open("x", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, indent=2) + "\n")
+        return folder, pairs, digest
+    if frozen.get("pairs_sha256") != digest:
+        raise PilotError(
+            "pairs.json no longer matches pairs.frozen.json. The pairs and held-out marks were "
+            "frozen before measurement and cannot be changed; start a new pilot folder to change "
+            "them."
+        )
+    return folder, pairs, digest
+
+
 # ---------------------------------------------------------------- measuring
 
 
@@ -199,7 +300,7 @@ def run_measurements(
     """
 
     criteria = load_criteria(pilot_dir)
-    folder, pairs = load_pairs(pilot_dir)
+    folder, pairs, pairs_digest = frozen_pairs(pilot_dir)
     chosen = [p for p in pairs if include_held_out or not p.held_out]
     if include_held_out:
         _log_held_out(pilot_dir, criteria.sha256, "measure")
@@ -227,6 +328,7 @@ def run_measurements(
     payload = {
         "measured_at_utc": measured_at,
         "criteria_sha256": criteria.sha256,
+        "pairs_sha256": pairs_digest,
         "site_folder": folder,
         "scope": "development_and_held_out" if include_held_out else "development",
         "results": results,
@@ -308,8 +410,20 @@ def _gauge_direction(
     earlier, later = context.get("earlier_gauge"), context.get("later_gauge")
     if not earlier or not later or not earlier.get("usable") or not later.get("usable"):
         return None, None, "no usable matched gauge reading at both ends"
-    if earlier.get("unit") != later.get("unit"):
-        return None, None, "gauge units differ"
+    # A difference of two readings means something only when they come from the same station and
+    # measure the same thing. Anything unrecorded or different leaves the comparison unavailable.
+    for label, key in (
+        ("station", "station_nwis_id"),
+        ("measurement type", "parameter_code"),
+        ("unit", "unit"),
+    ):
+        a, b = earlier.get(key), later.get(key)
+        if not a or not b:
+            return None, None, f"gauge {label} is not recorded at both ends"
+        if a != b:
+            return None, None, f"gauge {label} differs between the two ends"
+    if bool(earlier.get("used_fallback_discharge")) != bool(later.get("used_fallback_discharge")):
+        return None, None, "gauge readings were taken from different measurements"
     change = float(later["value"]) - float(earlier["value"])
     if change > tolerance:
         return "higher", change, ""
@@ -450,14 +564,31 @@ def _gauge_review(rows: list[dict[str, Any]], criteria: Criteria) -> list[dict[s
 
 def build_report(pilot_dir: Path, *, evaluate_held_out: bool = False) -> dict[str, Any]:
     criteria = load_criteria(pilot_dir)
-    _, pairs = load_pairs(pilot_dir)
     measurements = _read_measurements(pilot_dir)
     if not measurements:
         raise PilotError("No measurements yet. Run the measure step first.")
     protocol: list[str] = []
+    frozen = read_frozen_pairs(pilot_dir)
+    if frozen is None:
+        # An older pilot, or one whose frozen file was removed: the split cannot be trusted.
+        _, pairs = load_pairs(pilot_dir)
+        protocol.append("the pairs and held-out marks were not frozen before measurement")
+    else:
+        # The split comes from the frozen file, never from a pairs.json that may have been edited.
+        _, pairs = _pairs_from_frozen(frozen)
+        try:
+            _, live = load_pairs(pilot_dir)
+            if pairs_sha256(str(frozen.get("site_folder") or ""), live) != frozen["pairs_sha256"]:
+                protocol.append("pairs.json was edited after the pairs were frozen")
+        except PilotError:
+            protocol.append("pairs.json is missing or unreadable after the pairs were frozen")
+        if any(m.get("pairs_sha256") != frozen["pairs_sha256"] for m in measurements):
+            protocol.append("a measurement was made under different pairs than the frozen ones")
     first_time = _aware(measurements[0]["measured_at_utc"], "first measurement time")
     if criteria.written_at >= first_time:
         protocol.append("criteria were written after the first machine measurement")
+    if frozen is not None and _aware(frozen["frozen_at_utc"], "frozen time") >= first_time:
+        protocol.append("the pairs were frozen after the first machine measurement")
     if any(m["criteria_sha256"] != criteria.sha256 for m in measurements):
         protocol.append("criteria changed after a measurement was made")
     reviewers, rejected = _load_judgments(pilot_dir, first_time)

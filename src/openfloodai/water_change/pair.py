@@ -48,6 +48,7 @@ from openfloodai.vision.water_change import (
     WaterChangeInputError,
     roi_from_crop,
 )
+from openfloodai.water_change.region import expected_crop_px
 
 PAIR_DIR = "water-change-pairs"
 _FOLDER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,200}$")
@@ -121,6 +122,10 @@ def _gauge_context(snapshot: dict[str, Any]) -> dict[str, Any]:
         "datetime_utc": reading.get("datetime_utc") if reading else None,
         "time_difference_seconds": gauge.get("time_difference_seconds"),
         "station": gauge.get("station"),
+        "station_nwis_id": (gauge.get("station") or {}).get("nwis_site_id"),
+        "parameter_code": reading.get("parameter_code") if reading else None,
+        "parameter_label": reading.get("parameter_label") if reading else None,
+        "used_fallback_discharge": reading.get("used_fallback_discharge") if reading else None,
         "usable": reading is not None and not problems,
         "problems": problems,
         "note": "Instrument context at a possibly nearby station. Not a label and not an input.",
@@ -171,10 +176,25 @@ def resolve_endpoint(site_dir: Path, ref: EndpointRef, prefix: str) -> ResolvedE
         "config_sha256": snap["configuration"]["config_sha256"],
         "reference_region": snap["configuration"]["reference_region"],
         "dataset_group": snap["dataset_group"],
+        "review_state": _review_state(review),
     }
     if chosen is not None:
         _attach_mask(out, chosen)
     return out
+
+
+def _review_state(review: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The human review of this image that can change a result: its revision, when it was made,
+    and the camera and visibility answers. Part of the result's identity, so marking the camera as
+    moved later makes a new result instead of reusing an old "available" one."""
+
+    if not review:
+        return None
+    return {
+        "label_revision": review.get("label_revision"),
+        "reviewed_at_utc": review.get("reviewed_at_utc"),
+        "visibility": review.get("visibility") or {},
+    }
 
 
 def _attach_mask(out: ResolvedEndpoint, chosen: MaskCandidate) -> None:
@@ -199,6 +219,19 @@ def _attach_mask(out: ResolvedEndpoint, chosen: MaskCandidate) -> None:
     ):
         out.image_size = (int(size[0]), int(size[1]))
     out.crop_px = transform.get("crop_px") if isinstance(transform.get("crop_px"), list) else None
+    # The crop the mask was cut with must be the run's own frozen watched area. A mask from a
+    # smaller or stale region would otherwise be measured against that wrong region.
+    expected = expected_crop_px(out.details.get("reference_region"), out.image_size)
+    out.details["mask_crop_px"] = out.crop_px
+    out.details["expected_crop_px"] = expected
+    if expected is None:
+        out.reasons.append(f"{out.prefix}_WATCHED_AREA_NOT_VERIFIABLE")
+        out.crop_px = None
+        return
+    if out.crop_px != expected:
+        out.reasons.append(f"{out.prefix}_MASK_WATCHED_AREA_DIFFERS_FROM_RUN")
+        out.crop_px = None
+        return
     if any(not p.is_file() for p in chosen.mask_paths) or not chosen.mask_paths:
         out.reasons.append(f"{out.prefix}_MASK_FILE_MISSING")
         return
@@ -218,7 +251,15 @@ def _attach_mask(out: ResolvedEndpoint, chosen: MaskCandidate) -> None:
 def pair_key(earlier: ResolvedEndpoint, later: ResolvedEndpoint, framing_by: str | None) -> str:
     """Identifies exactly the evidence used. A new review or mask makes a new key."""
 
-    keys = ("image_sha256", "mask_sha256s", "review_decision", "reviewed_at_utc", "config_sha256")
+    keys = (
+        "image_sha256",
+        "mask_sha256s",
+        "review_decision",
+        "reviewed_at_utc",
+        "config_sha256",
+        "mask_crop_px",
+        "review_state",
+    )
     return content_id(
         {
             "calculation_version": CALCULATION_VERSION,
@@ -275,6 +316,8 @@ def measure_pair(
     blocking = list(first.reasons) + list(second.reasons)
     framing = _same_framing(first, second)
     blocking.extend(framing)
+    # A mask cut from a different watched area is invalid evidence for this run, not just missing.
+    wrong_area = [r for r in blocking if r.endswith("_MASK_WATCHED_AREA_DIFFERS_FROM_RUN")]
     roi: Roi | None = None
     size = first.image_size or second.image_size
     crop = first.crop_px or second.crop_px
@@ -292,7 +335,7 @@ def measure_pair(
         image_size=size,
         framing_confirmed_by=framing_confirmed_by,
         blocking_reasons=tuple(blocking),
-        blocking_status="invalid" if framing else "unavailable",
+        blocking_status="invalid" if framing or wrong_area else "unavailable",
         provenance={"site_folder": site_folder, "adapter": PLUGIN_ID},
     )
     record = WaterChangeObservationAdapter(inputs).collect()
